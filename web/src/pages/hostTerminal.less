@@ -1,0 +1,113 @@
+/* 宿主机终端页面样式 */
+
+/* 顶部工具栏 */
+.ht-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.ht-toolbar__cwd {
+  flex: 1;
+  min-width: 220px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, Consolas, monospace);
+}
+
+.ht-shell {
+  min-width: 130px;
+}
+
+/* 终端主体 */
+.ht-terminal {
+  background: #0f1117;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ht-terminal__output {
+  min-height: 400px;
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+  padding: 14px;
+  font-family: var(--font-mono, Consolas, 'Courier New', monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d5d8de;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ht-output-line {
+  width: 100%;
+}
+
+.ht-output-line--prompt {
+  color: #7ee787;
+}
+
+.ht-output-line--cmd {
+  color: #d5d8de;
+}
+
+.ht-output-line--err {
+  color: #ff7b72;
+}
+
+.ht-output-line--muted {
+  color: #8b949e;
+}
+
+/* 底部输入区 */
+.ht-inputbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border-color);
+  padding: 10px 14px;
+  background: #161a22;
+}
+
+.ht-inputbar__prompt {
+  color: #7ee787;
+  font-family: var(--font-mono, Consolas, monospace);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ht-inputbar__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #d5d8de;
+  font-family: var(--font-mono, Consolas, monospace);
+  font-size: 13px;
+}
+
+.ht-inputbar__input::placeholder {
+  color: #565f6e;
+}
+
+/* 输出区滚动条在深色背景下 */
+.ht-terminal__output::-webkit-scrollbar {
+  width: 10px;
+}
+
+.ht-terminal__output::-webkit-scrollbar-thumb {
+  background: #2b3340;
+  border-radius: 5px;
+}
+
+.ht-terminal__output::-webkit-scrollbar-track {
+  background: #12151b;
+}

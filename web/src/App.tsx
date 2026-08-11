@@ -32,6 +32,8 @@ const OperationLogsPage = lazy(() => import('./pages/operationLogs'));
 const EventsPage = lazy(() => import('./pages/events'));
 const TasksPage = lazy(() => import('./pages/tasks'));
 const FilesPage = lazy(() => import('./pages/files'));
+const HostFilesPage = lazy(() => import('./pages/hostFiles'));
+const HostTerminalPage = lazy(() => import('./pages/hostTerminal'));
 const DatabasesPage = lazy(() => import('./pages/databases'));
 
 /**
@@ -196,6 +198,22 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <FilesPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/hostfiles"
+                element={
+                  <PageSuspense>
+                    <HostFilesPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/hostterminal"
+                element={
+                  <PageSuspense>
+                    <HostTerminalPage />
                   </PageSuspense>
                 }
               />

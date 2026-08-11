@@ -1,0 +1,141 @@
+/* 宿主机文件管理页面样式 */
+
+/* 顶部路径与操作区 */
+.hf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.hf-toolbar__path {
+  flex: 1;
+  min-width: 220px;
+}
+
+.hf-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 文件列表 */
+.hf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.hf-table thead th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.hf-table tbody td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.hf-table tbody tr {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.hf-table tbody tr:hover {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.05));
+}
+
+/* 名称单元格 */
+.hf-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hf-name__icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.hf-name__icon--dir {
+  color: #d8a13c;
+}
+
+.hf-name__icon--file {
+  color: var(--text-muted);
+}
+
+.hf-name__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.hf-table tr[data-type="dir"] .hf-name__text {
+  font-weight: 600;
+}
+
+/* 大小 / 时间 / 类型列 */
+.hf-size,
+.hf-time {
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.hf-type {
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 行操作按钮 */
+.hf-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.hf-actions .hf-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.hf-actions .hf-link--danger {
+  color: var(--danger, #dc2626);
+}
+
+.hf-actions .hf-link:hover {
+  text-decoration: underline;
+}
+
+/* 拖拽上传高亮 */
+.hf-dropzone--active {
+  outline: 2px dashed var(--primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* 文本文件编辑弹窗内容 */
+.hf-editor textarea {
+  min-height: 320px;
+  font-family: var(--font-mono, Consolas, monospace);
+  font-size: 12px;
+}

@@ -150,6 +150,27 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/hostfiles',
+    label: '宿主机文件',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="4" width="18" height="4" rx="1" />
+        <path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
+        <path d="M12 8v8M8 12l4-4 4 4" />
+      </svg>
+    ),
+  },
+  {
+    to: '/hostterminal',
+    label: '宿主机终端',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="m7 9 3 3-3 3M13 15h4" />
+      </svg>
+    ),
+  },
+  {
     to: '/databases',
     label: '数据库',
     icon: (

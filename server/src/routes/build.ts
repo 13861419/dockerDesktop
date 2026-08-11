@@ -91,7 +91,7 @@ router.post(
 
     try {
       const stream = await docker.buildImage(
-        { context: contextAbs },
+        { context: contextAbs, src: ['.'] },
         {
           t: name,
           dockerfile,
