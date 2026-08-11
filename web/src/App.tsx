@@ -34,6 +34,7 @@ const TasksPage = lazy(() => import('./pages/tasks'));
 const FilesPage = lazy(() => import('./pages/files'));
 const HostFilesPage = lazy(() => import('./pages/hostFiles'));
 const HostTerminalPage = lazy(() => import('./pages/hostTerminal'));
+const EnginesPage = lazy(() => import('./pages/engines'));
 const DatabasesPage = lazy(() => import('./pages/databases'));
 
 /**
@@ -214,6 +215,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <HostTerminalPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/engines"
+                element={
+                  <PageSuspense>
+                    <EnginesPage />
                   </PageSuspense>
                 }
               />

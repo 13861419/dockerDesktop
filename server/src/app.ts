@@ -28,6 +28,7 @@ import eventsRouter from './routes/events';
 import buildRouter from './routes/build';
 import hostFilesRouter from './routes/hostFiles';
 import hostTerminalRouter from './routes/hostTerminal';
+import enginesRouter from './routes/engines';
 import authRouter from './routes/auth';
 import { requireAuth } from './auth';
 
@@ -71,6 +72,7 @@ app.use('/api/events', requireAuth, eventsRouter);
 app.use('/api/build', requireAuth, buildRouter);
 app.use('/api/hostfiles', requireAuth, hostFilesRouter);
 app.use('/api/hostterminal', requireAuth, hostTerminalRouter);
+app.use('/api/engines', requireAuth, enginesRouter);
 
 // 生产模式：托管前端静态文件（单进程部署）
 if (process.env.NODE_ENV === 'production') {

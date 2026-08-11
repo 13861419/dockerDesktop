@@ -171,6 +171,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/engines',
+    label: 'Docker 引擎',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M10 17h.01M14 17h.01M6 17h.01M4 17h.01M18 13h.01M20 9h.01M16 5h.01" />
+        <rect x="3" y="3" width="18" height="14" rx="2" />
+        <path d="M4 7h16M4 10h16" />
+      </svg>
+    ),
+  },
+  {
     to: '/databases',
     label: '数据库',
     icon: (

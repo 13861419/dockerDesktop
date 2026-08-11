@@ -210,6 +210,16 @@ function createTables(): void {
       params       TEXT NOT NULL DEFAULT '{}',
       updated_at   INTEGER NOT NULL
     );
+
+    -- Docker 引擎表：多引擎配置（命名端点，可切换当前引擎）
+    CREATE TABLE IF NOT EXISTS docker_engines (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      endpoint   TEXT NOT NULL,
+      is_current INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

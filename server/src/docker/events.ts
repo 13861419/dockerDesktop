@@ -41,6 +41,8 @@ const subscribers = new Set<(ev: DockerEvent) => void>();
 let started = false;
 /** 事件采集器内部模拟 http.Server 监听开关 */
 let listening = false;
+/** 当前活动的事件流（用于切换引擎时主动断开以触发基于新引擎的重连） */
+let activeStream: { destroy(): void } | null = null;
 
 /** 用于在切换引擎/重启时通知订阅者重置缓存的事件 */
 export const eventBus = new EventEmitter();
@@ -126,6 +128,7 @@ export function startEventMonitor(): void {
       const docker = await getDockerClient();
       const stream = await docker.getEvents();
       listening = false;
+      activeStream = stream as unknown as { destroy(): void };
 
       stream.on('data', (chunk: Buffer) => {
         try {
@@ -166,4 +169,21 @@ export function startEventMonitor(): void {
 
   // 首启
   setTimeout(listen, 200);
+}
+
+/**
+ * 重启事件监听器（用于切换 Docker 引擎后让事件流对准新引擎）
+ *
+ * 主动销毁当前活动事件流，其 end/error 回调会自动触发基于最新"当前引擎"的重连。
+ * 事件流的环形缓冲不清空（历史事件保留）。
+ */
+export function restartEventMonitor(): void {
+  if (activeStream) {
+    try {
+      activeStream.destroy();
+    } catch {
+      // 忽略销毁异常
+    }
+    activeStream = null;
+  }
 }

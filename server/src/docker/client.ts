@@ -10,6 +10,7 @@
  */
 import Dockerode from 'dockerode';
 import os from 'os';
+import { getDb } from '../storage';
 
 /** 常见 Docker 访问端点的探测顺序，按优先级排列 */
 const DEFAULT_ENDPOINTS: string[] = [
@@ -79,24 +80,85 @@ async function detectDockerEndpoint(candidates: string[]): Promise<string> {
   );
 }
 
-/** 缓存已探测到的端点，避免每次请求都重复探测 */
-let cachedEndpoint: string | null = null;
+/** 缓存已探测到的默认端点，避免每次请求都重复探测 */
+let cachedDetectedEndpoint: string | null = null;
+
+/**
+ * 读取当前生效的 Docker 引擎端点（多引擎模式下）
+ *
+ * 从 docker_engines 表读取 is_current=1 的引擎端点；若为空返回 null，
+ * 表示处于"默认引擎"（环境变量 / 自动探测）。
+ * @returns 当前引擎端点，或 null
+ */
+function getCurrentEngineEndpoint(): string | null {
+  try {
+    const row = getDb()
+      .prepare('SELECT endpoint FROM docker_engines WHERE is_current = 1 LIMIT 1')
+      .get() as { endpoint: string } | undefined;
+    return row ? row.endpoint : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 缓存的当前引擎签名（用于判断引擎是否变更） */
+let cachedCurrentKey = '';
+/** 缓存的当前引擎 dockerode 实例 */
+let cachedCurrentDocker: Dockerode | null = null;
+
+/**
+ * 使 Docker 客户端缓存失效
+ *
+ * 当引擎被新增/修改/删除/切换时调用，强制下一次 getDockerClient 重新解析
+ * 当前引擎或重新探测，从而让新引擎配置立即生效。
+ */
+export function resetDockerCache(): void {
+  cachedDetectedEndpoint = null;
+  cachedCurrentKey = '';
+  cachedCurrentDocker = null;
+}
+
+/**
+ * 校验某个 Docker 引擎端点是否可连通（用于引擎新增/更新前测试）
+ * @param endpoint 待校验端点（npipe:// / tcp:// / unix://）
+ * @returns 可连通返回 true，否则 false
+ */
+export async function testEngineEndpoint(endpoint: string): Promise<boolean> {
+  try {
+    const docker = new Dockerode(resolveEndpoint(endpoint));
+    await docker.ping();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 获取 dockerode 客户端实例
  *
- * 若 DOCKER_HOST 未设置，则自动探测本机可用的 Docker 引擎。
+ * 若配置了"当前引擎"，则直连该引擎端点；否则回退到环境变量 DOCKER_HOST
+ * 或本机自动探测（保留原有单引擎行为）。
  * @returns dockerode 客户端
  */
 export async function getDockerClient(): Promise<Dockerode> {
-  // 优先使用环境变量显式指定的端点
+  const current = getCurrentEngineEndpoint();
+  if (current) {
+    const key = 'engine:' + current;
+    if (key !== cachedCurrentKey || !cachedCurrentDocker) {
+      cachedCurrentKey = key;
+      cachedCurrentDocker = new Dockerode(resolveEndpoint(current));
+    }
+    return cachedCurrentDocker;
+  }
+
+  // 回退：优先使用环境变量显式指定的端点，否则自动探测
   const envEndpoint = process.env.DOCKER_HOST;
 
-  let endpoint = cachedEndpoint;
+  let endpoint = cachedDetectedEndpoint;
   if (!endpoint) {
     const candidates = [envEndpoint || '', ...DEFAULT_ENDPOINTS];
     endpoint = await detectDockerEndpoint(candidates);
-    cachedEndpoint = endpoint;
+    cachedDetectedEndpoint = endpoint;
   }
   return new Dockerode(resolveEndpoint(endpoint));
 }
