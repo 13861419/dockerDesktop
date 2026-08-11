@@ -1,0 +1,536 @@
+/**
+ * 数据卷列表页
+ *
+ * 展示 Docker 数据卷，支持刷新、新建数据卷、删除数据卷与清理未使用数据卷。
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Card from '../components/Card';
+import Button from '../components/Button';
+import Modal from '../components/Modal';
+import ConfirmDialog from '../components/ConfirmDialog';
+import Empty from '../components/Empty';
+import { Field, Input } from '../components/Form';
+import { SkeletonRows } from '../components/Loading';
+import { useToast } from '../components/Toast';
+import { get, post, del } from '../api/client';
+import { VolumeItem } from '../types';
+import './volumes.less';
+
+/**
+ * 将 ISO 时间字符串格式化为本地可读时间
+ * @param iso ISO8601 时间字符串
+ */
+function formatTime(iso: string): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '-';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+/** 数据卷 inspect 结果（/api/volumes/:name 返回，dockerode VolumeInspectInfo） */
+interface VolumeInspect {
+  Name: string;
+  Driver: string;
+  Mountpoint: string;
+  CreatedAt: string;
+  Labels: Record<string, string> | null;
+  Scope: string;
+  Options: Record<string, string> | null;
+  UsageData?: { Size?: number; RefCount?: number } | null;
+}
+
+/** 容器挂载项（/api/containers 列表返回结构中的 Mounts） */
+interface ContainerMountInfo {
+  Type?: string;
+  Name?: string;
+  Source?: string;
+}
+
+/** 容器列表项（/api/containers?all=true 返回结构，含 Mounts） */
+interface VolumeContainerItem {
+  Id: string;
+  Names: string[];
+  Image: string;
+  State: string;
+  Status: string;
+  Created: number;
+  Mounts?: ContainerMountInfo[];
+}
+
+/**
+ * 将字节数格式化为人类可读大小
+ * @param bytes 字节数
+ */
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+/**
+ * 数据卷列表页组件
+ */
+export default function VolumesPage() {
+  const { showToast } = useToast();
+  const [volumes, setVolumes] = useState<VolumeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [driver, setDriver] = useState('local');
+  const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<VolumeItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [pruneOpen, setPruneOpen] = useState(false);
+  const [pruning, setPruning] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  // 搜索关键字（按名称/挂载点本地过滤）
+  const [keyword, setKeyword] = useState('');
+  // 分页：每页显示的数据卷条数
+  const PAGE_SIZE = 15;
+  // 当前页码（从 1 开始）
+  const [page, setPage] = useState(1);
+  // 待查看详情的卷（用于打开详情弹窗）
+  const [detailTarget, setDetailTarget] = useState<VolumeItem | null>(null);
+  // 卷 inspect 详情（弹窗内拉取）
+  const [detail, setDetail] = useState<VolumeInspect | null>(null);
+  // 详情弹窗加载中
+  const [detailLoading, setDetailLoading] = useState(false);
+  // 使用该卷的容器列表
+  const [usingContainers, setUsingContainers] = useState<VolumeContainerItem[]>([]);
+  // 使用该卷的容器列表加载中
+  const [containersLoading, setContainersLoading] = useState(false);
+
+  const fetchVolumes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await get<{ volumes: VolumeItem[] }>('/api/volumes');
+      setVolumes(data?.volumes || []);
+    } catch (e: any) {
+      showToast(e?.message || '拉取数据卷列表失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    fetchVolumes();
+  }, [fetchVolumes, refreshKey]);
+
+  const handleCreate = useCallback(async () => {
+    const volName = name.trim();
+    if (!volName) {
+      showToast('请输入数据卷名称', 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      await post('/api/volumes', { name: volName, driver });
+      showToast('数据卷创建成功');
+      setCreateOpen(false);
+      setName('');
+      setDriver('local');
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '数据卷创建失败', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }, [name, driver, showToast]);
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await del('/api/volumes/' + encodeURIComponent(deleteTarget.Name));
+      showToast('数据卷删除成功');
+      setDeleteTarget(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '数据卷删除失败', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, showToast]);
+
+  const handlePrune = useCallback(async () => {
+    setPruning(true);
+    try {
+      await post('/api/volumes/prune');
+      showToast('清理完成');
+      setPruneOpen(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '清理失败', 'error');
+    } finally {
+      setPruning(false);
+    }
+  }, [showToast]);
+
+  /**
+   * 打开卷详情弹窗并触发详情与使用容器列表的加载
+   * @param vol 目标卷
+   */
+  const openDetail = useCallback((vol: VolumeItem) => {
+    setDetail(null);
+    setUsingContainers([]);
+    setDetailTarget(vol);
+  }, []);
+
+  /** 拉取指定卷的 inspect 详情 */
+  const fetchVolumeDetail = useCallback(
+    async (name: string) => {
+      setDetailLoading(true);
+      try {
+        const data = await get<VolumeInspect>('/api/volumes/' + encodeURIComponent(name));
+        setDetail(data || null);
+      } catch (e: any) {
+        showToast(e?.message || '拉取卷详情失败', 'error');
+        setDetail(null);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  /** 拉取容器列表并过滤出使用该卷的容器（按 HostConfig.Mounts 的 Source/Name 匹配） */
+  const fetchUsingContainers = useCallback(
+    async (volName: string) => {
+      setContainersLoading(true);
+      try {
+        const data = await get<VolumeContainerItem[]>('/api/containers', { all: true });
+        const list = (data || []).filter((c) =>
+          (c.Mounts || []).some(
+            (m) => m.Name === volName || (m.Source || '').includes(volName)
+          )
+        );
+        setUsingContainers(list);
+      } catch (e: any) {
+        showToast(e?.message || '拉取容器列表失败', 'error');
+        setUsingContainers([]);
+      } finally {
+        setContainersLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  // 当详情弹窗打开时，加载该卷的 inspect 与使用该卷的容器
+  useEffect(() => {
+    if (!detailTarget) return;
+    fetchVolumeDetail(detailTarget.Name);
+    fetchUsingContainers(detailTarget.Name);
+  }, [detailTarget, fetchVolumeDetail, fetchUsingContainers]);
+
+  /** 根据关键字过滤后的卷列表（按名称或挂载点匹配） */
+  const filteredVolumes = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return volumes;
+    return volumes.filter(
+      (vol) =>
+        vol.Name.toLowerCase().includes(kw) ||
+        (vol.Mountpoint || '').toLowerCase().includes(kw)
+    );
+  }, [volumes, keyword]);
+
+  /** 总页数（至少 1 页） */
+  const totalPages = Math.max(1, Math.ceil(filteredVolumes.length / PAGE_SIZE));
+
+  /** 当前页码：当分页组合变化导致页码越界时，回退到最大有效页 */
+  const safePage = Math.min(page, Math.max(1, totalPages));
+
+  /** 当前页起始序号（用于"第 x-y 条"展示，空列表时为 0） */
+  const pageStart = filteredVolumes.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  /** 当前页结束序号 */
+  const pageEnd = Math.min(safePage * PAGE_SIZE, filteredVolumes.length);
+
+  /** 当前页要展示的数据卷 */
+  const pageItems = filteredVolumes.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  return (
+    <div className="page">
+      <Card
+        title="数据卷"
+        extra={
+          <div className="toolbar">
+            <input
+              className="input volumes-search"
+              placeholder="搜索卷名或挂载点"
+              value={keyword}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setPage(1);
+              }}
+            />
+            <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
+              刷新
+            </Button>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
+              清理未使用卷
+            </Button>
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              新建卷
+            </Button>
+          </div>
+        }
+      >
+        {loading ? (
+          <SkeletonRows rows={6} />
+        ) : filteredVolumes.length === 0 ? (
+          <Empty
+            title={keyword ? '未找到匹配数据卷' : '暂无数据卷'}
+            description={keyword ? '尝试更换搜索关键字' : '点击右上角'}
+          />
+        ) : (
+          <>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>驱动</th>
+                  <th>挂载点</th>
+                  <th>创建时间</th>
+                  <th className="col-actions">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.map((vol) => (
+                <tr key={vol.Name}>
+                  <td className="col-name">
+                    <div className="name-main" title={vol.Name}>
+                      {vol.Name}
+                    </div>
+                  </td>
+                  <td>
+                    <span className="badge badge--muted">{vol.Driver}</span>
+                  </td>
+                  <td className="col-mono" title={vol.Mountpoint}>
+                    {vol.Mountpoint}
+                  </td>
+                  <td>{formatTime(vol.CreatedAt)}</td>
+                  <td className="col-actions">
+                    <div className="row-actions">
+                      <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
+                        详情
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)}>
+                        删除
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              </tbody>
+            </table>
+
+            {/* 分页控件 */}
+            <div className="volumes__pagination">
+              <span className="volumes__pagination-info">
+                共 {filteredVolumes.length} 条，当前第 {pageStart}-{pageEnd} 条
+              </span>
+              <div className="volumes__pagination-controls">
+                <button
+                  className="volumes__page-btn"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage(safePage - 1)}
+                >
+                  上一页
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    className={`volumes__page-btn ${p === safePage ? 'volumes__page-btn--active' : ''}`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  className="volumes__page-btn"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage(safePage + 1)}
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* 卷详情弹窗 */}
+      <Modal
+        open={!!detailTarget}
+        title={detailTarget ? `卷详情 · ${detailTarget.Name}` : '卷详情'}
+        onClose={() => setDetailTarget(null)}
+        width={620}
+      >
+        <div className="vol-detail">
+          {detailLoading ? (
+            <div className="vol-detail__tip">加载中…</div>
+          ) : !detail ? (
+            <div className="vol-detail__tip">未能加载卷详情</div>
+          ) : (
+            <div className="vol-detail__grid">
+              <div className="vol-detail__item">
+                <div className="vol-detail__label">名称</div>
+                <div className="vol-detail__value mono">{detail.Name}</div>
+              </div>
+              <div className="vol-detail__item">
+                <div className="vol-detail__label">驱动</div>
+                <div className="vol-detail__value">{detail.Driver}</div>
+              </div>
+              <div className="vol-detail__item vol-detail__item--full">
+                <div className="vol-detail__label">挂载点</div>
+                <div className="vol-detail__value mono">{detail.Mountpoint}</div>
+              </div>
+              <div className="vol-detail__item">
+                <div className="vol-detail__label">创建时间</div>
+                <div className="vol-detail__value">{formatTime(detail.CreatedAt)}</div>
+              </div>
+              <div className="vol-detail__item">
+                <div className="vol-detail__label">作用域</div>
+                <div className="vol-detail__value">{detail.Scope || '-'}</div>
+              </div>
+              <div className="vol-detail__item vol-detail__item--full">
+                <div className="vol-detail__label">选项（Options）</div>
+                <div className="vol-detail__value">
+                  {detail.Options && Object.keys(detail.Options).length ? (
+                    <div className="line-list">
+                      {Object.entries(detail.Options).map(([k, v]) => (
+                        <span className="tag-chip" key={k}>
+                          {k}={v}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </div>
+              </div>
+              <div className="vol-detail__item vol-detail__item--full">
+                <div className="vol-detail__label">标签（Labels）</div>
+                <div className="vol-detail__value">
+                  {detail.Labels && Object.keys(detail.Labels).length ? (
+                    <div className="line-list">
+                      {Object.entries(detail.Labels).map(([k, v]) => (
+                        <span className="tag-chip" key={k}>
+                          {k}={v}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </div>
+              </div>
+              <div className="vol-detail__item">
+                <div className="vol-detail__label">引用数（RefCount）</div>
+                <div className="vol-detail__value">
+                  {detail.UsageData?.RefCount != null ? detail.UsageData.RefCount : '-'}
+                </div>
+              </div>
+              <div className="vol-detail__item">
+                <div className="vol-detail__label">数据大小</div>
+                <div className="vol-detail__value">
+                  {detail.UsageData?.Size != null ? formatBytes(detail.UsageData.Size) : '-'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="vol-detail__section">使用该卷的容器</div>
+          {containersLoading ? (
+            <div className="vol-detail__tip">加载中…</div>
+          ) : usingContainers.length === 0 ? (
+            <div className="vol-detail__tip">暂无容器使用该卷</div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>镜像</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usingContainers.map((c) => {
+                  const cname = (c.Names && c.Names[0]?.replace(/^\//, '')) || c.Id.slice(0, 12);
+                  return (
+                    <tr key={c.Id}>
+                      <td className="col-name">
+                        <div className="name-main" title={cname}>
+                          {cname}
+                        </div>
+                      </td>
+                      <td>{c.Image}</td>
+                      <td>{c.State}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Modal>
+
+      {/* 新建数据卷弹窗 */}
+      <Modal
+        open={createOpen}
+        title="新建数据卷"
+        onClose={() => setCreateOpen(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
+              取消
+            </Button>
+            <Button onClick={handleCreate} loading={creating}>
+              创建
+            </Button>
+          </>
+        }
+      >
+        <Field label="名称" required>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="数据卷名称"
+            autoFocus
+          />
+        </Field>
+        <Field label="驱动" hint="默认 local">
+          <Input value={driver} onChange={(e) => setDriver(e.target.value)} placeholder="local" />
+        </Field>
+      </Modal>
+
+      {/* 删除数据卷确认框 */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="删除数据卷"
+        message={`确定要删除数据卷 "${deleteTarget?.Name}" 吗？此操作不可恢复。`}
+        confirmText="删除"
+        danger
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* 清理未使用数据卷确认框 */}
+      <ConfirmDialog
+        open={pruneOpen}
+        title="清理未使用数据卷"
+        message="确定要清理所有未被容器引用的数据卷吗？此操作不可恢复。"
+        confirmText="清理"
+        danger
+        loading={pruning}
+        onConfirm={handlePrune}
+        onCancel={() => setPruneOpen(false)}
+      />
+    </div>
+  );
+}

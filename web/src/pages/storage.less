@@ -1,0 +1,186 @@
+/**
+ * 系统存储管理页样式
+ *
+ * 使用 BEM 类名与全局 CSS 变量，支持浅色 / 深色主题。
+ */
+.storage-page {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 顶部统计卡片区 */
+.storage-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.storage-stat {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.storage-stat__label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.storage-stat__value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-stat__sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 清理区块 */
+.storage-clean {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.storage-clean__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.storage-clean__item:last-child {
+  border-bottom: none;
+}
+
+.storage-clean__check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.storage-clean__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.storage-clean__name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.storage-clean__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.storage-clean__space {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-clean__count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.storage-clean__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.storage-clean__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: auto;
+}
+
+/* 移除 / 无数据提示 */
+.storage-tip {
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* 磁盘分区使用率 */
+.storage-disks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.storage-disk {
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-surface);
+}
+
+.storage-disk__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.storage-disk__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.storage-disk__pct {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.storage-disk__pct--high {
+  color: #ef4444;
+}
+
+.storage-disk__bar {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--bg-muted, #eef0f5);
+  overflow: hidden;
+}
+
+.storage-disk__fill {
+  height: 100%;
+  border-radius: 6px;
+  background: #22c55e;
+  transition: width 0.3s ease;
+}
+
+.storage-disk__fill--high {
+  background: #ef4444;
+}
+
+.storage-disk__sub {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}

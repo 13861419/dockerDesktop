@@ -1,0 +1,251 @@
+/**
+ * Docker Compose 项目管理页样式
+ */
+.page {
+  padding: 20px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 通用数据表格（与其它列表页保持一致） */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-body);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.col-actions {
+  width: auto;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.col-name {
+  max-width: 200px;
+}
+
+.name-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.name-sub {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.col-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态徽标 */
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.badge--running {
+  color: var(--color-running);
+  background: color-mix(in srgb, var(--color-running) 12%, transparent);
+}
+
+.badge--muted {
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+}
+
+/* Compose 文件编辑框 */
+.compose-editor {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  resize: vertical;
+}
+
+/* 文件上传选择框 */
+.compose-upload {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 内置模板选择区域 */
+.compose-tpl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* 模板下拉选择器 */
+.compose-tpl__select {
+  max-width: 220px;
+}
+
+/* 选中模板的预览描述行 */
+.compose-tpl__preview {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 已选中的上传文件名提示 */
+.compose-upload__name {
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 停止 / 删除确认弹窗内容 */
+.compose-confirm {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.compose-confirm p {
+  margin: 0 0 12px;
+}
+
+.compose-confirm__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.compose-confirm__check input {
+  width: 14px;
+  height: 14px;
+}
+
+/* 配置内容查看器 */
+.config-viewer {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  overflow: auto;
+  max-height: 480px;
+  white-space: pre;
+  word-break: break-all;
+}
+
+/* 状态列 */
+.status-cell {
+  min-width: 140px;
+}
+
+.status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.status-item em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* 日志查看器 */
+.log-viewer {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  overflow: auto;
+  max-height: 480px;
+  white-space: pre;
+  word-break: break-all;
+}
+
+.log-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}

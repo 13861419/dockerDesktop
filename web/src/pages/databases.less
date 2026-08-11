@@ -1,0 +1,381 @@
+/**
+ * 数据库可视化管理页样式
+ */
+.db-tip {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+/* 实例卡片网格 */
+.db-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* 单个实例卡片 */
+.db-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.db-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 6px rgba(31, 35, 51, 0.08);
+}
+
+.db-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.db-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  font-size: 20px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.db-card__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.db-card__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-card__type {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+/* 主机 / 用户 / 密码信息行 */
+.db-card__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.db-card__row-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.db-card__row-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.db-card__badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 操作按钮区域 */
+.db-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* 登记实例表单 */
+.db-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 已识别容器快捷入口 */
+.db-recognized__tip {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.db-recognized__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.db-recognized__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-body);
+  font-size: 12px;
+}
+
+.db-recognized__name {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-recognized__meta {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.db-recognized__section {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 详情弹窗布局 */
+.db-detail__info {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+}
+
+/* 库列表区块 */
+.db-detail__section {
+  margin-top: 16px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.db-detail__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.db-detail__section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 数据库 / 键 列表 */
+.db-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.db-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-size: 12px;
+}
+
+.db-list__empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--bg-body);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+/* 库名 / 键名 */
+.db-list__name {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.db-list__name:hover {
+  color: var(--primary);
+}
+
+.db-list__meta {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* 新建库弹窗的字段容器 */
+.db-create__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* SQL 查询面板 */
+.db-sql {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.db-sql__area {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 12px;
+}
+
+.db-sql__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.db-sql__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.db-sql__result {
+  margin-top: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-height: 300px;
+}
+
+.db-sql__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.db-sql__table th,
+.db-sql__table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-sql__table th {
+  background: var(--bg-body);
+  font-weight: 600;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+}
+
+.db-sql__table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Redis 指标列表 */
+.db-redis__info {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.db-redis__info-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-body);
+}
+
+.db-redis__info-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.db-redis__info-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+/* Redis 键工具栏 */
+.db-redis__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.db-redis__pattern {
+  width: 200px;
+}
+
+/* Modal 底部按钮 */
+.db-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

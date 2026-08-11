@@ -1,0 +1,405 @@
+/**
+ * 应用商店页样式
+ */
+
+/* 顶部工具栏：搜索框 + 视图切换 + 刷新 */
+.appstore-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.appstore-search {
+  width: 220px;
+}
+
+/* 分类筛选下拉 */
+.appstore-category {
+  width: 132px;
+}
+
+/* 视图切换标签 */
+.appstore-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.appstore-tabs__item {
+  border: none;
+  background: transparent;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.appstore-tabs__item:hover {
+  color: var(--text-primary);
+}
+
+.appstore-tabs__item.is-active {
+  background: var(--bg-surface);
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-card);
+}
+
+/* 顶部说明文字 */
+.appstore-tip {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+/* 应用卡片网格 */
+.appstore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* 单个应用卡片 */
+.appstore-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.appstore-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 6px rgba(31, 35, 51, 0.08);
+}
+
+.appstore-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.appstore-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.appstore-card__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.appstore-card__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 已安装应用的版本号小徽标（Compose 套件） */
+.appstore-card__version {
+  flex-shrink: 0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono, monospace);
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: var(--bg-muted, #eef0f5);
+  border: 1px solid var(--border-color);
+}
+
+.appstore-card__category {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.appstore-card__status {
+  flex-shrink: 0;
+}
+
+.appstore-card__desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 40px;
+}
+
+/* 标签列表 */
+.appstore-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.appstore-card__tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+}
+
+/* 端口信息 */
+.appstore-card__ports {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.appstore-card__ports-label {
+  color: var(--text-muted);
+}
+
+.appstore-card__ports-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+/* 操作按钮区域 */
+.appstore-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* 应用详情弹窗 */
+.appstore-detail__desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.appstore-detail__row {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.appstore-detail__label {
+  width: 64px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.appstore-detail__value {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.appstore-detail__value--mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.appstore-detail__section {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.appstore-detail__list {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.appstore-detail__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+}
+
+.appstore-detail__line:last-child {
+  border-bottom: none;
+}
+
+.appstore-detail__list-key {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.appstore-detail__list-val {
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+}
+
+.appstore-detail__empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* 安装前环境变量配置弹窗 */
+.appstore-install__tip {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.appstore-install__none {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--bg-body);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.appstore-install__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.appstore-install__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* 安装弹窗镜像源选择区 */
+.appstore-install__source {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* 端口映射 / 挂载卷 区块标题 */
+.appstore-install__sec {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* 端口/挂载 行列表 */
+.appstore-install__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 单条端口/挂载 编辑行：弹性布局保证输入与删除对齐 */
+.appstore-install__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* 行内单元格（输入域），除协议外撑满 */
+.appstore-install__cell {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 协议下拉窄一点 */
+.appstore-install__cell--proto {
+  flex: 0 0 96px;
+}
+
+/* 只读复选项 */
+.appstore-install__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding-bottom: 8px;
+  white-space: nowrap;
+}
+
+/* “添加端口 / 添加挂载” 按钮行 */
+.appstore-install__add {
+  margin-top: 10px;
+}
+
+/* ===================== Compose 套件 ===================== */
+
+/* 卡片上的「套件」标签：高亮以与普通标签区分 */
+.appstore-card__tag--suite {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* 卡片状态区：Compose 已安装但无法判断运行状态时展示「已安装」标签 */
+.appstore-card__suite-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+/* 详情弹窗：多容器套件标记 */
+.appstore-detail__suite {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+  margin-bottom: 8px;
+}

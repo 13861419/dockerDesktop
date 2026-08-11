@@ -1,0 +1,152 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.settings-table th,
+.settings-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.settings-table td {
+  color: var(--text-primary);
+}
+
+.settings-current {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--primary);
+  background: var(--primary-soft, #eef2ff);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.settings-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-section__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.settings-form__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.settings-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.settings-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-info__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-color);
+  padding: 8px 2px;
+}
+
+.settings-info__row span:first-child {
+  color: var(--text-muted);
+}
+
+.settings-info__row span:last-child {
+  color: var(--text-primary);
+  font-family: var(--font-mono, Consolas, monospace);
+}
+
+/* 外观 / 主题切换 */
+.settings-theme {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-theme__label {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.settings-theme__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 强制改密提示横幅 */
+.settings-force-banner {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-md, 10px);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-force-banner strong {
+  color: #d97706;
+}
+
+/* 数据备份与恢复 */
+.settings-backup__desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.settings-backup__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

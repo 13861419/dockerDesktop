@@ -1,0 +1,409 @@
+/* 容器列表页样式 */
+.containers-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+
+  &__title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+/* 顶部工具栏 */
+.containers__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  &-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+}
+
+/* 工具栏左侧：筛选 + 搜索 */
+.containers__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* 搜索输入框 */
+.containers__search {
+  width: 240px;
+}
+
+/* 按镜像筛选下拉 */
+.containers__img-filter {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+/* 批量操作按钮组 */
+.containers__batch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &-count {
+    font-size: 13px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+}
+
+.containers__filters {
+  display: flex;
+  gap: 8px;
+}
+
+.seg {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: var(--primary);
+  }
+
+  &--active {
+    background: var(--primary-soft, #eef2ff);
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  &__count {
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+}
+
+.containers__total {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* 表格 */
+.containers__table {
+  overflow-x: auto;
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th,
+  td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    background: var(--bg-surface);
+  }
+
+  tbody tr:hover {
+    background: var(--primary-soft, #f5f5ff);
+  }
+
+  .col-actions {
+    text-align: right;
+  }
+
+  .col-select {
+    width: 40px;
+    text-align: center;
+  }
+
+  .row--selected {
+    background: var(--primary-soft, #eef2ff) !important;
+  }
+
+  .cell-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cell-image {
+    color: var(--text-secondary);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cell-ports {
+    color: var(--text-secondary);
+  }
+
+  /* 端口单元格内的单个端口项，竖排展示 */
+  .port-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+
+    &--conflict {
+      color: var(--danger, #dc2626);
+    }
+
+    &__warn {
+      font-size: 11px;
+      color: var(--danger, #dc2626);
+      background: var(--danger-soft, #fee2e2);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+  }
+
+  .cell-created {
+    color: var(--text-muted);
+  }
+}
+
+.containers__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* 分页控件 */
+.containers__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+
+  &-info {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  &-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+}
+
+.containers__page-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  &--active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 500;
+
+    &:hover {
+      color: #fff;
+    }
+  }
+}
+
+/* 创建容器弹窗 */
+.create-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.create-modal__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.create-modal__tty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.create-modal__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+}
+
+.create-modal__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.create-modal__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-modal__add {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* 端口 列 */
+.create-modal__col-container {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.create-modal__col-host {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.create-modal__col-protocol {
+  width: 110px;
+  flex: none;
+}
+
+/* 挂载 列 */
+.create-modal__col-source {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.create-modal__col-target {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.create-modal__col-readonly {
+  width: 40px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+}
+
+.create-modal__readonly {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* 环境变量 列 */
+.create-modal__col-env-key {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.create-modal__col-env-value {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.create-modal__col-op {
+  flex: none;
+  width: 56px;
+}
+
+.create-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* CPU / 内存实时监控列 */
+.cell-stat {
+  font-family: var(--mono-font, 'Consolas', 'Courier New', monospace);
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.cell-stat__value {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.cell-stat__value--high {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+
+.cell-stat__muted {
+  color: var(--text-muted);
+}
+
+/* 表头排序 */
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.th-sort:hover {
+  color: var(--primary);
+}
+
+.th-sort__ind {
+  display: inline-block;
+  min-width: 14px;
+  margin-left: 2px;
+  opacity: 0.65;
+  font-size: 12px;
+}
+
+

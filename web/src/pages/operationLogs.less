@@ -1,0 +1,216 @@
+.logs-page__title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+
+/* 工具条 */
+.logs__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+}
+
+.logs__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs__type-select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.logs__type-select:focus {
+  border-color: var(--primary);
+}
+
+/* 时间范围筛选 */
+.logs__time-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.logs__time-filter input[type='datetime-local'] {
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  outline: none;
+}
+.logs__time-filter input[type='datetime-local']:focus {
+  border-color: var(--primary);
+}
+.logs__time-sep {
+  color: var(--text-muted);
+}
+
+.logs__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs__total {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-right: 8px;
+}
+
+/* 表格 */
+.logs__table .logs__time {
+  min-width: 160px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.logs__table .logs__target {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logs__table .logs__detail {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* 类型徽标 */
+.logs__type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.logs__type-badge--blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+.logs__type-badge--purple {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+.logs__type-badge--cyan {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+}
+.logs__type-badge--green {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.logs__type-badge--orange {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.logs__type-badge--pink {
+  background: rgba(236, 72, 153, 0.15);
+  color: #ec4899;
+}
+.logs__type-badge--grey {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+}
+
+/* 结果 */
+.logs__result {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.logs__result--ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.logs__result--fail {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* 分页控件 */
+.logs__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+}
+.logs__pagination-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.logs__pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.logs__page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.logs__page-size select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.logs__page-size select:focus {
+  border-color: var(--primary);
+}
+
+.logs__page-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.logs__page-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.logs__page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.logs__page-btn--active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}

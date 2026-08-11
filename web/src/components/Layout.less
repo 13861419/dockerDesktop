@@ -1,0 +1,148 @@
+/**
+ * 主布局样式
+ *
+ * 浅色侧边栏 + 内容区，indigo 高亮导航。
+ */
+.layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== 侧边栏（浅色） ===== */
+.sidebar {
+  width: 208px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0 0;
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 18px 18px;
+}
+
+.sidebar__logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar__title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.sidebar__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sidebar__sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  text-align: left;
+  transition: all 0.15s;
+  cursor: pointer;
+  text-decoration: none;
+  width: 100%;
+}
+
+.nav-item:hover {
+  background: var(--nav-hover-bg);
+  color: var(--text-primary);
+}
+
+.nav-item--active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.nav-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: inherit;
+}
+
+/* 连接状态圆点 */
+.conn-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-running);
+  display: inline-block;
+}
+
+.sidebar__footer {
+  padding: 10px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 连接状态区域 */
+.sidebar__conn {
+  display: flex;
+}
+
+/* 退出登录按钮：默认弱化，悬浮时红色提示 */
+.nav-item--logout {
+  color: var(--text-muted);
+}
+
+.nav-item--logout:hover {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+/* ===== 主内容区 ===== */
+.main {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-body);
+}
+
+.main__content {
+  width: min(100%, 1600px);
+  margin-inline: auto;
+  padding: 24px 24px 48px;
+}

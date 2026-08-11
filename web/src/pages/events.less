@@ -1,0 +1,161 @@
+/* Docker 事件流页面样式 */
+
+/* 顶部筛选工具栏 */
+.events-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.events-toolbar__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 4px;
+}
+
+.events-toolbar__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.events-toolbar__filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.events-status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.events-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.events-status--live .events-status__dot {
+  background: var(--success, #16a34a);
+  box-shadow: 0 0 0 3px var(--success-alpha, rgba(22, 163, 74, 0.15));
+}
+
+.events-status--off .events-status__dot {
+  background: var(--danger, #dc2626);
+}
+
+/* 事件列表主体 */
+.events-body {
+  overflow: hidden;
+}
+
+.events-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 单个事件行 */
+.events-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.events-item:last-child {
+  border-bottom: none;
+}
+
+.events-item__time {
+  flex-shrink: 0;
+  width: 150px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  padding-top: 1px;
+}
+
+.events-item__type {
+  flex-shrink: 0;
+  min-width: 82px;
+  text-align: center;
+}
+
+.events-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-muted, #eef0f5);
+  color: var(--text-secondary);
+}
+
+.events-badge--container { background: #e0f2fe; color: #0369a1; }
+.events-badge--image { background: #ede9fe; color: #6d28d9; }
+.events-badge--volume { background: #fef3c7; color: #b45309; }
+.events-badge--network { background: #dcfce7; color: #15803d; }
+.events-badge--plugin { background: #fce7f3; color: #be185d; }
+.events-badge--daemon { background: #fee2e2; color: #b91c1c; }
+.events-badge--tombstone { background: #f3f4f6; color: #6b7280; }
+
+.events-item__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.events-item__action {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.events-item__id {
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.events-item__scope {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.events-item__attrs {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 2px;
+}
+
+.events-attr {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.events-attr strong {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* 暗色模式下徽标自动适配（由 less 变量主题决定，这里保持通用） */

@@ -1,0 +1,42 @@
+# 依赖
+node_modules/
+dist/
+
+# 环境变量（敏感）
+.env
+.env.*
+env.prod
+!.env.example
+
+# 日志
+*.log
+npm-debug.log*
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tsbuildinfo
+.playwright-cli/
+
+# 构建产物
+server/dist/
+web/dist/
+web/build/
+web/.cache/
+dist-release/
+
+# 打包依赖（可重新生成）
+packaging/nssm/
+packaging/nsis/
+packaging/tray/TrayApp.exe
+
+# 安装包
+*.exe
+
+# 运行时数据（含敏感：用户密码哈希、镜像源配置）与 SQLite 数据库
+data/
+!data/.gitkeep

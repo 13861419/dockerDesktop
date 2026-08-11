@@ -1,0 +1,260 @@
+/**
+ * 全局设计变量与基础样式
+ *
+ * 采用清爽的 indigo 色系：
+ *  - 主色: #6366f1（清新 indigo）
+ *  - 背景: 干净白色 / 冷色调
+ *  - 侧边栏: 浅色背景
+ *  - 标签: 透明背景 + 统一灰色文字（用字重/灰度区分）
+ */
+
+:root {
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-soft: #eef2ff;
+  --primary-border: #c7d2fe;
+
+  --bg-body: #f7f8fa;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #fafafc;
+
+  --text-primary: #1f2333;
+  --text-secondary: #63687a;
+  --text-muted: #9aa0b2;
+
+  --border-color: #e6e8ef;
+  --border-strong: #d5d8e3;
+
+  --color-running: #16a34a;
+  --color-running-bg: #ecfdf3;
+  --color-stopped: #9aa0b2;
+  --color-stopped-bg: #f4f5f7;
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-paused: #d97706;
+  --color-paused-bg: #fffbeb;
+
+  /* 新增语义变量（供浅色 / 深色共用的可变量化样式） */
+  --nav-hover-bg: #f0f1f7; /* 侧边栏导航 hover 底色 */
+  --gradient-primary: linear-gradient(135deg, #eef2ff, #e0e7ff); /* 概览 indigo 渐变块 */
+  --scrollbar-thumb: #d3d6e0; /* 滚动条滑块 */
+  --scrollbar-thumb-hover: #b8bccb; /* 滚动条滑块 hover */
+  --overlay-tag-bg: rgba(127, 127, 127, 0.15); /* 告警 tag 半透明底色 */
+  --gradient-login: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); /* 登录页背景 */
+  --skeleton-shine: linear-gradient(90deg, #eceef3 25%, #f5f6f9 50%, #eceef3 75%); /* 骨架屏扫光 */
+
+  --shadow-card: 0 1px 2px rgba(31, 35, 51, 0.04), 0 1px 3px rgba(31, 35, 51, 0.06);
+  --shadow-pop: 0 4px 16px rgba(31, 35, 51, 0.12);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+}
+
+/**
+ * 深色主题
+ *
+ * 通过 html[data-theme='dark'] 覆盖 :root 中的全部颜色变量。
+ * 由于所有样式均消费变量，仅需调整本块即可完成整体换肤。
+ */
+:root[data-theme='dark'] {
+  --primary: #818cf8;
+  --primary-hover: #6d79f5;
+  --primary-soft: rgba(99, 102, 241, 0.16);
+  --primary-border: rgba(129, 140, 248, 0.4);
+
+  --bg-body: #16181d;
+  --bg-surface: #1e2128;
+  --bg-sidebar: #1a1d23;
+
+  --text-primary: #e6e8ee;
+  --text-secondary: #a6abba;
+  --text-muted: #6b7080;
+
+  --border-color: #2a2e37;
+  --border-strong: #363b46;
+
+  --color-running: #4ade80;
+  --color-running-bg: rgba(74, 222, 128, 0.14);
+  --color-stopped: #9aa0b2;
+  --color-stopped-bg: rgba(154, 160, 178, 0.14);
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.14);
+  --color-paused: #fbbf24;
+  --color-paused-bg: rgba(251, 191, 36, 0.14);
+
+  /* 深色下的语义变量 */
+  --nav-hover-bg: rgba(99, 102, 241, 0.1);
+  --gradient-primary: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(99, 102, 241, 0.08));
+  --scrollbar-thumb: #3a3f4a;
+  --scrollbar-thumb-hover: #4a5060;
+  --overlay-tag-bg: rgba(160, 168, 190, 0.18);
+  --gradient-login: linear-gradient(135deg, #16181d 0%, #1a1d23 100%);
+  --skeleton-shine: linear-gradient(90deg, #262a32 25%, #2e333d 50%, #262a32 75%);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* 通用状态标签：透明背景 + 统一灰色文字，用字重/灰度区分层级 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #5b6172);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  line-height: 20px;
+}
+
+.badge--primary {
+  color: var(--primary);
+  font-weight: 700;
+  border-color: var(--primary-border);
+}
+
+.badge--muted {
+  color: var(--text-muted);
+  font-weight: 400;
+  border-color: var(--border-color);
+}
+
+.badge--dot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* 通用滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, #d3d6e0);
+  border-radius: 8px;
+}
+
+/* 全局错误边界 */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.error-boundary__card {
+  max-width: 460px;
+  width: 100%;
+  padding: 40px 36px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
+  text-align: center;
+}
+
+.error-boundary__icon {
+  color: #ef4444;
+  margin-bottom: 8px;
+}
+
+.error-boundary__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.error-boundary__desc {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.error-boundary__msg {
+  margin: 0 0 20px;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.error-boundary__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.error-boundary__btn {
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  background: var(--primary, #6366f1);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.error-boundary__btn:hover {
+  opacity: 0.9;
+}
+
+.error-boundary__btn--ghost {
+  background: var(--bg-muted, #eef0f5);
+  color: var(--text-secondary);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, #b8bccb);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

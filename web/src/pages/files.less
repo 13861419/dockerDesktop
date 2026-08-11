@@ -1,0 +1,139 @@
+/**
+ * 容器内文件管理页样式
+ */
+
+/* 顶部工具栏：容器下拉 + 操作按钮 */
+.files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 容器选择下拉 */
+.files-container-select {
+  min-width: 220px;
+}
+
+/* 面包屑导航 */
+.files-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.files-breadcrumb__sep {
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.files-breadcrumb__crumb {
+  border: none;
+  background: transparent;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.files-breadcrumb__crumb:hover {
+  background: var(--bg-body);
+}
+
+.files-breadcrumb__crumb--current {
+  color: var(--text-primary);
+  font-weight: 500;
+  cursor: default;
+  background: transparent;
+}
+
+/* 文件表格列宽 */
+.files-table .files-col-name {
+  width: 42%;
+}
+
+.files-table .files-col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-table .files-col-size {
+  width: 120px;
+}
+
+.files-table .files-col-mtime {
+  width: 180px;
+}
+
+/* 文件/目录名称按钮（占满单元格，点击目录可进入） */
+.files-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: default;
+  max-width: 100%;
+}
+
+.files-name--dir {
+  cursor: pointer;
+}
+
+.files-name--dir:hover .files-name__text {
+  color: var(--primary);
+}
+
+.files-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.files-name__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 预览弹窗 */
+.files-preview__loading {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.files-preview__truncated {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.files-preview__content {
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-body);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

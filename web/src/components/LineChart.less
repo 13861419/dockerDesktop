@@ -1,0 +1,46 @@
+/**
+ * 折线图组件样式
+ */
+.linechart {
+  width: 100%;
+  user-select: none;
+}
+
+.linechart__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.linechart__grid {
+  stroke: var(--border-color);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.linechart__axis {
+  font-size: 10px;
+  fill: var(--text-muted);
+  font-family: var(--font-sans);
+}
+
+.linechart__legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.linechart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.linechart__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

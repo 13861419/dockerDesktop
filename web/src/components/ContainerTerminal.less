@@ -1,0 +1,53 @@
+/**
+ * 容器终端样式
+ */
+.cterm {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #1e2130;
+}
+
+.cterm__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #171a26;
+  color: #aab;
+  font-size: 12px;
+  border-bottom: 1px solid #2a2e42;
+}
+
+.cterm__status {
+  font-size: 10px;
+}
+
+.cterm__status--connecting {
+  color: #fbbf24;
+}
+.cterm__status--connected {
+  color: #34d399;
+}
+.cterm__status--error {
+  color: #f87171;
+}
+.cterm__status--closed {
+  color: #9ca3af;
+}
+
+.cterm__text {
+  color: #9ca3af;
+}
+
+.cterm__host {
+  flex: 1;
+  padding: 6px 8px;
+  min-height: 0;
+}
+
+.cterm__host .xterm {
+  height: 100%;
+}

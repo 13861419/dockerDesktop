@@ -1,0 +1,215 @@
+/**
+ * 单个镜像详情页样式
+ */
+.page {
+  padding: 20px;
+}
+
+.back-btn {
+  margin-bottom: 12px;
+}
+
+/* 键值网格描述列表 */
+.desc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+}
+
+.desc-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.desc-item:nth-child(2n) {
+  border-right: none;
+}
+
+.desc-item--full {
+  grid-column: 1 / -1;
+  border-right: none;
+}
+
+.desc-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.desc-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+.desc-value.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.line {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 标签块列表 */
+.tag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  max-width: 360px;
+}
+
+/* 标签名称：超长时省略号截断 */
+.tag-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 标签删除按钮（×） */
+.tag-chip__del {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tag-chip__del:hover {
+  background: color-mix(in srgb, var(--danger, #e5484d) 15%, transparent);
+  color: var(--danger, #e5484d);
+}
+
+/* Labels 键值表 */
+.labels-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.labels-table tr {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.labels-table tr:last-child {
+  border-bottom: none;
+}
+
+.labels-table td {
+  padding: 6px 8px;
+  vertical-align: top;
+}
+
+.labels-key {
+  width: 40%;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.labels-val {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* 行内提示文字（如层大小说明） */
+.hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* 内联标签 / 端口列表 */
+.line-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 环境变量列表 */
+.env-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 构建历史命令单元格 */
+.history-cmd {
+  max-width: 560px;
+  word-break: break-all;
+}
+
+.clickable {
+  cursor: pointer;
+  color: var(--primary);
+}
+
+/* 通用数据表格（详情页中使用） */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 详情页中多 Card 的间距 */
+.detail-page .card + .card {
+  margin-top: 16px;
+}

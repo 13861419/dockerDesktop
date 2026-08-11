@@ -1,0 +1,849 @@
+/**
+ * Docker Compose 项目管理页
+ *
+ * 展示主机上的 Compose 项目列表，支持新建项目、启动 / 停止 / 重启服务、
+ * 查看配置与删除项目等操作。
+ */
+import React, { useCallback, useEffect, useState } from 'react';
+import Card from '../components/Card';
+import Button from '../components/Button';
+import Modal from '../components/Modal';
+import Empty from '../components/Empty';
+import { Field, Input, Select, TextArea } from '../components/Form';
+import { SkeletonRows } from '../components/Loading';
+import { useToast } from '../components/Toast';
+import { get, post, del } from '../api/client';
+import { ComposeProject, ComposeService } from '../types';
+import './compose.less';
+
+/**
+ * 内置 docker-compose.yml 模板
+ */
+interface ComposeTemplate {
+  /** 模板唯一标识 */
+  id: string;
+  /** 模板名称（下拉中展示） */
+  name: string;
+  /** 模板说明（下拉预览行展示） */
+  description: string;
+  /** 完整的 docker-compose.yml 文本 */
+  content: string;
+}
+
+/**
+ * 内置模板数组：提供可直接使用的常用服务编排模板
+ */
+const COMPOSE_TEMPLATES: ComposeTemplate[] = [
+  {
+    id: 'wordpress',
+    name: 'WordPress',
+    description: 'WordPress + MySQL 博客站点',
+    content: `version: "3"
+services:
+  wordpress:
+    image: wordpress:latest
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wordpress_data:/var/www/html
+    depends_on:
+      - db
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: rootpass
+    volumes:
+      - db_data:/var/lib/mysql
+volumes:
+  wordpress_data:
+  db_data:`,
+  },
+  {
+    id: 'nginx',
+    name: 'Nginx 静态站',
+    description: 'Nginx 静态网站托管',
+    content: `version: "3"
+services:
+  web:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "8080:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro`,
+  },
+  {
+    id: 'redis',
+    name: 'Redis',
+    description: 'Redis 缓存服务（含密码）',
+    content: `version: "3"
+services:
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass redispass
+    volumes:
+      - redis_data:/data
+volumes:
+  redis_data:`,
+  },
+  {
+    id: 'postgres',
+    name: 'PostgreSQL',
+    description: 'PostgreSQL 数据库服务',
+    content: `version: "3"
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+volumes:
+  pg_data:`,
+  },
+  {
+    id: 'node',
+    name: 'Node.js 应用',
+    description: 'Node.js 应用 + 构建后运行',
+    content: `version: "3"
+services:
+  app:
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+    volumes:
+      - ./:/app
+    command: npm start`,
+  },
+];
+
+/**
+ * Compose 项目管理页组件
+ */
+export default function ComposePage() {
+  const { showToast } = useToast();
+  const [projects, setProjects] = useState<ComposeProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // 各项目的服务运行状态（name → compose ps 结果）
+  const [statusMap, setStatusMap] = useState<Record<string, ComposeService[]>>({});
+
+  // 日志弹窗状态
+  const [logOpen, setLogOpen] = useState(false);
+  const [logName, setLogName] = useState('');
+  const [logContent, setLogContent] = useState('');
+  const [logLoading, setLogLoading] = useState(false);
+
+  // 新建项目弹窗状态
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createContent, setCreateContent] = useState('');
+  // 上传的 compose 文件名（用于界面展示）
+  const [createFileName, setCreateFileName] = useState('');
+  // 新建弹窗当前选择的模板 id（'' 表示空白）
+  const [createTemplate, setCreateTemplate] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // 编辑项目弹窗状态
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // 停止（down）确认弹窗状态：记录目标项目与是否删除数据卷
+  const [stopTarget, setStopTarget] = useState<ComposeProject | null>(null);
+  const [stopVolumes, setStopVolumes] = useState(false);
+  const [stopping, setStopping] = useState(false);
+
+  // 查看配置弹窗状态
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configTitle, setConfigTitle] = useState('');
+  const [configContent, setConfigContent] = useState('');
+
+  // 操作中的项目与删除确认状态（删除时额外记录是否删除数据卷）
+  const [opName, setOpName] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ComposeProject | null>(null);
+  const [deleteVolumes, setDeleteVolumes] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  /**
+   * 执行 Compose 操作（启动 / 停止 / 重启）
+   * @param project 项目
+   * @param action 动作标识
+   * @param successMsg 成功提示
+   * @param body 可选请求体
+   */
+  const runAction = useCallback(
+    async (project: ComposeProject, action: string, successMsg: string, body?: object) => {
+      const name = project.name;
+      setOpName(name);
+      try {
+        await post(projectUrl(name) + '/' + action, body);
+        showToast(successMsg);
+        setRefreshKey((k) => k + 1);
+      } catch (e: any) {
+        showToast(e?.message || successMsg.replace('成功', '失败'), 'error');
+      } finally {
+        setOpName(null);
+      }
+    },
+    [showToast]
+  );
+
+  /** 解析并设置项目操作中的名称（项目名可能含特殊字符，需编码） */
+  const projectUrl = (name: string): string => '/api/compose/' + encodeURIComponent(name);
+
+  /**
+   * 拉取单个项目的服务运行状态（compose ps）
+   * @param name 项目名
+   */
+  const loadStatus = useCallback(
+    async (name: string) => {
+      try {
+        const data = await get<ComposeService[]>(projectUrl(name));
+        setStatusMap((prev) => ({ ...prev, [name]: data || [] }));
+      } catch {
+        // 拉取失败时不显示具体状态，置为空
+        setStatusMap((prev) => ({ ...prev, [name]: [] }));
+      }
+    },
+    []
+  );
+
+  /**
+   * 拉取 Compose 项目列表
+   */
+  const fetchProjects = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await get<ComposeProject[]>('/api/compose');
+      setProjects(data || []);
+      // 逐个拉取各项目的服务运行状态
+      (data || []).forEach((p) => loadStatus(p.name));
+    } catch (e: any) {
+      showToast(e?.message || '拉取项目列表失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast, loadStatus]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects, refreshKey]);
+
+  /**
+   * 读取用户选择的 compose 文件，将内容填入新建弹窗的文本框，并记录文件名
+   * @param file 选择的文件
+   */
+  const handleUploadFile = useCallback(
+    (file: File | undefined | null) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || '');
+        setCreateContent(text);
+        setCreateFileName(file.name);
+      };
+      reader.onerror = () => {
+        showToast('读取文件失败', 'error');
+      };
+      reader.readAsText(file);
+    },
+    [showToast]
+  );
+
+  /**
+   * 选择内置模板：将所选模板的 content 填充到新建弹窗的文本框，并记录模板 id
+   * @param tplId 模板 id（'' 表示空白，不改变内容）
+   */
+  const handleTemplateChange = useCallback(
+    (tplId: string) => {
+      setCreateTemplate(tplId);
+      if (!tplId) return;
+      const tpl = COMPOSE_TEMPLATES.find((t) => t.id === tplId);
+      if (tpl) {
+        // 选择模板后清除当前内容并填入模板内容
+        setCreateContent(tpl.content);
+        setCreateFileName('');
+      }
+    },
+    []
+  );
+
+  /** 新建 Compose 项目 */
+  const handleCreate = useCallback(async () => {
+    const name = createName.trim();
+    if (!name) {
+      showToast('请输入项目名称', 'error');
+      return;
+    }
+    if (!createContent.trim()) {
+      showToast('请输入 docker-compose.yml 内容', 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      await post('/api/compose', { name, content: createContent });
+      showToast('项目创建成功');
+      setCreateOpen(false);
+      setCreateName('');
+      setCreateContent('');
+      setCreateFileName('');
+      setCreateTemplate('');
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '项目创建失败', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }, [createName, createContent, showToast]);
+
+  /** 查看项目配置文件 */
+  const handleViewConfig = useCallback(
+    async (project: ComposeProject) => {
+      try {
+        const res = await get<any>(projectUrl(project.name) + '/config');
+        const content =
+          typeof res === 'string'
+            ? res
+            : res?.content ||
+              res?.config ||
+              JSON.stringify(res, null, 2);
+        setConfigTitle(project.name);
+        setConfigContent(content || '（无配置文件）');
+        setConfigOpen(true);
+      } catch (e: any) {
+        showToast(e?.message || '获取配置失败', 'error');
+      }
+    },
+    [showToast]
+  );
+
+  /** 删除项目（根据 deleteVolumes 决定是否同时删除数据卷） */
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await del(projectUrl(deleteTarget.name), { volumes: deleteVolumes });
+      showToast('项目删除成功');
+      setDeleteTarget(null);
+      setDeleteVolumes(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '项目删除失败', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, deleteVolumes, showToast]);
+
+  /** 打开编辑弹窗并加载指定项目的 compose 文件内容 */
+  const openEdit = useCallback(
+    async (project: ComposeProject) => {
+      setEditName(project.name);
+      setEditOpen(true);
+      setEditLoading(true);
+      setEditContent('');
+      try {
+        const res = await get<any>(projectUrl(project.name) + '/file');
+        const content = typeof res === 'string' ? res : res?.content || '';
+        setEditContent(content);
+      } catch (e: any) {
+        setEditContent('');
+        showToast(e?.message || '获取 compose 文件失败', 'error');
+      } finally {
+        setEditLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  /** 保存编辑后的 compose 文件（复用 POST /api/compose 同名覆盖端点） */
+  const handleSaveEdit = useCallback(async () => {
+    const name = editName.trim();
+    if (!name) {
+      showToast('项目名称无效', 'error');
+      return;
+    }
+    if (!editContent.trim()) {
+      showToast('请输入 docker-compose.yml 内容', 'error');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await post('/api/compose', { name, content: editContent });
+      showToast('项目修改已保存');
+      setEditOpen(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '保存失败', 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editName, editContent, showToast]);
+
+  /** 关闭编辑弹窗 */
+  const closeEdit = useCallback(() => {
+    setEditOpen(false);
+    setEditName('');
+    setEditContent('');
+  }, []);
+
+  /** 执行停止（down）操作，带删卷选择 */
+  const handleStopConfirm = useCallback(async () => {
+    if (!stopTarget) return;
+    setStopping(true);
+    try {
+      await post(projectUrl(stopTarget.name) + '/down', { volumes: stopVolumes });
+      showToast(stopVolumes ? '项目已停止，数据卷已删除' : '项目已停止');
+      setStopTarget(null);
+      setStopVolumes(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '停止项目失败', 'error');
+      setStopping(false);
+      return;
+    }
+    setStopping(false);
+  }, [stopTarget, stopVolumes, showToast]);
+
+  /**
+   * 打开日志弹窗并拉取最近日志
+   * @param name 项目名
+   */
+  const openLog = useCallback(
+    async (name: string) => {
+      setLogName(name);
+      setLogOpen(true);
+      setLogLoading(true);
+      setLogContent('');
+      try {
+        const res = await post<unknown>(projectUrl(name) + '/logs', { tail: 200 });
+        setLogContent(
+          typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
+        );
+      } catch (e: any) {
+        setLogContent('');
+        showToast(e?.message || '获取日志失败', 'error');
+      } finally {
+        setLogLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  /**
+   * 刷新当前项目日志
+   */
+  const refreshLog = useCallback(async () => {
+    if (!logName) return;
+    setLogLoading(true);
+    try {
+      const res = await post<unknown>(projectUrl(logName) + '/logs', { tail: 200 });
+      setLogContent(
+        typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
+      );
+    } catch (e: any) {
+      showToast(e?.message || '刷新日志失败', 'error');
+    } finally {
+      setLogLoading(false);
+    }
+  }, [logName, showToast]);
+
+  /** 关闭日志弹窗 */
+  const closeLog = useCallback(() => {
+    setLogOpen(false);
+    setLogName('');
+    setLogContent('');
+  }, []);
+
+  return (
+    <div className="page">
+      <Card
+        title="Compose 项目"
+        extra={
+          <div className="toolbar">
+            <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
+              刷新
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setCreateFileName('');
+                setCreateTemplate('');
+                setCreateOpen(true);
+              }}
+            >
+              新建项目
+            </Button>
+          </div>
+        }
+      >
+        {loading ? (
+          <SkeletonRows rows={6} />
+        ) : projects.length === 0 ? (
+          <Empty title="暂无 Compose 项目" description="点击右上角「新建项目」创建" />
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>项目名</th>
+                <th>状态</th>
+                <th>Compose 文件</th>
+                <th>路径</th>
+                <th className="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((proj) => (
+                <tr key={proj.name}>
+                  <td className="col-name">
+                    <div className="name-main" title={proj.name}>
+                      {proj.name}
+                    </div>
+                    {proj.hasCompose ? (
+                      <div className="name-sub badge badge--running">已配置</div>
+                    ) : (
+                      <div className="name-sub badge badge--muted">未配置</div>
+                    )}
+                  </td>
+                  <td className="status-cell">
+                    {statusMap[proj.name] && statusMap[proj.name].length > 0 ? (
+                      <div className="status-list">
+                        {statusMap[proj.name].map((svc) => (
+                          <span
+                            key={svc.ID || svc.Name || svc.Service}
+                            className={`status-item badge ${
+                              /running|up/i.test(svc.State || '')
+                                ? 'badge--running'
+                                : 'badge--muted'
+                            }`}
+                            title={`${svc.Name || svc.Service || ''} - ${svc.State || svc.Status || ''}`}
+                          >
+                            {svc.Name || svc.Service || '-'}
+                            <em>{svc.State || svc.Status || '-'}</em>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="badge badge--muted">-</span>
+                    )}
+                  </td>
+                  <td className="col-mono" title={proj.composeFile || '-'}>
+                    {proj.composeFile || '-'}
+                  </td>
+                  <td className="col-mono" title={proj.path}>
+                    {proj.path}
+                  </td>
+                  <td className="col-actions">
+                    <div className="row-actions">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={opName === proj.name}
+                        onClick={() => runAction(proj, 'up', '项目启动成功')}
+                      >
+                        启动
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setStopVolumes(false);
+                          setStopTarget(proj);
+                        }}
+                      >
+                        停止
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={opName === proj.name}
+                        onClick={() => runAction(proj, 'restart', '项目重启成功')}
+                      >
+                        重启
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={opName === proj.name}
+                        onClick={() => runAction(proj, 'pull', '镜像拉取成功')}
+                      >
+                        拉取镜像
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={opName === proj.name}
+                        onClick={() => runAction(proj, 'build', '镜像构建成功')}
+                      >
+                        构建镜像
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(proj)}>
+                        编辑
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleViewConfig(proj)}
+                      >
+                        配置
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openLog(proj.name)}
+                      >
+                        日志
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => setDeleteTarget(proj)}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* 新建项目弹窗 */}
+      <Modal
+        open={createOpen}
+        title="新建 Compose 项目"
+        onClose={() => setCreateOpen(false)}
+        width={640}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCreateOpen(false);
+                setCreateFileName('');
+              }}
+              disabled={creating}
+            >
+              取消
+            </Button>
+            <Button onClick={handleCreate} loading={creating}>
+              创建
+            </Button>
+          </>
+        }
+      >
+        <Field label="项目名称" required>
+          <Input
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            placeholder="例如：myapp"
+            autoFocus
+          />
+        </Field>
+        <Field label="docker-compose.yml" required hint="可选内置模板，或选择文件上传、直接粘贴完整内容">
+          <div className="compose-tpl">
+            <Select
+              value={createTemplate}
+              onChange={(e) => handleTemplateChange(e.target.value)}
+              className="compose-tpl__select"
+            >
+              <option value="">空白</option>
+              {COMPOSE_TEMPLATES.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name}
+                </option>
+              ))}
+            </Select>
+            {createTemplate && (
+              <div className="compose-tpl__preview">
+                {COMPOSE_TEMPLATES.find((t) => t.id === createTemplate)?.description}
+              </div>
+            )}
+          </div>
+          <input
+            type="file"
+            accept=".yml,.yaml"
+            onChange={(e) => handleUploadFile(e.target.files?.[0])}
+            className="compose-upload"
+          />
+          {createFileName && (
+            <div className="compose-upload__name" title={createFileName}>
+              已选择文件：{createFileName}
+            </div>
+          )}
+          <TextArea
+            value={createContent}
+            onChange={(e) => setCreateContent(e.target.value)}
+            placeholder={'version: "3"\nservices:\n  web:\n    image: nginx:latest'}
+            rows={10}
+            className="compose-editor"
+          />
+        </Field>
+      </Modal>
+
+      {/* 编辑项目弹窗 */}
+      <Modal
+        open={editOpen}
+        title={`编辑 ${editName} - docker-compose.yml`}
+        onClose={closeEdit}
+        width={720}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeEdit} disabled={savingEdit}>
+              取消
+            </Button>
+            <Button onClick={handleSaveEdit} loading={savingEdit}>
+              保存
+            </Button>
+          </>
+        }
+      >
+        {editLoading ? (
+          <div className="log-empty">正在加载 compose 文件…</div>
+        ) : (
+          <Field label="docker-compose.yml" required>
+            <TextArea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              rows={18}
+              className="compose-editor"
+            />
+          </Field>
+        )}
+      </Modal>
+
+      {/* 查看配置弹窗 */}
+      <Modal
+        open={configOpen}
+        title={`${configTitle} - 配置`}
+        onClose={() => setConfigOpen(false)}
+        width={720}
+        footer={
+          <Button variant="secondary" onClick={() => setConfigOpen(false)}>
+            关闭
+          </Button>
+        }
+      >
+        <pre className="config-viewer">{configContent}</pre>
+      </Modal>
+
+      {/* 日志弹窗 */}
+      <Modal
+        open={logOpen}
+        title={`${logName} - 日志`}
+        onClose={closeLog}
+        width={760}
+        footer={
+          <>
+            <Button variant="secondary" onClick={refreshLog} loading={logLoading}>
+              刷新
+            </Button>
+            <Button variant="secondary" onClick={closeLog}>
+              关闭
+            </Button>
+          </>
+        }
+      >
+        {logLoading && !logContent ? (
+          <div className="log-empty">正在拉取日志…</div>
+        ) : (
+          <pre className="log-viewer">{logContent || '（暂无日志）'}</pre>
+        )}
+      </Modal>
+
+      {/* 停止（down）确认弹窗：可选择是否同时删除数据卷 */}
+      <Modal
+        open={!!stopTarget}
+        title="停止项目"
+        onClose={() => setStopTarget(null)}
+        width={420}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setStopTarget(null)} disabled={stopping}>
+              取消
+            </Button>
+            <Button onClick={handleStopConfirm} loading={stopping}>
+              停止
+            </Button>
+          </>
+        }
+      >
+        <div className="compose-confirm">
+          <p>确定要停止 Compose 项目 "{stopTarget?.name}" 吗？</p>
+          <label className="compose-confirm__check">
+            <input
+              type="checkbox"
+              checked={stopVolumes}
+              onChange={(e) => setStopVolumes(e.target.checked)}
+            />
+            <span>同时删除该项目的数据卷（volumes）</span>
+          </label>
+        </div>
+      </Modal>
+
+      {/* 删除项目确认框：可选择是否同时删除数据卷 */}
+      <Modal
+        open={!!deleteTarget}
+        title="删除项目"
+        onClose={() => setDeleteTarget(null)}
+        width={420}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeleteTarget(null);
+                setDeleteVolumes(false);
+              }}
+              disabled={deleting}
+            >
+              取消
+            </Button>
+            <Button variant="danger" onClick={handleDelete} loading={deleting}>
+              删除
+            </Button>
+          </>
+        }
+      >
+        <div className="compose-confirm">
+          <p>确定要删除 Compose 项目 "{deleteTarget?.name}" 吗？此操作不可恢复。</p>
+          <label className="compose-confirm__check">
+            <input
+              type="checkbox"
+              checked={deleteVolumes}
+              onChange={(e) => setDeleteVolumes(e.target.checked)}
+            />
+            <span>同时删除该项目的数据卷（volumes）</span>
+          </label>
+        </div>
+      </Modal>
+    </div>
+  );
+}

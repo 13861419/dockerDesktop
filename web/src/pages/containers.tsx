@@ -1,0 +1,1545 @@
+/**
+ * 容器列表页
+ *
+ * 拉取 /api/containers?all=true 容器列表，支持状态本地筛选，
+ * 提供启动 / 停止 / 重启 / 删除等行操作（删除需二次确认）。
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { get, post, del } from '../api/client';
+import { ContainerListItem, ContainerPortConflicts } from '../types';
+import Button from '../components/Button';
+import Card from '../components/Card';
+import StatusBadge from '../components/StatusBadge';
+import Empty from '../components/Empty';
+import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
+import { Field, Input, Select } from '../components/Form';
+import { PageLoading } from '../components/Loading';
+import { useToast } from '../components/Toast';
+import './containers.less';
+
+/** 状态筛选选项 */
+type Filter = 'all' | 'running';
+
+/** 批量操作类型 */
+type BatchAction = 'start' | 'stop' | 'restart' | 'delete';
+
+/** 列表排序键 */
+type SortKey = 'name' | 'status' | 'created' | 'cpu' | 'mem';
+
+/** 单容器实时资源统计（对齐后端 /stats 返回结构） */
+interface ContainerStat {
+  cpuPercent: number;
+  memory: { usage: number; limit: number; percent: number };
+}
+
+interface DeleteTarget {
+  id: string;
+  name: string;
+}
+
+/** 创建表单中的端口映射条目 */
+interface CreatePort {
+  container: string;
+  host: string;
+  protocol: string;
+}
+
+/** 创建表单中的挂载卷条目 */
+interface CreateVolume {
+  source: string;
+  target: string;
+  readonly: boolean;
+}
+
+/** 创建表单中的环境变量条目 */
+interface CreateEnv {
+  key: string;
+  value: string;
+}
+
+/** 分页每页条数 */
+const PAGE_SIZE = 10;
+
+/** 网络模式选项 */
+const NETWORK_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'default', label: 'default（默认）' },
+  { value: 'bridge', label: 'bridge（桥接）' },
+  { value: 'host', label: 'host（宿主机网络）' },
+  { value: 'none', label: 'none（禁用网络）' },
+];
+
+/** 重启策略选项 */
+const RESTART_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'no', label: 'no（不自动重启）' },
+  { value: 'always', label: 'always（总是重启）' },
+  { value: 'on-failure', label: 'on-failure（失败时重启）' },
+  { value: 'unless-stopped', label: 'unless-stopped（除非停止）' },
+];
+
+/**
+ * 容器列表页组件
+ */
+export default function ContainersPage() {
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [list, setList] = useState<ContainerListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  // 按镜像筛选：'' 表示不过滤，值如 'nginx:latest'
+  const [imageFilter, setImageFilter] = useState('');
+  const [page, setPage] = useState(1);
+  // 排序：sortKey 为 名称/状态/创建/CPU/内存；sortDir 升序或降序
+  const [sortKey, setSortKey] = useState<SortKey>('created');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // 重命名弹窗状态
+  const [renameTarget, setRenameTarget] = useState<DeleteTarget | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  // 克隆弹窗状态
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneTarget, setCloneTarget] = useState<DeleteTarget | null>(null);
+  const [cloneValue, setCloneValue] = useState('');
+  const [cloning, setCloning] = useState(false);
+  // 宿主机端口占用冲突映射（HostPort -> 容器列表）
+  const [portConflicts, setPortConflicts] = useState<ContainerPortConflicts>({});
+  // 容器实时资源统计（containerId -> {cpuPercent, memory}），轮询更新
+  const [statsMap, setStatsMap] = useState<Record<string, ContainerStat>>({});
+  // 清理未使用资源弹窗状态
+  const [pruneOpen, setPruneOpen] = useState(false);
+  const [pruning, setPruning] = useState(false);
+
+  // 创建容器弹窗状态
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  // 基础字段草稿
+  const [createName, setCreateName] = useState('');
+  const [createImage, setCreateImage] = useState('');
+  const [createCommand, setCreateCommand] = useState('');
+  const [createNetworkMode, setCreateNetworkMode] = useState('default');
+  const [createRestartPolicy, setCreateRestartPolicy] = useState('no');
+  const [createTty, setCreateTty] = useState(false);
+  // 导入配置的扩展字段（创建弹窗不展示，提交时随请求带上以完整还原）
+  const [createEntrypoint, setCreateEntrypoint] = useState('');
+  const [createUser, setCreateUser] = useState('');
+  const [createWorkingDir, setCreateWorkingDir] = useState('');
+  const [createHostname, setCreateHostname] = useState('');
+  const [createPrivileged, setCreatePrivileged] = useState(false);
+  const [createAutoRemove, setCreateAutoRemove] = useState(false);
+  // 资源限制：内存上限(MB) / CPU 上限(毫核, 1000=1核)，空为不限制
+  const [createMemLimit, setCreateMemLimit] = useState('');
+  const [createCpuLimit, setCreateCpuLimit] = useState('');
+  // 健康检查：命令(test) / 间隔(秒) / 超时(秒) / 重试次数
+  const [createHealthCmd, setCreateHealthCmd] = useState('');
+  const [createHealthInterval, setCreateHealthInterval] = useState('');
+  const [createHealthTimeout, setCreateHealthTimeout] = useState('');
+  const [createHealthRetries, setCreateHealthRetries] = useState('');
+  // 导入配置的文件输入引用
+  const importFileRef = useRef<HTMLInputElement>(null);
+  // 端口 / 挂载 / 环境变量 列表草稿
+  const [createPorts, setCreatePorts] = useState<CreatePort[]>([{ container: '', host: '', protocol: 'tcp' }]);
+  const [createVolumes, setCreateVolumes] = useState<CreateVolume[]>([{ source: '', target: '', readonly: false }]);
+  const [createEnvs, setCreateEnvs] = useState<CreateEnv[]>([{ key: '', value: '' }]);
+
+  /**
+   * 拉取容器列表
+   */
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await get<ContainerListItem[]>('/api/containers', { all: true });
+      const data = res || [];
+      setList(data);
+      // 刷新后清除已不存在的选中项（如已删除的容器）
+      setSelectedIds((prev) => {
+        const ids = new Set(data.map((c) => c.Id));
+        return prev.filter((id) => ids.has(id));
+      });
+    } catch (e: any) {
+      showToast(e?.message || '获取容器列表失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  /**
+   * 拉取宿主机端口占用冲突映射，用于对冲突端口做红色警示
+   */
+  const loadPortConflicts = useCallback(async () => {
+    try {
+      const res = await get<ContainerPortConflicts>('/api/containers/ports');
+      setPortConflicts(res || {});
+    } catch {
+      // 拉取端口冲突失败不阻塞列表展示
+      setPortConflicts({});
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    loadPortConflicts();
+  }, [load, loadPortConflicts]);
+
+  /**
+   * 拉取全部运行中容器的实时资源统计（批量 stats）
+   */
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await get<Record<string, ContainerStat>>('/api/containers/stats');
+      setStatsMap(res || {});
+    } catch {
+      // stats 拉取失败不阻塞列表展示
+    }
+  }, []);
+
+  // 每 3 秒轮询一次运行中容器的 CPU/内存
+  useEffect(() => {
+    loadStats();
+    const timer = setInterval(loadStats, 3000);
+    return () => clearInterval(timer);
+  }, [loadStats]);
+
+  /** 状态筛选后的列表 */
+  const stateFiltered = filter === 'running' ? list.filter((c) => c.State === 'running') : list;
+
+  /**
+   * 搜索过滤：按 容器名 / 镜像名 / ID 模糊匹配（不区分大小写）
+   * @param c 容器项
+   * @returns 是否命中搜索关键字
+   */
+  function matchSearch(c: ContainerListItem): boolean {
+    const kw = search.trim().toLowerCase();
+    if (!kw) return true;
+    const name = displayName(c).toLowerCase();
+    const image = (c.Image || '').toLowerCase();
+    const id = (c.Id || '').toLowerCase();
+    return name.includes(kw) || image.includes(kw) || id.includes(kw);
+  }
+
+  /** 镜像下拉选项：从容器列表提取唯一镜像名 */
+  const imageOptions = Array.from(
+    new Set((list || []).map((c) => c.Image).filter(Boolean))
+  ) as string[];
+  imageOptions.sort((a, b) => a.localeCompare(b));
+
+  /** 按镜像过滤后的列表 */
+  const imageFiltered = imageFilter
+    ? stateFiltered.filter((c) => c.Image === imageFilter)
+    : stateFiltered;
+
+  /** 搜索过滤后的列表 */
+  const filteredList = imageFiltered.filter(matchSearch);
+
+  /**
+   * 排序比较函数：按当前 sortKey/sortDir 对容器排序。
+   * CPU/内存使用 statsMap 实时值，缺失值按 0 处理。
+   */
+  const sortedList = useMemo(() => {
+    const arr = [...filteredList];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      let va: number | string = 0;
+      let vb: number | string = 0;
+      switch (sortKey) {
+        case 'name':
+          va = displayName(a).toLowerCase();
+          vb = displayName(b).toLowerCase();
+          return va < vb ? -dir : va > vb ? dir : 0;
+        case 'status':
+          va = a.State || '';
+          vb = b.State || '';
+          return va < vb ? -dir : va > vb ? dir : 0;
+        case 'cpu':
+          va = Number(statsMap[a.Id]?.cpuPercent || 0);
+          vb = Number(statsMap[b.Id]?.cpuPercent || 0);
+          return (va - vb) * dir;
+        case 'mem':
+          va = Number(statsMap[a.Id]?.memory?.percent || 0);
+          vb = Number(statsMap[b.Id]?.memory?.percent || 0);
+          return (va - vb) * dir;
+        case 'created':
+        default:
+          va = a.Created || 0;
+          vb = b.Created || 0;
+          return (va - vb) * dir;
+      }
+    });
+    return arr;
+  }, [filteredList, sortKey, sortDir, statsMap]);
+
+  /** 切换排序：同列点击切换方向，新列默认降序 */
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+    setPage(1);
+  }
+
+  /** 表头排序指示字符 */
+  function sortIndicator(key: SortKey): string {
+    if (sortKey !== key) return '⇅';
+    return sortDir === 'asc' ? '↑' : '↓';
+  }
+
+  /** 总页数 */
+  const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
+
+  /** 当前页容器的起止（含） */
+  const pageStart = sortedList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * PAGE_SIZE, sortedList.length);
+
+  /** 当前页展示的容器列表 */
+  const pageItems = sortedList.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  /** 是否所有当前页容器均被选中 */
+  const allChecked = pageItems.length > 0 && pageItems.every((c) => selectedIds.includes(c.Id));
+
+  /** 全选/取消全选当前页 */
+  function toggleSelectAll(checked: boolean) {
+    if (checked) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        pageItems.forEach((c) => next.add(c.Id));
+        return Array.from(next);
+      });
+    } else {
+      setSelectedIds((prev) => prev.filter((id) => !pageItems.some((c) => c.Id === id)));
+    }
+  }
+
+  /** 切换单个容器选中状态 */
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  /** 刷新列表并提示 */
+  async function handleRefresh() {
+    await load();
+    showToast('已刷新');
+  }
+
+  /** 启动容器 */
+  async function handleStart(id: string, name: string) {
+    try {
+      await post(`/api/containers/${id}/start`);
+      showToast(`已启动 ${name}`);
+      load();
+    } catch (e: any) {
+      showToast(`启动失败：${e?.message || '未知错误'}`, 'error');
+    }
+  }
+
+  /** 停止容器 */
+  async function handleStop(id: string, name: string) {
+    try {
+      await post(`/api/containers/${id}/stop`);
+      showToast(`已停止 ${name}`);
+      load();
+    } catch (e: any) {
+      showToast(`停止失败：${e?.message || '未知错误'}`, 'error');
+    }
+  }
+
+  /** 重启容器 */
+  async function handleRestart(id: string, name: string) {
+    try {
+      await post(`/api/containers/${id}/restart`);
+      showToast(`已重启 ${name}`);
+      load();
+    } catch (e: any) {
+      showToast(`重启失败：${e?.message || '未知错误'}`, 'error');
+    }
+  }
+
+  /** 打开重命名弹窗，以当前名称初始化输入框 */
+  function openRename(id: string, name: string) {
+    setRenameTarget({ id, name });
+    setRenameValue(name);
+  }
+
+  /** 执行重命名（确认后调用后端接口） */
+  async function confirmRename() {
+    if (!renameTarget) return;
+    const newName = renameValue.trim();
+    // 名称必填与未变更校验
+    if (!newName) {
+      showToast('新名称不能为空', 'error');
+      return;
+    }
+    if (newName === renameTarget.name) {
+      showToast('名称未发生变化', 'error');
+      return;
+    }
+    setRenaming(true);
+    try {
+      await post(`/api/containers/${renameTarget.id}/rename`, { name: newName });
+      showToast(`已重命名为 ${newName}`);
+      setRenameTarget(null);
+      load();
+      loadPortConflicts();
+    } catch (e: any) {
+      showToast(`重命名失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  /** 打开克隆弹窗，预填 <原名>-clone 作为新名称 */
+  function openClone(id: string, name: string) {
+    setCloneTarget({ id, name });
+    setCloneValue(`${name}-clone`);
+    setCloneOpen(true);
+  }
+
+  /** 执行克隆（确认后调用后端接口） */
+  async function confirmClone() {
+    if (!cloneTarget) return;
+    const newName = cloneValue.trim();
+    // 名称必填校验
+    if (!newName) {
+      showToast('新名称不能为空', 'error');
+      return;
+    }
+    setCloning(true);
+    try {
+      const res = await post<any>(`/api/containers/${cloneTarget.id}/clone`, { name: newName });
+      const clonedName = res?.name || newName;
+      showToast(`已克隆为 ${clonedName}`);
+      setCloneTarget(null);
+      load();
+      loadPortConflicts();
+    } catch (e: any) {
+      showToast(`克隆失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setCloning(false);
+    }
+  }
+
+  /** 暂停容器 */
+  async function handlePause(id: string, name: string) {
+    try {
+      await post(`/api/containers/${id}/pause`);
+      showToast(`已暂停 ${name}`);
+      load();
+      loadPortConflicts();
+    } catch (e: any) {
+      showToast(`暂停失败：${e?.message || '未知错误'}`, 'error');
+    }
+  }
+
+  /** 恢复（取消暂停）容器 */
+  async function handleUnpause(id: string, name: string) {
+    try {
+      await post(`/api/containers/${id}/unpause`);
+      showToast(`已恢复 ${name}`);
+      load();
+      loadPortConflicts();
+    } catch (e: any) {
+      showToast(`恢复失败：${e?.message || '未知错误'}`, 'error');
+    }
+  }
+
+  /** 删除容器（确认后执行） */
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await del(`/api/containers/${deleteTarget.id}`, { force: true });
+      showToast(`已删除 ${deleteTarget.name}`);
+      setDeleteTarget(null);
+      load();
+    } catch (e: any) {
+      showToast(`删除失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  /** 提取容器显示名称（去前导斜杠） */
+  function displayName(c: ContainerListItem): string {
+    return (c.Names && c.Names[0]?.replace(/^\//, '')) || c.Id;
+  }
+
+  /** 批量操作确认对话框的标题 */
+  function batchTitle(): string {
+    if (batchAction === 'delete') return '批量删除容器';
+    if (batchAction === 'stop') return '批量停止容器';
+    if (batchAction === 'restart') return '批量重启容器';
+    return '批量启动容器';
+  }
+
+  /** 批量操作确认对话框的提示文案 */
+  function batchMessage(): string {
+    const count = selectedIds.length;
+    if (batchAction === 'delete') return `确定要删除选中的 ${count} 个容器吗？此操作不可撤销。`;
+    if (batchAction === 'stop') return `确定要停止选中的 ${count} 个容器吗？`;
+    if (batchAction === 'restart') return `确定要重启选中的 ${count} 个容器吗？`;
+    return `确定要启动选中的 ${count} 个容器吗？`;
+  }
+
+  /** 根据操作类型对单个容器执行对应接口调用 */
+  async function runBatchItem(id: string, action: BatchAction) {
+    if (action === 'delete') {
+      await del(`/api/containers/${id}`, { force: true });
+    } else if (action === 'stop') {
+      await post(`/api/containers/${id}/stop`);
+    } else if (action === 'restart') {
+      await post(`/api/containers/${id}/restart`);
+    } else {
+      await post(`/api/containers/${id}/start`);
+    }
+  }
+
+  /** 批量操作标签（用于成功提示） */
+  function batchActionLabel(action: BatchAction): string {
+    if (action === 'delete') return '删除';
+    if (action === 'stop') return '停止';
+    if (action === 'restart') return '重启';
+    return '启动';
+  }
+
+  /**
+   * 执行批量操作（启动 / 停止 / 删除）
+   *
+   * 逐项调用对应接口，逐个统计成功与失败数量，全部处理完成后刷新列表并提示结果。
+   */
+  async function confirmBatch() {
+    if (!batchAction || selectedIds.length === 0) return;
+    setBatchLoading(true);
+    let success = 0;
+    let fail = 0;
+    // 依次处理每个选中的容器
+    for (const id of selectedIds) {
+      try {
+        await runBatchItem(id, batchAction);
+        success += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setBatchAction(null);
+    setSelectedIds([]);
+    setBatchLoading(false);
+    // 统一提示成功 / 失败数量
+    if (fail === 0) {
+      showToast(`${batchActionLabel(batchAction!)}成功 ${success} 个容器`);
+    } else if (success === 0) {
+      showToast(`${batchActionLabel(batchAction!)}失败 ${fail} 个容器`, 'error');
+    } else {
+      showToast(`${batchActionLabel(batchAction!)}成功 ${success} 个，失败 ${fail} 个`, 'info');
+    }
+    load();
+  }
+
+  /**
+   * 清理未使用资源（悬空镜像 / 未使用网络 / 未使用卷 / build cache）。
+   * 仅清理未使用资源，不会删除任何运行中的容器。
+   */
+  async function confirmPrune() {
+    setPruning(true);
+    try {
+      const res = await post<any>('/api/system/prune', {
+        images: true,
+        containers: true,
+        networks: true,
+        volumes: true,
+        buildCache: true,
+      });
+      const space = formatSpace(res?.totalSpace);
+      showToast(`清理完成，释放空间 ${space}`);
+      setPruneOpen(false);
+      load();
+    } catch (e: any) {
+      showToast(`清理失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setPruning(false);
+    }
+  }
+
+  /** 字节数格式化为可读大小 */
+  function formatSpace(bytes?: number): string {
+    if (!bytes || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let n = bytes;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i += 1;
+    }
+    return `${n.toFixed(1)} ${units[i]}`;
+  }
+  /** 重置创建表单草稿并打开弹窗 */
+  function openCreate() {
+    setCreateName('');
+    setCreateImage('');
+    setCreateCommand('');
+    setCreateNetworkMode('default');
+    setCreateRestartPolicy('no');
+    setCreateTty(false);
+    setCreateEntrypoint('');
+    setCreateUser('');
+    setCreateWorkingDir('');
+    setCreateHostname('');
+    setCreatePrivileged(false);
+    setCreateAutoRemove(false);
+    setCreatePorts([{ container: '', host: '', protocol: 'tcp' }]);
+    setCreateVolumes([{ source: '', target: '', readonly: false }]);
+    setCreateEnvs([{ key: '', value: '' }]);
+    setCreateOpen(true);
+  }
+
+  /**
+   * 导入容器配置文件（JSON），解析后回填到创建表单，便于一键按配置重建。
+   * 支持导出接口生成的格式：{ schema, config:{...} } 或直接为创建配置对象。
+   */
+  function handleImportConfig(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(String(reader.result));
+        // 兼容两种结构：{ config } 包装 或 顶层即配置
+        const cfg = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
+        const c = cfg || {};
+        setCreateName(String(c.name || '').trim());
+        setCreateImage(String(c.image || '').trim());
+        setCreateCommand(String(c.command || '').trim());
+        setCreateNetworkMode(String(c.networkMode || 'default'));
+        setCreateRestartPolicy(String(c.restartPolicy || 'no'));
+        setCreateTty(c.tty !== false);
+        setCreateEntrypoint(String(c.entrypoint || '').trim());
+        setCreateUser(String(c.user || '').trim());
+        setCreateWorkingDir(String(c.workingDir || '').trim());
+        setCreateHostname(String(c.hostname || '').trim());
+        setCreatePrivileged(c.privileged === true);
+        setCreateAutoRemove(c.autoRemove === true);
+
+        // env: ["K=V",...] -> [{key,value}]
+        const envArr = Array.isArray(c.env) ? c.env : [];
+        setCreateEnvs(
+          envArr.length
+            ? envArr.map((e: string) => {
+                const idx = String(e).indexOf('=');
+                return idx > -1
+                  ? { key: String(e).slice(0, idx), value: String(e).slice(idx + 1) }
+                  : { key: String(e), value: '' };
+              })
+            : [{ key: '', value: '' }],
+        );
+
+        // ports: [{host,container,protocol,hostIp}] -> [{container,host,protocol}]
+        const portArr = Array.isArray(c.ports) ? c.ports : [];
+        setCreatePorts(
+          portArr.length
+            ? portArr.map((p: any) => ({
+                container: String(p?.container ?? ''),
+                host: String(p?.host ?? ''),
+                protocol: p?.protocol || 'tcp',
+              }))
+            : [{ container: '', host: '', protocol: 'tcp' }],
+        );
+
+        // volumes: [{source,target,readonly}] -> 同构
+        const volArr = Array.isArray(c.volumes) ? c.volumes : [];
+        setCreateVolumes(
+          volArr.length
+            ? volArr.map((v: any) => ({
+                source: String(v?.source ?? ''),
+                target: String(v?.target ?? ''),
+                readonly: v?.readonly === true,
+              }))
+            : [{ source: '', target: '', readonly: false }],
+        );
+
+        setPage(1);
+        setCreateOpen(true);
+        showToast('配置已导入，请确认后创建');
+      } catch (e: any) {
+        showToast(`配置文件解析失败：${e?.message || '格式错误'}`, 'error');
+      }
+    };
+    reader.onerror = () => showToast('读取文件失败', 'error');
+    reader.readAsText(file);
+    // 允许重复选择同一文件
+    if (importFileRef.current) importFileRef.current.value = '';
+  }
+
+  /** 更新创建端口草稿中某个条目 */
+  function updateCreatePort(index: number, field: 'container' | 'host' | 'protocol', value: string) {
+    setCreatePorts((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  }
+
+  /** 删除创建端口草稿中某个条目 */
+  function removeCreatePort(index: number) {
+    setCreatePorts((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /** 新增一个创建端口条目 */
+  function addCreatePort() {
+    setCreatePorts((prev) => [...prev, { container: '', host: '', protocol: 'tcp' }]);
+  }
+
+  /** 更新创建挂载草稿中某个条目 */
+  function updateCreateVolume(index: number, field: 'source' | 'target' | 'readonly', value: any) {
+    setCreateVolumes((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  }
+
+  /** 删除创建挂载草稿中某个条目 */
+  function removeCreateVolume(index: number) {
+    setCreateVolumes((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /** 新增一个创建挂载条目 */
+  function addCreateVolume() {
+    setCreateVolumes((prev) => [...prev, { source: '', target: '', readonly: false }]);
+  }
+
+  /** 更新创建环境变量草稿中某个条目 */
+  function updateCreateEnv(index: number, field: 'key' | 'value', value: string) {
+    setCreateEnvs((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  }
+
+  /** 删除创建环境变量草稿中某个条目 */
+  function removeCreateEnv(index: number) {
+    setCreateEnvs((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /** 新增一个创建环境变量条目 */
+  function addCreateEnv() {
+    setCreateEnvs((prev) => [...prev, { key: '', value: '' }]);
+  }
+
+  /**
+   * 提交创建容器
+   *
+   * 校验镜像 / 容器名必填；将端口、挂载、环境变量草稿按后端格式组装后 POST /api/containers。
+   */
+  async function submitCreate() {
+    // 必填校验
+    if (!createName.trim()) {
+      showToast('请填写容器名', 'error');
+      return;
+    }
+    if (!createImage.trim()) {
+      showToast('请填写镜像', 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      // ports：过滤空容器端口，container 转 number，host 可空则 undefined
+      const ports = createPorts
+        .filter((item) => item.container.trim() !== '')
+        .map((item) => ({
+          host: item.host.trim() ? item.host.trim() : undefined,
+          container: Number(item.container.trim()),
+          protocol: item.protocol,
+        }));
+      // volumes：过滤来源或目标为空的条目
+      const volumes = createVolumes
+        .filter((item) => item.source.trim() !== '' && item.target.trim() !== '')
+        .map((item) => ({
+          source: item.source.trim(),
+          target: item.target.trim(),
+          readonly: item.readonly,
+        }));
+      // env：过滤空键名，转为 "KEY=VALUE" 字符串数组
+      const env = createEnvs
+        .filter((item) => item.key.trim() !== '')
+        .map((item) => `${item.key.trim()}=${item.value}`);
+
+      await post('/api/containers', {
+        name: createName.trim(),
+        image: createImage.trim(),
+        command: createCommand.trim() || undefined,
+        entrypoint: createEntrypoint.trim() || undefined,
+        user: createUser.trim() || undefined,
+        workingDir: createWorkingDir.trim() || undefined,
+        hostname: createHostname.trim() || undefined,
+        privileged: createPrivileged,
+        autoRemove: createAutoRemove,
+        env: env.length ? env : undefined,
+        ports,
+        volumes,
+        networkMode: createNetworkMode,
+        restartPolicy: createRestartPolicy,
+        tty: createTty,
+        // 资源限制：内存 MB 转字节；CPU 毫核转纳核
+        memLimit: createMemLimit.trim() ? Number(createMemLimit) * 1024 * 1024 : undefined,
+        cpuLimit: createCpuLimit.trim() ? Number(createCpuLimit) * 1000000 : undefined,
+        // 健康检查
+        healthcheck:
+          createHealthCmd.trim()
+            ? {
+                test: ['CMD-SHELL', createHealthCmd.trim()],
+                interval: createHealthInterval.trim() ? Number(createHealthInterval) * 1000 : undefined,
+                timeout: createHealthTimeout.trim() ? Number(createHealthTimeout) * 1000 : undefined,
+                retries: createHealthRetries.trim() ? Number(createHealthRetries) : undefined,
+              }
+            : undefined,
+      });
+      showToast('容器创建成功');
+      setCreateOpen(false);
+      load();
+    } catch (e: any) {
+      showToast(`创建失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  /**
+   * 判断某个宿主机端口是否与其他容器存在占用冲突
+   * @param publicPort 宿主机端口
+   * @returns 是否存在冲突
+   */
+  function isPortConflicted(publicPort?: number): boolean {
+    if (publicPort === undefined || publicPort === null) return false;
+    return !!portConflicts[String(publicPort)];
+  }
+
+  /**
+   * 渲染端口单元格，冲突端口以红色警示样式展示
+   * @param c 容器项
+   * @returns 端口单元格 JSX
+   */
+  function renderPortCell(c: ContainerListItem) {
+    if (!c.Ports || c.Ports.length === 0) return '-';
+    return c.Ports.map((p, i) => {
+      const conflicted = isPortConflicted(p.PublicPort);
+      return (
+        <span key={i} className={conflicted ? 'port-item port-item--conflict' : 'port-item'}>
+          {p.PublicPort ?? '-'}:{p.PrivatePort}
+          {conflicted && <span className="port-item__warn">端口被占用</span>}
+        </span>
+      );
+    });
+  }
+
+  /**
+   * 渲染 CPU / 内存实时监控单元格。
+   * 仅运行中的容器展示真实数据（statsMap 里的值）；非运行中或不含数据显示占位。
+   */
+  function renderStatCells(c: ContainerListItem) {
+    const stat = statsMap[c.Id];
+    if (c.State !== 'running' || !stat) {
+      return (
+        <>
+          <td className="cell-stat">
+            <span className="cell-stat__muted">-</span>
+          </td>
+          <td className="cell-stat">
+            <span className="cell-stat__muted">-</span>
+          </td>
+        </>
+      );
+    }
+    const cpu = Number(stat.cpuPercent || 0);
+    const memPct = Number(stat.memory?.percent || 0);
+    return (
+      <>
+        <td className="cell-stat">
+          <span className={`cell-stat__value ${cpu > 90 ? 'cell-stat__value--high' : ''}`}>
+            {cpu.toFixed(1)}%
+          </span>
+        </td>
+        <td className="cell-stat">
+          <span className={`cell-stat__value ${memPct > 90 ? 'cell-stat__value--high' : ''}`}>
+            {memPct.toFixed(1)}%
+          </span>
+        </td>
+      </>
+    );
+  }
+
+  /** 创建时间：epoch 秒转日期字符串 */
+  function formatCreated(seconds: number): string {
+    if (!seconds) return '-';
+    const d = new Date(seconds * 1000);
+    return d.toLocaleString('zh-CN', { hour12: false });
+  }
+
+  if (loading) return <PageLoading />;
+
+  return (
+    <div className="containers-page">
+      <h1 className="containers-page__title">容器</h1>
+
+      <div className="containers__toolbar">
+        <div className="containers__left">
+          <div className="containers__filters">
+            <button
+              className={`seg ${filter === 'all' ? 'seg--active' : ''}`}
+              onClick={() => {
+                setFilter('all');
+                setPage(1);
+              }}
+            >
+              全部 <span className="seg__count">{list.length}</span>
+            </button>
+            <button
+              className={`seg ${filter === 'running' ? 'seg--active' : ''}`}
+              onClick={() => {
+                setFilter('running');
+                setPage(1);
+              }}
+            >
+              运行中 <span className="seg__count">{list.filter((c) => c.State === 'running').length}</span>
+            </button>
+          </div>
+          <Select
+            className="containers__img-filter"
+            value={imageFilter}
+            onChange={(e) => {
+              setImageFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">全部镜像</option>
+            {imageOptions.map((img) => (
+              <option key={img} value={img}>
+                {img}
+              </option>
+            ))}
+          </Select>
+          <Input
+            className="containers__search"
+            placeholder="搜索 容器名 / 镜像 / ID"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div className="containers__toolbar-right">
+          {selectedIds.length > 0 && (
+            <div className="containers__batch">
+              <span className="containers__batch-count">已选 {selectedIds.length} 项</span>
+              <Button variant="secondary" size="sm" onClick={() => setBatchAction('start')}>
+                批量启动
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setBatchAction('stop')}>
+                批量停止
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setBatchAction('restart')}>
+                批量重启
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => setBatchAction('delete')}>
+                批量删除
+              </Button>
+            </div>
+          )}
+          <span className="containers__total">共 {filteredList.length} 个容器</span>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={openCreate}
+            className="containers__create-btn"
+          >
+            创建容器
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setPruneOpen(true)}>
+            清理未使用
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => importFileRef.current?.click()}>
+            导入配置
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleRefresh}>
+            刷新
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        {filteredList.length === 0 ? (
+          <Empty
+            title={search ? '未找到匹配的容器' : filter === 'running' ? '暂无运行中的容器' : '暂无容器'}
+            description={search ? '请尝试更换搜索关键字' : '容器未创建或已被删除'}
+          />
+        ) : (
+          <>
+            <div className="containers__table">
+              <table>
+                <thead>
+                  <tr>
+                    <th className="col-select">
+                      <input
+                        type="checkbox"
+                        checked={allChecked}
+                        onChange={(e) => toggleSelectAll(e.target.checked)}
+                        aria-label="全选当前页"
+                      />
+                    </th>
+                    <th className="th-sort" onClick={() => toggleSort('name')}>
+                      名称 <span className="th-sort__ind">{sortIndicator('name')}</span>
+                    </th>
+                    <th>镜像</th>
+                    <th className="th-sort" onClick={() => toggleSort('status')}>
+                      状态 <span className="th-sort__ind">{sortIndicator('status')}</span>
+                    </th>
+                    <th>端口</th>
+                    <th className="th-sort" onClick={() => toggleSort('cpu')}>
+                      CPU <span className="th-sort__ind">{sortIndicator('cpu')}</span>
+                    </th>
+                    <th className="th-sort" onClick={() => toggleSort('mem')}>
+                      内存 <span className="th-sort__ind">{sortIndicator('mem')}</span>
+                    </th>
+                    <th className="th-sort" onClick={() => toggleSort('created')}>
+                      创建时间 <span className="th-sort__ind">{sortIndicator('created')}</span>
+                    </th>
+                    <th className="col-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((c) => {
+                    const name = displayName(c);
+                    const running = c.State === 'running';
+                    const checked = selectedIds.includes(c.Id);
+                    return (
+                      <tr key={c.Id} className={checked ? 'row--selected' : ''}>
+                        <td className="col-select">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSelect(c.Id)}
+                            aria-label={`选择 ${name}`}
+                          />
+                        </td>
+                        <td className="cell-name" title={c.Id}>
+                          {name}
+                        </td>
+                        <td className="cell-image">{c.Image || '-'}</td>
+                        <td>
+                          <StatusBadge status={c.State} />
+                        </td>
+                        <td className="cell-ports">{renderPortCell(c)}</td>
+                        {renderStatCells(c)}
+                        <td className="cell-created">{formatCreated(c.Created)}</td>
+                        <td className="col-actions">
+                          <div className="containers__actions">
+                            {c.State === 'paused' ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleUnpause(c.Id, name)}
+                              >
+                                恢复
+                              </Button>
+                            ) : !running ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleStart(c.Id, name)}
+                              >
+                                启动
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleStop(c.Id, name)}
+                              >
+                                停止
+                              </Button>
+                            )}
+                            {running && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handlePause(c.Id, name)}
+                              >
+                                暂停
+                              </Button>
+                            )}
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleRestart(c.Id, name)}
+                            >
+                              重启
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openRename(c.Id, name)}
+                            >
+                              重命名
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openClone(c.Id, name)}
+                            >
+                              克隆
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => navigate(`/containerDetail/${c.Id}`)}
+                            >
+                              详情
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => setDeleteTarget({ id: c.Id, name })}
+                            >
+                              删除
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 分页控件 */}
+            <div className="containers__pagination">
+              <span className="containers__pagination-info">
+                共 {filteredList.length} 条，当前第 {pageStart}-{pageEnd} 条
+              </span>
+              <div className="containers__pagination-controls">
+                <button
+                  className="containers__page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
+                >
+                  上一页
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    className={`containers__page-btn ${p === page ? 'containers__page-btn--active' : ''}`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  className="containers__page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(page + 1)}
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="删除容器"
+        message={`确定要删除容器「${deleteTarget?.name || ''}」吗？此操作不可撤销。`}
+        confirmText="删除"
+        danger
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* 重命名容器弹窗 */}
+      <Modal
+        open={!!renameTarget}
+        title="重命名容器"
+        onClose={() => !renaming && setRenameTarget(null)}
+        width={440}
+        footer={
+          <div className="create-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setRenameTarget(null)} disabled={renaming}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={renaming} onClick={confirmRename}>
+              重命名
+            </Button>
+          </div>
+        }
+      >
+        <Field label="新名称" required hint="修改后立即生效">
+          <Input
+            placeholder="新容器名称"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            autoFocus
+            disabled={renaming}
+          />
+        </Field>
+      </Modal>
+
+      {/* 克隆容器弹窗 */}
+      <Modal
+        open={cloneOpen}
+        title="克隆容器"
+        onClose={() => !cloning && setCloneOpen(false)}
+        width={440}
+        footer={
+          <div className="create-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setCloneOpen(false)} disabled={cloning}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={cloning} onClick={confirmClone}>
+              克隆
+            </Button>
+          </div>
+        }
+      >
+        <Field label="新名称" required hint={`将基于「${cloneTarget?.name || ''}」复制配置并创建新容器，原容器保留`}>
+          <Input
+            placeholder="新容器名称"
+            value={cloneValue}
+            onChange={(e) => setCloneValue(e.target.value)}
+            autoFocus
+            disabled={cloning}
+          />
+        </Field>
+      </Modal>
+
+      {/* 批量操作确认对话框 */}
+      <ConfirmDialog
+        open={!!batchAction && selectedIds.length > 0}
+        title={batchTitle()}
+        message={batchMessage()}
+        confirmText={batchActionLabel(batchAction!)}
+        danger={batchAction === 'delete'}
+        loading={batchLoading}
+        onConfirm={confirmBatch}
+        onCancel={() => setBatchAction(null)}
+      />
+
+      {/* 清理未使用资源确认对话框 */}
+      <ConfirmDialog
+        open={pruneOpen}
+        title="清理未使用资源"
+        message="将清理未使用的镜像、已停止的容器、未使用的数据卷与网络、以及构建缓存。此操作不可撤销，但不会影响处于运行中的容器。"
+        confirmText="清理"
+        danger
+        loading={pruning}
+        onConfirm={confirmPrune}
+        onCancel={() => setPruneOpen(false)}
+      />
+
+      {/* 导入配置文件（隐藏 input，由「导入配置」按钮触发） */}
+      <input
+        ref={importFileRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportConfig(file);
+        }}
+      />
+
+      {/* 创建容器弹窗 */}
+      <Modal
+        open={createOpen}
+        title="创建容器"
+        onClose={() => !creating && setCreateOpen(false)}
+        width={720}
+        footer={
+          <div className="create-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setCreateOpen(false)} disabled={creating}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={creating} onClick={submitCreate}>
+              创建
+            </Button>
+          </div>
+        }
+      >
+        <div className="create-modal__body">
+          <div className="create-modal__grid">
+            <Field label="容器名" required>
+              <Input
+                placeholder="my-container"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                disabled={creating}
+              />
+            </Field>
+            <Field label="镜像" required>
+              <Input
+                placeholder="nginx:latest"
+                value={createImage}
+                onChange={(e) => setCreateImage(e.target.value)}
+                disabled={creating}
+              />
+            </Field>
+          </div>
+
+          <Field label="命令" hint="可选，多个参数以空格分隔">
+            <Input
+              placeholder="sh -c ..."
+              value={createCommand}
+              onChange={(e) => setCreateCommand(e.target.value)}
+              disabled={creating}
+            />
+          </Field>
+
+          <div className="create-modal__grid">
+            <Field label="网络模式">
+              <Select value={createNetworkMode} onChange={(e) => setCreateNetworkMode(e.target.value)} disabled={creating}>
+                {NETWORK_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="重启策略">
+              <Select
+                value={createRestartPolicy}
+                onChange={(e) => setCreateRestartPolicy(e.target.value)}
+                disabled={creating}
+              >
+                {RESTART_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          {/* 资源限制 */}
+          <div className="create-modal__grid">
+            <Field label="内存上限 (MB)">
+              <Input
+                type="number"
+                min={0}
+                placeholder="留空不限制，如 512"
+                value={createMemLimit}
+                onChange={(e) => setCreateMemLimit(e.target.value)}
+                disabled={creating}
+              />
+            </Field>
+            <Field label="CPU 上限 (毫核)">
+              <Input
+                type="number"
+                min={0}
+                placeholder="留空不限制，1000=1核"
+                value={createCpuLimit}
+                onChange={(e) => setCreateCpuLimit(e.target.value)}
+                disabled={creating}
+              />
+            </Field>
+          </div>
+
+          {/* 健康检查 */}
+          <Field label="健康检查命令">
+            <Input
+              placeholder="留空不启用，如 CMD: curl -f http://localhost || exit 1"
+              value={createHealthCmd}
+              onChange={(e) => setCreateHealthCmd(e.target.value)}
+              disabled={creating}
+            />
+          </Field>
+          {createHealthCmd.trim() ? (
+            <div className="create-modal__grid">
+              <Field label="检查间隔 (秒)">
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="默认 30"
+                  value={createHealthInterval}
+                  onChange={(e) => setCreateHealthInterval(e.target.value)}
+                  disabled={creating}
+                />
+              </Field>
+              <Field label="超时 (秒)">
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="默认 5"
+                  value={createHealthTimeout}
+                  onChange={(e) => setCreateHealthTimeout(e.target.value)}
+                  disabled={creating}
+                />
+              </Field>
+              <Field label="重试次数">
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="默认 3"
+                  value={createHealthRetries}
+                  onChange={(e) => setCreateHealthRetries(e.target.value)}
+                  disabled={creating}
+                />
+              </Field>
+            </div>
+          ) : null}
+
+          <Field label="TTY 模式">
+            <label className="create-modal__tty">
+              <input
+                type="checkbox"
+                checked={createTty}
+                onChange={(e) => setCreateTty(e.target.checked)}
+                disabled={creating}
+              />
+              启用 TTY（交互式终端）
+            </label>
+          </Field>
+
+          {/* 端口映射 */}
+          <Field label="端口映射">
+            <div className="create-modal__section">
+              <div className="create-modal__head">
+                <span className="create-modal__col-container">容器端口</span>
+                <span className="create-modal__col-host">宿主机端口</span>
+                <span className="create-modal__col-protocol">协议</span>
+                <span className="create-modal__col-op" />
+              </div>
+              {createPorts.map((item, index) => (
+                <div className="create-modal__row" key={index}>
+                  <Input
+                    className="create-modal__col-container"
+                    placeholder="80"
+                    value={item.container}
+                    onChange={(e) => updateCreatePort(index, 'container', e.target.value)}
+                    disabled={creating}
+                  />
+                  <Input
+                    className="create-modal__col-host"
+                    placeholder="8080（可选）"
+                    value={item.host}
+                    onChange={(e) => updateCreatePort(index, 'host', e.target.value)}
+                    disabled={creating}
+                  />
+                  <Select
+                    className="create-modal__col-protocol"
+                    value={item.protocol}
+                    onChange={(e) => updateCreatePort(index, 'protocol', e.target.value)}
+                    disabled={creating}
+                  >
+                    <option value="tcp">tcp</option>
+                    <option value="udp">udp</option>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="create-modal__col-op"
+                    onClick={() => removeCreatePort(index)}
+                    disabled={creating}
+                    title="删除这项端口"
+                  >
+                    删除
+                  </Button>
+                </div>
+              ))}
+              <div className="create-modal__add">
+                <Button variant="secondary" size="sm" onClick={addCreatePort} disabled={creating}>
+                  + 添加端口
+                </Button>
+              </div>
+            </div>
+          </Field>
+
+          {/* 挂载卷 */}
+          <Field label="挂载卷">
+            <div className="create-modal__section">
+              <div className="create-modal__head">
+                <span className="create-modal__col-source">来源</span>
+                <span className="create-modal__col-target">容器路径</span>
+                <span className="create-modal__col-readonly">只读</span>
+                <span className="create-modal__col-op" />
+              </div>
+              {createVolumes.map((item, index) => (
+                <div className="create-modal__row" key={index}>
+                  <Input
+                    className="create-modal__col-source"
+                    placeholder="宿主机路径或卷名"
+                    value={item.source}
+                    onChange={(e) => updateCreateVolume(index, 'source', e.target.value)}
+                    disabled={creating}
+                  />
+                  <Input
+                    className="create-modal__col-target"
+                    placeholder="/容器/路径"
+                    value={item.target}
+                    onChange={(e) => updateCreateVolume(index, 'target', e.target.value)}
+                    disabled={creating}
+                  />
+                  <label className="create-modal__readonly">
+                    <input
+                      type="checkbox"
+                      checked={item.readonly}
+                      onChange={(e) => updateCreateVolume(index, 'readonly', e.target.checked)}
+                      disabled={creating}
+                    />
+                  </label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="create-modal__col-op"
+                    onClick={() => removeCreateVolume(index)}
+                    disabled={creating}
+                    title="删除这项挂载"
+                  >
+                    删除
+                  </Button>
+                </div>
+              ))}
+              <div className="create-modal__add">
+                <Button variant="secondary" size="sm" onClick={addCreateVolume} disabled={creating}>
+                  + 添加挂载
+                </Button>
+              </div>
+            </div>
+          </Field>
+
+          {/* 环境变量 */}
+          <Field label="环境变量">
+            <div className="create-modal__section">
+              {createEnvs.map((item, index) => (
+                <div className="create-modal__row" key={index}>
+                  <Input
+                    className="create-modal__col-env-key"
+                    placeholder="变量名"
+                    value={item.key}
+                    onChange={(e) => updateCreateEnv(index, 'key', e.target.value)}
+                    disabled={creating}
+                  />
+                  <Input
+                    className="create-modal__col-env-value"
+                    placeholder="变量值"
+                    value={item.value}
+                    onChange={(e) => updateCreateEnv(index, 'value', e.target.value)}
+                    disabled={creating}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="create-modal__col-op"
+                    onClick={() => removeCreateEnv(index)}
+                    disabled={creating}
+                    title="删除这项"
+                  >
+                    删除
+                  </Button>
+                </div>
+              ))}
+              <div className="create-modal__add">
+                <Button variant="secondary" size="sm" onClick={addCreateEnv} disabled={creating}>
+                  + 添加环境变量
+                </Button>
+              </div>
+            </div>
+          </Field>
+        </div>
+      </Modal>
+    </div>
+  );
+}

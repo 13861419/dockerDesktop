@@ -1,0 +1,337 @@
+/**
+ * 计划任务页样式
+ *
+ * 含任务列表表格、类型徽标、结果徽标、启用开关、
+ * cron 快捷预设按钮、配置表单网格与执行历史弹窗样式。
+ */
+
+/* 页标题 */
+.tasks-page__title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+
+/* 顶部工具条 */
+.tasks__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+}
+.tasks__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tasks__total {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.tasks__toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 通用数据表格 */
+.tasks__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.tasks__table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+.tasks__table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+.tasks__table tbody tr:hover {
+  background: var(--bg-body);
+}
+.tasks__table tbody tr:last-child td {
+  border-bottom: none;
+}
+.tasks__cell-name {
+  max-width: 220px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tasks__cell-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tasks__cell-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tasks__cell-actions {
+  width: 220px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* 类型徽标 */
+.tasks__type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tasks__type-badge--cyan {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+}
+.tasks__type-badge--blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+.tasks__type-badge--purple {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+.tasks__type-badge--green {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.tasks__type-badge--orange {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+/* 结果徽标 */
+.tasks__result {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.tasks__result--ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.tasks__result--fail {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.tasks__result--none {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+}
+
+/* 启用开关（原生 checkbox 美化） */
+.tasks__switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.tasks__switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.tasks__switch-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border-strong);
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+.tasks__switch-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.tasks__switch input:checked + .tasks__switch-slider {
+  background: var(--primary);
+}
+.tasks__switch input:checked + .tasks__switch-slider::before {
+  transform: translateX(16px);
+}
+.tasks__switch input:disabled + .tasks__switch-slider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 新建任务弹窗 */
+.tasks__form {
+  display: flex;
+  flex-direction: column;
+}
+.tasks__cron-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.tasks__cron-col {
+  flex: 1;
+}
+.tasks__cron-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tasks__cron-preset {
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tasks__cron-preset:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.tasks__cron-error {
+  font-size: 12px;
+  color: var(--color-error);
+  margin-top: 6px;
+}
+.tasks__cron-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* 配置表单：prune 勾选项 */
+.tasks__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tasks__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.tasks__check input[type='checkbox'] {
+  cursor: pointer;
+}
+
+/* 配置表单：backup 单选项 */
+.tasks__radios {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tasks__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.tasks__radio input[type='radio'] {
+  cursor: pointer;
+}
+.tasks__radio-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 20px;
+}
+
+/* 执行历史弹窗 */
+.tasks__logs-scroll {
+  max-height: 60vh;
+  overflow: auto;
+}
+.tasks__logs-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 0;
+  flex-wrap: wrap;
+}
+.tasks__logs-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.tasks__logs-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tasks__page-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tasks__page-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.tasks__page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.tasks__page-btn--active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.tasks__export-btn {
+  border-color: var(--primary);
+  color: var(--primary);
+  white-space: nowrap;
+}
+.tasks__logs-detail {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* 空提示（无任务时） */
+.tasks__tip {
+  padding: 16px 18px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
