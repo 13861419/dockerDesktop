@@ -17,25 +17,25 @@
 
 ## 🧰 技术栈
 
-| 层级 | 技术 |
-| --- | --- |
-| 前端 | React 18 · TypeScript · Vite · Less · xterm.js · ECharts(LineChart) |
-| 后端 | Node.js · TypeScript · Express 4 · ws（WebSocket） |
-| Docker 交互 | dockerode（Docker Engine API） |
-| 打包发布 | NSIS（安装包）· NSSM（服务注册）· TrayApp（托盘程序） |
+| 层级        | 技术                                                                  |
+| --------- | ------------------------------------------------------------------- |
+| 前端        | React 18 · TypeScript · Vite · Less · xterm.js · ECharts(LineChart) |
+| 后端        | Node.js · TypeScript · Express 4 · ws（WebSocket）                    |
+| Docker 交互 | dockerode（Docker Engine API）                                        |
+| 打包发布      | NSIS（安装包）· NSSM（服务注册）· TrayApp（托盘程序）                                |
 
 ## 💾 数据存储说明（SQLite，无第三方数据库服务）
 
-> 本项目使用 **SQLite** 作为数据存储，基于 **Node.js 内置的 `node:sqlite` 模块**，**零第三方依赖、零编译**（无需安装 MySQL / PostgreSQL 等数据库服务）。
+> 本项目使用 **SQLite** 作为数据存储，基于 **Node.js 内置的** **`node:sqlite`** **模块**，**零第三方依赖、零编译**（无需安装 MySQL / PostgreSQL 等数据库服务）。
 
 所有业务数据统一存储在 **`data/docker-manager.db`** 这一个 SQLite 数据库文件（自包含、可整体复制备份），由后端通过 `node:sqlite` 的 `DatabaseSync` 同步 API 读写。采用 WAL 日志模式，兼顾并发读与崩溃安全。
 
-| 表 | 内容 | 对应模块 |
-| --- | --- | --- |
-| `users` | 用户账号、盐值（salt）与加盐 scrypt 密码哈希 | `server/src/users.ts` |
-| `hub_sources` | 镜像加速源列表（含内置默认源） | `server/src/hubConfig.ts` |
-| `setting` | 键值配置（如自定义搜索源基址 `searchSource`） | `server/src/hubConfig.ts` |
-| `image_pull_history` | 镜像 ID → 本地拉取时间戳（秒）映射 | `server/src/imagePullHistory.ts` |
+| 表                    | 内容                             | 对应模块                             |
+| -------------------- | ------------------------------ | -------------------------------- |
+| `users`              | 用户账号、盐值（salt）与加盐 scrypt 密码哈希   | `server/src/users.ts`            |
+| `hub_sources`        | 镜像加速源列表（含内置默认源）                | `server/src/hubConfig.ts`        |
+| `setting`            | 键值配置（如自定义搜索源基址 `searchSource`） | `server/src/hubConfig.ts`        |
+| `image_pull_history` | 镜像 ID → 本地拉取时间戳（秒）映射           | `server/src/imagePullHistory.ts` |
 
 > **旧版兼容**：早期版本使用 JSON/文本文件存储（`data/users.json`、`data/hub-sources.json`、`data/hub-search-source.txt`、`data/image-pull-history.json`）。服务启动时会自动将旧文件数据迁移进 SQLite，并把旧文件重命名为 `.bak` 备份，实现平滑升级、不丢失任何现有配置。
 
@@ -184,24 +184,24 @@ npm run package:installer
 
 ## 🔑 使用说明
 
-| 项目 | 说明 |
-| --- | --- |
-| 默认登录账号 | `admin` |
-| 默认登录密码 | `admin888` |
-| 默认端口 | `9528`（后端）/ `9526`（前端开发） |
-| 会话有效期 | 24 小时（可用环境变量 `AUTH_TTL_HOURS` 调整） |
-| 数据目录 | 项目根目录 `data/`（SQLite 数据库 `docker-manager.db`） |
+| 项目     | 说明                                            |
+| ------ | --------------------------------------------- |
+| 默认登录账号 | `admin`                                       |
+| 默认登录密码 | `admin888`                                    |
+| 默认端口   | `9528`（后端）/ `9526`（前端开发）                      |
+| 会话有效期  | 24 小时（可用环境变量 `AUTH_TTL_HOURS` 调整）             |
+| 数据目录   | 项目根目录 `data/`（SQLite 数据库 `docker-manager.db`） |
 
 ### 环境变量
 
-| 变量 | 说明 | 默认值 |
-| --- | --- | --- |
-| `PORT` | 后端监听端口 | `9528` |
-| `HOST` | 后端监听地址 | `0.0.0.0` |
-| `DOCKER_HOST` | Docker 引擎端点（`npipe://` / `unix://` / `tcp://`） | 自动探测 |
-| `ADMIN_USER` / `ADMIN_PASS` | 初始管理员账号/密码 | `admin` / `admin888` |
-| `AUTH_TTL_HOURS` | 会话过期小时数 | `24` |
-| `STATIC_DIR` | 生产模式前端静态目录（可选） | `web/dist` |
+| 变量                          | 说明                                             | 默认值                  |
+| --------------------------- | ---------------------------------------------- | -------------------- |
+| `PORT`                      | 后端监听端口                                         | `9528`               |
+| `HOST`                      | 后端监听地址                                         | `0.0.0.0`            |
+| `DOCKER_HOST`               | Docker 引擎端点（`npipe://` / `unix://` / `tcp://`） | 自动探测                 |
+| `ADMIN_USER` / `ADMIN_PASS` | 初始管理员账号/密码                                     | `admin` / `admin888` |
+| `AUTH_TTL_HOURS`            | 会话过期小时数                                        | `24`                 |
+| `STATIC_DIR`                | 生产模式前端静态目录（可选）                                 | `web/dist`           |
 
 ## ⚙️ 环境变量补充说明：Docker 引擎连接
 
@@ -214,6 +214,15 @@ npm run package:installer
 
 > 注意：Windows named pipe 无法用 `fs.existsSync` 检测，需通过真实连接验证，因此新增端点会自动尝试逐个探测。
 
+<br />
+
+功能总览：
+
+![总览](images/1.png "总览")
+![容器](images/2.png "容器")
+![镜像](images/3.png "镜像")
+![应用商店](images/4.png "应用商店")
+![镜像中心](images/5.png "镜像中心")
 ## 🧪 常见问题
 
 - **提示"无法连接 Docker 引擎"**：请确认 Docker Desktop 已启动，必要时设置 `DOCKER_HOST` 环境变量指向可用的引擎端点。
@@ -223,4 +232,4 @@ npm run package:installer
 
 ## 📜 License
 
-本项目仅供个人与企业内部使用，未指定开源许可证。
+本项目采用 MIT 许可证 - 查看 [LICENSE](https://github.com/13861419/dockerDesktop/blob/main/LICENSE) 文件了解详情。

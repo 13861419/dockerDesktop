@@ -20,6 +20,7 @@ const ContainersPage = lazy(() => import('./pages/containers'));
 const ContainerDetailPage = lazy(() => import('./pages/containerDetail'));
 const ImageDetailPage = lazy(() => import('./pages/imageDetail'));
 const ImagesPage = lazy(() => import('./pages/images'));
+const BuildPage = lazy(() => import('./pages/build'));
 const VolumesPage = lazy(() => import('./pages/volumes'));
 const StoragePage = lazy(() => import('./pages/storage'));
 const NetworksPage = lazy(() => import('./pages/networks'));
@@ -91,6 +92,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <ImagesPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/build"
+                element={
+                  <PageSuspense>
+                    <BuildPage />
                   </PageSuspense>
                 }
               />

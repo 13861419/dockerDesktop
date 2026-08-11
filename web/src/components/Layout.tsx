@@ -64,6 +64,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/build',
+    label: '构建镜像',
+    icon: (
+      <svg {...iconProps}>
+        <polygon points="3 11 3 21 14 21 11 11 3 11" />
+        <rect x="3" y="3" width="7" height="4" />
+      </svg>
+    ),
+  },
+  {
     to: '/volumes',
     label: '数据卷',
     icon: (

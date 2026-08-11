@@ -1,0 +1,89 @@
+/* Dockerfile 镜像构建页面样式 */
+
+/* 构建配置区 */
+.build-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* 构建参数动态行 */
+.build-arg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.build-arg-key {
+  flex: 1;
+}
+
+.build-arg-value {
+  flex: 1;
+}
+
+/* 构建日志区 */
+.build-logs {
+  margin-top: 14px;
+}
+
+.build-logs__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.build-logs__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.build-logs__status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.build-logs__status--running {
+  color: var(--primary);
+}
+
+.build-logs__status--success {
+  color: var(--success, #16a34a);
+}
+
+.build-logs__status--error {
+  color: var(--danger, #dc2626);
+}
+
+.build-logs__pre {
+  background: #0f1117;
+  color: #d5d8de;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 420px;
+  min-height: 160px;
+  overflow: auto;
+  font-family: var(--font-mono, 'Consolas', 'Courier New', monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.build-logs__pre--empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* 顶部操作区 */
+.build-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
