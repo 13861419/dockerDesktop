@@ -452,6 +452,48 @@
   color: var(--text-muted);
 }
 
+/* CPU / 内存实时监控进度条 */
+.stat-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
+}
+
+.stat-gauge__bar {
+  flex: 1;
+  height: 6px;
+  min-width: 52px;
+  border-radius: 999px;
+  background: var(--bg-body, rgba(31, 35, 51, 0.08));
+  overflow: hidden;
+}
+
+.stat-gauge__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+
+.stat-gauge__fill--ok {
+  background: #22c55e;
+}
+
+.stat-gauge__fill--warn {
+  background: #f59e0b;
+}
+
+.stat-gauge__fill--high {
+  background: #ef4444;
+}
+
+.stat-gauge__num {
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* 表头排序 */
 .th-sort {
   cursor: pointer;

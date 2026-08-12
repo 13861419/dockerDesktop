@@ -923,12 +923,8 @@ export default function ContainersPage() {
     if (c.State !== 'running' || !stat) {
       return (
         <>
-          <td className="cell-stat">
-            <span className="cell-stat__muted">-</span>
-          </td>
-          <td className="cell-stat">
-            <span className="cell-stat__muted">-</span>
-          </td>
+          <td className="cell-stat"><span className="cell-stat__muted">-</span></td>
+          <td className="cell-stat"><span className="cell-stat__muted">-</span></td>
         </>
       );
     }
@@ -937,17 +933,34 @@ export default function ContainersPage() {
     return (
       <>
         <td className="cell-stat">
-          <span className={`cell-stat__value ${cpu > 90 ? 'cell-stat__value--high' : ''}`}>
-            {cpu.toFixed(1)}%
+          <span className="stat-gauge">
+            <span className="stat-gauge__bar">
+              <span className={`stat-gauge__fill ${gaugeTone(cpu)}`} style={{ width: `${Math.min(100, cpu)}%` }} />
+            </span>
+            <span className="stat-gauge__num">{cpu.toFixed(1)}%</span>
           </span>
         </td>
         <td className="cell-stat">
-          <span className={`cell-stat__value ${memPct > 90 ? 'cell-stat__value--high' : ''}`}>
-            {memPct.toFixed(1)}%
+          <span className="stat-gauge">
+            <span className="stat-gauge__bar">
+              <span className={`stat-gauge__fill ${gaugeTone(memPct)}`} style={{ width: `${Math.min(100, memPct)}%` }} />
+            </span>
+            <span className="stat-gauge__num">{memPct.toFixed(1)}%</span>
           </span>
         </td>
       </>
     );
+  }
+
+  /**
+   * 根据占用率返回进度条配色：>90 红、>70 橙、其余绿
+   * @param pct 占用百分比
+   * @returns 样式类别
+   */
+  function gaugeTone(pct: number): string {
+    if (pct > 90) return 'stat-gauge__fill--high';
+    if (pct > 70) return 'stat-gauge__fill--warn';
+    return 'stat-gauge__fill--ok';
   }
 
   /** 创建时间：epoch 秒转日期字符串 */
