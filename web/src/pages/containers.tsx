@@ -59,8 +59,8 @@ interface CreateEnv {
   value: string;
 }
 
-/** 分页每页条数 */
-const PAGE_SIZE = 10;
+/** 分页每页条数可选值 */
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 /** 网络模式选项 */
 const NETWORK_OPTIONS: Array<{ value: string; label: string }> = [
@@ -91,6 +91,10 @@ export default function ContainersPage() {
   // 按镜像筛选：'' 表示不过滤，值如 'nginx:latest'
   const [imageFilter, setImageFilter] = useState('');
   const [page, setPage] = useState(1);
+  // 每页条数（可在运行时切换）
+  const [pageSize, setPageSize] = useState(10);
+  // 分页跳转：输入的目标页码
+  const [pageJump, setPageJump] = useState('');
   // 排序：sortKey 为 名称/状态/创建/CPU/内存；sortDir 升序或降序
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -303,14 +307,38 @@ export default function ContainersPage() {
   }
 
   /** 总页数 */
-  const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
+
+  /**
+   * 切换每页条数：重置到第一页并清空跳转输入
+   * @param size 新的每页条数
+   */
+  function changePageSize(size: number) {
+    setPageSize(size);
+    setPage(1);
+    setPageJump('');
+  }
+
+  /**
+   * 跳转到指定页码（限制在有效范围内）
+   */
+  function handlePageJump() {
+    const n = parseInt(pageJump, 10);
+    if (isNaN(n)) {
+      setPageJump('');
+      return;
+    }
+    const target = Math.min(Math.max(1, n), totalPages);
+    setPage(target);
+    setPageJump('');
+  }
 
   /** 当前页容器的起止（含） */
-  const pageStart = sortedList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const pageEnd = Math.min(page * PAGE_SIZE, sortedList.length);
+  const pageStart = sortedList.length === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, sortedList.length);
 
   /** 当前页展示的容器列表 */
-  const pageItems = sortedList.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageItems = sortedList.slice((page - 1) * pageSize, page * pageSize);
 
   /** 是否所有当前页容器均被选中 */
   const allChecked = pageItems.length > 0 && pageItems.every((c) => selectedIds.includes(c.Id));
@@ -1216,9 +1244,26 @@ export default function ContainersPage() {
 
             {/* 分页控件 */}
             <div className="containers__pagination">
-              <span className="containers__pagination-info">
-                共 {filteredList.length} 条，当前第 {pageStart}-{pageEnd} 条
-              </span>
+              <div className="containers__pagination-left">
+                <span className="containers__pagination-size">
+                  每页
+                  <Select
+                    className="containers__pagesize"
+                    value={String(pageSize)}
+                    onChange={(e) => changePageSize(Number(e.target.value))}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((s) => (
+                      <option key={s} value={String(s)}>
+                        {s}
+                      </option>
+                    ))}
+                  </Select>
+                  条
+                </span>
+                <span className="containers__pagination-info">
+                  共 {filteredList.length} 条，当前第 {pageStart}-{pageEnd} 条
+                </span>
+              </div>
               <div className="containers__pagination-controls">
                 <button
                   className="containers__page-btn"
@@ -1243,6 +1288,23 @@ export default function ContainersPage() {
                 >
                   下一页
                 </button>
+                <span className="containers__page-jump">
+                  <Input
+                    className="containers__page-jump-input"
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    placeholder="页码"
+                    value={pageJump}
+                    onChange={(e) => setPageJump(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handlePageJump();
+                    }}
+                  />
+                  <Button variant="ghost" size="sm" onClick={handlePageJump}>
+                    跳转
+                  </Button>
+                </span>
               </div>
             </div>
           </>
