@@ -90,6 +90,8 @@ export default function ImagesPage() {
   const navigate = useNavigate();
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [pullOpen, setPullOpen] = useState(false);
   const [pullRef, setPullRef] = useState('');
   const [pulling, setPulling] = useState(false);
@@ -151,7 +153,9 @@ export default function ImagesPage() {
     try {
       const data = await get<ImageItem[]>('/api/images');
       setImages(data || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '拉取镜像列表失败');
       showToast(e?.message || '拉取镜像列表失败', 'error');
     } finally {
       setLoading(false);
@@ -517,8 +521,20 @@ export default function ImagesPage() {
       >
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取镜像列表失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchImages}>
+                重试
+              </Button>
+            }
+          />
         ) : sortedImages.length === 0 ? (
           <Empty
+            kind={keyword ? 'search' : 'empty'}
             title={keyword ? '未找到匹配镜像' : '暂无镜像'}
             description={keyword ? '尝试更换搜索关键字' : '点击右上角'}
           />
