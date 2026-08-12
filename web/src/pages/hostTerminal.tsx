@@ -96,6 +96,14 @@ export default function HostTerminalPage() {
     }
   }, [lines]);
 
+  // 命令执行结束（running 从 true 变为 false）后，输入框从 disabled 恢复可用时会丢失焦点，
+  // 这里主动把焦点重新还给输入框，避免用户必须手动点击才能继续输入
+  useEffect(() => {
+    if (!running) {
+      inputRef.current?.focus();
+    }
+  }, [running]);
+
   /**
    * 执行命令
    * @param cmd 命令文本
