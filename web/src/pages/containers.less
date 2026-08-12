@@ -375,6 +375,62 @@
   text-overflow: ellipsis;
 }
 
+/* 编辑镜像弹窗：可搜索下拉 */
+.edit-image__picker {
+  position: relative;
+}
+
+.edit-image__input {
+  width: 100%;
+}
+
+.edit-image__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+  padding: 4px;
+}
+
+.edit-image__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--mono-font, 'Consolas', 'Courier New', monospace);
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.edit-image__option:hover {
+  background: var(--primary-soft, rgba(63, 81, 181, 0.1));
+}
+
+.edit-image__option--active {
+  background: var(--primary-soft, rgba(63, 81, 181, 0.14));
+  color: var(--primary);
+}
+
+.edit-image__dropdown-empty {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 /* CPU / 内存实时监控列 */
 .cell-stat {
   font-family: var(--mono-font, 'Consolas', 'Courier New', monospace);

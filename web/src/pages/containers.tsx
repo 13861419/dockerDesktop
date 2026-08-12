@@ -155,6 +155,9 @@ export default function ContainersPage() {
   const [editImageSaving, setEditImageSaving] = useState(false);
   // 可用镜像下拉选项（本地镜像标签列表）
   const [imageList, setImageList] = useState<string[]>([]);
+  // 可搜索下拉：过滤关键字 与 面板展开状态
+  const [editImageSearch, setEditImageSearch] = useState('');
+  const [editImageDropdownOpen, setEditImageDropdownOpen] = useState(false);
 
   /**
    * 拉取容器列表
@@ -459,8 +462,32 @@ export default function ContainersPage() {
   function openEditImage(id: string, name: string, currentImage: string) {
     setEditImageTarget({ id, name });
     setEditImageValue(currentImage);
+    setEditImageSearch('');
+    setEditImageDropdownOpen(false);
     setEditImageOpen(true);
     loadImageOptions();
+  }
+
+  /**
+   * 按关键字过滤镜像下拉选项（不区分大小写）
+   * @returns 过滤后的镜像列表
+   */
+  function filteredImageOptions(): string[] {
+    const kw = editImageSearch.trim().toLowerCase();
+    const base = imageList.includes(editImageValue) ? imageList : [editImageValue, ...imageList];
+    const unique = Array.from(new Set(base)).filter(Boolean);
+    if (!kw) return unique;
+    return unique.filter((t) => t.toLowerCase().includes(kw));
+  }
+
+  /**
+   * 从下拉列表中选择一个镜像：填入并以它作为当前选择，收起面板并清空过滤词
+   * @param image 选中的镜像
+   */
+  function chooseEditImage(image: string) {
+    setEditImageValue(image);
+    setEditImageSearch('');
+    setEditImageDropdownOpen(false);
   }
 
   /**
@@ -1307,20 +1334,41 @@ export default function ContainersPage() {
           </div>
         </Field>
         <Field label="替换为以下镜像" required>
-          <Select
-            value={editImageValue}
-            onChange={(e) => setEditImageValue(e.target.value)}
-            disabled={editImageSaving}
-          >
-            <option value={editImageValue}>{editImageValue || '请选择镜像'}</option>
-            {imageList
-              .filter((t) => t !== editImageValue)
-              .map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-          </Select>
+          <div className="edit-image__picker">
+            <Input
+              className="edit-image__input"
+              placeholder="输入关键字过滤或直接填写镜像名，如 nginx:latest"
+              value={editImageValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                setEditImageValue(v);
+                setEditImageSearch(v);
+                setEditImageDropdownOpen(true);
+              }}
+              onFocus={() => setEditImageDropdownOpen(true)}
+              onBlur={() => setEditImageDropdownOpen(false)}
+              disabled={editImageSaving}
+            />
+            {editImageDropdownOpen && (
+              <div className="edit-image__dropdown">
+                {filteredImageOptions().length === 0 ? (
+                  <div className="edit-image__dropdown-empty">无匹配的本地镜像，可继续手动输入</div>
+                ) : (
+                  filteredImageOptions().map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`edit-image__option ${t === editImageValue ? 'edit-image__option--active' : ''}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => chooseEditImage(t)}
+                    >
+                      {t}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </Field>
       </Modal>
 
