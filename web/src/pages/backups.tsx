@@ -124,6 +124,8 @@ export default function BackupsPage() {
 
   const [backups, setBackups] = useState<BackupListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
 
   // 创建备份弹窗
   const [createOpen, setCreateOpen] = useState(false);
@@ -147,7 +149,9 @@ export default function BackupsPage() {
     try {
       const data = await get<BackupsResponse>('/api/backups');
       setBackups(data?.backups || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '加载失败');
       showToast(e?.message || '加载失败', 'error');
     } finally {
       setLoading(false);
@@ -262,6 +266,17 @@ export default function BackupsPage() {
       <Card>
         {loading ? (
           <SkeletonRows rows={4} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="加载备份列表失败"
+            description={loadError || '请稍后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={load}>
+                重试
+              </Button>
+            }
+          />
         ) : backups.length === 0 ? (
           <Empty title="暂无备份记录" description="点击右上角「创建备份」生成第一条备份。" />
         ) : (

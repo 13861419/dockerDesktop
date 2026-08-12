@@ -82,6 +82,8 @@ export default function HostFilesPage() {
   // 列表
   const [items, setItems] = useState<FsItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [uploading, setUploading] = useState(false);
 
   // 新建文件夹弹窗
@@ -114,7 +116,9 @@ export default function HostFilesPage() {
       const data = await get<ListResponse>('/api/hostfiles/list', { path });
       setCurPath(data?.path || path || '');
       setItems(data?.items || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '加载失败');
       showToast(e?.message || '加载失败', 'error');
     } finally {
       setLoading(false);
@@ -388,6 +392,17 @@ export default function HostFilesPage() {
       <Card>
         {loading ? (
           <SkeletonRows rows={8} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="加载文件列表失败"
+            description={loadError || '请稍后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => load(curPath)}>
+                重试
+              </Button>
+            }
+          />
         ) : items.length === 0 ? (
           <Empty title={curPath ? '目录为空' : '未检测到磁盘'} />
         ) : (

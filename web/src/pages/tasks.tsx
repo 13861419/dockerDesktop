@@ -132,6 +132,8 @@ export default function TasksPage() {
   const [projects, setProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   // 新增/编辑弹窗：null=关闭，task=编辑（新建时 null+open 打开）
   const [editing, setEditing] = useState<CronTask | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -168,7 +170,9 @@ export default function TasksPage() {
       const data = await get<CronTaskListResponse>('/api/tasks');
       setTasks(data?.tasks || []);
       setProjects(data?.projects || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '拉取计划任务失败');
       showToast(e?.message || '拉取计划任务失败', 'error');
     } finally {
       setLoading(false);
@@ -411,6 +415,17 @@ export default function TasksPage() {
 
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取计划任务失败"
+            description={loadError || '请稍后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchTasks}>
+                重试
+              </Button>
+            }
+          />
         ) : tasks.length === 0 ? (
           <Empty
             title="暂无计划任务"
