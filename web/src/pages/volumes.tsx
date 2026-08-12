@@ -79,6 +79,8 @@ export default function VolumesPage() {
   const { showToast } = useToast();
   const [volumes, setVolumes] = useState<VolumeItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [driver, setDriver] = useState('local');
@@ -110,7 +112,9 @@ export default function VolumesPage() {
     try {
       const data = await get<{ volumes: VolumeItem[] }>('/api/volumes');
       setVolumes(data?.volumes || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '拉取数据卷列表失败');
       showToast(e?.message || '拉取数据卷列表失败', 'error');
     } finally {
       setLoading(false);
@@ -281,8 +285,20 @@ export default function VolumesPage() {
       >
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取数据卷列表失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchVolumes}>
+                重试
+              </Button>
+            }
+          />
         ) : filteredVolumes.length === 0 ? (
           <Empty
+            kind={keyword ? 'search' : 'empty'}
             title={keyword ? '未找到匹配数据卷' : '暂无数据卷'}
             description={keyword ? '尝试更换搜索关键字' : '点击右上角'}
           />
