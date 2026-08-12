@@ -1,6 +1,6 @@
 # Docker Manager（Docker 管理面板）
 
-一个面向 **Windows** 的 Docker 容器管理面板（类似 1Panel），提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
+一个面向 **Windows** 的 Docker 容器管理面板，提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
 
 ## ✨ 功能特性
 

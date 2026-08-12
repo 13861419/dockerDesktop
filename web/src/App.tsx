@@ -35,7 +35,10 @@ const FilesPage = lazy(() => import('./pages/files'));
 const HostFilesPage = lazy(() => import('./pages/hostFiles'));
 const HostTerminalPage = lazy(() => import('./pages/hostTerminal'));
 const EnginesPage = lazy(() => import('./pages/engines'));
+const CloudBackupPage = lazy(() => import('./pages/cloudBackup'));
+const SitesPage = lazy(() => import('./pages/sites'));
 const DatabasesPage = lazy(() => import('./pages/databases'));
+const BackupsPage = lazy(() => import('./pages/backups'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -223,6 +226,22 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <EnginesPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/cloudbackup"
+                element={
+                  <PageSuspense>
+                    <CloudBackupPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/backups"
+                element={
+                  <PageSuspense>
+                    <BackupsPage />
                   </PageSuspense>
                 }
               />

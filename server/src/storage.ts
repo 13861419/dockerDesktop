@@ -220,6 +220,49 @@ function createTables(): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    -- 云端备份目标表：S3 / OSS / WebDAV 存储目标（凭据加密存储）
+    CREATE TABLE IF NOT EXISTS cloud_targets (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      type       TEXT NOT NULL,            -- s3 | oss | webdav
+      endpoint   TEXT NOT NULL,            -- 基址（WebDAV 服务器 / S3 region 端点 / OSS 端点）
+      bucket     TEXT,                      -- 桶名（webdav 可空）
+      path       TEXT NOT NULL DEFAULT '',  -- 基路径
+      access_key TEXT,
+      secret_encrypted TEXT,
+      region     TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    -- 反向代理站点表：站点域名 → 上游，经内置 nginx 反代容器承载
+    CREATE TABLE IF NOT EXISTS sites (
+      id            TEXT PRIMARY KEY,
+      domain        TEXT NOT NULL UNIQUE,
+      upstream_host TEXT NOT NULL,
+      upstream_port INTEGER NOT NULL,
+      listen_port   INTEGER NOT NULL,        -- 宿主机对外监听端口（80/443 或自定义）
+      enable_https  INTEGER NOT NULL DEFAULT 0,
+      cert_path     TEXT,
+      enabled       INTEGER NOT NULL DEFAULT 1,
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    );
+
+    -- 备份清单表：记录本地备份文件及其恢复状态
+    CREATE TABLE IF NOT EXISTS backups (
+      id         TEXT PRIMARY KEY,
+      kind       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      source     TEXT NOT NULL,
+      file_path  TEXT NOT NULL,
+      size       INTEGER NOT NULL DEFAULT 0,
+      status     TEXT NOT NULL DEFAULT 'ready',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_backups_created ON backups(created_at DESC);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

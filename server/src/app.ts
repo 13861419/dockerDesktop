@@ -29,6 +29,9 @@ import buildRouter from './routes/build';
 import hostFilesRouter from './routes/hostFiles';
 import hostTerminalRouter from './routes/hostTerminal';
 import enginesRouter from './routes/engines';
+import cloudRouter from './routes/cloud';
+import sitesRouter from './routes/sites';
+import backupsRouter from './routes/backups';
 import authRouter from './routes/auth';
 import { requireAuth } from './auth';
 
@@ -73,6 +76,9 @@ app.use('/api/build', requireAuth, buildRouter);
 app.use('/api/hostfiles', requireAuth, hostFilesRouter);
 app.use('/api/hostterminal', requireAuth, hostTerminalRouter);
 app.use('/api/engines', requireAuth, enginesRouter);
+app.use('/api/cloud', requireAuth, cloudRouter);
+app.use('/api/sites', requireAuth, sitesRouter);
+app.use('/api/backups', requireAuth, backupsRouter);
 
 // 生产模式：托管前端静态文件（单进程部署）
 if (process.env.NODE_ENV === 'production') {

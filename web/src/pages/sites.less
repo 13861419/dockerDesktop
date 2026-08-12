@@ -1,0 +1,43 @@
+/* 反向代理站点页面样式 */
+
+.site-domain {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.site-upstream {
+  color: var(--text-muted);
+  font-family: var(--font-mono, Consolas, monospace);
+  font-size: 12px;
+}
+
+.site-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.site-badge--on {
+  background: rgba(22, 163, 74, 0.14);
+  color: #16a34a;
+}
+
+.site-badge--off {
+  background: rgba(128, 128, 128, 0.14);
+  color: var(--text-muted);
+}
+
+.site-badge--https {
+  background: rgba(99, 102, 241, 0.14);
+  color: #6366f1;
+}
+
+.site-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}

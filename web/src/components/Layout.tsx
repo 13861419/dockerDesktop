@@ -182,6 +182,27 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/cloudbackup',
+    label: '云端备份',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M17.5 19a4.5 4.5 0 1 0-.42-8.98A5 5 0 0 0 7 11a3.5 3.5 0 0 0-.5 6.97" />
+        <path d="M12 19v-8M8 15l4 4 4-4" />
+      </svg>
+    ),
+  },
+  {
+    to: '/backups',
+    label: '备份恢复',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="4" width="18" height="5" rx="1" />
+        <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" />
+        <path d="M10 13h4" />
+      </svg>
+    ),
+  },
+  {
     to: '/databases',
     label: '数据库',
     icon: (

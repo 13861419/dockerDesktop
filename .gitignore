@@ -22,6 +22,9 @@ Thumbs.db
 *.tsbuildinfo
 .playwright-cli/
 
+# 子代理开发流程临时账本
+.superpowers/
+
 # 构建产物
 server/dist/
 web/dist/
