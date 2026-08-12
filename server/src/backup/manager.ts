@@ -22,6 +22,7 @@ import { exec as execCb } from 'child_process';
 import { promisify } from 'util';
 import { getDb, DATA_DIR, importDatabaseBuffer } from '../storage';
 import { getDockerClient } from '../docker/client';
+import type Dockerode from 'dockerode';
 import { listBackups, getBackup, writeBackup, updateBackupStatus } from './manifest';
 import type { BackupKind, BackupManifest, BackupStatus } from './types';
 
@@ -173,6 +174,66 @@ function writePlaceholderPayload(target: string, kind: BackupKind, source: strin
   fs.writeFileSync(target, body, 'utf8');
 }
 
+/** 用于临时命名的容器名前缀，避免与业务容器冲突 */
+const TMP_CONTAINER_PREFIX = 'dm-backup-tmp-';
+
+/**
+ * 保证 alpine 镜像存在（不存在则 pull）
+ * @param docker Dockerode 实例
+ */
+async function ensureAlpineImage(docker: Dockerode): Promise<void> {
+  const images = await docker.listImages();
+  const hasAlpine = images.some((i) =>
+    (i.RepoTags || []).some((t) => t.split(':')[0].toLowerCase() === 'alpine'),
+  );
+  if (!hasAlpine) {
+    await pullImage(docker, 'alpine:latest');
+  }
+}
+
+/**
+ * 拉取指定镜像
+ * @param docker Dockerode 实例
+ * @param ref 镜像引用，如 alpine:latest
+ */
+async function pullImage(docker: Dockerode, ref: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    docker.pull(ref, (err: any, stream: any) => {
+      if (err) return reject(err);
+      docker.modem.followProgress(stream, (perr: any) => (perr ? reject(perr) : resolve()), () => {});
+    });
+  });
+}
+
+/**
+ * 通过一次性 alpine 容器对卷执行 tar 命令（打包或解包）
+ * @param docker Dockerode 实例
+ * @param volume 卷名
+ * @param mountDir 挂载进容器 /backup 的宿主机目录（即 dir，dir/backup.tar.gz 即容器内 /backup/backup.tar.gz）
+ * @param direction 'pack' 打包 | 'unpack' 解包
+ */
+async function runVolumeTar(docker: Dockerode, volume: string, mountDir: string, direction: 'pack' | 'unpack'): Promise<void> {
+  await ensureAlpineImage(docker);
+  const tarName = 'backup.tar.gz';
+  const cmd =
+    direction === 'pack'
+      ? `sh -c "tar -czf /backup/${tarName} -C /data ."`
+      : `sh -c "tar -xzf /backup/${tarName} -C /data"`;
+  const container = await docker.createContainer({
+    Image: 'alpine:latest',
+    Cmd: ['/bin/sh', '-c', cmd],
+    HostConfig: {
+      Binds: [`${volume}:/data`, `${mountDir}:/backup`],
+      AutoRemove: true,
+    },
+  });
+  await container.start();
+  const res = await container.wait();
+  if (res.StatusCode !== 0) {
+    throw new Error(`卷备份容器退出码非 0: ${res.StatusCode}`);
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * 对外 API
  * ------------------------------------------------------------------------- */
@@ -201,6 +262,9 @@ export async function createBackup(input: { kind: BackupKind; name: string; sour
   const filePath = path.join(dir, payloadName(kind));
   if (kind === 'database') {
     snapshotDatabase(filePath);
+  } else if (kind === 'volume') {
+    const docker = await getDockerClient();
+    await runVolumeTar(docker, input.source, dir, 'pack');
   } else {
     writePlaceholderPayload(filePath, kind, input.source);
   }
@@ -292,6 +356,23 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
         updateBackupStatus(id, 'ready');
       }
       return { ok: true, supported: true, kind, id, message: '数据库已恢复' };
+    }
+
+    if (kind === 'volume') {
+      if (!fs.existsSync(filePath)) {
+        updateBackupStatus(id, 'failed');
+        return { ok: false, supported: true, kind, id, message: '备份负载文件缺失，无法恢复' };
+      }
+      const docker = await getDockerClient();
+      // 卷不存在则先创建
+      const vols = await docker.listVolumes();
+      const exists = (vols.Volumes || []).some((v) => v && v.Name === manifest.source);
+      if (!exists) {
+        await docker.createVolume({ Name: manifest.source });
+      }
+      await runVolumeTar(docker, manifest.source, dir, 'unpack');
+      updateBackupStatus(id, 'ready');
+      return { ok: true, supported: true, kind, id, message: '数据卷已恢复' };
     }
 
     // volume / compose / site：本阶段不支持真实恢复，保持数据不动
