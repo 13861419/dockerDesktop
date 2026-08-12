@@ -60,6 +60,25 @@ function isSafeKind(kind: string): kind is BackupKind {
 }
 
 /**
+ * 校验 Compose 项目名是否安全（仅允许字母数字开头，后续可为字母数字、下划线、短划线，
+ * 拒绝 . 与 .. 等路径穿越片段）
+ * @param n 项目名
+ * @returns 是否安全
+ */
+function isSafeProjectName(n: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(n);
+}
+
+/**
+ * 将站点记录 ID（UUID）安全化为文件名片段（与 sites.ts 的 safeName 规则一致）
+ * @param id 站点记录 ID
+ * @returns 安全化后的文件名片段
+ */
+function safeNameOfId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+/**
  * 路径安全归一化：将若干路径片段拼接到 base 下，并强制校验结果位于 base 之内
  * @param base 基准目录
  * @param segments 待拼接片段
@@ -153,6 +172,16 @@ function snapshotDatabase(target: string): void {
 }
 
 /**
+ * 查询站点表中的 ID、域名与证书路径
+ * @returns 站点 ID、域名与证书路径列表
+ */
+function listSiteRows() {
+  return getDb()
+    .prepare('SELECT id, domain, cert_path FROM sites')
+    .all() as { id: string; domain: string; cert_path: string | null }[];
+}
+
+/**
  * 生成占位（骨架）负载文件，用于尚未实现真实数据搬运的备份类型
  * @param target 目标文件路径
  * @param kind 备份类型
@@ -173,9 +202,6 @@ function writePlaceholderPayload(target: string, kind: BackupKind, source: strin
   );
   fs.writeFileSync(target, body, 'utf8');
 }
-
-/** 用于临时命名的容器名前缀，避免与业务容器冲突 */
-const TMP_CONTAINER_PREFIX = 'dm-backup-tmp-';
 
 /**
  * 保证 alpine 镜像存在（不存在则 pull）
@@ -224,11 +250,13 @@ async function runVolumeTar(docker: Dockerode, volume: string, mountDir: string,
     Cmd: ['/bin/sh', '-c', cmd],
     HostConfig: {
       Binds: [`${volume}:/data`, `${mountDir}:/backup`],
-      AutoRemove: true,
+      // 不使用 AutoRemove：容器退出后会被立即删除，导致 container.wait() 返回 404
+      // 改为 wait() 后手动 remove，确保能可靠取得退出码
     },
   });
   await container.start();
   const res = await container.wait();
+  await container.remove({ force: true });
   if (res.StatusCode !== 0) {
     throw new Error(`卷备份容器退出码非 0: ${res.StatusCode}`);
   }
@@ -266,8 +294,35 @@ export async function createBackup(input: { kind: BackupKind; name: string; sour
     const docker = await getDockerClient();
     await runVolumeTar(docker, input.source, dir, 'pack');
   } else if (kind === 'compose') {
+    if (!isSafeProjectName(input.source)) throw new Error('非法的 Compose 项目名');
     const src = path.join(COMPOSE_ROOT, input.source);
     await packDirToTar(src, filePath);
+  } else if (kind === 'site') {
+    // 站点数据分布在 data/nginx 根目录的 <safeName>.conf 与证书路径，先收集到临时 stage 目录再打包
+    if (!/^[a-zA-Z0-9.-]+$/.test(input.source)) throw new Error('非法的站点域名');
+    const stage = path.join(dir, 'stage');
+    fs.mkdirSync(path.join(stage, 'conf.d'), { recursive: true });
+    fs.mkdirSync(path.join(stage, 'certs'), { recursive: true });
+    const rows = listSiteRows();
+    const site = rows.find((r) => r.domain === input.source);
+    let siteIdSafe = '';
+    if (site) {
+      siteIdSafe = safeNameOfId(site.id);
+      const confSrc = path.join(NGINX_DIR, `${siteIdSafe}.conf`);
+      if (fs.existsSync(confSrc)) fs.copyFileSync(confSrc, path.join(stage, 'conf.d', `${siteIdSafe}.conf`));
+      // 从 sites 表读取证书路径并复制
+      if (site.cert_path) {
+        const keyPath = site.cert_path.replace(/\.(crt|pem)$/i, '.key');
+        if (fs.existsSync(site.cert_path)) fs.copyFileSync(site.cert_path, path.join(stage, 'certs', path.basename(site.cert_path)));
+        if (fs.existsSync(keyPath)) fs.copyFileSync(keyPath, path.join(stage, 'certs', path.basename(keyPath)));
+      }
+    }
+    try {
+      await packDirToTar(stage, filePath);
+    } finally {
+      // 无论打包成功与否都清理临时 stage 目录
+      fs.rmSync(stage, { recursive: true, force: true });
+    }
   } else {
     writePlaceholderPayload(filePath, kind, input.source);
   }
@@ -379,7 +434,7 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
     }
 
     if (kind === 'compose') {
-      if (!/^[a-zA-Z0-9._-]+$/.test(manifest.source)) {
+      if (!isSafeProjectName(manifest.source)) {
         updateBackupStatus(id, 'failed');
         return { ok: false, supported: true, kind, id, message: '非法的 Compose 项目名' };
       }
@@ -393,15 +448,50 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
       return { ok: true, supported: true, kind, id, message: 'Compose 配置已恢复（未自动启停容器）' };
     }
 
-    // volume / compose / site：本阶段不支持真实恢复，保持数据不动
+    if (kind === 'site') {
+      if (!/^[a-zA-Z0-9.-]+$/.test(manifest.source)) {
+        updateBackupStatus(id, 'failed');
+        return { ok: false, supported: true, kind, id, message: '非法的站点域名' };
+      }
+      if (!fs.existsSync(filePath)) {
+        updateBackupStatus(id, 'failed');
+        return { ok: false, supported: true, kind, id, message: '备份负载文件缺失，无法恢复' };
+      }
+      const stage = path.join(dir, 'stage');
+      // 站点是否仍在库（影响 conf 是否可还原）
+      const site = listSiteRows().find((r) => r.domain === manifest.source);
+      try {
+        await unpackTarToDir(filePath, stage);
+        // 站点仍在库时，按其 record id 还原 conf 到 data/nginx 根目录 <safeName>.conf
+        if (site) {
+          const siteIdSafe = safeNameOfId(site.id);
+          const confStage = path.join(stage, 'conf.d', `${siteIdSafe}.conf`);
+          const confDest = path.join(NGINX_DIR, `${siteIdSafe}.conf`);
+          fs.mkdirSync(NGINX_DIR, { recursive: true });
+          if (fs.existsSync(confStage)) fs.copyFileSync(confStage, confDest);
+        }
+        // 还原证书目录（无论站点是否仍在库都尝试）
+        const certsStage = path.join(stage, 'certs');
+        if (fs.existsSync(certsStage)) {
+          const certsDest = path.join(NGINX_DIR, 'certs');
+          fs.mkdirSync(certsDest, { recursive: true });
+          for (const f of fs.readdirSync(certsStage)) {
+            fs.copyFileSync(path.join(certsStage, f), path.join(certsDest, f));
+          }
+        }
+      } finally {
+        // 无论解包/还原成功与否都清理临时 stage 目录
+        fs.rmSync(stage, { recursive: true, force: true });
+      }
+      updateBackupStatus(id, 'ready');
+      // message 提示 conf 是否还原成功
+      const confNote = site ? '（含 nginx 配置）' : '（站点已不存在，未还原 nginx 配置，已还原证书）';
+      return { ok: true, supported: true, kind, id, message: `站点配置已恢复${confNote}（未自动重启反代容器）` };
+    }
+
+    // 兜底终止：正常情况下不可达（kind 已由 isSafeKind 收窄）
     updateBackupStatus(id, 'ready');
-    return {
-      ok: false,
-      supported: false,
-      kind,
-      id,
-      message: `${kind} 类型的恢复暂未支持，未对现有数据做任何改动`,
-    };
+    return { ok: false, supported: true, kind, id, message: '未知的备份类型' };
   } catch (err: any) {
     // 恢复过程异常：标记失败
     try {

@@ -76,6 +76,19 @@ const STATUS_LABEL: Record<BackupListItem['status'], string> = {
 };
 
 /**
+ * 依据备份类型生成恢复确认文案
+ * @param item 待恢复的备份项
+ * @returns 确认提示文案
+ */
+const restoreMessage = (item: { kind: string; source: string }) => {
+  const base = '恢复将覆盖现有数据，确认继续？';
+  if (item.kind === 'volume') return `${base}（数据卷「${item.source}」的内容将被备份内容覆盖）`;
+  if (item.kind === 'compose') return `将还原 Compose 项目「${item.source}」的配置文件（不会自动启停容器）。确认？`;
+  if (item.kind === 'site') return `将还原站点「${item.source}」的 nginx 配置与证书（不会自动重启反代容器）。确认？`;
+  return base;
+};
+
+/**
  * 将字节数格式化为可读大小
  * @param bytes 字节数
  */
@@ -344,7 +357,7 @@ export default function BackupsPage() {
       <ConfirmDialog
         open={!!restoreTarget}
         title="恢复备份"
-        message={`恢复将覆盖现有数据，确认继续？（${restoreTarget?.name || ''}）`}
+        message={restoreTarget ? `${restoreMessage(restoreTarget)}（${restoreTarget.name || ''}）` : ''}
         confirmText="恢复"
         danger
         loading={restoring}
