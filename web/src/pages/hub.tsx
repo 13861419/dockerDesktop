@@ -110,6 +110,8 @@ export default function HubPage() {
   const [results, setResults] = useState<HubRepo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  // 搜索加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
   // 当前展开的仓库（用完整名标识，如 library/nginx）
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -245,6 +247,7 @@ export default function HubPage() {
       }
       setLoading(true);
       setExpanded(null);
+      setLoadError('');
       try {
         const data = await get<{ results: HubRepo[]; total: number }>(
           '/api/hub/search?q=' + encodeURIComponent(kw) + '&page=1'
@@ -253,6 +256,7 @@ export default function HubPage() {
         setTotal(data?.total || 0);
         setPage(1);
       } catch (e: any) {
+        setLoadError(e?.message || '搜索失败');
         showToast(e?.message || '搜索失败', 'error');
         setResults([]);
         setTotal(0);
@@ -429,6 +433,17 @@ export default function HubPage() {
 
         {loading && results.length === 0 ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="搜索失败"
+            description={loadError || '请检查网络连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => doSearch(query)}>
+                重试
+              </Button>
+            }
+          />
         ) : results.length === 0 ? (
           <Empty title="未找到镜像" description="尝试更换搜索关键字" />
         ) : (
