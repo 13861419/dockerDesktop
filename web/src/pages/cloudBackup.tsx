@@ -59,6 +59,8 @@ export default function CloudBackupPage() {
 
   const [targets, setTargets] = useState<CloudTarget[]>([]);
   const [loading, setLoading] = useState(false);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
 
   // 新增/编辑弹窗
   const [modalOpen, setModalOpen] = useState(false);
@@ -97,10 +99,12 @@ export default function CloudBackupPage() {
       const data = await get<TargetsResponse>('/api/cloud/targets');
       const list = data?.targets || [];
       setTargets(list);
+      setLoadError('');
       if (list.length > 0 && !list.some((t) => t.id === uploadTargetId)) {
         setUploadTargetId(list[0].id);
       }
     } catch (e: any) {
+      setLoadError(e?.message || '加载失败');
       showToast(e?.message || '加载失败', 'error');
     } finally {
       setLoading(false);
@@ -309,6 +313,17 @@ export default function CloudBackupPage() {
       <Card>
         {loading ? (
           <SkeletonRows rows={4} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="加载云端目标失败"
+            description={loadError || '请稍后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={load}>
+                重试
+              </Button>
+            }
+          />
         ) : targets.length === 0 ? (
           <Empty title="暂无云端目标" description="先新增一个 S3 / OSS / WebDAV 目标，即可上传备份文件。" />
         ) : (

@@ -33,6 +33,8 @@ export default function AppStorePage() {
   const [apps, setApps] = useState<AppStoreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   // 当前视图过滤（全部 / 已安装）
   const [view, setView] = useState<ViewFilter>('all');
   // 当前分类筛选（'all' 表示不过滤）
@@ -86,7 +88,9 @@ export default function AppStorePage() {
     try {
       const data = await get<{ apps: AppStoreItem[] }>('/api/appstore');
       setApps(data?.apps || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '拉取应用商店失败');
       showToast(e?.message || '拉取应用商店失败', 'error');
     } finally {
       setLoading(false);
@@ -575,6 +579,17 @@ export default function AppStorePage() {
 
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取应用商店失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchAppStore}>
+                重试
+              </Button>
+            }
+          />
         ) : filteredApps.length === 0 ? (
           <Empty
             title={view === 'installed' ? '暂无已安装应用' : '未找到匹配应用'}

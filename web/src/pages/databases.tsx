@@ -97,6 +97,8 @@ export default function DatabasesPage() {
   const [recognized, setRecognized] = useState<RecognizedContainer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   // 登记弹窗是否打开
   const [registerOpen, setRegisterOpen] = useState(false);
   // 待编辑的实例（打开编辑弹窗）
@@ -121,7 +123,9 @@ export default function DatabasesPage() {
       const data = await get<DatabaseListResponse>('/api/databases');
       setInstances(data?.instances || []);
       setRecognized(data?.recognizedInstances || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '拉取数据库实例失败');
       showToast(e?.message || '拉取数据库实例失败', 'error');
     } finally {
       setLoading(false);
@@ -312,6 +316,17 @@ export default function DatabasesPage() {
 
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取数据库实例失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchDatabases}>
+                重试
+              </Button>
+            }
+          />
         ) : instances.length === 0 ? (
           <Empty
             title="暂无数据库实例"
