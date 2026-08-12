@@ -265,6 +265,9 @@ export async function createBackup(input: { kind: BackupKind; name: string; sour
   } else if (kind === 'volume') {
     const docker = await getDockerClient();
     await runVolumeTar(docker, input.source, dir, 'pack');
+  } else if (kind === 'compose') {
+    const src = path.join(COMPOSE_ROOT, input.source);
+    await packDirToTar(src, filePath);
   } else {
     writePlaceholderPayload(filePath, kind, input.source);
   }
@@ -373,6 +376,21 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
       await runVolumeTar(docker, manifest.source, dir, 'unpack');
       updateBackupStatus(id, 'ready');
       return { ok: true, supported: true, kind, id, message: '数据卷已恢复' };
+    }
+
+    if (kind === 'compose') {
+      if (!/^[a-zA-Z0-9._-]+$/.test(manifest.source)) {
+        updateBackupStatus(id, 'failed');
+        return { ok: false, supported: true, kind, id, message: '非法的 Compose 项目名' };
+      }
+      if (!fs.existsSync(filePath)) {
+        updateBackupStatus(id, 'failed');
+        return { ok: false, supported: true, kind, id, message: '备份负载文件缺失，无法恢复' };
+      }
+      const dest = path.join(COMPOSE_ROOT, manifest.source);
+      await unpackTarToDir(filePath, dest);
+      updateBackupStatus(id, 'ready');
+      return { ok: true, supported: true, kind, id, message: 'Compose 配置已恢复（未自动启停容器）' };
     }
 
     // volume / compose / site：本阶段不支持真实恢复，保持数据不动
