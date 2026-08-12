@@ -63,6 +63,47 @@ function normalizeCwd(raw: string | undefined | null): string {
 }
 
 /**
+ * 为指定 shell 构造 UTF-8 输出前缀，修复中文 Windows 下宿主终端中文乱码。
+ * 仅 PowerShell 需要前缀：强制其控制台/stdout 编码为 UTF-8，使 Node 端可按 UTF-8 解码。
+ * cmd 无法通过 chcp 改变管道输出的代码页（仍是系统 OEM 代码页），
+ * 故 cmd 分支不改命令，改为在接收端按 GBK 解码（见 decodeOutput）。
+ * @param shell shell 类型
+ * @param command 原始命令
+ * @returns 拼接 UTF-8 适配前缀后的命令
+ */
+function withUtf8(shell: Shell, command: string): string {
+  if (shell === 'cmd') {
+    // cmd：不注入前缀，保持原命令原样执行
+    return command;
+  }
+  // PowerShell：强制 stdout/控制台输出编码为 UTF-8，避免 GBK 输出被按 UTF-8 解码成乱码
+  return `$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${command}`;
+}
+
+/**
+ * 按 shell 把收集到的输出字节解码为可读文本。
+ * PowerShell 已在前缀中强制 UTF-8 输出，此处按 UTF-8 解码；
+ * cmd 管道输出使用系统 OEM 代码页（中文 Windows 为 GBK/CP936），
+ * 通过内置 TextDecoder（ICU 支持 gbk，零第三方依赖）解码，避免中文乱码。
+ * 若目标编码不可用则回退 UTF-8。
+ * @param shell shell 类型
+ * @param buf 原始输出字节
+ * @returns 解码后的文本
+ */
+function decodeOutput(shell: Shell, buf: Buffer): string {
+  if (shell === 'powershell' || buf.length === 0) {
+    return buf.toString('utf8');
+  }
+  try {
+    // cmd：按中文 Windows 的 GBK 代码页解码
+    return new TextDecoder('gbk').decode(buf);
+  } catch {
+    // ICU 不可用或编码不支持时回退 UTF-8
+    return buf.toString('utf8');
+  }
+}
+
+/**
  * 使用 spawn 执行单条命令并收集输出（stdout + stderr 合并），支持超时强制结束
  * @param shell shell 类型
  * @param command 命令文本
@@ -78,8 +119,8 @@ async function runShell(
 ): Promise<{ output: string; exitCode: number | null }> {
   const args =
     shell === 'powershell'
-      ? ['-NoProfile', '-NonInteractive', '-Command', command]
-      : ['/c', command];
+      ? ['-NoProfile', '-NonInteractive', '-Command', withUtf8(shell, command)]
+      : ['/d', '/c', withUtf8(shell, command)];
 
   return await new Promise((resolve) => {
     const child = spawn(shell === 'powershell' ? 'powershell.exe' : 'cmd.exe', args, {
@@ -109,7 +150,7 @@ async function runShell(
 
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
-      const output = Buffer.concat(chunks).toString('utf8');
+      const output = decodeOutput(shell, Buffer.concat(chunks));
       resolve({ output, exitCode: code });
     });
   });
