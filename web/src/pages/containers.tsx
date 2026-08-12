@@ -1308,7 +1308,7 @@ export default function ContainersPage() {
         open={editImageOpen}
         title="编辑镜像"
         onClose={() => !editImageSaving && setEditImageOpen(false)}
-        width={480}
+        width={600}
         footer={
           <div className="create-modal__footer">
             <Button
