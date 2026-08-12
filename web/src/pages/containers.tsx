@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get, post, del } from '../api/client';
-import { ContainerListItem, ContainerPortConflicts } from '../types';
+import { ContainerListItem, ContainerPortConflicts, ImageItem } from '../types';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -147,6 +147,14 @@ export default function ContainersPage() {
   const [createPorts, setCreatePorts] = useState<CreatePort[]>([{ container: '', host: '', protocol: 'tcp' }]);
   const [createVolumes, setCreateVolumes] = useState<CreateVolume[]>([{ source: '', target: '', readonly: false }]);
   const [createEnvs, setCreateEnvs] = useState<CreateEnv[]>([{ key: '', value: '' }]);
+
+  // 编辑镜像弹窗状态
+  const [editImageOpen, setEditImageOpen] = useState(false);
+  const [editImageTarget, setEditImageTarget] = useState<DeleteTarget | null>(null);
+  const [editImageValue, setEditImageValue] = useState('');
+  const [editImageSaving, setEditImageSaving] = useState(false);
+  // 可用镜像下拉选项（本地镜像标签列表）
+  const [imageList, setImageList] = useState<string[]>([]);
 
   /**
    * 拉取容器列表
@@ -422,6 +430,61 @@ export default function ContainersPage() {
       showToast(`克隆失败：${e?.message || '未知错误'}`, 'error');
     } finally {
       setCloning(false);
+    }
+  }
+
+  /**
+   * 拉取本地镜像标签列表，用于"编辑镜像"弹窗的可选镜像下拉
+   */
+  const loadImageOptions = useCallback(async () => {
+    try {
+      const res = await get<ImageItem[]>('/api/images');
+      const tags = (res || [])
+        .flatMap((img) => img.RepoTags || [])
+        .filter((t) => t && !t.startsWith('<none>'))
+        .sort((a, b) => a.localeCompare(b));
+      setImageList(tags);
+    } catch {
+      // 拉取镜像列表失败不阻塞，弹窗内仍可手动输入
+      setImageList([]);
+    }
+  }, []);
+
+  /**
+   * 打开编辑镜像弹窗：预填当前镜像，并刷新可选镜像列表
+   * @param id 容器 ID
+   * @param name 容器名
+   * @param currentImage 当前镜像
+   */
+  function openEditImage(id: string, name: string, currentImage: string) {
+    setEditImageTarget({ id, name });
+    setEditImageValue(currentImage);
+    setEditImageOpen(true);
+    loadImageOptions();
+  }
+
+  /**
+   * 提交替换镜像：基于现有容器重建，仅替换镜像，其余配置（端口、挂载、网络、环境变量等）保留
+   */
+  async function confirmEditImage() {
+    if (!editImageTarget) return;
+    const newImage = editImageValue.trim();
+    // 镜像必填校验
+    if (!newImage) {
+      showToast('请填写或选择新镜像', 'error');
+      return;
+    }
+    setEditImageSaving(true);
+    try {
+      await post(`/api/containers/${editImageTarget.id}/recreate`, { image: newImage });
+      showToast(`已替换镜像为 ${newImage}`);
+      setEditImageOpen(false);
+      load();
+      loadPortConflicts();
+    } catch (e: any) {
+      showToast(`替换镜像失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setEditImageSaving(false);
     }
   }
 
@@ -1077,6 +1140,13 @@ export default function ContainersPage() {
                             <Button
                               variant="secondary"
                               size="sm"
+                              onClick={() => openEditImage(c.Id, name, c.Image)}
+                            >
+                              编辑镜像
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
                               onClick={() => openClone(c.Id, name)}
                             >
                               克隆
@@ -1203,6 +1273,54 @@ export default function ContainersPage() {
             autoFocus
             disabled={cloning}
           />
+        </Field>
+      </Modal>
+
+      {/* 编辑镜像弹窗（替换容器使用的镜像） */}
+      <Modal
+        open={editImageOpen}
+        title="编辑镜像"
+        onClose={() => !editImageSaving && setEditImageOpen(false)}
+        width={480}
+        footer={
+          <div className="create-modal__footer">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => setEditImageOpen(false)}
+              disabled={editImageSaving}
+            >
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={editImageSaving} onClick={confirmEditImage}>
+              替换镜像
+            </Button>
+          </div>
+        }
+      >
+        <Field
+          label={`容器「${editImageTarget?.name || ''}」当前镜像`}
+          hint="替换镜像将基于现有容器重建，仅替换镜像，端口、挂载、网络、环境变量等配置保留；重建会导致容器短暂中断，容器 ID 会改变。"
+        >
+          <div className="edit-image__current" title={editImageValue}>
+            {editImageValue || '-'}
+          </div>
+        </Field>
+        <Field label="替换为以下镜像" required>
+          <Select
+            value={editImageValue}
+            onChange={(e) => setEditImageValue(e.target.value)}
+            disabled={editImageSaving}
+          >
+            <option value={editImageValue}>{editImageValue || '请选择镜像'}</option>
+            {imageList
+              .filter((t) => t !== editImageValue)
+              .map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+          </Select>
         </Field>
       </Modal>
 

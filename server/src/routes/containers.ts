@@ -925,6 +925,7 @@ router.post(
  * POST /api/containers/:id/recreate
  * 基于现有容器重建，仅替换环境变量（其余配置如镜像、端口、挂载、网络、重启策略等均保留）
  * body: { env: Record<string,string> } 完整的新环境变量映射
+ * body(可选): { image: string } 替换容器使用的镜像
  */
 router.post(
   '/:id/recreate',
@@ -933,6 +934,12 @@ router.post(
     const old = docker.getContainer(req.params.id);
     const inspect = await old.inspect();
     const oldName = (inspect.Name || '').replace(/^\//, '');
+
+    // 可选：替换容器使用的镜像（用于容器首页"编辑镜像"功能）
+    const desiredImage: string | undefined =
+      typeof req.body?.image === 'string' && req.body.image.trim()
+        ? req.body.image.trim()
+        : undefined;
 
     // 将前端传入的完整环境变量映射转为 "KEY=VALUE" 数组
     const desiredEnv: Record<string, string> =
@@ -980,9 +987,9 @@ router.post(
         ? req.body.privileged
         : !!inspect.HostConfig?.Privileged;
 
-    // 复用原容器的各项配置
+    // 复用原容器的各项配置（镜像可被 desiredImage 替换）
     const createOpts: Dockerode.ContainerCreateOptions = {
-      Image: inspect.Config?.Image || '',
+      Image: desiredImage || inspect.Config?.Image || '',
       Cmd: inspect.Config?.Cmd || undefined,
       Entrypoint: inspect.Config?.Entrypoint || undefined,
       WorkingDir: inspect.Config?.WorkingDir || undefined,
