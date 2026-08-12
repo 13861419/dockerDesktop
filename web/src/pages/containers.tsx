@@ -85,6 +85,8 @@ export default function ContainersPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [list, setList] = useState<ContainerListItem[]>([]);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -172,12 +174,14 @@ export default function ContainersPage() {
       const res = await get<ContainerListItem[]>('/api/containers', { all: true });
       const data = res || [];
       setList(data);
+      setLoadError('');
       // 刷新后清除已不存在的选中项（如已删除的容器）
       setSelectedIds((prev) => {
         const ids = new Set(data.map((c) => c.Id));
         return prev.filter((id) => ids.has(id));
       });
     } catch (e: any) {
+      setLoadError(e?.message || '获取容器列表失败');
       showToast(e?.message || '获取容器列表失败', 'error');
     } finally {
       setLoading(false);
@@ -1091,8 +1095,20 @@ export default function ContainersPage() {
       </div>
 
       <Card>
-        {filteredList.length === 0 ? (
+        {loadError ? (
           <Empty
+            kind="error"
+            title="加载容器列表失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={load}>
+                重试
+              </Button>
+            }
+          />
+        ) : filteredList.length === 0 ? (
+          <Empty
+            kind={search ? 'search' : 'empty'}
             title={search ? '未找到匹配的容器' : filter === 'running' ? '暂无运行中的容器' : '暂无容器'}
             description={search ? '请尝试更换搜索关键字' : '容器未创建或已被删除'}
           />
