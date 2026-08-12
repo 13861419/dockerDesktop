@@ -17,9 +17,23 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
+import { exec as execCb } from 'child_process';
+import { promisify } from 'util';
 import { getDb, DATA_DIR, importDatabaseBuffer } from '../storage';
+import { getDockerClient } from '../docker/client';
 import { listBackups, getBackup, writeBackup, updateBackupStatus } from './manifest';
 import type { BackupKind, BackupManifest, BackupStatus } from './types';
+
+const execAsync = promisify(execCb);
+
+// Compose 项目根目录（与 server/src/routes/compose.ts 保持一致，避免循环依赖）
+const COMPOSE_ROOT = process.env.COMPOSE_ROOT
+  ? process.env.COMPOSE_ROOT
+  : path.join(os.tmpdir(), 'docker-compose-projects');
+
+// nginx 配置根目录（等同 server/src/routes/sites.ts 中 data/nginx）
+const NGINX_DIR = path.join(DATA_DIR, 'nginx');
 
 /** 备份根目录（位于数据目录下） */
 const BACKUP_ROOT = path.join(DATA_DIR, 'backups');
@@ -85,6 +99,43 @@ function payloadName(kind: BackupKind): string {
     case 'site':
     default:
       return 'backup.tar.gz';
+  }
+}
+
+/**
+ * 将目录打包为 tar.gz
+ * @param srcDir 源目录（必须存在）
+ * @param tarPath 目标 tar.gz 路径
+ */
+async function packDirToTar(srcDir: string, tarPath: string): Promise<void> {
+  if (!fs.existsSync(srcDir)) throw new Error(`源目录不存在: ${srcDir}`);
+  fs.mkdirSync(path.dirname(tarPath), { recursive: true });
+  const escapedSrc = srcDir.replace(/"/g, '\\"');
+  const escapedTar = tarPath.replace(/"/g, '\\"');
+  // Windows 下使用系统 tar（Win10+ 自带 bsdtar）；cmd 内参数用引号包裹
+  const cmd = `tar -czf "${escapedTar}" -C "${escapedSrc}" .`;
+  try {
+    await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 1024 * 1024 * 50 });
+  } catch (err: any) {
+    throw new Error(`目录打包失败: ${err?.stderr || err?.message || 'tar 执行错误'}`);
+  }
+}
+
+/**
+ * 将 tar.gz 解包到目标目录（不存在则创建）
+ * @param tarPath 源 tar.gz 路径
+ * @param destDir 目标目录
+ */
+async function unpackTarToDir(tarPath: string, destDir: string): Promise<void> {
+  if (!fs.existsSync(tarPath)) throw new Error(`备份文件不存在: ${tarPath}`);
+  fs.mkdirSync(destDir, { recursive: true });
+  const escapedTar = tarPath.replace(/"/g, '\\"');
+  const escapedDest = destDir.replace(/"/g, '\\"');
+  const cmd = `tar -xzf "${escapedTar}" -C "${escapedDest}"`;
+  try {
+    await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 1024 * 1024 * 50 });
+  } catch (err: any) {
+    throw new Error(`解包失败: ${err?.stderr || err?.message || 'tar 执行错误'}`);
   }
 }
 
