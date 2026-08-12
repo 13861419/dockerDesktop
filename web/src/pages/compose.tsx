@@ -147,6 +147,8 @@ export default function ComposePage() {
   const [projects, setProjects] = useState<ComposeProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
 
   // 各项目的服务运行状态（name → compose ps 结果）
   const [statusMap, setStatusMap] = useState<Record<string, ComposeService[]>>({});
@@ -242,9 +244,11 @@ export default function ComposePage() {
     try {
       const data = await get<ComposeProject[]>('/api/compose');
       setProjects(data || []);
+      setLoadError('');
       // 逐个拉取各项目的服务运行状态
       (data || []).forEach((p) => loadStatus(p.name));
     } catch (e: any) {
+      setLoadError(e?.message || '拉取项目列表失败');
       showToast(e?.message || '拉取项目列表失败', 'error');
     } finally {
       setLoading(false);
@@ -504,6 +508,17 @@ export default function ComposePage() {
       >
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取项目列表失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchProjects}>
+                重试
+              </Button>
+            }
+          />
         ) : projects.length === 0 ? (
           <Empty title="暂无 Compose 项目" description="点击右上角「新建项目」创建" />
         ) : (

@@ -57,6 +57,8 @@ export default function NetworksPage() {
   const { showToast } = useToast();
   const [networks, setNetworks] = useState<NetworkItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [driver, setDriver] = useState('bridge');
@@ -91,7 +93,9 @@ export default function NetworksPage() {
     try {
       const data = await get<NetworkItem[]>('/api/networks');
       setNetworks(data || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '拉取网络列表失败');
       showToast(e?.message || '拉取网络列表失败', 'error');
     } finally {
       setLoading(false);
@@ -311,6 +315,17 @@ export default function NetworksPage() {
       >
         {loading ? (
           <SkeletonRows rows={6} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="拉取网络列表失败"
+            description={loadError || '请检查 Docker 引擎连接后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={fetchNetworks}>
+                重试
+              </Button>
+            }
+          />
         ) : networks.length === 0 ? (
           <Empty title="暂无网络" description="点击右上角" />
         ) : (
