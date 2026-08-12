@@ -44,6 +44,33 @@
   flex-shrink: 0;
 }
 
+.toast__msg {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.toast__close:hover {
+  background: var(--bg-body);
+  color: var(--text-primary);
+}
+
 .toast--success .toast__icon {
   background: var(--color-running);
 }
