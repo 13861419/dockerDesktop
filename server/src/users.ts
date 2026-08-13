@@ -133,6 +133,18 @@ export function userExists(username: string): boolean {
 }
 
 /**
+ * 获取用户角色
+ * @param username 用户名
+ * @returns 角色 'admin' | 'user'；用户不存在时视为普通用户（非管理员）
+ */
+export function getUserRole(username: string): UserRecord['role'] {
+  const row = getDb()
+    .prepare('SELECT role FROM users WHERE username = ?')
+    .get(username) as { role: string } | undefined;
+  return (row?.role as UserRecord['role']) || 'user';
+}
+
+/**
  * 新增用户
  * @param username 用户名
  * @param password 明文密码

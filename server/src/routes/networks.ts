@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -92,6 +93,7 @@ router.post(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     await docker.getNetwork(req.params.id).remove();

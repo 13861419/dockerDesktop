@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -316,6 +317,7 @@ router.post(
  */
 router.delete(
   '/:name',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     if (fs.existsSync(dir)) {

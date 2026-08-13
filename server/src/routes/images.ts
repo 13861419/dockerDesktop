@@ -10,6 +10,7 @@ import { getDockerClient } from '../docker/client';
 import { buildPullRef, listSources, searchHubRepos } from '../hubConfig';
 import { getPullTime, recordPullTime } from '../imagePullHistory';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -413,6 +414,7 @@ router.post(
  */
 router.delete(
   '/:name',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();

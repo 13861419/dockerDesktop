@@ -13,6 +13,7 @@ import path from 'path';
 import { Router, Request, Response } from 'express';
 import { DATA_DIR } from '../storage';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 import {
   createBackup,
   deleteBackupFile,
@@ -160,6 +161,7 @@ router.post(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const manifest = readBackupManifest(id);

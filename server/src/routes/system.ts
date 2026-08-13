@@ -17,6 +17,7 @@ import {
 } from '../users';
 import { exportDatabase, importDatabaseBuffer, getDataDir } from '../storage';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -266,6 +267,7 @@ router.get(
  */
 router.post(
   '/users',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { username, password, role } = req.body || {};
     if (!username || !password) {
@@ -292,6 +294,7 @@ router.post(
  */
 router.delete(
   '/users/:name',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     try {
       deleteUser(req.params.name);
@@ -356,6 +359,7 @@ router.get(
  */
 router.post(
   '/restore',
+  requireAdmin,
   express.raw({ type: 'application/octet-stream', limit: '200mb' }),
   asyncHandler(async (req: Request, res: Response) => {
       const raw = req.body as Buffer | undefined;

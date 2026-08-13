@@ -14,6 +14,7 @@ import https from 'https';
 import { URL } from 'url';
 import { getDb, encryptSecret, decryptSecret } from '../storage';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -373,6 +374,7 @@ router.put(
  */
 router.delete(
   '/targets/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();

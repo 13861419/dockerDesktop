@@ -17,6 +17,7 @@ import path from 'path';
 import { getDb } from '../storage';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -303,6 +304,7 @@ router.put(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();

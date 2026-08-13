@@ -16,6 +16,7 @@ import { promisify } from 'util';
 import Dockerode from 'dockerode';
 import { getDockerClient } from '../docker/client';
 import { getDb, encryptSecret, decryptSecret } from '../storage';
+import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
 import { APP_LABEL_KEY, APP_CATALOG } from '../appstore/catalog';
 
@@ -593,6 +594,7 @@ router.put(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -724,6 +726,7 @@ router.post(
  */
 router.delete(
   '/:id/databases/:db',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -892,6 +895,7 @@ router.post(
  */
 router.delete(
   '/:id/redis/keys',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);

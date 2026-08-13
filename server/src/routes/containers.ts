@@ -9,6 +9,7 @@ import { parseStats } from '../docker/stats';
 import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -433,6 +434,7 @@ router.post(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();

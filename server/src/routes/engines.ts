@@ -11,6 +11,7 @@ import { getDb } from '../storage';
 import { resetDockerCache, testEngineEndpoint } from '../docker/client';
 import { restartEventMonitor } from '../docker/events';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -96,6 +97,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const name = assertName(req.body?.name);
     const endpoint = normalizeEndpoint(req.body?.endpoint);
@@ -129,6 +131,7 @@ router.post(
  */
 router.put(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();
@@ -166,6 +169,7 @@ router.put(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();
@@ -186,6 +190,7 @@ router.delete(
  */
 router.post(
   '/:id/switch',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();

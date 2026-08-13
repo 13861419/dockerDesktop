@@ -17,6 +17,7 @@ import path from 'path';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { requireAdmin } from '../auth';
 import {
   getDb,
   exportDatabase,
@@ -606,6 +607,7 @@ router.post(
  */
 router.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = getTaskRow(req.params.id);
     if (!row) {

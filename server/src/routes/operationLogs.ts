@@ -7,6 +7,7 @@
  */
 import { Router } from 'express';
 import { listOperationLogs, clearOperationLogs, exportOperationLogsCsv } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -70,7 +71,7 @@ router.get('/', (req: any, res: any) => {
  * DELETE /api/operation-logs
  * 清空全部操作日志
  */
-router.delete('/', (_req: any, res: any) => {
+router.delete('/', requireAdmin, (_req: any, res: any) => {
   try {
     clearOperationLogs();
     res.json({ ok: true });

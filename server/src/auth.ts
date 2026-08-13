@@ -8,7 +8,7 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { verifyCredentials as usersVerifyCredentials } from './users';
+import { verifyCredentials as usersVerifyCredentials, getUserRole } from './users';
 
 /** 会话过期时间（毫秒），默认 24 小时 */
 const SESSION_TTL = Number(process.env.AUTH_TTL_HOURS || 24) * 3600 * 1000;
@@ -116,13 +116,31 @@ export function extractToken(req: Request): string | null {
 
 /**
  * 鉴权中间件：保护需要登录的接口
- * 校验通过后会将当前登录用户名写入 res.locals.username，供后续记录操作日志等使用。
+ * 校验通过后会将当前登录用户信息写入 res.locals.user（含 username 与 role），
+ * 供后续记录操作日志与权限校验使用。
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = extractToken(req);
   if (!token || !isValidToken(token)) {
     return res.status(401).json({ error: '未登录或会话已过期，请重新登录' });
   }
-  res.locals.username = getSessionUsername(token);
+  const username = getSessionUsername(token) as string;
+  res.locals.user = {
+    username,
+    role: getUserRole(username),
+  };
+  // 兼容旧代码：保留 res.locals.username
+  res.locals.username = username;
+  next();
+}
+
+/**
+ * 管理员权限中间件：仅允许 admin 角色访问（须在 requireAuth 之后使用）
+ * 用于保护删除 / 恢复 / 引擎切换 / 用户管理等破坏性操作。
+ */
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (res.locals.user?.role !== 'admin') {
+    return res.status(403).json({ error: '该操作需要管理员权限' });
+  }
   next();
 }

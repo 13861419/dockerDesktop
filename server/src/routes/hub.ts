@@ -16,6 +16,7 @@ import {
   getSearchSource,
   setSearchSource,
 } from '../hubConfig';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -181,6 +182,7 @@ router.post(
  */
 router.delete(
   '/sources/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     removeSource(req.params.id);
     res.json({ ok: true });
