@@ -276,3 +276,18 @@ textarea:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--primary-border);
 }
+
+/* 通用：数据表格(.data-table)操作列 sticky 固定，横向滚动时不随左右滑动
+ * 覆盖 volumes / images / networks / compose 等统一使用 .data-table 的列表页。
+ */
+.data-table .col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--bg-surface);
+  box-shadow: -6px 0 8px -6px rgba(31, 35, 51, 0.18);
+}
+
+.data-table tbody tr:hover .col-actions {
+  background: var(--bg-body);
+}
