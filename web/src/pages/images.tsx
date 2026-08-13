@@ -106,10 +106,14 @@ export default function ImagesPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   // 搜索关键字（按镜像名/ID 本地过滤）
   const [keyword, setKeyword] = useState('');
-  // 分页：每页显示的镜像条数
-  const PAGE_SIZE = 15;
+  /** 分页每页条数可选值 */
+  const PAGE_SIZE_OPTIONS = [15, 30, 50];
   // 当前页码（从 1 开始）
   const [page, setPage] = useState(1);
+  // 每页条数（可在运行时切换）
+  const [pageSize, setPageSize] = useState(15);
+  // 分页跳转：输入的目标页码
+  const [pageJump, setPageJump] = useState('');
   // 待打标签的镜像（用于打开打标签弹窗）
   const [tagTarget, setTagTarget] = useState<ImageItem | null>(null);
   // 打标签弹窗中的仓库与标签输入
@@ -467,18 +471,37 @@ export default function ImagesPage() {
   }
 
   /** 总页数（至少 1 页） */
-  const totalPages = Math.max(1, Math.ceil(sortedImages.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sortedImages.length / pageSize));
 
   /** 当前页码：当分页组合变化导致页码越界时，回退到最大有效页 */
   const safePage = Math.min(page, Math.max(1, totalPages));
 
+  /** 切换每页条数：回到第一页并清空跳转输入 */
+  function changePageSize(size: number) {
+    setPageSize(size);
+    setPage(1);
+    setPageJump('');
+  }
+
+  /** 跳转到指定页码（限制在有效范围内） */
+  function handlePageJump() {
+    const n = parseInt(pageJump, 10);
+    if (isNaN(n)) {
+      setPageJump('');
+      return;
+    }
+    const target = Math.min(Math.max(1, n), totalPages);
+    setPage(target);
+    setPageJump('');
+  }
+
   /** 当前页起始序号（用于"第 x-y 条"展示，空列表时为 0） */
-  const pageStart = sortedImages.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const pageStart = sortedImages.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
   /** 当前页结束序号 */
-  const pageEnd = Math.min(safePage * PAGE_SIZE, sortedImages.length);
+  const pageEnd = Math.min(safePage * pageSize, sortedImages.length);
 
   /** 当前页要展示的镜像 */
-  const pageItems = sortedImages.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageItems = sortedImages.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   /** 跳转到镜像详情页（name 用 encodeURIComponent 编码，页面内 useParams 会自动还原） */
   const goDetail = (img: ImageItem) => {
@@ -599,9 +622,26 @@ export default function ImagesPage() {
 
           {/* 分页控件 */}
           <div className="images__pagination">
-            <span className="images__pagination-info">
-              共 {sortedImages.length} 条，当前第 {pageStart}-{pageEnd} 条
-            </span>
+            <div className="images__pagination-left">
+              <span className="images__pagination-size">
+                每页
+                <Select
+                  className="images__pagesize"
+                  value={String(pageSize)}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                >
+                  {PAGE_SIZE_OPTIONS.map((s) => (
+                    <option key={s} value={String(s)}>
+                      {s}
+                    </option>
+                  ))}
+                </Select>
+                条
+              </span>
+              <span className="images__pagination-info">
+                共 {sortedImages.length} 条，当前第 {pageStart}-{pageEnd} 条
+              </span>
+            </div>
             <div className="images__pagination-controls">
               <button
                 className="images__page-btn"
@@ -626,6 +666,23 @@ export default function ImagesPage() {
               >
                 下一页
               </button>
+              <span className="images__page-jump">
+                <Input
+                  className="images__page-jump-input"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  placeholder="页码"
+                  value={pageJump}
+                  onChange={(e) => setPageJump(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handlePageJump();
+                  }}
+                />
+                <Button variant="ghost" size="sm" onClick={handlePageJump}>
+                  跳转
+                </Button>
+              </span>
             </div>
           </div>
           </>

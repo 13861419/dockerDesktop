@@ -143,6 +143,21 @@
   padding: 14px 18px;
   flex-wrap: wrap;
 
+  &-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  &-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
   &-info {
     font-size: 13px;
     color: var(--text-muted);
@@ -154,6 +169,21 @@
     gap: 6px;
     flex-wrap: wrap;
   }
+
+  &-page-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+  }
+
+  &-page-jump-input {
+    width: 64px;
+  }
+}
+
+.images__pagesize {
+  width: 64px;
 }
 
 .images__page-btn {
