@@ -9,7 +9,7 @@ import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
-import { Field, Input } from '../components/Form';
+import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
@@ -92,10 +92,14 @@ export default function VolumesPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   // 搜索关键字（按名称/挂载点本地过滤）
   const [keyword, setKeyword] = useState('');
-  // 分页：每页显示的数据卷条数
-  const PAGE_SIZE = 15;
+  /** 分页每页条数可选值 */
+  const PAGE_SIZE_OPTIONS = [15, 30, 50];
   // 当前页码（从 1 开始）
   const [page, setPage] = useState(1);
+  // 每页条数（可在运行时切换）
+  const [pageSize, setPageSize] = useState(15);
+  // 分页跳转：输入的目标页码
+  const [pageJump, setPageJump] = useState('');
   // 待查看详情的卷（用于打开详情弹窗）
   const [detailTarget, setDetailTarget] = useState<VolumeItem | null>(null);
   // 卷 inspect 详情（弹窗内拉取）
@@ -243,18 +247,37 @@ export default function VolumesPage() {
   }, [volumes, keyword]);
 
   /** 总页数（至少 1 页） */
-  const totalPages = Math.max(1, Math.ceil(filteredVolumes.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredVolumes.length / pageSize));
 
   /** 当前页码：当分页组合变化导致页码越界时，回退到最大有效页 */
   const safePage = Math.min(page, Math.max(1, totalPages));
 
+  /** 切换每页条数：回到第一页并清空跳转输入 */
+  function changePageSize(size: number) {
+    setPageSize(size);
+    setPage(1);
+    setPageJump('');
+  }
+
+  /** 跳转到指定页码（限制在有效范围内） */
+  function handlePageJump() {
+    const n = parseInt(pageJump, 10);
+    if (isNaN(n)) {
+      setPageJump('');
+      return;
+    }
+    const target = Math.min(Math.max(1, n), totalPages);
+    setPage(target);
+    setPageJump('');
+  }
+
   /** 当前页起始序号（用于"第 x-y 条"展示，空列表时为 0） */
-  const pageStart = filteredVolumes.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const pageStart = filteredVolumes.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
   /** 当前页结束序号 */
-  const pageEnd = Math.min(safePage * PAGE_SIZE, filteredVolumes.length);
+  const pageEnd = Math.min(safePage * pageSize, filteredVolumes.length);
 
   /** 当前页要展示的数据卷 */
-  const pageItems = filteredVolumes.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageItems = filteredVolumes.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <div className="page">
@@ -346,9 +369,26 @@ export default function VolumesPage() {
 
             {/* 分页控件 */}
             <div className="volumes__pagination">
-              <span className="volumes__pagination-info">
-                共 {filteredVolumes.length} 条，当前第 {pageStart}-{pageEnd} 条
-              </span>
+              <div className="volumes__pagination-left">
+                <span className="volumes__pagination-size">
+                  每页
+                  <Select
+                    className="volumes__pagesize"
+                    value={String(pageSize)}
+                    onChange={(e) => changePageSize(Number(e.target.value))}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((s) => (
+                      <option key={s} value={String(s)}>
+                        {s}
+                      </option>
+                    ))}
+                  </Select>
+                  条
+                </span>
+                <span className="volumes__pagination-info">
+                  共 {filteredVolumes.length} 条，当前第 {pageStart}-{pageEnd} 条
+                </span>
+              </div>
               <div className="volumes__pagination-controls">
                 <button
                   className="volumes__page-btn"
@@ -373,6 +413,23 @@ export default function VolumesPage() {
                 >
                   下一页
                 </button>
+                <span className="volumes__page-jump">
+                  <Input
+                    className="volumes__page-jump-input"
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    placeholder="页码"
+                    value={pageJump}
+                    onChange={(e) => setPageJump(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handlePageJump();
+                    }}
+                  />
+                  <Button variant="ghost" size="sm" onClick={handlePageJump}>
+                    跳转
+                  </Button>
+                </span>
               </div>
             </div>
           </>
