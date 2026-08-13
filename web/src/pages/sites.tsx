@@ -57,6 +57,8 @@ export default function SitesPage() {
 
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(false);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [applying, setApplying] = useState(false);
 
   // 新增/编辑弹窗
@@ -93,7 +95,9 @@ export default function SitesPage() {
     try {
       const data = await get<SitesResponse>('/api/sites');
       setSites(data?.sites || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '加载站点失败');
       showToast(e?.message || '加载站点失败', 'error');
     } finally {
       setLoading(false);
@@ -300,6 +304,17 @@ export default function SitesPage() {
       <Card>
         {loading ? (
           <SkeletonRows rows={4} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="加载站点失败"
+            description={loadError || '请稍后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={load}>
+                重试
+              </Button>
+            }
+          />
         ) : sites.length === 0 ? (
           <Empty title="暂无站点" description="新增一个反向代理站点，将域名代理到指定的上游地址与端口。" />
         ) : (
