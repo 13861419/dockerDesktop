@@ -91,6 +91,8 @@ export default function OperationLogsPage() {
   const [endTime, setEndTime] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  // 分页跳转：输入的目标页码
+  const [pageJump, setPageJump] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -126,6 +128,17 @@ export default function OperationLogsPage() {
   const changePageSize = (n: number) => {
     setPageSize(n);
     setPage(1);
+  };
+
+  const handleJump = () => {
+    const n = parseInt(pageJump, 10);
+    if (isNaN(n)) {
+      setPageJump('');
+      return;
+    }
+    const target = Math.min(Math.max(1, n), totalPages);
+    setPage(target);
+    setPageJump('');
   };
 
   const changeType = (v: string) => {
@@ -349,6 +362,23 @@ export default function OperationLogsPage() {
                 >
                   下一页
                 </button>
+                <span className="logs__page-jump">
+                  <input
+                    className="logs__page-jump-input"
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    placeholder="页码"
+                    value={pageJump}
+                    onChange={(e) => setPageJump(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleJump();
+                    }}
+                  />
+                  <Button variant="ghost" size="sm" onClick={handleJump}>
+                    跳转
+                  </Button>
+                </span>
               </div>
             </div>
           </>
