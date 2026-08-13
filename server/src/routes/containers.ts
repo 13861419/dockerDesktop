@@ -519,12 +519,26 @@ router.get(
  * @param tty 容器是否为 TTY 模式
  * @returns 拼接后的纯文本日志
  */
+/**
+ * ANSI 转义序列正则（SGR 颜色 / 样式码等，用于彩色日志输出）
+ */
+const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+
+/**
+ * 剥离 ANSI 转义序列，返回纯文本（避免容器彩色日志在面板中显示为乱码）
+ * @param s 原始字符串
+ * @returns 去除 ANSI 控制序列后的纯文本
+ */
+function stripAnsi(s: string): string {
+  return String(s).replace(ANSI_RE, '');
+}
+
 function demuxBufferToText(buf: Buffer | any, tty = false): string {
   if (!buf || buf.length === 0) return '';
   const buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
   // TTY：纯字节流，直接 UTF-8 解码
   if (tty) {
-    return new StringDecoder('utf8').write(buffer);
+    return stripAnsi(new StringDecoder('utf8').write(buffer));
   }
   // 非 TTY：解析多路复用帧
   const decoder = new StringDecoder('utf8');
@@ -537,7 +551,7 @@ function demuxBufferToText(buf: Buffer | any, tty = false): string {
     offset += 8 + payloadLen;
   }
   result += decoder.end();
-  return result;
+  return stripAnsi(result);
 }
 
 /**
@@ -672,7 +686,7 @@ router.get(
 
     demuxLogStream(stream, tty, (text, streamType) => {
       if (res.writableEnded) return;
-      writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: text + '\n' });
+      writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: stripAnsi(text) + '\n' });
     });
 
     stream.on('end', cleanup);
@@ -724,7 +738,7 @@ function sendInitialLines(res: Response, initial: Buffer, tty: boolean) {
   if (tail) lines.push([0, tail]);
   for (const [streamType, payload] of lines) {
     if (res.writableEnded) break;
-    if (payload) writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: payload });
+    if (payload) writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: stripAnsi(payload) });
   }
 }
 
