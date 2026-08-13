@@ -129,7 +129,16 @@
   }
 
   .col-actions {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--bg-surface);
     text-align: right;
+    box-shadow: -6px 0 8px -6px var(--actions-shadow, rgba(31, 35, 51, 0.18));
+  }
+
+  tbody tr:hover .col-actions {
+    background: var(--primary-soft, #f5f5ff);
   }
 
   .col-select {
