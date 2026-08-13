@@ -347,7 +347,7 @@ export default function OverviewPage() {
                     </div>
                     <div className="monitor__disk-bar">
                       <div
-                        className={`monitor__disk-bar__fill ${d.percent >= 90 ? 'is-danger' : d.percent >= 75 ? 'is-warn' : ''}`}
+                        className={`monitor__disk-bar__fill ${gaugeTone(d.percent)}`}
                         style={{ width: `${Math.min(100, d.percent)}%` }}
                       />
                     </div>
