@@ -9,7 +9,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { get, del, post } from '../api/client';
+import { get, del, post, download } from '../api/client';
 import { ContainerDetailInfo, ContainerStats } from '../types';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -268,31 +268,20 @@ export default function ContainerDetailPage() {
   }, [id, start, clear]);
 
   /**
-   * 下载当前已接收的日志文本为 .log 文件
-   *
-   * 日志 Tab 使用 SSE 实时流，本函数将已缓冲的日志行（lines）拼接成纯文本，
-   * 转为 Blob 后用 <a download> 触发浏览器下载，无需后端接口。
-   * 文件名形如 <容器名>.log。
+   * 下载容器的完整日志文件（调用后端 /logs/download，返回完整日志而非当前缓冲）
    */
-  const handleDownloadLogs = useCallback(() => {
-    // 将已缓冲的日志行文本拼接（SSE 末尾自带换行，无需额外补全）
-    const text = lines.map((l) => l.text).join('');
-    if (!text.trim()) {
-      showToast('当前没有可下载的日志内容', 'error');
-      return;
+  const handleDownloadLogs = useCallback(async () => {
+    if (!id) return;
+    try {
+      await download(
+        `/api/containers/${encodeURIComponent(id)}/logs/download`,
+        `${detail?.name || id || 'container'}.log`
+      );
+      showToast('已下载完整日志');
+    } catch (e: any) {
+      showToast(e?.message || '下载日志失败', 'error');
     }
-    // 生成 Blob 并创建临时下载链接
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${detail?.name || id || 'container'}.log`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('已下载当前日志');
-  }, [lines, detail?.name, id, showToast]);
+  }, [id, detail?.name, showToast]);
 
   /**
    * 日志区自动滚动到底部（仅开启时生效）
