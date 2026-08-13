@@ -43,6 +43,8 @@ export default function EnginesPage() {
 
   const [engines, setEngines] = useState<Engine[]>([]);
   const [loading, setLoading] = useState(false);
+  // 列表加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   // 新增/编辑弹窗
@@ -65,7 +67,9 @@ export default function EnginesPage() {
     try {
       const data = await get<EnginesResponse>('/api/engines');
       setEngines(data?.engines || []);
+      setLoadError('');
     } catch (e: any) {
+      setLoadError(e?.message || '加载引擎失败');
       showToast(e?.message || '加载引擎失败', 'error');
     } finally {
       setLoading(false);
@@ -183,6 +187,17 @@ export default function EnginesPage() {
       <Card>
         {loading ? (
           <SkeletonRows rows={4} />
+        ) : loadError ? (
+          <Empty
+            kind="error"
+            title="加载引擎失败"
+            description={loadError || '请稍后重试'}
+            action={
+              <Button variant="secondary" size="sm" onClick={load}>
+                重试
+              </Button>
+            }
+          />
         ) : engines.length === 0 ? (
           <Empty title="尚未配置引擎" description="当前使用本机自动探测的默认 Docker 引擎。可新增引擎进行多引擎管理。" />
         ) : (

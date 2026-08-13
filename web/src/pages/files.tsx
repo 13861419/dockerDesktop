@@ -467,10 +467,25 @@ export default function FilesPage() {
 
             {loading ? (
               <SkeletonRows rows={6} />
+            ) : errorMsg ? (
+              <Empty
+                kind="error"
+                title="加载失败"
+                description={errorMsg}
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => loadFiles(selectedId, currentPath())}
+                  >
+                    重试
+                  </Button>
+                }
+              />
             ) : items.length === 0 ? (
               <Empty
-                title={errorMsg ? '加载失败' : '目录为空'}
-                description={errorMsg || '该目录下暂无文件，可点击上方「上传」或「新建目录」'}
+                title="目录为空"
+                description="该目录下暂无文件，可点击上方「上传」或「新建目录」"
               />
             ) : (
               <div className="data-table-wrap">
