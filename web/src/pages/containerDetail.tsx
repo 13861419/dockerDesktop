@@ -99,6 +99,10 @@ export default function ContainerDetailPage() {
   const [rebuilding, setRebuilding] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [starting, setStarting] = useState(false);
+  // 停止 / 暂停 / 恢复处理中状态
+  const [stopping, setStopping] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [unpausing, setUnpausing] = useState(false);
   // 环境变量编辑弹窗状态
   const [envEditOpen, setEnvEditOpen] = useState(false);
   // 编辑中的环境变量（支持修改键名/值、删除、新增）
@@ -367,6 +371,51 @@ export default function ContainerDetailPage() {
       showToast(`启动失败：${e?.message || '未知错误'}`, 'error');
     } finally {
       setStarting(false);
+    }
+  }
+
+  /** 停止容器 */
+  async function handleStop() {
+    if (!id) return;
+    setStopping(true);
+    try {
+      await post(`/api/containers/${id}/stop`);
+      showToast('容器已停止');
+      fetchDetail();
+    } catch (e: any) {
+      showToast(`停止失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  /** 暂停容器 */
+  async function handlePause() {
+    if (!id) return;
+    setPausing(true);
+    try {
+      await post(`/api/containers/${id}/pause`);
+      showToast('容器已暂停');
+      fetchDetail();
+    } catch (e: any) {
+      showToast(`暂停失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setPausing(false);
+    }
+  }
+
+  /** 恢复暂停的容器 */
+  async function handleUnpause() {
+    if (!id) return;
+    setUnpausing(true);
+    try {
+      await post(`/api/containers/${id}/unpause`);
+      showToast('容器已恢复');
+      fetchDetail();
+    } catch (e: any) {
+      showToast(`恢复失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setUnpausing(false);
     }
   }
 
@@ -929,6 +978,10 @@ export default function ContainerDetailPage() {
 
   /** 运行状态判断 */
   const running = detail?.state === 'running';
+  /** 是否为暂停状态 */
+  const paused = detail?.state === 'paused';
+  /** 是否已退出（停止） */
+  const exited = detail?.state === 'exited';
 
   /** 资源监控网格数值 */
   const cpuValue = stats ? stats.cpuPercent.toFixed(1) + '%' : '-';
@@ -952,6 +1005,26 @@ export default function ContainerDetailPage() {
           {running && (
             <Button variant="secondary" size="sm" loading={restarting} onClick={handleRestart}>
               重启
+            </Button>
+          )}
+          {running && (
+            <Button variant="secondary" size="sm" loading={stopping} onClick={handleStop}>
+              停止
+            </Button>
+          )}
+          {running && (
+            <Button variant="secondary" size="sm" loading={pausing} onClick={handlePause}>
+              暂停
+            </Button>
+          )}
+          {paused && (
+            <Button variant="secondary" size="sm" loading={unpausing} onClick={handleUnpause}>
+              恢复
+            </Button>
+          )}
+          {exited && (
+            <Button variant="secondary" size="sm" loading={starting} onClick={handleStart}>
+              启动
             </Button>
           )}
           <Button variant="secondary" size="sm" onClick={openClone}>
