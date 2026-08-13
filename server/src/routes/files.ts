@@ -272,80 +272,75 @@ function parseTarStream(
      * 从当前缓冲中循环解析完整的 tar 块序列
      */
     const tryParse = (): void => {
-      // 至少要有 1024 字节的结尾块（两个 512 空块）才判定归档结束
-      if (buf.length >= 1024) {
-        // 检查两个连续的零块（tar 归档结束标记）
-        const isEnd = buf.length >= 2 * TAR_BLOCK_SIZE &&
-          buf.subarray(0, 2 * TAR_BLOCK_SIZE).every((b) => b === 0);
-        if (isEnd) {
-          // 忽略结尾零块，维持已解析出的条目
-          return;
+      while (buf.length >= TAR_BLOCK_SIZE) {
+        // 至少要有 1024 字节的结尾块（两个 512 空块）才判定归档结束
+        if (buf.length >= 1024) {
+          // 检查两个连续的零块（tar 归档结束标记）
+          const isEnd =
+            buf.length >= 2 * TAR_BLOCK_SIZE &&
+            buf.subarray(0, 2 * TAR_BLOCK_SIZE).every((b) => b === 0);
+          if (isEnd) {
+            // 忽略结尾零块，维持已解析出的条目
+            break;
+          }
         }
+
+        // 读取头部字段
+        const headerBuf = buf.subarray(0, TAR_BLOCK_SIZE);
+        const name = readStr(headerBuf, 0, 100).replace(/^\.\//, '').replace(/^\//, '');
+        const size = readOctal(headerBuf, 124, 12);
+        const mode = readOctal(headerBuf, 100, 8);
+        const mtime = readOctal(headerBuf, 136, 12);
+        // 类型标志：第 156 字节（'5' 表示目录，'0'/0 表示普通文件，'L' 是 GNU 长文件名扩展头）
+        const typeFlag = headerBuf[156] || 0;
+
+        // 处理 GNU 长文件名扩展头（typeflag='L'）：后面 size 字节存的是真正的文件路径
+        if (String.fromCharCode(typeFlag) === 'L') {
+          if (buf.length < TAR_BLOCK_SIZE + size) break;
+          // 该扩展头的内容为下一块头部的文件名
+          const longName = buf
+            .subarray(TAR_BLOCK_SIZE, TAR_BLOCK_SIZE + size)
+            .toString('utf8')
+            .replace(/\0+$/, '');
+          // 跳过本块头 + 内容 + 对齐填充，继续解析后续实际头部
+          const skipBlocks = Math.ceil((size + TAR_BLOCK_SIZE) / TAR_BLOCK_SIZE);
+          if (buf.length < TAR_BLOCK_SIZE * (skipBlocks + 1)) break;
+          buf = buf.subarray(TAR_BLOCK_SIZE * skipBlocks);
+          // 将长名写回读到的下一个头部
+          const nextHeader = buf.subarray(0, TAR_BLOCK_SIZE);
+          nextHeader.write(longName, 0, Math.min(longName.length, 100), 'utf8');
+          continue;
+        }
+
+        const isDir = typeFlag === 5 || /\/$/.test(name);
+
+        // 文件内容紧随头部之后，按 size 对齐到 512 的整数倍
+        const dataLen = TAR_BLOCK_SIZE + size;
+        if (buf.length < dataLen) break;
+
+        const fileData = buf.subarray(TAR_BLOCK_SIZE, TAR_BLOCK_SIZE + size);
+
+        const entryName = name;
+        const hasContent = size > 0;
+
+        entries.push({
+          name: entryName,
+          type: isDir ? 'dir' : 'file',
+          size,
+          mode: mode.toString(8),
+          mtime: mtime * 1000, // tar 中 mtime 为秒，转为毫秒
+        });
+
+        // 若请求了指定路径，且当前条目名与之匹配（支持 "./path" 相对形式），取出内容
+        if (only && hasContent && (entryName === only || './' + entryName === only)) {
+          content = Buffer.from(fileData);
+        }
+
+        // 计算下一个头部偏移（跳过头部 + 内容 + 对齐填充块）
+        const aligned = TAR_BLOCK_SIZE * Math.ceil(size / TAR_BLOCK_SIZE);
+        buf = buf.subarray(TAR_BLOCK_SIZE + aligned);
+        raw = raw.subarray(TAR_BLOCK_SIZE + aligned);
       }
-
-      // 单文件 tar：第一块即为头部，头部文件名字段为空则视为结束
-      if (buf.length < TAR_BLOCK_SIZE) return;
-
-      // 读取头部字段
-      const headerBuf = buf.subarray(0, TAR_BLOCK_SIZE);
-      const name = readStr(headerBuf, 0, 100).replace(/^\.\//, '').replace(/^\//, '');
-      const size = readOctal(headerBuf, 124, 12);
-      const mode = readOctal(headerBuf, 100, 8);
-      const mtime = readOctal(headerBuf, 136, 12);
-      // 类型标志：第 156 字节（'5' 表示目录，'0'/0 表示普通文件，'L' 是 GNU 长文件名扩展头）
-      const typeFlag = headerBuf[156] || 0;
-
-      // 处理 GNU 长文件名扩展头（typeflag='L'）：后面 size 字节存的是真正的文件路径
-      if (String.fromCharCode(typeFlag) === 'L') {
-        if (buf.length < TAR_BLOCK_SIZE + size) return;
-        // 该扩展头的内容为下一块头部的文件名
-        const longName = buf.subarray(TAR_BLOCK_SIZE, TAR_BLOCK_SIZE + size).toString('utf8').replace(/\0+$/, '');
-        // 跳过本块头 + 内容 + 对齐填充，继续解析后续实际头部
-        const skipBlocks = Math.ceil((size + TAR_BLOCK_SIZE) / TAR_BLOCK_SIZE);
-        if (buf.length < TAR_BLOCK_SIZE * (skipBlocks + 1)) return;
-        buf = buf.subarray(TAR_BLOCK_SIZE * skipBlocks);
-        // 将长名写回读到的下一个头部
-        const nextHeader = buf.subarray(0, TAR_BLOCK_SIZE);
-        buf = Buffer.concat([nextHeader, buf.subarray(TAR_BLOCK_SIZE)]);
-        nextHeader.write(longName, 0, Math.min(longName.length, 100), 'utf8');
-        // 重新进入循环解析下一个头部
-        tryParse();
-        return;
-      }
-
-      const isDir = typeFlag === 5 || /\/$/.test(name);
-
-      // 文件内容紧随头部之后，按 size 对齐到 512 的整数倍
-      const dataLen = TAR_BLOCK_SIZE + size;
-      if (buf.length < dataLen) return;
-
-      const fileData = buf.subarray(TAR_BLOCK_SIZE, TAR_BLOCK_SIZE + size);
-
-      const entryName = only
-        ? name  // 单文件模式：getArchive 返回的 tar 中名字通常是该文件名本身
-        : name;
-      const hasContent = size > 0;
-
-      entries.push({
-        name: entryName,
-        type: isDir ? 'dir' : 'file',
-        size,
-        mode: mode.toString(8),
-        mtime: mtime * 1000, // tar 中 mtime 为秒，转为毫秒
-      });
-
-      // 若请求了指定路径，且当前条目名与之匹配（支持 "./path" 相对形式），取出内容
-      if (only && hasContent && (entryName === only || './' + entryName === only)) {
-        content = Buffer.from(fileData);
-      }
-
-      // 计算下一个头部偏移（跳过头部 + 内容 + 对齐填充块）
-      const aligned = TAR_BLOCK_SIZE * Math.ceil(size / TAR_BLOCK_SIZE);
-      buf = buf.subarray(TAR_BLOCK_SIZE + aligned);
-      raw = raw.subarray(TAR_BLOCK_SIZE + aligned);
-
-      // 继续解析后续块
-      tryParse();
     };
 
     stream.on('data', (chunk: Buffer | string) => {
