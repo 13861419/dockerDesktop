@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { parseStats } from '../docker/stats';
 import Dockerode from 'dockerode';
+import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
 
 const router = Router();
@@ -68,37 +69,85 @@ function buildMainPort(ports: Dockerode.PortMap | undefined): string {
  * @param stream dockerode 返回的日志流
  * @param onLine 每行内容回调 (text, streamType)
  */
-function demuxLogStream(stream: NodeJS.ReadableStream, onLine: (text: string, streamType: number) => void): void {
-  let buffer = Buffer.alloc(0);
-
-  const tryParse = () => {
-    while (buffer.length >= 8) {
-      const streamType = buffer[0];
-      const payloadLen = buffer.readUInt32BE(4);
-      if (buffer.length < 8 + payloadLen) break;
-      const payload = buffer.subarray(8, 8 + payloadLen).toString('utf8');
-      buffer = buffer.subarray(8 + payloadLen);
-      // 按行拆解（保留换行）
-      let last = 0;
-      for (let i = 0; i <= payload.length; i++) {
-        if (i === payload.length || payload[i] === '\n') {
-          if (i > last) {
-            onLine(payload.slice(last, i), streamType);
-          }
-          last = i + 1;
+/**
+ * 行拆分器：跨多次 push 拼接尚未换行的残余内容（用于流式日志按行分发）
+ */
+function createLineSplitter(onLine: (line: string, streamType: number) => void) {
+  let pending = '';
+  let pendingType = 0;
+  return {
+    push(text: string, streamType: number) {
+      pendingType = streamType;
+      const combined = pending + text;
+      let start = 0;
+      for (let i = 0; i < combined.length; i++) {
+        if (combined[i] === '\n') {
+          const line = combined.slice(start, i);
+          if (line) onLine(line, pendingType);
+          start = i + 1;
         }
       }
-    }
+      pending = combined.slice(start);
+    },
+    end() {
+      if (pending) onLine(pending, pendingType);
+      pending = '';
+    },
   };
+}
 
-  stream.on('data', (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    tryParse();
-  });
-
-  stream.on('error', () => {
-    buffer = Buffer.alloc(0);
-  });
+/**
+ * 解复用容器日志流（SSE 实时日志用）
+ *
+ * 根据容器 TTY 配置自适应：
+ *  - TTY：日志为纯字节流，StringDecoder 直接 UTF-8 解码后按行分发；
+ *  - 非 TTY：解析 8 字节帧头，取出各帧载荷后同样按行分发。
+ * streamType: 1=stdout(0 兼容), 2=stderr。
+ * @param stream dockerode 日志流
+ * @param tty 容器是否为 TTY 模式
+ * @param onLine 每行回调
+ */
+function demuxLogStream(
+  stream: NodeJS.ReadableStream,
+  tty: boolean,
+  onLine: (text: string, streamType: number) => void
+): void {
+  const splitter = createLineSplitter(onLine);
+  if (tty) {
+    // TTY：纯字节流，UTF-8 解码后按行分发（TTY 下 stdout/stderr 合并，type 取 0）
+    const decoder = new StringDecoder('utf8');
+    stream.on('data', (chunk: Buffer) => splitter.push(decoder.write(chunk), 0));
+    stream.on('error', () => splitter.end());
+    stream.on('end', () => {
+      splitter.push(decoder.end(), 0);
+      splitter.end();
+    });
+  } else {
+    // 非 TTY：解析 8 字节帧头
+    let buffer = Buffer.alloc(0);
+    const decoder = new StringDecoder('utf8');
+    const tryParse = () => {
+      while (buffer.length >= 8) {
+        const streamType = buffer[0];
+        const payloadLen = buffer.readUInt32BE(4);
+        if (buffer.length < 8 + payloadLen) break;
+        splitter.push(decoder.write(buffer.subarray(8, 8 + payloadLen)), streamType);
+        buffer = buffer.subarray(8 + payloadLen);
+      }
+    };
+    stream.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      tryParse();
+    });
+    stream.on('error', () => {
+      buffer = Buffer.alloc(0);
+      splitter.end();
+    });
+    stream.on('end', () => {
+      splitter.push(decoder.end(), 0);
+      splitter.end();
+    });
+  }
 }
 
 /** SSE 保活心跳间隔（毫秒） */
@@ -446,27 +495,48 @@ router.get(
       logsOpts.until = until;
     }
     const logs = await container.logs(logsOpts);
-    // 解析多路复用帧，返回纯文本日志
-    const text = demuxBufferToText(logs);
+    // 解析日志（按容器 TTY 配置区分纯流 / 多路复用帧），返回纯文本日志
+    let tty = false;
+    try {
+      tty = !!(await container.inspect()).Config?.Tty;
+    } catch {
+      tty = false;
+    }
+    const text = demuxBufferToText(logs, tty);
     res.json({ logs: text });
   }),
 );
 
 /**
- * 将多路复用日志缓冲解析为纯文本（去除 8 字节帧头）
- * @param buf 原始多路复用缓冲
+ * 将容器日志缓冲解析为纯文本。
+ *
+ * Docker 日志存在两种格式，需按容器 TTY 配置区分：
+ *  - TTY 容器（创建默认即 TTY）：日志为纯字节流，无帧头，直接按 UTF-8 解码；
+ *  - 非 TTY 容器：8 字节帧头（streamType + payloadLen）的多路复用格式。
+ *
+ * 解析均使用 StringDecoder，避免 UTF-8 多字节字符在帧/块边界被截断导致乱码。
+ * @param buf 原始日志缓冲
+ * @param tty 容器是否为 TTY 模式
  * @returns 拼接后的纯文本日志
  */
-function demuxBufferToText(buf: Buffer | any): string {
+function demuxBufferToText(buf: Buffer | any, tty = false): string {
   if (!buf || buf.length === 0) return '';
-  let buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
-  let result = '';
-  while (buffer.length >= 8) {
-    const payloadLen = buffer.readUInt32BE(4);
-    if (buffer.length < 8 + payloadLen) break;
-    result += buffer.subarray(8, 8 + payloadLen).toString('utf8');
-    buffer = buffer.subarray(8 + payloadLen);
+  const buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
+  // TTY：纯字节流，直接 UTF-8 解码
+  if (tty) {
+    return new StringDecoder('utf8').write(buffer);
   }
+  // 非 TTY：解析多路复用帧
+  const decoder = new StringDecoder('utf8');
+  let result = '';
+  let offset = 0;
+  while (buffer.length - offset >= 8) {
+    const payloadLen = buffer.readUInt32BE(offset + 4);
+    if (buffer.length - offset < 8 + payloadLen) break;
+    result += decoder.write(buffer.subarray(offset + 8, offset + 8 + payloadLen));
+    offset += 8 + payloadLen;
+  }
+  result += decoder.end();
   return result;
 }
 
@@ -490,8 +560,8 @@ router.get(
       follow: false,
       timestamps: false,
     });
-    // 解析多路复用帧，得到纯文本
-    const text = demuxBufferToText(logs);
+    // 解析日志（按容器 TTY 配置区分纯流 / 多路复用帧），得到纯文本
+    const text = demuxBufferToText(logs, !!info.Config?.Tty);
     // 设置附件下载响应头并写入日志内容
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
@@ -523,6 +593,15 @@ router.get(
       'X-Accel-Buffering': 'no',
     });
 
+    // 先探测容器 TTY 配置（决定日志是纯流还是多路复用帧）与运行状态
+    let inspectInfo: any = null;
+    try {
+      inspectInfo = await container.inspect();
+    } catch {
+      inspectInfo = null;
+    }
+    const tty = !!inspectInfo?.Config?.Tty;
+
     // 先取历史日志（尾部）
     let initial: any = Buffer.alloc(0);
     try {
@@ -531,7 +610,7 @@ router.get(
       initial = Buffer.alloc(0);
     }
     // flush 初始历史日志
-    sendInitialLines(res, initial);
+    sendInitialLines(res, initial, tty);
 
     if (!follow) {
       res.end();
@@ -571,7 +650,7 @@ router.get(
     // 而是明确告知前端"容器已停止"，避免前端无限重连
     let running = false;
     try {
-      running = !!(await container.inspect()).State?.Running;
+      running = !!inspectInfo?.State?.Running;
     } catch {
       running = false;
     }
@@ -591,7 +670,7 @@ router.get(
       return;
     }
 
-    demuxLogStream(stream, (text, streamType) => {
+    demuxLogStream(stream, tty, (text, streamType) => {
       if (res.writableEnded) return;
       writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: text + '\n' });
     });
@@ -620,23 +699,32 @@ router.get(
  * @param res Express 响应
  * @param initial 原始多路复用日志缓冲
  */
-function sendInitialLines(res: Response, initial: Buffer) {
+function sendInitialLines(res: Response, initial: Buffer, tty: boolean) {
+  if (tty) {
+    // TTY：纯字节流，整段作为 stdout 输出（保留换行，由前端渲染）
+    const text = new StringDecoder('utf8').write(initial);
+    if (text && !res.writableEnded) writeEvent(res, { type: 'stdout', text });
+    return;
+  }
   let buffer = initial;
+  const decoder = new StringDecoder('utf8');
   const lines: Array<[number, string]> = [];
   const tryParse = () => {
     while (buffer.length >= 8) {
       const streamType = buffer[0];
       const payloadLen = buffer.readUInt32BE(4);
       if (buffer.length < 8 + payloadLen) break;
-      const payload = buffer.subarray(8, 8 + payloadLen).toString('utf8');
+      const payload = decoder.write(buffer.subarray(8, 8 + payloadLen));
       buffer = buffer.subarray(8 + payloadLen);
       lines.push([streamType, payload]);
     }
   };
   tryParse();
+  const tail = decoder.end();
+  if (tail) lines.push([0, tail]);
   for (const [streamType, payload] of lines) {
     if (res.writableEnded) break;
-    writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: payload });
+    if (payload) writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: payload });
   }
 }
 
