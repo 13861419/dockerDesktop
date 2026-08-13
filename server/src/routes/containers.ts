@@ -741,6 +741,15 @@ router.get(
             })),
           }
         : null,
+      // 健康检查配置（供编辑弹窗预填；纳秒转毫秒便于输入）
+      healthcheck: inspect.Config?.Healthcheck
+        ? {
+            test: inspect.Config.Healthcheck.Test || [],
+            interval: Math.round((inspect.Config.Healthcheck.Interval || 0) / 1e6),
+            timeout: Math.round((inspect.Config.Healthcheck.Timeout || 0) / 1e6),
+            retries: inspect.Config.Healthcheck.Retries ?? 0,
+          }
+        : null,
     });
   }),
 );
@@ -990,6 +999,20 @@ router.post(
         ? req.body.privileged
         : !!inspect.HostConfig?.Privileged;
 
+    // 可选：健康检查配置覆盖（interval/timeout 单位 ms，转纳秒；Test=['NONE'] 表示禁用）
+    let desiredHealthcheck: Dockerode.HealthConfig | undefined =
+      inspect.Config?.Healthcheck || undefined;
+    if (typeof req.body?.healthcheck === 'object' && req.body.healthcheck) {
+      const hc = req.body.healthcheck;
+      const test = Array.isArray(hc.test) ? hc.test : [];
+      desiredHealthcheck = {
+        Test: test.length ? test : ['NONE'],
+        Interval: (Number(hc.interval) || 0) * 1e6,
+        Timeout: (Number(hc.timeout) || 0) * 1e6,
+        Retries: Number(hc.retries) || 0,
+      };
+    }
+
     // 复用原容器的各项配置（镜像可被 desiredImage 替换）
     const createOpts: Dockerode.ContainerCreateOptions = {
       Image: desiredImage || inspect.Config?.Image || '',
@@ -1000,6 +1023,7 @@ router.post(
       Hostname: inspect.Config?.Hostname || undefined,
       Env: newEnv,
       Labels: inspect.Config?.Labels || {},
+      Healthcheck: desiredHealthcheck,
       ExposedPorts: exposedPorts,
       HostConfig: {
         Binds: desiredBinds.length ? desiredBinds : inspect.HostConfig?.Binds || undefined,

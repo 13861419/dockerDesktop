@@ -253,7 +253,22 @@ export interface ContainerDetailInfo {
   ports: ContainerDetailPort[];
   hostname: string;
   health: ContainerHealth | null;
+  /** 健康检查配置（test 数组 / interval / timeout / retries，单位 ms；test=['NONE'] 表示禁用） */
+  healthcheck: ContainerHealthcheckConfig | null;
 }
+
+/** 容器健康检查配置 */
+export interface ContainerHealthcheckConfig {
+  /** 检测命令数组，如 ['CMD','curl','-f','http://localhost']；['NONE'] 表示禁用 */
+  test: string[];
+  /** 检测间隔（毫秒） */
+  interval: number;
+  /** 超时（毫秒） */
+  timeout: number;
+  /** 失败重试次数 */
+  retries: number;
+}
+
 /** 应用商店应用定义（/api/appstore 返回的应用目录字段） */
 export interface AppStoreApp {
   /** 应用唯一 id */

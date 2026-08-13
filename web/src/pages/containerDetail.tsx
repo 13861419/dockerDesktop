@@ -152,6 +152,14 @@ export default function ContainerDetailPage() {
   const [uCpu, setUCpu] = useState('');
   const [uMem, setUMem] = useState('');
   const [updating, setUpdating] = useState(false);
+  // 健康检查编辑弹窗状态
+  const [hcEditOpen, setHcEditOpen] = useState(false);
+  const [hcEnabled, setHcEnabled] = useState(true);
+  const [hcTestCmd, setHcTestCmd] = useState('');
+  const [hcInterval, setHcInterval] = useState(30);
+  const [hcTimeout, setHcTimeout] = useState(5);
+  const [hcRetries, setHcRetries] = useState(3);
+  const [hcSaving, setHcSaving] = useState(false);
 
   // 历史日志查看（按时间范围分页拉取）状态
   const [histOpen, setHistOpen] = useState(false);
@@ -846,6 +854,62 @@ export default function ContainerDetailPage() {
     }
   }
 
+  /** 打开健康检查编辑弹窗，以当前配置预填 */
+  function openHealthEdit() {
+    const hc = detail?.healthcheck;
+    const has = !!hc && !!hc.test && hc.test.length > 0 && hc.test[0] !== 'NONE';
+    setHcEnabled(has);
+    if (hc && hc.test && hc.test.length > 0) {
+      // test 形如 ['CMD','curl','-f','http://...']，去掉 CMD 前缀后以空格连接
+      const parts = hc.test[0] === 'CMD' ? hc.test.slice(1) : hc.test;
+      setHcTestCmd(parts.join(' '));
+    } else {
+      setHcTestCmd('');
+    }
+    setHcInterval(hc?.interval || 30);
+    setHcTimeout(hc?.timeout || 5);
+    setHcRetries(hc?.retries || 3);
+    setHcEditOpen(true);
+  }
+
+  /** 保存健康检查配置（通过重建容器生效；一并保留现有环境变量） */
+  async function saveHealth() {
+    if (!id) return;
+    setHcSaving(true);
+    try {
+      let healthcheck: any;
+      if (hcEnabled) {
+        const parts = hcTestCmd.trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) {
+          showToast('请填写健康检查命令', 'error');
+          setHcSaving(false);
+          return;
+        }
+        healthcheck = {
+          test: ['CMD', ...parts],
+          interval: hcInterval || 0,
+          timeout: hcTimeout || 0,
+          retries: hcRetries || 0,
+        };
+      } else {
+        // 禁用健康检查
+        healthcheck = { test: ['NONE'], interval: 0, timeout: 0, retries: 0 };
+      }
+      // 通过重建容器套用健康检查（其余配置由后端从原容器保留）
+      await post(`/api/containers/${id}/recreate`, {
+        env: detail?.env || {},
+        healthcheck,
+      });
+      showToast('健康检查已更新（容器已重建）');
+      setHcEditOpen(false);
+      fetchDetail();
+    } catch (e: any) {
+      showToast(e?.message || '更新健康检查失败', 'error');
+    } finally {
+      setHcSaving(false);
+    }
+  }
+
   /** 提交为镜像（确认后调用后端接口） */
   async function submitCommit() {
     if (!id) return;
@@ -1327,34 +1391,58 @@ export default function ContainerDetailPage() {
               </Card>
 
               {/* 健康检查 */}
-              {detail.health && (
-                <Card title="健康检查">
-                  <div className="desc-grid">
-                    <div className="desc-item">
-                      <div className="desc-label">状态</div>
-                      <div className="desc-value">
-                        <StatusBadge status={detail.health.status} />
+              <Card
+                title="健康检查"
+                extra={
+                  <Button variant="secondary" size="sm" onClick={openHealthEdit}>
+                    {detail.healthcheck &&
+                    detail.healthcheck.test &&
+                    detail.healthcheck.test.length > 0 &&
+                    detail.healthcheck.test[0] !== 'NONE'
+                      ? '编辑'
+                      : '设置'}
+                  </Button>
+                }
+              >
+                {detail.health ? (
+                  <>
+                    <div className="desc-grid">
+                      <div className="desc-item">
+                        <div className="desc-label">状态</div>
+                        <div className="desc-value">
+                          <StatusBadge status={detail.health.status} />
+                        </div>
+                      </div>
+                      <div className="desc-item">
+                        <div className="desc-label">连续失败次数</div>
+                        <div className="desc-value">{detail.health.failingStreak ?? 0}</div>
                       </div>
                     </div>
-                    <div className="desc-item">
-                      <div className="desc-label">连续失败次数</div>
-                      <div className="desc-value">{detail.health.failingStreak ?? 0}</div>
-                    </div>
-                  </div>
-                  {detail.health.log && detail.health.log.length > 0 && (
-                    <div className="kv-scroll health-log">
-                      {detail.health.log.map((l, i) => (
-                        <div key={i} className="health-log__item">
-                          <div className="health-log__meta mono">
-                            {formatTime(l.start)} · exit {l.exit}
+                    {detail.health.log && detail.health.log.length > 0 && (
+                      <div className="kv-scroll health-log">
+                        {detail.health.log.map((l, i) => (
+                          <div key={i} className="health-log__item">
+                            <div className="health-log__meta mono">
+                              {formatTime(l.start)} · exit {l.exit}
+                            </div>
+                            <pre className="health-log__output">{l.output || '(空输出)'}</pre>
                           </div>
-                          <pre className="health-log__output">{l.output || '(空输出)'}</pre>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              )}
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="desc-value">
+                    容器未配置健康检查
+                    {detail.healthcheck &&
+                    detail.healthcheck.test &&
+                    detail.healthcheck.test[0] === 'NONE'
+                      ? '（已禁用）'
+                      : ''}
+                    。点击右上角「设置」可为容器添加健康检查。
+                  </div>
+                )}
+              </Card>
             </div>
           )}
 
@@ -1966,6 +2054,73 @@ export default function ContainerDetailPage() {
             onChange={(e) => setUMem(e.target.value)}
           />
         </Field>
+      </Modal>
+
+      {/* 健康检查编辑弹窗（通过重建容器生效） */}
+      <Modal
+        open={hcEditOpen}
+        title="健康检查"
+        onClose={() => !hcSaving && setHcEditOpen(false)}
+        width={520}
+        footer={
+          <div className="env-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setHcEditOpen(false)} disabled={hcSaving}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={hcSaving} onClick={saveHealth}>
+              保存并重建
+            </Button>
+          </div>
+        }
+      >
+        <div className="env-modal__tip">
+          修改健康检查需重新创建容器（其余配置保留）。重建会导致容器短暂中断，容器 ID 会改变。
+        </div>
+        <Field label="启用健康检查">
+          <label className="cfg-modal__priv">
+            <input
+              type="checkbox"
+              checked={hcEnabled}
+              onChange={(e) => setHcEnabled(e.target.checked)}
+            />
+            启用（监测容器运行状况并在详情页展示）
+          </label>
+        </Field>
+        {hcEnabled && (
+          <>
+            <Field label="检测命令" required>
+              <Input
+                placeholder="如 curl -f http://localhost 或 node /app/health.js"
+                value={hcTestCmd}
+                onChange={(e) => setHcTestCmd(e.target.value)}
+              />
+            </Field>
+            <Field label="检测间隔（秒）">
+              <Input
+                type="number"
+                min={1}
+                value={String(hcInterval)}
+                onChange={(e) => setHcInterval(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="超时（秒）">
+              <Input
+                type="number"
+                min={1}
+                value={String(hcTimeout)}
+                onChange={(e) => setHcTimeout(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="重试次数">
+              <Input
+                type="number"
+                min={1}
+                value={String(hcRetries)}
+                onChange={(e) => setHcRetries(Number(e.target.value))}
+              />
+            </Field>
+          </>
+        )}
       </Modal>
     </div>
   );
