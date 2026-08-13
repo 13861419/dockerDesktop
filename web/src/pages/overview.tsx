@@ -223,16 +223,19 @@ export default function OverviewPage() {
       label: 'CPU',
       value: now ? formatPercent(now.cpu.percent) : '--',
       extra: now ? `${now.cpu.cores} 核` : '',
+      percent: now ? now.cpu.percent : undefined,
     },
     {
       label: '内存',
       value: now ? formatPercent(now.mem.percent) : '--',
       extra: now ? `${formatGB(now.mem.used)} / ${formatGB(now.mem.total)}` : '',
+      percent: now ? now.mem.percent : undefined,
     },
     {
       label: '磁盘',
       value: now ? formatPercent(now.disk.percent) : '--',
       extra: now ? `${formatGB(now.disk.used)} / ${formatGB(now.disk.total)}` : '',
+      percent: now ? now.disk.percent : undefined,
     },
     {
       label: '容器',
@@ -245,6 +248,17 @@ export default function OverviewPage() {
       extra: '镜像数量',
     },
   ];
+
+  /**
+   * 根据占用率返回进度条配色：>90 红、>70 橙、其余绿
+   * @param pct 占用百分比
+   * @returns 样式类别
+   */
+  function gaugeTone(pct: number): string {
+    if (pct > 90) return 'ov-monitor__fill--high';
+    if (pct > 70) return 'ov-monitor__fill--warn';
+    return 'ov-monitor__fill--ok';
+  }
 
   return (
     <div className="overview-page">
@@ -283,13 +297,26 @@ export default function OverviewPage() {
       <div className="overview__monitor">
         <Card title="资源监控">
           <div className="monitor__now">
-            {monitorCards.map((m) => (
-              <div key={m.label} className="monitor__now-item">
-                <div className="monitor__now-label">{m.label}</div>
-                <div className="monitor__now-value">{m.value}</div>
-                <div className="monitor__now-extra">{m.extra}</div>
-              </div>
-            ))}
+            {monitorCards.map((m) => {
+              const pct = (m as { percent?: number }).percent;
+              return (
+                <div key={m.label} className="monitor__now-item">
+                  <div className="monitor__now-label">{m.label}</div>
+                  <div className="monitor__now-value">{m.value}</div>
+                  {pct !== undefined && (
+                    <div className="ov-monitor__bar">
+                      <span className="ov-monitor__bar-fillwrap">
+                        <span
+                          className={`ov-monitor__bar-fill ${gaugeTone(pct)}`}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </span>
+                    </div>
+                  )}
+                  <div className="monitor__now-extra">{m.extra}</div>
+                </div>
+              );
+            })}
           </div>
           <div className="monitor__charts">
             <div className="monitor__chart">
