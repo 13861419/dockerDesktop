@@ -255,6 +255,17 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/sites',
+    label: '站点反代',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M9 3h6l1 5H8z" />
+        <path d="M8 8c0 4 2 7 4 9 2-2 4-5 4-9M8 8h8" />
+        <path d="M12 17V3" />
+      </svg>
+    ),
+  },
 ];
 
 /**

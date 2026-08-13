@@ -190,6 +190,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/sites"
+                element={
+                  <PageSuspense>
+                    <SitesPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
                 path="/tasks"
                 element={
                   <PageSuspense>
