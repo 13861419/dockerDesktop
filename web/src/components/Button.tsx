@@ -30,6 +30,7 @@ export default function Button({
       className={`btn btn--${variant} btn--${size} ${className || ''}`}
       disabled={disabled || loading}
       {...rest}
+      aria-busy={loading || undefined}
     >
       {loading && <span className="btn__spinner" aria-hidden="true" />}
       {children}

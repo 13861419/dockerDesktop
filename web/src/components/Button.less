@@ -20,6 +20,17 @@
   cursor: not-allowed;
 }
 
+/* 键盘聚焦焦点环 */
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 按下态视觉反馈 */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 .btn--sm {
   height: 28px;
   padding: 0 12px;

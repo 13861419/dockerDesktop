@@ -258,3 +258,21 @@ textarea {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 键盘导航统一焦点环（浅色 / 深色通用）
+ * 仅当通过键盘 Tab 聚焦时显示，鼠标点击不显示，避免视觉噪音。
+ */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 表单输入(.input)已自带 focus 边框+柔和光圈，避免重复叠加；
+ * 其余原生输入控件用 box-shadow 环替代 outline，保证键盘可达且更柔和。
+ */
+input:focus-visible:not(.input),
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary-border);
+}
