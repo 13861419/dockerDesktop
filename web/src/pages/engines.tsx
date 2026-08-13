@@ -260,17 +260,26 @@ export default function EnginesPage() {
           </div>
         }
       >
-        <Field label="引擎名称" required>
-          <Input value={name} placeholder="如：服务器B" onChange={(e) => setName(e.target.value)} />
-          {errors.name && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.name}</div>}
+        <Field label="引擎名称" required error={errors.name}>
+          <Input
+            value={name}
+            error={!!errors.name}
+            placeholder="如：服务器B"
+            onChange={(e) => setName(e.target.value)}
+          />
         </Field>
-        <Field label="端点地址" required hint="npipe:////./pipe/dockerDesktopLinuxEngine · tcp://host:2375 · unix:///var/run/docker.sock">
+        <Field
+          label="端点地址"
+          required
+          error={errors.endpoint}
+          hint="npipe:////./pipe/dockerDesktopLinuxEngine · tcp://host:2375 · unix:///var/run/docker.sock"
+        >
           <Input
             value={endpoint}
+            error={!!errors.endpoint}
             placeholder="tcp://192.168.1.10:2375"
             onChange={(e) => setEndpoint(e.target.value)}
           />
-          {errors.endpoint && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.endpoint}</div>}
         </Field>
       </Modal>
 
