@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get, post, del } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { ContainerListItem, ContainerPortConflicts, ImageItem } from '../types';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -84,6 +85,7 @@ const RESTART_OPTIONS: Array<{ value: string; label: string }> = [
 export default function ContainersPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const canDelete = isAdmin();
   const [list, setList] = useState<ContainerListItem[]>([]);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
   const [loadError, setLoadError] = useState('');
@@ -573,6 +575,11 @@ export default function ContainersPage() {
 
   /** 删除容器（确认后执行） */
   async function confirmDelete() {
+    if (!canDelete) {
+      showToast('仅管理员可删除容器', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     if (!deleteTarget) return;
     setDeleting(true);
     try {
@@ -637,6 +644,11 @@ export default function ContainersPage() {
    */
   async function confirmBatch() {
     if (!batchAction || selectedIds.length === 0) return;
+    if (batchAction === 'delete' && !canDelete) {
+      showToast('仅管理员可批量删除容器', 'error');
+      setBatchAction(null);
+      return;
+    }
     setBatchLoading(true);
     let success = 0;
     let fail = 0;
@@ -1068,7 +1080,7 @@ export default function ContainersPage() {
               <Button variant="secondary" size="sm" onClick={() => setBatchAction('restart')}>
                 批量重启
               </Button>
-              <Button variant="danger" size="sm" onClick={() => setBatchAction('delete')}>
+              <Button variant="danger" size="sm" onClick={() => setBatchAction('delete')} disabled={!canDelete}>
                 批量删除
               </Button>
             </div>
@@ -1246,6 +1258,7 @@ export default function ContainersPage() {
                               variant="danger"
                               size="sm"
                               onClick={() => setDeleteTarget({ id: c.Id, name })}
+                              disabled={!canDelete}
                             >
                               删除
                             </Button>

@@ -8,13 +8,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Outlet } from 'react-router-dom';
 import { get, ApiError } from '../api/client';
-import { getToken, clearToken } from '../api/auth';
+import { getToken, clearToken, setRole, type UserRole } from '../api/auth';
 import { PageLoading } from './Loading';
 
 /** 校验通过后返回的用户信息 */
 interface MeResult {
   authenticated: boolean;
   username?: string;
+  role?: UserRole;
 }
 
 /**
@@ -39,7 +40,8 @@ export default function RequireAuth() {
       }
       try {
         // 带 token 调用后端校验接口
-        await get<MeResult>('/api/auth/me');
+        const me = await get<MeResult>('/api/auth/me');
+        setRole(me.role || 'user');
         if (!cancelled) {
           setChecking(false);
         }

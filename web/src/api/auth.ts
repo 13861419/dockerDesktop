@@ -7,6 +7,12 @@
 /** token 在 localStorage 中使用的存储 key */
 const TOKEN_KEY = 'docker_manager_token';
 
+/** 用户角色在 localStorage 中使用的存储 key */
+const ROLE_KEY = 'docker_manager_role';
+
+/** 前端识别的用户角色 */
+export type UserRole = 'admin' | 'user';
+
 /**
  * 读取本地存储的 token
  * @returns 当前 token，若未登录则为 null
@@ -24,8 +30,33 @@ export function setToken(token: string): void {
 }
 
 /**
+ * 读取本地存储的用户角色
+ * @returns 当前用户角色，未缓存时按普通用户处理
+ */
+export function getRole(): UserRole {
+  return localStorage.getItem(ROLE_KEY) === 'admin' ? 'admin' : 'user';
+}
+
+/**
+ * 写入用户角色到本地存储
+ * @param role 登录接口或会话校验接口返回的用户角色
+ */
+export function setRole(role: UserRole): void {
+  localStorage.setItem(ROLE_KEY, role);
+}
+
+/**
+ * 判断当前本地缓存用户是否为管理员
+ * @returns true 表示当前用户是 admin 角色
+ */
+export function isAdmin(): boolean {
+  return getRole() === 'admin';
+}
+
+/**
  * 清除本地存储的 token（退出登录时调用）
  */
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ROLE_KEY);
 }

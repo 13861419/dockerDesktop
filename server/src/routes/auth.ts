@@ -13,6 +13,7 @@ import {
   getSessionUsername,
 } from '../auth';
 import { isLocked, getLockRemaining, registerFailure, resetFailures } from '../loginProtection';
+import { getUserRole } from '../users';
 
 const router = Router();
 
@@ -66,7 +67,7 @@ router.post(
     // 登录成功，清除失败记录
     resetFailures(user);
     const token = createSession(user);
-    res.json({ token, username: user, mustChangePassword: auth.mustChangePassword });
+    res.json({ token, username: user, role: getUserRole(user), mustChangePassword: auth.mustChangePassword });
   }),
 );
 
@@ -95,7 +96,7 @@ router.get(
       return res.status(401).json({ error: '未登录或会话已过期' });
     }
     const username = getSessionUsername(token) || 'admin';
-    res.json({ authenticated: true, username });
+    res.json({ authenticated: true, username, role: getUserRole(username) });
   }),
 );
 

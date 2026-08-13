@@ -11,7 +11,7 @@ import { Field, Input } from '../components/Form';
 import { useToast } from '../components/Toast';
 import { useTheme } from '../hooks/useTheme';
 import { get, post, del, download } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, setRole, type UserRole } from '../api/auth';
 import './settings.less';
 
 interface UserItem {
@@ -37,6 +37,11 @@ interface SettingsInfo {
   port: number;
   version: string;
   engine: EngineInfo | null;
+}
+
+interface CurrentUserInfo {
+  username: string;
+  role?: UserRole;
 }
 
 /** 字节转可读文本 */
@@ -71,6 +76,7 @@ export default function SettingsPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [settings, setSettings] = useState<SettingsInfo | null>(null);
   const [currentUser, setCurrentUser] = useState('');
+  const [currentRole, setCurrentRole] = useState<UserRole>('user');
   const [loading, setLoading] = useState(true);
 
   // 新增用户表单
@@ -92,11 +98,14 @@ export default function SettingsPage() {
       const [u, s, me] = await Promise.all([
         get<UserItem[]>('/api/system/users'),
         get<SettingsInfo>('/api/system/settings'),
-        get<{ username: string }>('/api/auth/me'),
+        get<CurrentUserInfo>('/api/auth/me'),
       ]);
+      const role = me.role || 'user';
       setUsers(u || []);
       setSettings(s);
-      setCurrentUser(me?.username || '');
+      setCurrentUser(me.username || '');
+      setCurrentRole(role);
+      setRole(role);
     } catch (e: any) {
       showToast(e?.message || '加载设置失败', 'error');
     } finally {
@@ -112,6 +121,10 @@ export default function SettingsPage() {
    * 新增用户
    */
   async function handleCreateUser() {
+    if (currentRole !== 'admin') {
+      showToast('仅管理员可创建用户', 'error');
+      return;
+    }
     if (!newUsername.trim()) {
       showToast('请输入用户名', 'error');
       return;
@@ -139,6 +152,10 @@ export default function SettingsPage() {
    * @param username 用户名
    */
   async function handleDeleteUser(username: string) {
+    if (currentRole !== 'admin') {
+      showToast('仅管理员可删除用户', 'error');
+      return;
+    }
     if (username === currentUser) {
       showToast('不能删除当前登录用户', 'error');
       return;
@@ -170,6 +187,10 @@ export default function SettingsPage() {
   const [restoreInput, setRestoreInput] = useState<HTMLInputElement | null>(null);
   const [restoring, setRestoring] = useState(false);
   async function handleRestoreFile(file: File) {
+    if (currentRole !== 'admin') {
+      showToast('仅管理员可恢复数据', 'error');
+      return;
+    }
     if (!file) return;
     const confirmed = window.confirm(
       `确定要使用 "${file.name}" 恢复数据吗？\n将覆盖当前全部用户与面板数据，此操作不可撤销。`,
@@ -350,10 +371,11 @@ export default function SettingsPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="至少 6 位"
+                disabled={currentRole !== 'admin'}
               />
             </Field>
             <Field label="角色">
-              <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value as 'admin' | 'user')}>
+              <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value as 'admin' | 'user')} disabled={currentRole !== 'admin'}>
                 <option value="user">普通用户</option>
                 <option value="admin">管理员</option>
               </select>
@@ -422,7 +444,7 @@ export default function SettingsPage() {
               从备份文件恢复面板数据。注意：恢复会覆盖当前全部数据，且需刷新页面后生效。
             </p>
             <div className="settings-backup__actions">
-              <Button variant="danger" size="sm" loading={restoring} onClick={() => restoreInput?.click()}>
+              <Button variant="danger" size="sm" loading={restoring} onClick={() => restoreInput?.click()} disabled={currentRole !== 'admin'}>
                 {restoring ? '恢复中…' : '选择备份文件并恢复'}
               </Button>
               <input

@@ -13,6 +13,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, del, download } from '../api/client';
+import { isAdmin } from '../api/auth';
 import './operationLogs.less';
 
 /** 每页显示条数的可选值 */
@@ -78,6 +79,7 @@ function formatTime(ms: number): string {
 
 export default function OperationLogsPage() {
   const { showToast } = useToast();
+  const canClear = isAdmin();
 
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -157,6 +159,11 @@ export default function OperationLogsPage() {
   };
 
   const handleClear = async () => {
+    if (!canClear) {
+      showToast('仅管理员可清空操作日志', 'error');
+      setConfirmClear(false);
+      return;
+    }
     setClearing(true);
     try {
       await del('/api/operation-logs');
@@ -272,7 +279,7 @@ export default function OperationLogsPage() {
             <Button variant="secondary" size="sm" onClick={handleExport} disabled={total === 0 || exporting}>
               {exporting ? '导出中...' : '导出 CSV'}
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmClear(true)} disabled={total === 0}>
+            <Button variant="danger" size="sm" onClick={() => setConfirmClear(true)} disabled={total === 0 || !canClear}>
               清空
             </Button>
           </div>

@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { post } from '../api/client';
-import { setToken } from '../api/auth';
+import { setRole, setToken, type UserRole } from '../api/auth';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Field, Input } from '../components/Form';
@@ -18,6 +18,7 @@ import './login.less';
 interface LoginResult {
   token: string;
   username: string;
+  role?: UserRole;
   mustChangePassword?: boolean;
 }
 
@@ -46,6 +47,7 @@ export default function LoginPage() {
     try {
       const res = await post<LoginResult>('/api/auth/login', { username, password });
       setToken(res.token);
+      setRole(res.role || 'user');
       // 强制改密：首次使用默认密码需先修改密码
       if (res.mustChangePassword) {
         showToast('请先修改默认密码', 'info');

@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { get, post, del } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -40,6 +41,7 @@ interface FormError {
  */
 export default function EnginesPage() {
   const { showToast } = useToast();
+  const canManage = isAdmin();
 
   const [engines, setEngines] = useState<Engine[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,6 +86,10 @@ export default function EnginesPage() {
    * 打开新增弹窗
    */
   const openCreate = useCallback(() => {
+    if (!canManage) {
+      showToast('仅管理员可新增引擎', 'error');
+      return;
+    }
     setEditing(null);
     setName('');
     setEndpoint('');
@@ -96,12 +102,16 @@ export default function EnginesPage() {
    * @param engine 待编辑引擎
    */
   const openEdit = useCallback((engine: Engine) => {
+    if (!canManage) {
+      showToast('仅管理员可编辑引擎', 'error');
+      return;
+    }
     setEditing(engine);
     setName(engine.name);
     setEndpoint(engine.endpoint);
     setErrors({});
     setModalOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 校验并提交表单（新增或编辑）
@@ -132,7 +142,7 @@ export default function EnginesPage() {
     } finally {
       setSaving(false);
     }
-  }, [editing, name, endpoint, load, showToast]);
+  }, [canManage, editing, name, endpoint, load, showToast]);
 
   /**
    * 切换当前引擎
@@ -140,6 +150,10 @@ export default function EnginesPage() {
    */
   const handleSwitch = useCallback(
     async (engine: Engine) => {
+      if (!canManage) {
+        showToast('仅管理员可切换引擎', 'error');
+        return;
+      }
       setSwitchingId(engine.id);
       try {
         await post(`/api/engines/${engine.id}/switch`);
@@ -158,6 +172,10 @@ export default function EnginesPage() {
    * 删除引擎
    */
   const handleDelete = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可删除引擎', 'error');
+      return;
+    }
     if (!deleteTarget) return;
     setDeleting(true);
     try {
@@ -170,7 +188,7 @@ export default function EnginesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, load, showToast]);
+  }, [canManage, deleteTarget, load, showToast]);
 
   return (
     <div className="page">
@@ -232,8 +250,8 @@ export default function EnginesPage() {
                           设为当前
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(e)}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(e)}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(e)} disabled={!canManage}>编辑</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(e)} disabled={!canManage}>删除</Button>
                     </div>
                   </td>
                 </tr>
@@ -266,6 +284,7 @@ export default function EnginesPage() {
             error={!!errors.name}
             placeholder="如：服务器B"
             onChange={(e) => setName(e.target.value)}
+            disabled={!canManage}
           />
         </Field>
         <Field
@@ -279,6 +298,7 @@ export default function EnginesPage() {
             error={!!errors.endpoint}
             placeholder="tcp://192.168.1.10:2375"
             onChange={(e) => setEndpoint(e.target.value)}
+            disabled={!canManage}
           />
         </Field>
       </Modal>
