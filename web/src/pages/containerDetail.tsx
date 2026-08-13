@@ -142,6 +142,12 @@ export default function ContainerDetailPage() {
   const [executing, setExecuting] = useState(false);
   // 宿主机端口占用冲突映射（key 为宿主端口，值为占用该端口的其他容器）
   const [portConflicts, setPortConflicts] = useState<ContainerPortConflicts>({});
+  // 在线更新配置（重启策略 / 资源限制，免重建，对应 docker update）弹窗状态
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [uRestart, setURestart] = useState('no');
+  const [uCpu, setUCpu] = useState('');
+  const [uMem, setUMem] = useState('');
+  const [updating, setUpdating] = useState(false);
 
   // 历史日志查看（按时间范围分页拉取）状态
   const [histOpen, setHistOpen] = useState(false);
@@ -757,6 +763,51 @@ export default function ContainerDetailPage() {
     setCommitOpen(true);
   }
 
+  /** 打开在线更新弹窗，以当前重启策略 / 资源限制预填（免重建） */
+  function openUpdate() {
+    setURestart(detail?.restartPolicy || 'no');
+    // cpuLimit 为 NanoCpus（纳核），转为核数供输入
+    setUCpu(detail?.cpuLimit ? String((detail.cpuLimit / 1e9).toFixed(3)) : '');
+    // memLimit 为字节，转为 GB 供输入
+    setUMem(detail?.memLimit ? String((detail.memLimit / 1024 / 1024 / 1024).toFixed(2)) : '');
+    setUpdateOpen(true);
+  }
+
+  /** 在线更新容器配置：提交重启策略与资源限制（对应 docker update，免重建） */
+  async function saveUpdate() {
+    if (!id) return;
+    const body: Record<string, unknown> = { restartPolicy: uRestart };
+    // CPU：留空表示不修改；填数字则转为纳核
+    if (uCpu.trim() !== '') {
+      const cpus = parseFloat(uCpu);
+      if (isNaN(cpus) || cpus < 0) {
+        showToast('请输入有效的 CPU 核数（如 1 或 1.5）', 'error');
+        return;
+      }
+      body.cpuLimit = Math.round(cpus * 1e9);
+    }
+    // 内存：留空表示不修改；填数字则转为字节
+    if (uMem.trim() !== '') {
+      const gb = parseFloat(uMem);
+      if (isNaN(gb) || gb < 0) {
+        showToast('请输入有效的内存大小（GB，如 2）', 'error');
+        return;
+      }
+      body.memLimit = Math.round(gb * 1024 * 1024 * 1024);
+    }
+    setUpdating(true);
+    try {
+      await post(`/api/containers/${id}/update`, body);
+      showToast('容器配置已在线更新');
+      setUpdateOpen(false);
+      fetchDetail();
+    } catch (e: any) {
+      showToast(e?.message || '更新失败', 'error');
+    } finally {
+      setUpdating(false);
+    }
+  }
+
   /** 提交为镜像（确认后调用后端接口） */
   async function submitCommit() {
     if (!id) return;
@@ -914,6 +965,9 @@ export default function ContainerDetailPage() {
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setRebuildOpen(true)}>
             重建
+          </Button>
+          <Button variant="secondary" size="sm" onClick={openUpdate} disabled={!detail}>
+            更新配置
           </Button>
           <Button variant="secondary" size="sm" onClick={exportConfig}>
             导出配置
@@ -1799,6 +1853,56 @@ export default function ContainerDetailPage() {
             />
             以特权模式运行（授予容器更多 host 权限）
           </label>
+        </Field>
+      </Modal>
+
+      {/* 更新配置弹窗（重启策略 / 资源限制，免重建，对应 docker update） */}
+      <Modal
+        open={updateOpen}
+        title="更新配置"
+        onClose={() => !updating && setUpdateOpen(false)}
+        width={520}
+        footer={
+          <div className="env-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setUpdateOpen(false)} disabled={updating}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={updating} onClick={saveUpdate}>
+              保存
+            </Button>
+          </div>
+        }
+      >
+        <div className="env-modal__tip">
+          在线更新无需重建容器，不中断运行、不改变容器 ID。留空的字段将保持现状。
+        </div>
+        <Field label="重启策略" required>
+          <Select value={uRestart} onChange={(e) => setURestart(e.target.value)}>
+            <option value="no">no（不自动重启）</option>
+            <option value="always">always（总是重启）</option>
+            <option value="on-failure">on-failure（失败时重启）</option>
+            <option value="unless-stopped">unless-stopped（除非停止，否则重启）</option>
+          </Select>
+        </Field>
+        <Field label="CPU 限制（核数，留空不修改；填 0 取消限制）">
+          <Input
+            type="number"
+            min={0}
+            step="0.1"
+            placeholder="如 1 或 1.5"
+            value={uCpu}
+            onChange={(e) => setUCpu(e.target.value)}
+          />
+        </Field>
+        <Field label="内存限制（GB，留空不修改；填 0 取消限制）">
+          <Input
+            type="number"
+            min={0}
+            step="0.5"
+            placeholder="如 2"
+            value={uMem}
+            onChange={(e) => setUMem(e.target.value)}
+          />
         </Field>
       </Modal>
     </div>

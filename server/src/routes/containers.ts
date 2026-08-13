@@ -719,6 +719,9 @@ router.get(
       restartPolicy: inspect.HostConfig?.RestartPolicy?.Name || 'no',
       autoRemove: !!inspect.HostConfig?.AutoRemove,
       privileged: !!inspect.HostConfig?.Privileged,
+      // 资源限制（用于在线更新弹窗预填）
+      cpuLimit: inspect.HostConfig?.NanoCpus || 0,
+      memLimit: inspect.HostConfig?.Memory || 0,
       // 资源
       env,
       labels: inspect.Config?.Labels || {},
@@ -1041,6 +1044,79 @@ router.post(
       }
       throw err;
     }
+  }),
+);
+
+// ============ 容器在线更新（docker update） ============
+
+/**
+ * POST /api/containers/:id/update
+ * 在线更新运行中容器的资源限制与重启策略（对应 docker update，无需重建、不改变容器 ID）。
+ * 仅覆盖请求中显式提供的字段，未提供的保持现状。
+ * body: {
+ *   restartPolicy?: string  'no'|'always'|'on-failure'|'unless-stopped'
+ *   maxRetry?: number       重启策略最大重试次数（仅 on-failure 有效）
+ *   memLimit?: number       内存上限（字节；传 0/空 表示取消）
+ *   memReservation?: number 内存预留（字节）
+ *   cpuLimit?: number       CPU 限制（NanoCpus 纳核，例如 1.5 核 = 1.5e9）
+ *   cpuShares?: number      CPU 权重
+ *   cpusetCpus?: string     允许使用的 CPU 集，形如 "0-1"
+ * }
+ */
+router.post(
+  '/:id/update',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const b = req.body || {};
+    const inspect = await container.inspect();
+    const name = (inspect.Name || '').replace(/^\//, '');
+
+    // 以当前 HostConfig 为基线，避免把未提供的字段清空
+    const hc: any = { ...(inspect.HostConfig || {}) };
+
+    // 重启策略
+    if (typeof b.restartPolicy === 'string' && b.restartPolicy) {
+      hc.RestartPolicy = { Name: b.restartPolicy, MaximumRetryCount: Number(b.maxRetry) || 0 };
+    }
+
+    // 内存相关：显式传 memLimit 才更新；同时按 docker 默认 swap=2x 内存同步 MemorySwap，避免 EINVAL
+    if (b.memLimit !== undefined && b.memLimit !== null && b.memLimit !== '') {
+      const mem = Number(b.memLimit) || 0;
+      hc.Memory = mem > 0 ? mem : 0;
+      if (b.memSwap === undefined || b.memSwap === null || b.memSwap === '') {
+        hc.MemorySwap = mem > 0 ? mem * 2 : 0;
+      }
+    }
+    if (b.memSwap !== undefined && b.memSwap !== null && b.memSwap !== '') {
+      hc.MemorySwap = Number(b.memSwap) || 0;
+    }
+    if (b.memReservation !== undefined && b.memReservation !== null && b.memReservation !== '') {
+      hc.MemoryReservation = Number(b.memReservation) || 0;
+    }
+
+    // CPU 相关
+    if (b.cpuLimit !== undefined && b.cpuLimit !== null && b.cpuLimit !== '') {
+      const ncpus = Number(b.cpuLimit) || 0;
+      if (ncpus > 0) {
+        hc.NanoCpus = ncpus;
+        delete hc.CpuQuota;
+      } else {
+        hc.NanoCpus = 0;
+      }
+    }
+    if (b.cpuShares !== undefined && b.cpuShares !== null && b.cpuShares !== '') {
+      hc.CpuShares = Number(b.cpuShares) || 0;
+    }
+    if (typeof b.cpusetCpus === 'string') {
+      hc.CpusetCpus = b.cpusetCpus.trim() || undefined;
+    }
+
+    // 在线更新（docker update）；失败会抛出，由 asyncHandler 统一处理
+    await container.update(hc);
+    logOperation(res.locals.username, '更新容器配置', 'container', name);
+    const info = await container.inspect();
+    res.json(await formatContainer(container, info));
   }),
 );
 

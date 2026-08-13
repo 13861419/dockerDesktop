@@ -242,6 +242,10 @@ export interface ContainerDetailInfo {
   restartPolicy: string;
   autoRemove: boolean;
   privileged: boolean;
+  /** CPU 限制（NanoCpus 纳核，0 表示不限制） */
+  cpuLimit: number;
+  /** 内存限制（字节，0 表示不限制） */
+  memLimit: number;
   env: Record<string, string>;
   labels: Record<string, string>;
   mounts: ContainerDetailMount[];
@@ -250,7 +254,6 @@ export interface ContainerDetailInfo {
   hostname: string;
   health: ContainerHealth | null;
 }
-
 /** 应用商店应用定义（/api/appstore 返回的应用目录字段） */
 export interface AppStoreApp {
   /** 应用唯一 id */
