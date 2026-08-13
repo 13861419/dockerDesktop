@@ -66,6 +66,8 @@ export default function EventsPage() {
   const [events, setEvents] = useState<DockerEvent[]>([]);
   // 加载状态
   const [loading, setLoading] = useState(true);
+  // 初次加载失败的错误信息（用于展示可重试的错误态）
+  const [loadError, setLoadError] = useState('');
   // WebSocket 连接状态
   const [live, setLive] = useState(false);
   // 类型过滤
@@ -107,8 +109,10 @@ export default function EventsPage() {
       const list = (data?.events || []).slice(0, MAX_EVENTS);
       countRef.current = list.length;
       setEvents(list);
-    } catch {
-      // 失败时保持空列表（WebSocket 仍会推送新事件）
+      setLoadError('');
+    } catch (e: any) {
+      // 失败时保持空列表（WebSocket 仍会推送新事件），并记录错误供错误态展示
+      setLoadError(e?.message || '加载事件失败');
     } finally {
       setLoading(false);
     }
@@ -274,7 +278,20 @@ export default function EventsPage() {
           {loading ? (
             <div className="empty" style={{ padding: '40px 0' }}>加载中...</div>
           ) : filtered.length === 0 ? (
-            <Empty title={events.length === 0 ? '暂无事件' : '无匹配事件'} />
+            events.length === 0 && loadError ? (
+              <Empty
+                kind="error"
+                title="加载事件失败"
+                description={loadError}
+                action={
+                  <Button variant="secondary" size="sm" onClick={loadInitial}>
+                    重试
+                  </Button>
+                }
+              />
+            ) : (
+              <Empty title={events.length === 0 ? '暂无事件' : '无匹配事件'} />
+            )
           ) : (
             <div className="events-list">
               {filtered.map((e, idx) => (
