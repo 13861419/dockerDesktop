@@ -256,6 +256,7 @@ router.get(
  */
 router.get(
   '/users',
+  requireAdmin,
   asyncHandler(async (_req: Request, res: Response) => {
     res.json(listUsers());
   }),
@@ -338,6 +339,7 @@ router.post(
  */
 router.get(
   '/backup',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const backupPath = exportDatabase();
     res.download(backupPath, `docker-manager-backup-${Date.now()}.db`, (err) => {

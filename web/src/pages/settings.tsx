@@ -172,6 +172,10 @@ export default function SettingsPage() {
   // 数据备份：下载 SQLite 数据库文件
   const [backingUp, setBackingUp] = useState(false);
   async function handleBackup() {
+    if (currentRole !== 'admin') {
+      showToast('仅管理员可导出备份', 'error');
+      return;
+    }
     setBackingUp(true);
     try {
       await download('/api/system/backup', 'docker-manager-backup.db');
@@ -431,7 +435,7 @@ export default function SettingsPage() {
               备份面板数据（用户、镜像源、操作日志等），导出为 SQLite 数据库文件。
             </p>
             <div className="settings-backup__actions">
-              <Button variant="primary" size="sm" onClick={handleBackup} loading={backingUp}>
+              <Button variant="primary" size="sm" onClick={handleBackup} loading={backingUp} disabled={currentRole !== 'admin'}>
                 导出备份
               </Button>
             </div>

@@ -203,6 +203,7 @@ function applyCdIfAny(command: string, shell: Shell): string | null {
  */
 router.get(
   '/info',
+  requireAdmin,
   asyncHandler(async (_req: Request, res: Response) => {
     res.json({ cwd: sessionCwd, shell: 'powershell' as Shell, shells: ['powershell', 'cmd'] });
   }),

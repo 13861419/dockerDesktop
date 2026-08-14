@@ -67,6 +67,7 @@ function assertSafePath(p: string): void {
  */
 router.get(
   '/list',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const rawPath = req.query.path ? String(req.query.path) : '';
     let target: string;

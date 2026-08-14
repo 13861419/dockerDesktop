@@ -28,7 +28,7 @@ function boolOrUndefined(v: any): boolean | undefined {
  * GET /api/operation-logs/export
  * 按过滤条件导出操作日志为 CSV（不受分页限制）
  */
-router.get('/export', (req: any, res: any) => {
+router.get('/export', requireAdmin, (req: any, res: any) => {
   try {
     const username = req.query.username ? String(req.query.username) : undefined;
     const targetType = req.query.targetType ? String(req.query.targetType) : undefined;
@@ -51,7 +51,7 @@ router.get('/export', (req: any, res: any) => {
  * GET /api/operation-logs
  * 分页查询操作日志
  */
-router.get('/', (req: any, res: any) => {
+router.get('/', requireAdmin, (req: any, res: any) => {
   try {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 20;
