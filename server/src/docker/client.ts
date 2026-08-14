@@ -82,6 +82,8 @@ async function detectDockerEndpoint(candidates: string[]): Promise<string> {
 
 /** 缓存已探测到的默认端点，避免每次请求都重复探测 */
 let cachedDetectedEndpoint: string | null = null;
+/** 缓存默认引擎（回退分支）的 dockerode 实例，避免 monitor 等高频调用反复 new Dockerode 累积短命对象 */
+let cachedDefaultDocker: Dockerode | null = null;
 
 /**
  * 读取当前生效的 Docker 引擎端点（多引擎模式下）
@@ -116,6 +118,7 @@ export function resetDockerCache(): void {
   cachedDetectedEndpoint = null;
   cachedCurrentKey = '';
   cachedCurrentDocker = null;
+  cachedDefaultDocker = null;
 }
 
 /**
@@ -160,7 +163,12 @@ export async function getDockerClient(): Promise<Dockerode> {
     endpoint = await detectDockerEndpoint(candidates);
     cachedDetectedEndpoint = endpoint;
   }
-  return new Dockerode(resolveEndpoint(endpoint));
+
+  // 复用缓存的默认实例，避免 monitor 等高频调用每次 new Dockerode 累积短命对象
+  if (!cachedDefaultDocker) {
+    cachedDefaultDocker = new Dockerode(resolveEndpoint(endpoint));
+  }
+  return cachedDefaultDocker;
 }
 
 /**
