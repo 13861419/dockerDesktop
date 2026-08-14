@@ -34,6 +34,7 @@ interface MonitorPoint {
   mem: { percent: number; used: number; total: number };
   disk: { percent: number; used: number; total: number };
   disks: DiskPartition[];
+  gpu: Array<{ index: number; name: string; utilization: number; memUsed: number; memTotal: number; temperature: number }>;
   net: { rx: number; tx: number };
   containers: { running: number; total: number };
   images: number;
@@ -215,6 +216,9 @@ export default function OverviewPage() {
   // 各磁盘分区明细（来自实时监控点）
   const diskPartitions = now?.disks || [];
 
+  // NVIDIA GPU 状态（来自实时监控点，无 GPU 时为空数组）
+  const gpus = now?.gpu || [];
+
   // 高占用告警条目（来自实时监控点，无告警时为空数组）
   const alerts = now?.alerts || [];
 
@@ -354,6 +358,40 @@ export default function OverviewPage() {
                     <div className="monitor__disk-meta">
                       <span className="monitor__disk-used">{formatGB(d.used)} / {formatGB(d.total)}</span>
                       <span className="monitor__disk-free">可用 {formatGB(d.free)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* NVIDIA GPU 状态（nvidia-smi 可用时展示） */}
+          {gpus.length > 0 && (
+            <div className="monitor__disks">
+              <div className="monitor__disks-title">GPU</div>
+              <div className="monitor__disks-grid">
+                {gpus.map((g) => (
+                  <div className="monitor__disk" key={g.index}>
+                    <div className="monitor__disk-head">
+                      <span className="monitor__disk-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 9v6l2.5-1.5v-3z" fill="currentColor" stroke="none" />
+                          <rect x="6" y="8" width="16" height="8" rx="1.4" />
+                          <path d="M9 11.5h3M9 13.5h5" />
+                        </svg>
+                      </span>
+                      <span className="monitor__disk-mount">{g.name}</span>
+                      <span className="monitor__disk-percent">{g.utilization}%</span>
+                    </div>
+                    <div className="monitor__disk-bar">
+                      <div
+                        className={`monitor__disk-bar__fill ${gaugeTone(g.utilization)}`}
+                        style={{ width: `${Math.min(100, g.utilization)}%` }}
+                      />
+                    </div>
+                    <div className="monitor__disk-meta">
+                      <span className="monitor__disk-used">显存 {formatGB(g.memUsed * 1024 * 1024)} / {formatGB(g.memTotal * 1024 * 1024)}</span>
+                      <span className="monitor__disk-free">{g.temperature}°C</span>
                     </div>
                   </div>
                 ))}

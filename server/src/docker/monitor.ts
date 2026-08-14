@@ -36,6 +36,33 @@ export interface MonitorAlert {
   message: string;
 }
 
+/** GPU 采集信息（基于 nvidia-smi，若未安装 NVIDIA 驱动则无） */
+export interface GpuInfo {
+  /** GPU 索引 */
+  index: number;
+  /** GPU 名称，如 "NVIDIA GeForce RTX 3060" */
+  name: string;
+  /** 计算利用率（0-100） */
+  utilization: number;
+  /** 已用显存（MiB） */
+  memUsed: number;
+  /** 显存总量（MiB） */
+  memTotal: number;
+  /** 核心温度（摄氏度） */
+  temperature: number;
+}
+
+/**
+ * 告警条目标注
+ * @type 资源类型（cpu / mem / disk）
+ * @level 告警级别（warn 警告 / danger 危险），与 message 文案对应
+ */
+export interface MonitorAlert {
+  type: 'cpu' | 'mem' | 'disk';
+  level: 'warn' | 'danger';
+  message: string;
+}
+
 /** 单个监控数据点 */
 export interface MonitorPoint {
   timestamp: number;
@@ -43,6 +70,7 @@ export interface MonitorPoint {
   mem: { percent: number; used: number; total: number };
   disk: { percent: number; used: number; total: number };
   disks: DiskPartition[];
+  gpu: GpuInfo[];
   net: { rx: number; tx: number }; // 累计字节
   containers: { running: number; total: number };
   images: number;
@@ -222,6 +250,61 @@ async function getDiskUsage(docker: Dockerode): Promise<{ used: number; total: n
   return { used: 0, total: 0 };
 }
 
+/** GPU 采集最小间隔（毫秒），避免频繁调用 nvidia-smi 拖慢采集循环 */
+const GPU_COLLECT_INTERVAL = 5000;
+/** 最近一次 GPU 采集时间戳 */
+let lastGpuAt = 0;
+/** 最近一次 GPU 采集结果缓存 */
+let gpuCache: GpuInfo[] = [];
+
+/**
+ * 采集 NVIDIA GPU 状态（基于 nvidia-smi，零第三方依赖）
+ *
+ * 仅在系统安装了 NVIDIA 驱动（存在 nvidia-smi）时返回数据，否则返回空数组。
+ * 带 5 秒缓存，避免每个采集周期都启动外部进程。
+ * @returns GPU 数组；未检测到或命令失败时返回空数组
+ */
+function collectGpu(): GpuInfo[] {
+  const now = Date.now();
+  if (now - lastGpuAt < GPU_COLLECT_INTERVAL) return gpuCache;
+  lastGpuAt = now;
+  try {
+    const cp = require('child_process') as typeof import('child_process');
+    const out = cp.execSync(
+      'nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits',
+      { encoding: 'utf8' },
+    );
+    const list: GpuInfo[] = [];
+    for (const raw of out.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const parts = line.split(',').map((s) => s.trim());
+      if (parts.length < 6) continue;
+      const index = Number(parts[0]);
+      const name = parts[1];
+      const utilization = Number(parts[2]);
+      const memUsed = Number(parts[3]);
+      const memTotal = Number(parts[4]);
+      const temperature = Number(parts[5]);
+      if (Number.isNaN(index) || !name) continue;
+      list.push({
+        index,
+        name,
+        utilization: Number.isNaN(utilization) ? 0 : utilization,
+        memUsed: Number.isNaN(memUsed) ? 0 : memUsed,
+        memTotal: Number.isNaN(memTotal) ? 0 : memTotal,
+        temperature: Number.isNaN(temperature) ? 0 : temperature,
+      });
+    }
+    gpuCache = list;
+    return list;
+  } catch {
+    // nvidia-smi 不可用（未装 NVIDIA 驱动 / 非 NVIDIA 机器）时静默返回空
+    gpuCache = [];
+    return [];
+  }
+}
+
 /**
  * 根据资源使用率生成告警条目
  * @param type 资源类型
@@ -315,6 +398,7 @@ async function collect() {
         total: diskTotal,
       },
       disks: diskPartitions,
+      gpu: collectGpu(),
       net: { rx: netRx, tx: netTx },
       containers: { running, total: containers.length },
       images: info.Images || 0,
