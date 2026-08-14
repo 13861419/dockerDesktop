@@ -372,6 +372,7 @@ router.post(
  */
 router.post(
   '/:id/rename',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -1261,6 +1262,7 @@ router.post(
  */
 router.post(
   '/:id/clone',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const old = docker.getContainer(req.params.id);

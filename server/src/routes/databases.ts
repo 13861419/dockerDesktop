@@ -550,6 +550,7 @@ router.post(
  */
 router.put(
   '/:id',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);

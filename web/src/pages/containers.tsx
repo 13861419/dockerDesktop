@@ -408,6 +408,10 @@ export default function ContainersPage() {
 
   /** 打开重命名弹窗，以当前名称初始化输入框 */
   function openRename(id: string, name: string) {
+    if (!canDelete) {
+      showToast('仅管理员可重命名容器', 'error');
+      return;
+    }
     setRenameTarget({ id, name });
     setRenameValue(name);
   }
@@ -415,6 +419,11 @@ export default function ContainersPage() {
   /** 执行重命名（确认后调用后端接口） */
   async function confirmRename() {
     if (!renameTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可重命名容器', 'error');
+      setRenameTarget(null);
+      return;
+    }
     const newName = renameValue.trim();
     // 名称必填与未变更校验
     if (!newName) {
@@ -695,6 +704,11 @@ export default function ContainersPage() {
    * 仅清理未使用资源，不会删除任何运行中的容器。
    */
   async function confirmPrune() {
+    if (!canDelete) {
+      showToast('仅管理员可清理未使用资源', 'error');
+      setPruneOpen(false);
+      return;
+    }
     setPruning(true);
     try {
       const res = await post<any>('/api/system/prune', {
@@ -1119,7 +1133,7 @@ export default function ContainersPage() {
           >
             创建容器
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setPruneOpen(true)}>
+          <Button variant="secondary" size="sm" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
             清理未使用
           </Button>
           <Button variant="secondary" size="sm" onClick={() => importFileRef.current?.click()}>
@@ -1255,6 +1269,7 @@ export default function ContainersPage() {
                               variant="secondary"
                               size="sm"
                               onClick={() => openRename(c.Id, name)}
+                              disabled={!canDelete}
                             >
                               重命名
                             </Button>

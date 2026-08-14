@@ -119,6 +119,7 @@ const BUILT_IN_NETWORKS = new Set(['bridge', 'host', 'none']);
  */
 router.post(
   '/prune',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     // 列出全部网络，在代码内判断是否被容器使用（无需依赖无效的 usage filter）

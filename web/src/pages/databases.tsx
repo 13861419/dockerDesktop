@@ -147,9 +147,10 @@ export default function DatabasesPage() {
    */
   const handleSave = useCallback(
     async (target: DatabaseInstance | null, values: InstanceFormValues) => {
-      if (!target && !canManage) {
-        showToast('仅管理员可登记数据库实例', 'error');
+      if (!canManage) {
+        showToast(target ? '仅管理员可编辑数据库实例' : '仅管理员可登记数据库实例', 'error');
         setRegisterOpen(false);
+        setEditTarget(null);
         return;
       }
       setSaving(true);
@@ -291,7 +292,7 @@ export default function DatabasesPage() {
             <Button variant="secondary" size="sm" onClick={() => setDetailTarget(instance)}>
               列库
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setEditTarget(instance)}>
+            <Button variant="ghost" size="sm" onClick={() => setEditTarget(instance)} disabled={!canManage}>
               编辑
             </Button>
             <Button variant="danger" size="sm" onClick={() => setDeleteTarget(instance)} disabled={!canDelete}>
@@ -301,7 +302,7 @@ export default function DatabasesPage() {
         </div>
       );
     },
-    [testingId, handleTest]
+    [testingId, handleTest, canManage]
   );
 
   return (
