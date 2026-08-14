@@ -14,7 +14,7 @@ import { Field, Input, Select } from '../components/Form';
 import { PageLoading, SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import { ImageItem } from '../types';
 import './images.less';
 
@@ -88,6 +88,7 @@ async function downloadImage(name: string): Promise<void> {
 export default function ImagesPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const canDelete = isAdmin();
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -209,6 +210,11 @@ export default function ImagesPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除镜像', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     const name = deleteTarget.RepoTags?.[0] || deleteTarget.Id;
     setDeleting(true);
     try {
@@ -221,7 +227,7 @@ export default function ImagesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, showToast]);
+  }, [canDelete, deleteTarget, showToast]);
 
   /**
    * 执行镜像搜索（调用后端 docker search 接口，引擎侧检索）
@@ -276,6 +282,11 @@ export default function ImagesPage() {
   );
 
   const handlePrune = useCallback(async () => {
+    if (!canDelete) {
+      showToast('仅管理员可清理镜像', 'error');
+      setPruneOpen(false);
+      return;
+    }
     setPruning(true);
     try {
       const res = await post<any>('/api/images/prune');
@@ -288,7 +299,7 @@ export default function ImagesPage() {
     } finally {
       setPruning(false);
     }
-  }, [showToast]);
+  }, [canDelete, showToast]);
 
   /** 返回镜像显示标签（无标签时显示 <none>） */
   const displayName = (img: ImageItem): string => img.RepoTags?.[0] || '<none>';
@@ -527,7 +538,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
               清理未使用镜像
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
@@ -610,7 +621,7 @@ export default function ImagesPage() {
                       <Button variant="ghost" size="sm" onClick={() => openPush(img)}>
                         推送
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)}>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)} disabled={!canDelete}>
                         删除
                       </Button>
                     </div>

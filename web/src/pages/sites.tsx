@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, del } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -53,6 +53,7 @@ interface FormError {
  */
 export default function SitesPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const certInputRef = useRef<HTMLInputElement>(null);
 
   const [sites, setSites] = useState<Site[]>([]);
@@ -194,6 +195,11 @@ export default function SitesPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除站点', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await del(`/api/sites/${deleteTarget.id}`);
@@ -205,7 +211,7 @@ export default function SitesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, load, showToast]);
+  }, [canDelete, deleteTarget, load, showToast]);
 
   /**
    * 启停站点
@@ -349,7 +355,7 @@ export default function SitesPage() {
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openCert(s)}>证书</Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(s)}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(s)} disabled={!canDelete}>删除</Button>
                     </div>
                   </td>
                 </tr>

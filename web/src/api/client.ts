@@ -52,7 +52,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const message = data?.error || data?.message || `请求失败 (${res.status})`;
+    const message = res.status === 403
+      ? '权限不足，仅管理员可执行此操作'
+      : data?.error || data?.message || `请求失败 (${res.status})`;
     throw new ApiError(res.status, message);
   }
   return data as T;
@@ -104,10 +106,10 @@ export const download = async (url: string, fallbackName = 'download.csv') => {
     throw new ApiError(0, '无法连接后端服务，请确认服务已启动');
   }
   if (!res.ok) {
-    let msg = `请求失败 (${res.status})`;
+    let msg = res.status === 403 ? '权限不足，仅管理员可执行此操作' : `请求失败 (${res.status})`;
     try {
       const data = await res.json();
-      msg = data?.error || msg;
+      msg = res.status === 403 ? msg : data?.error || msg;
     } catch {
       // 非 JSON 响应，保留默认错误信息
     }

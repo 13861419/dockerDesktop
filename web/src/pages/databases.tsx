@@ -14,7 +14,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del, ApiError } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import {
   DatabaseInstance,
   DatabaseListResponse,
@@ -82,7 +82,9 @@ async function put<T = any>(url: string, body?: any): Promise<T> {
   }
 
   if (!res.ok) {
-    const message = data?.error || data?.message || `请求失败 (${res.status})`;
+    const message = res.status === 403
+      ? '权限不足，仅管理员可执行此操作'
+      : data?.error || data?.message || `请求失败 (${res.status})`;
     throw new ApiError(res.status, message);
   }
   return data as T;
@@ -93,6 +95,7 @@ async function put<T = any>(url: string, body?: any): Promise<T> {
  */
 export default function DatabasesPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [instances, setInstances] = useState<DatabaseInstance[]>([]);
   const [recognized, setRecognized] = useState<RecognizedContainer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -211,6 +214,11 @@ export default function DatabasesPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除数据库实例', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     const target = deleteTarget;
     setDeleting(true);
     try {
@@ -223,7 +231,7 @@ export default function DatabasesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, showToast]);
+  }, [canDelete, deleteTarget, showToast]);
 
   /**
    * 渲染单张实例卡片
@@ -280,7 +288,7 @@ export default function DatabasesPage() {
             <Button variant="ghost" size="sm" onClick={() => setEditTarget(instance)}>
               编辑
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setDeleteTarget(instance)}>
+            <Button variant="danger" size="sm" onClick={() => setDeleteTarget(instance)} disabled={!canDelete}>
               删除
             </Button>
           </div>
@@ -611,6 +619,7 @@ function DetailModal({
  */
 function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [databases, setDatabases] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   // 新建库弹窗是否打开
@@ -699,6 +708,11 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteDb) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除数据库', 'error');
+      setDeleteDb(null);
+      return;
+    }
     const db = deleteDb;
     setDeleting(true);
     try {
@@ -712,7 +726,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
     } finally {
       setDeleting(false);
     }
-  }, [instance.id, deleteDb, activeDb, showToast, loadDatabases]);
+  }, [canDelete, instance.id, deleteDb, activeDb, showToast, loadDatabases]);
 
   return (
     <div>
@@ -748,6 +762,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
                 variant="ghost"
                 size="sm"
                 onClick={() => setDeleteDb(db)}
+                disabled={!canDelete}
               >
                 删除
               </Button>
@@ -958,6 +973,7 @@ function SqlQueryPanel({
  */
 function RedisPanel({ instance }: { instance: DatabaseInstance }) {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [keys, setKeys] = useState<RedisKeyItem[]>([]);
   const [info, setInfo] = useState<RedisInfo>({});
   const [pattern, setPattern] = useState('*');
@@ -1016,6 +1032,11 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
    */
   const handleDeleteKey = useCallback(async () => {
     if (!deleteKey) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除 Redis 键', 'error');
+      setDeleteKey(null);
+      return;
+    }
     const key = deleteKey;
     setDeleting(true);
     try {
@@ -1028,7 +1049,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
     } finally {
       setDeleting(false);
     }
-  }, [instance.id, deleteKey, pattern, limit, showToast, loadKeys]);
+  }, [canDelete, instance.id, deleteKey, pattern, limit, showToast, loadKeys]);
 
   /**
    * 挑选指标字段展示
@@ -1105,7 +1126,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
                 {item.type ? `${item.type}` : ''}
                 {item.size !== undefined ? ` · ${item.size}` : ''}
               </span>
-              <Button variant="ghost" size="sm" onClick={() => setDeleteKey(item.key)}>
+              <Button variant="ghost" size="sm" onClick={() => setDeleteKey(item.key)} disabled={!canDelete}>
                 删除
               </Button>
             </div>

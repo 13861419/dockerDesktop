@@ -13,6 +13,7 @@ import { Field, Input, Select, TextArea } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { ComposeProject, ComposeService } from '../types';
 import './compose.less';
 
@@ -144,6 +145,7 @@ services:
  */
 export default function ComposePage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [projects, setProjects] = useState<ComposeProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -350,6 +352,12 @@ export default function ComposePage() {
   /** 删除项目（根据 deleteVolumes 决定是否同时删除数据卷） */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除 Compose 项目', 'error');
+      setDeleteTarget(null);
+      setDeleteVolumes(false);
+      return;
+    }
     setDeleting(true);
     try {
       await del(projectUrl(deleteTarget.name), { volumes: deleteVolumes });
@@ -362,7 +370,7 @@ export default function ComposePage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, deleteVolumes, showToast]);
+  }, [canDelete, deleteTarget, deleteVolumes, showToast]);
 
   /** 打开编辑弹窗并加载指定项目的 compose 文件内容 */
   const openEdit = useCallback(
@@ -638,6 +646,7 @@ export default function ComposePage() {
                         variant="danger"
                         size="sm"
                         onClick={() => setDeleteTarget(proj)}
+                        disabled={!canDelete}
                       >
                         删除
                       </Button>

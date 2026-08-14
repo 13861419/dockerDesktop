@@ -13,6 +13,7 @@ import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { NetworkItem, ContainerListItem } from '../types';
 import './networks.less';
 
@@ -55,6 +56,7 @@ function getSubnet(net: NetworkItem): string {
  */
 export default function NetworksPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [networks, setNetworks] = useState<NetworkItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -142,6 +144,11 @@ export default function NetworksPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除网络', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await del('/api/networks/' + encodeURIComponent(deleteTarget.Id));
@@ -153,7 +160,7 @@ export default function NetworksPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, showToast]);
+  }, [canDelete, deleteTarget, showToast]);
 
   /**
    * 一键清理未使用网络
@@ -162,6 +169,11 @@ export default function NetworksPage() {
    * 成功后提示删除数量并刷新列表；若没有可清理的网络则提示。
    */
   const handlePrune = useCallback(async () => {
+    if (!canDelete) {
+      showToast('仅管理员可清理网络', 'error');
+      setPruneOpen(false);
+      return;
+    }
     setPruning(true);
     try {
       const res = await post<{ success: number; failed: number }>('/api/networks/prune');
@@ -177,7 +189,7 @@ export default function NetworksPage() {
     } finally {
       setPruning(false);
     }
-  }, [showToast]);
+  }, [canDelete, showToast]);
 
   /**
    * 拉取全部容器列表（用于连接容器下拉选择）
@@ -304,7 +316,7 @@ export default function NetworksPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
               清理未使用
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
@@ -363,7 +375,7 @@ export default function NetworksPage() {
                     <Button variant="ghost" size="sm" onClick={() => handleOpenDetail(net)}>
                       详情
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(net)}>
+                    <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(net)} disabled={!canDelete}>
                       删除
                     </Button>
                   </td>

@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, del } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -55,6 +55,7 @@ const TYPE_LABEL: Record<CloudType, string> = {
  */
 export default function CloudBackupPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const uploadRef = useRef<HTMLInputElement>(null);
 
   const [targets, setTargets] = useState<CloudTarget[]>([]);
@@ -188,6 +189,11 @@ export default function CloudBackupPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除云端目标', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await del(`/api/cloud/targets/${deleteTarget.id}`);
@@ -199,7 +205,7 @@ export default function CloudBackupPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, load, showToast]);
+  }, [canDelete, deleteTarget, load, showToast]);
 
   /**
    * 测试连接
@@ -352,7 +358,7 @@ export default function CloudBackupPage() {
                         测试连接
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canDelete}>删除</Button>
                     </div>
                   </td>
                 </tr>

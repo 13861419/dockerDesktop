@@ -18,7 +18,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del, download } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import {
   CronTask,
   CronTaskListResponse,
@@ -128,6 +128,7 @@ async function put(url: string, body?: any): Promise<any> {
  */
 export default function TasksPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [tasks, setTasks] = useState<CronTask[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -308,6 +309,11 @@ export default function TasksPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除任务', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await del(`/api/tasks/${deleteTarget.id}`);
@@ -319,7 +325,7 @@ export default function TasksPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, showToast]);
+  }, [canDelete, deleteTarget, showToast]);
 
   /**
    * 拉取某任务的分页执行历史
@@ -498,7 +504,7 @@ export default function TasksPage() {
                     <Button variant="secondary" size="sm" onClick={() => openEdit(task)}>
                       编辑
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(task)}>
+                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(task)} disabled={!canDelete}>
                       删除
                     </Button>
                   </td>

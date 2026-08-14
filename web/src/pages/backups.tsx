@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { get, post, del, download } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -121,6 +122,7 @@ function formatDate(iso: string): string {
  */
 export default function BackupsPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
 
   const [backups, setBackups] = useState<BackupListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -238,6 +240,11 @@ export default function BackupsPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除备份', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await del(`/api/backups/${deleteTarget.id}`);
@@ -249,7 +256,7 @@ export default function BackupsPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, load, showToast]);
+  }, [canDelete, deleteTarget, load, showToast]);
 
   return (
     <div className="page">
@@ -318,7 +325,7 @@ export default function BackupsPage() {
                       <Button variant="ghost" size="sm" disabled={!b.exists} onClick={() => setRestoreTarget(b)}>
                         恢复
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(b)}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(b)} disabled={!canDelete}>删除</Button>
                     </div>
                   </td>
                 </tr>

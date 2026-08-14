@@ -13,6 +13,7 @@ import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { VolumeItem } from '../types';
 import './volumes.less';
 
@@ -77,6 +78,7 @@ function formatBytes(bytes: number): string {
  */
 export default function VolumesPage() {
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [volumes, setVolumes] = useState<VolumeItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -152,6 +154,11 @@ export default function VolumesPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除数据卷', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await del('/api/volumes/' + encodeURIComponent(deleteTarget.Name));
@@ -163,9 +170,14 @@ export default function VolumesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, showToast]);
+  }, [canDelete, deleteTarget, showToast]);
 
   const handlePrune = useCallback(async () => {
+    if (!canDelete) {
+      showToast('仅管理员可清理数据卷', 'error');
+      setPruneOpen(false);
+      return;
+    }
     setPruning(true);
     try {
       await post('/api/volumes/prune');
@@ -177,7 +189,7 @@ export default function VolumesPage() {
     } finally {
       setPruning(false);
     }
-  }, [showToast]);
+  }, [canDelete, showToast]);
 
   /**
    * 打开卷详情弹窗并触发详情与使用容器列表的加载
@@ -297,7 +309,7 @@ export default function VolumesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
               清理未使用卷
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
@@ -357,7 +369,7 @@ export default function VolumesPage() {
                       <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
                         详情
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)}>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)} disabled={!canDelete}>
                         删除
                       </Button>
                     </div>

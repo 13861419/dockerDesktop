@@ -13,7 +13,7 @@ import { PageLoading } from '../components/Loading';
 import Empty from '../components/Empty';
 import { useToast } from '../components/Toast';
 import { get, del } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import './imageDetail.less';
 
 /** Docker 镜像 inspect 结果的结构 */
@@ -144,6 +144,7 @@ export default function ImageDetailPage() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const canDelete = isAdmin();
   const [image, setImage] = useState<ImageInspect | null>(null);
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -253,6 +254,11 @@ export default function ImageDetailPage() {
    */
   const handleDeleteTag = useCallback(async () => {
     if (!deleteTag) return;
+    if (!canDelete) {
+      showToast('仅管理员可删除镜像标签', 'error');
+      setDeleteTag(null);
+      return;
+    }
     setDeletingTag(true);
     try {
       await del('/api/images/' + encodeURIComponent(deleteTag) + '?force=true');
@@ -264,7 +270,7 @@ export default function ImageDetailPage() {
     } finally {
       setDeletingTag(false);
     }
-  }, [deleteTag, showToast, fetchImage]);
+  }, [canDelete, deleteTag, showToast, fetchImage]);
 
   return (
     <div className="page detail-page">
@@ -308,6 +314,7 @@ export default function ImageDetailPage() {
                           title="删除此标签"
                           aria-label={`删除标签 ${tag}`}
                           onClick={() => setDeleteTag(tag)}
+                          disabled={!canDelete}
                         >
                           ×
                         </button>
