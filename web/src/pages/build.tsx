@@ -4,13 +4,14 @@
  * 提供从宿主机构建上下文目录构建镜像的表单与实时日志展示。
  * 调用后端 POST /api/build/image，阻塞式返回完整构建日志。
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { post } from '../api/client';
+import { get, post, del } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Field, Input } from '../components/Form';
 import './build.less';
 
@@ -26,6 +27,18 @@ interface BuildResponse {
   name: string;
   logs: string[];
   error?: string;
+}
+
+/** 构建历史记录项 */
+interface BuildHistoryItem {
+  id: number;
+  name: string;
+  context: string;
+  dockerfile: string;
+  success: number;
+  log_preview: string;
+  duration_ms: number;
+  created_at: number;
 }
 
 /** 日志状态 */
@@ -53,6 +66,103 @@ export default function BuildPage() {
   const [logs, setLogs] = useState<string[]>([]);
   // 日志状态
   const [status, setStatus] = useState<LogStatus>('idle');
+  // 构建历史列表
+  const [history, setHistory] = useState<BuildHistoryItem[]>([]);
+  // 是否正在加载历史
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // 待清空历史的确认目标
+  const [clearTarget, setClearTarget] = useState(false);
+
+  /**
+   * 拉取构建历史列表（倒序）
+   */
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const resp = await get<{ success: boolean; list: BuildHistoryItem[] }>('/api/build/history', { limit: 50 });
+      setHistory(resp?.list || []);
+    } catch {
+      // 加载失败静默，避免干扰构建主流程
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  /**
+   * 页面挂载时加载历史
+   */
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  /**
+   * 从历史记录加载配置到表单
+   * @param item 历史记录项
+   */
+  const loadConfigFromHistory = useCallback(
+    (item: BuildHistoryItem) => {
+      const ctx = item.context || '';
+      setName(item.name || '');
+      setContext(ctx);
+      setDockerfile(item.dockerfile || 'Dockerfile');
+      setNoCache(false);
+      setArgs([]);
+      setLogs([]);
+      setStatus('idle');
+      showToast(`已加载历史配置：${item.name}`);
+    },
+    [showToast],
+  );
+
+  /**
+   * 查看历史记录的日志预览
+   * @param item 历史记录项
+   */
+  const showHistoryLog = useCallback((item: BuildHistoryItem) => {
+    const preview = item.log_preview || '（无日志预览）';
+    setLogs(preview.split('\n'));
+    setStatus(item.success === 1 ? 'success' : 'error');
+    showToast(item.success === 1 ? '该次构建成功' : '该次构建失败', item.success === 1 ? undefined : 'error');
+  }, [showToast]);
+
+  /**
+   * 清空全部构建历史
+   */
+  const confirmClearHistory = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可清空构建历史', 'error');
+      return;
+    }
+    try {
+      await del('/api/build/history');
+      setHistory([]);
+      setClearTarget(false);
+      showToast('构建历史已清空');
+    } catch (e: any) {
+      showToast(e?.message || '清空失败', 'error');
+    }
+  }, [canManage, showToast]);
+
+  /**
+   * 格式化耗时
+   * @param ms 毫秒
+   */
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    const s = (ms / 1000).toFixed(1);
+    return `${s}s`;
+  };
+
+  /**
+   * 格式化时间
+   * @param sec 秒级时间戳
+   */
+  const formatTime = (sec: number) => {
+    if (!sec) return '-';
+    const d = new Date(sec * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
 
   /**
    * 添加一行空构建参数
@@ -117,16 +227,18 @@ export default function BuildPage() {
       if (resp?.success) {
         setStatus('success');
         showToast(`镜像构建成功：${resp.name}`);
+        loadHistory();
       } else {
         setStatus('error');
         showToast(resp?.error || '镜像构建失败', 'error');
+        loadHistory();
       }
     } catch (e: any) {
       setStatus('error');
       setLogs((prev) => [...prev, `[错误] ${e?.message || '构建失败'}`]);
       showToast(e?.message || '构建请求失败', 'error');
     }
-  }, [canManage, name, context, dockerfile, noCache, args, showToast]);
+  }, [canManage, name, context, dockerfile, noCache, args, showToast, loadHistory]);
 
   /**
    * 重置表单
@@ -227,6 +339,65 @@ export default function BuildPage() {
           </pre>
         </div>
       </Card>
+
+      <Card
+        title="构建历史"
+        extra={
+          history.length > 0 && canManage ? (
+            <Button variant="ghost" size="sm" onClick={() => setClearTarget(true)}>清空历史</Button>
+          ) : undefined
+        }
+      >
+        {historyLoading ? (
+          <div className="build-history__empty">加载中...</div>
+        ) : history.length === 0 ? (
+          <div className="build-history__empty">暂无构建历史，完成一次镜像构建后将在此留档。</div>
+        ) : (
+          <table className="build-history__table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>镜像名称</th>
+                <th>上下文目录</th>
+                <th>结果</th>
+                <th>耗时</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h) => (
+                <tr key={h.id}>
+                  <td>{formatTime(h.created_at)}</td>
+                  <td className="build-history__name">{h.name}</td>
+                  <td className="build-history__ctx" title={h.context}>{h.context}</td>
+                  <td>
+                    <span className={h.success === 1 ? 'build-history__ok' : 'build-history__fail'}>
+                      {h.success === 1 ? '成功' : '失败'}
+                    </span>
+                  </td>
+                  <td>{formatDuration(h.duration_ms)}</td>
+                  <td>
+                    <div className="build-history__ops">
+                      <Button variant="ghost" size="sm" onClick={() => loadConfigFromHistory(h)}>加载配置</Button>
+                      <Button variant="ghost" size="sm" onClick={() => showHistoryLog(h)}>查看日志</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <ConfirmDialog
+        open={clearTarget}
+        title="清空构建历史"
+        message="确定清空全部镜像构建历史记录吗？此操作不可撤销。"
+        confirmText="清空"
+        danger
+        onConfirm={confirmClearHistory}
+        onCancel={() => setClearTarget(false)}
+      />
     </div>
   );
 }

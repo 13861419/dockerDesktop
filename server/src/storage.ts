@@ -263,6 +263,19 @@ function createTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_backups_created ON backups(created_at DESC);
+
+    -- 镜像构建历史表：记录每次 Dockerfile 独立构建的结果（用于回溯与配置复用）
+    CREATE TABLE IF NOT EXISTS image_build_history (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,               -- 镜像名称（含 tag，如 myapp:latest）
+      context     TEXT NOT NULL,               -- 构建上下文目录
+      dockerfile  TEXT NOT NULL DEFAULT 'Dockerfile',
+      success     INTEGER NOT NULL DEFAULT 0,  -- 构建是否成功（1/0）
+      log_preview TEXT,                        -- 构建日志尾部预览（便于快速排查失败）
+      duration_ms INTEGER NOT NULL DEFAULT 0,  -- 构建耗时（毫秒）
+      created_at  INTEGER NOT NULL             -- 构建时间（秒）
+    );
+    CREATE INDEX IF NOT EXISTS idx_build_history_created ON image_build_history(created_at DESC);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

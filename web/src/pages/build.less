@@ -87,3 +87,64 @@
   gap: 10px;
   margin-top: 2px;
 }
+
+/* 构建历史区 */
+.build-history__empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px 0;
+  font-size: 13px;
+}
+
+.build-history__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.build-history__table th,
+.build-history__table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.build-history__table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.build-history__table tbody tr:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.03));
+}
+
+.build-history__name {
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.build-history__ctx {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-history__ok {
+  color: var(--success, #16a34a);
+  font-weight: 600;
+}
+
+.build-history__fail {
+  color: var(--danger, #dc2626);
+  font-weight: 600;
+}
+
+.build-history__ops {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

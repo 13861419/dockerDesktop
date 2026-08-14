@@ -8,13 +8,17 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { getDockerClient } from '../docker/client';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireAuth } from '../auth';
 import { logOperation } from '../operationLog';
+import { getDb } from '../storage';
 
 const router = Router();
 
 /** 构建日志最大收集长度（字符），超长截断防止内存溢出 */
 const MAX_LOG_LEN = 200000;
+
+/** 历史记录保留的日志预览长度（取日志尾部，避免大字段） */
+const LOG_PREVIEW_LEN = 4000;
 
 /**
  * 统一兜底错误处理
@@ -32,6 +36,69 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
     });
   };
 }
+
+/**
+ * 写一条镜像构建历史记录
+ * @param name 镜像名称
+ * @param context 构建上下文目录
+ * @param dockerfile Dockerfile 文件名
+ * @param success 是否成功
+ * @param logs 完整构建日志（内部截取预览）
+ * @param durationMs 构建耗时（毫秒）
+ */
+function recordBuildHistory(
+  name: string,
+  context: string,
+  dockerfile: string,
+  success: boolean,
+  logs: string[],
+  durationMs: number,
+): void {
+  try {
+    const preview = logs.slice(-200).join('\n').slice(-LOG_PREVIEW_LEN);
+    getDb()
+      .prepare(
+        'INSERT INTO image_build_history (name, context, dockerfile, success, log_preview, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(name, context, dockerfile, success ? 1 : 0, preview, durationMs, Math.floor(Date.now() / 1000));
+  } catch {
+    // 历史写入失败不应影响构建结果返回
+  }
+}
+
+/**
+ * GET /api/build/history
+ * 分页返回镜像构建历史（倒序）
+ * @query limit 条数（默认 50）
+ * @query offset 偏移（默认 0）
+ */
+router.get(
+  '/history',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+    const rows = getDb()
+      .prepare(
+        'SELECT id, name, context, dockerfile, success, log_preview, duration_ms, created_at FROM image_build_history ORDER BY id DESC LIMIT ? OFFSET ?',
+      )
+      .all(limit, offset) as any[];
+    res.json({ success: true, list: rows });
+  }),
+);
+
+/**
+ * DELETE /api/build/history
+ * 清空全部构建历史（仅管理员）
+ */
+router.delete(
+  '/history',
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    getDb().prepare('DELETE FROM image_build_history').run();
+    res.json({ success: true, message: '构建历史已清空' });
+  }),
+);
 
 /**
  * POST /api/build/image
@@ -52,6 +119,7 @@ router.post(
     const dockerfile = String(body.dockerfile || 'Dockerfile').trim() || 'Dockerfile';
     const buildArgs: Record<string, string> = body.args || {};
     const noCache = !!body.noCache;
+    const startedAt = Date.now();
 
     // 参数校验
     if (!name) {
@@ -146,6 +214,7 @@ router.post(
       });
 
       logOperation(res.locals.username, '构建镜像', 'image', name, `上下文: ${contextAbs}; Dockerfile: ${dockerfile}; noCache: ${noCache}`);
+      recordBuildHistory(name, contextAbs, dockerfile, true, logs, Date.now() - startedAt);
       res.json({
         success: true,
         name,
@@ -156,6 +225,7 @@ router.post(
       if (!logs.some((l) => l.includes(msg))) {
         pushLog(`[错误] ${msg}`);
       }
+      recordBuildHistory(name, contextAbs, dockerfile, false, logs, Date.now() - startedAt);
       return res.json({
         success: false,
         name,
