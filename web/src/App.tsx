@@ -9,6 +9,7 @@ import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
+import RequireAdmin from './components/RequireAdmin';
 import { ToastProvider } from './components/Toast';
 import { PageLoading } from './components/Loading';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -105,7 +106,9 @@ export default function App() {
                 path="/build"
                 element={
                   <PageSuspense>
-                    <BuildPage />
+                    <RequireAdmin>
+                      <BuildPage />
+                    </RequireAdmin>
                   </PageSuspense>
                 }
               />
@@ -193,7 +196,9 @@ export default function App() {
                 path="/sites"
                 element={
                   <PageSuspense>
-                    <SitesPage />
+                    <RequireAdmin>
+                      <SitesPage />
+                    </RequireAdmin>
                   </PageSuspense>
                 }
               />
@@ -233,7 +238,9 @@ export default function App() {
                 path="/engines"
                 element={
                   <PageSuspense>
-                    <EnginesPage />
+                    <RequireAdmin>
+                      <EnginesPage />
+                    </RequireAdmin>
                   </PageSuspense>
                 }
               />
@@ -241,7 +248,9 @@ export default function App() {
                 path="/cloudbackup"
                 element={
                   <PageSuspense>
-                    <CloudBackupPage />
+                    <RequireAdmin>
+                      <CloudBackupPage />
+                    </RequireAdmin>
                   </PageSuspense>
                 }
               />

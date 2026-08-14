@@ -7,7 +7,7 @@ import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
 import { post } from '../api/client';
-import { clearToken } from '../api/auth';
+import { clearToken, isAdmin } from '../api/auth';
 import './Layout.less';
 
 interface NavItem {
@@ -15,6 +15,8 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   end?: boolean;
+  /** 标记为 true 时该菜单仅对管理员显示（配合路由级守卫） */
+  adminOnly?: boolean;
 }
 
 const iconProps = {
@@ -66,6 +68,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: '/build',
     label: '构建镜像',
+    adminOnly: true,
     icon: (
       <svg {...iconProps}>
         <polygon points="3 11 3 21 14 21 11 11 3 11" />
@@ -173,6 +176,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: '/engines',
     label: 'Docker 引擎',
+    adminOnly: true,
     icon: (
       <svg {...iconProps}>
         <path d="M10 17h.01M14 17h.01M6 17h.01M4 17h.01M18 13h.01M20 9h.01M16 5h.01" />
@@ -184,6 +188,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: '/cloudbackup',
     label: '云端备份',
+    adminOnly: true,
     icon: (
       <svg {...iconProps}>
         <path d="M17.5 19a4.5 4.5 0 1 0-.42-8.98A5 5 0 0 0 7 11a3.5 3.5 0 0 0-.5 6.97" />
@@ -258,6 +263,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: '/sites',
     label: '站点反代',
+    adminOnly: true,
     icon: (
       <svg {...iconProps}>
         <path d="M9 3h6l1 5H8z" />
@@ -274,6 +280,10 @@ const NAV_ITEMS: NavItem[] = [
 export default function Layout() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+
+  // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
+  const admin = isAdmin();
+  const visibleNav = NAV_ITEMS.filter((item) => !item.adminOnly || admin);
 
   /**
    * 退出登录：通知后端登出、清除本地 token 并跳转登录页
@@ -309,7 +319,7 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar__nav">
-          {NAV_ITEMS.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
