@@ -397,12 +397,19 @@ function psqlIdent(name: string): string {
 
 /**
  * 校验 SQL 是否为只读查询（仅允许 SELECT/SHOW/DESCRIBE/DESC/EXPLAIN 开头）
+ *
+ * 除开头白名单外，还拒绝多语句注入：若去掉首尾空白/末尾分号后，语句内部仍存在
+ * 分号 `;`，说明带多条语句或行内注释（如 "SELECT 1; DROP TABLE t"），一律判为非只读，
+ * 避免 mysql `-e` / psql `-c` 顺带执行后续写语句。
  * @param sql SQL 语句
  * @returns 是否只读
  */
 function isReadOnlySql(sql: string): boolean {
-  const t = sql.replace(/^\s+/, '').toUpperCase();
-  return /^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN)\b/.test(t);
+  const t = (sql || '').replace(/^\s+/, '').replace(/\s+$/, '').replace(/\s*;\s*$/, '');
+  if (!/^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN)\b/i.test(t)) return false;
+  // 内部仍含分号（多语句 / 行内注释分隔）则拒绝，防止 "SELECT 1; DROP..." 绕过
+  if (/;/.test(t)) return false;
+  return true;
 }
 
 /**
@@ -789,11 +796,13 @@ router.get(
 /**
  * POST /api/databases/:id/query
  * 执行 SQL 查询，body={sql, db?}。
- * 默认仅允许只读语句（SELECT/SHOW/DESCRIBE/EXPLAIN 开头），否则返回 403。
+ * 仅管理员可用（SQL 执行直接触达数据库实例，含只读查询也是敏感能力）。
+ * 只允许只读语句（SELECT/SHOW/DESCRIBE/EXPLAIN 开头，且拒绝多语句），否则返回 403。
  * 对 redis 不开放查询。
  */
 router.post(
   '/:id/query',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type === 'redis') {
@@ -830,10 +839,12 @@ router.post(
 /**
  * POST /api/databases/:id/redis/keys
  * Redis 键浏览，body={pattern?, limit?}。
+ * 仅管理员可用（对运行中 Redis 发起 CLI 扫描命令，属敏感能力）。
  * 用 redis-cli --scan（避免大规模 KEYS 阻塞），按 limit 截断返回。
  */
 router.post(
   '/:id/redis/keys',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type !== 'redis') {
@@ -855,9 +866,11 @@ router.post(
 /**
  * POST /api/databases/:id/redis/info
  * Redis 基础指标（内存/命中率/连接数），解析 redis-cli INFO 的 memory/keyspace stats 字段。
+ * 仅管理员可用（对运行中 Redis 发起 CLI 命令，indicator 亦含运行时信息）。
  */
 router.post(
   '/:id/redis/info',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type !== 'redis') {

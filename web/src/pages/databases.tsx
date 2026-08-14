@@ -881,6 +881,8 @@ function SqlQueryPanel({
   databases: string[];
 }) {
   const { showToast } = useToast();
+  // SQL 执行为敏感能力，仅管理员可用（后端已强制校验）
+  const canManage = isAdmin();
   const [sql, setSql] = useState('');
   const [db, setDb] = useState(activeDb);
   const [querying, setQuerying] = useState(false);
@@ -895,6 +897,10 @@ function SqlQueryPanel({
    * 执行查询并渲染结果
    */
   const runQuery = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可执行 SQL 查询', 'error');
+      return;
+    }
     if (!sql.trim()) return;
     setQuerying(true);
     try {
@@ -910,7 +916,7 @@ function SqlQueryPanel({
     } finally {
       setQuerying(false);
     }
-  }, [instance.id, sql, db, showToast]);
+  }, [instance.id, sql, db, showToast, canManage]);
 
   return (
     <div className="db-sql">
@@ -931,16 +937,17 @@ function SqlQueryPanel({
       </div>
       <textarea
         className="input input--area db-sql__area"
-        placeholder="SELECT * FROM users LIMIT 50;"
+        placeholder={canManage ? 'SELECT * FROM users LIMIT 50;' : '仅管理员可执行 SQL 查询'}
         value={sql}
         onChange={(e) => setSql(e.target.value)}
+        disabled={!canManage}
       />
       <div className="db-sql__actions">
         <Button
           variant="primary"
           size="sm"
           loading={querying}
-          disabled={!sql.trim()}
+          disabled={!sql.trim() || !canManage}
           onClick={runQuery}
         >
           执行查询
@@ -986,6 +993,8 @@ function SqlQueryPanel({
 function RedisPanel({ instance }: { instance: DatabaseInstance }) {
   const { showToast } = useToast();
   const canDelete = isAdmin();
+  // Redis 命令交互为敏感能力，仅管理员可用（后端已强制校验）
+  const canManage = isAdmin();
   const [keys, setKeys] = useState<RedisKeyItem[]>([]);
   const [info, setInfo] = useState<RedisInfo>({});
   const [pattern, setPattern] = useState('*');
@@ -1002,6 +1011,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
    */
   const loadKeys = useCallback(
     async (pat: string, lim: number) => {
+      if (!canManage) return;
       setLoading(true);
       try {
         const data = await post<{ keys?: RedisKeyItem[] | string[] } | RedisKeyItem[]>(
@@ -1017,20 +1027,21 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
         setLoading(false);
       }
     },
-    [instance.id, showToast]
+    [instance.id, showToast, canManage]
   );
 
   /**
    * 加载 Redis 指标
    */
   const loadInfo = useCallback(async () => {
+    if (!canManage) return;
     try {
       const data = await post<RedisInfo>(`/api/databases/${instance.id}/redis/info`);
       setInfo(data || {});
     } catch (e: any) {
       showToast(e?.message || '加载 Redis 指标失败', 'error');
     }
-  }, [instance.id, showToast]);
+  }, [instance.id, showToast, canManage]);
 
   useEffect(() => {
     loadKeys(pattern, limit);
@@ -1099,7 +1110,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
       <div className="db-detail__section">
         <span className="db-detail__section-title">键列表 ({keys.length})</span>
         <div className="db-detail__section-actions">
-          <Button variant="ghost" size="sm" onClick={() => loadKeys(pattern, limit)}>
+          <Button variant="ghost" size="sm" onClick={() => loadKeys(pattern, limit)} disabled={!canManage}>
             刷新
           </Button>
         </div>
@@ -1111,14 +1122,16 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
           placeholder="匹配模式，如 * / user:*"
           value={pattern}
           onChange={(e) => setPattern(e.target.value)}
+          disabled={!canManage}
         />
         <Input
           style={{ width: 90 }}
           placeholder="限制"
           value={limit}
           onChange={(e) => setLimit(Number(e.target.value))}
+          disabled={!canManage}
         />
-        <Button variant="secondary" size="sm" onClick={() => loadKeys(pattern, limit)}>
+        <Button variant="secondary" size="sm" onClick={() => loadKeys(pattern, limit)} disabled={!canManage}>
           查询
         </Button>
       </div>
