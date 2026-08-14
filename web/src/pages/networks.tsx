@@ -114,6 +114,11 @@ export default function NetworksPage() {
       showToast('请输入网络名称', 'error');
       return;
     }
+    if (!canDelete) {
+      showToast('仅管理员可创建网络', 'error');
+      setCreateOpen(false);
+      return;
+    }
     setCreating(true);
     try {
       await post('/api/networks', {
@@ -140,7 +145,7 @@ export default function NetworksPage() {
     } finally {
       setCreating(false);
     }
-  }, [name, driver, subnet, gateway, ipRange, internal, ipv6, showToast]);
+  }, [name, driver, subnet, gateway, ipRange, internal, ipv6, showToast, canDelete]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -254,6 +259,10 @@ export default function NetworksPage() {
    */
   const handleConnect = useCallback(async () => {
     if (!detailTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可连接容器到网络', 'error');
+      return;
+    }
     if (!connectContainer) {
       showToast('请选择要连接的容器', 'error');
       return;
@@ -273,7 +282,7 @@ export default function NetworksPage() {
     } finally {
       setConnecting(false);
     }
-  }, [detailTarget, connectContainer, connectIpv4, showToast, refreshDetail]);
+  }, [detailTarget, connectContainer, connectIpv4, showToast, refreshDetail, canDelete]);
 
   /**
    * 将容器从当前网络断开
@@ -282,6 +291,10 @@ export default function NetworksPage() {
   const handleDisconnect = useCallback(
     async (containerId: string) => {
       if (!detailTarget) return;
+      if (!canDelete) {
+        showToast('仅管理员可从网络断开容器', 'error');
+        return;
+      }
       setDisconnectId(containerId);
       try {
         await post('/api/networks/' + encodeURIComponent(detailTarget.Id) + '/disconnect', {
@@ -295,7 +308,7 @@ export default function NetworksPage() {
         setDisconnectId(null);
       }
     },
-    [detailTarget, showToast, refreshDetail]
+    [detailTarget, showToast, refreshDetail, canDelete]
   );
 
   /** 已连接容器的标识集合（id 与名称），用于过滤下拉中已连接的容器 */
@@ -319,7 +332,7 @@ export default function NetworksPage() {
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
               清理未使用
             </Button>
-            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+            <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canDelete}>
               新建网络
             </Button>
           </div>
@@ -571,6 +584,7 @@ export default function NetworksPage() {
                             variant="danger"
                             size="sm"
                             loading={disconnectId === cid || disconnectId === c.Name}
+                            disabled={!canDelete}
                             onClick={() => handleDisconnect(c.Name || cid)}
                           >
                             断开
@@ -617,7 +631,7 @@ export default function NetworksPage() {
                     />
                   </Field>
                   <div className="connect-form__actions">
-                    <Button onClick={handleConnect} loading={connecting}>
+                    <Button onClick={handleConnect} loading={connecting} disabled={!canDelete}>
                       连接
                     </Button>
                   </div>

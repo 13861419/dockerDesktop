@@ -15,7 +15,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, download } from '../api/client';
-import { getToken } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import { ContainerFileItem } from '../types';
 import './files.less';
 
@@ -64,6 +64,8 @@ function joinPath(dir: string, name: string): string {
  */
 export default function FilesPage() {
   const { showToast } = useToast();
+  // 是否可写（上传/新建目录/重命名/删除）：容器内文件写操作仅管理员可用，普通用户可只读浏览
+  const canManage = isAdmin();
   // 容器下拉选项列表
   const [containers, setContainers] = useState<ContainerOption[]>([]);
   // 当前选中的容器 id（'' 表示未选择）
@@ -233,6 +235,11 @@ export default function FilesPage() {
    */
   const handleUpload = async (file: File) => {
     if (!selectedId) return;
+    if (!canManage) {
+      showToast('仅管理员可上传文件', 'error');
+      if (uploadRef.current) uploadRef.current.value = '';
+      return;
+    }
     setUploading(true);
     try {
       const token = getToken();
@@ -274,6 +281,10 @@ export default function FilesPage() {
    */
   const handleMkdir = async () => {
     if (!selectedId) return;
+    if (!canManage) {
+      showToast('仅管理员可新建目录', 'error');
+      return;
+    }
     const name = mkdirName.trim();
     if (!name) {
       showToast('请输入目录名', 'error');
@@ -309,6 +320,10 @@ export default function FilesPage() {
    */
   const handleRename = async () => {
     if (!selectedId || !renameTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可重命名', 'error');
+      return;
+    }
     const newName = renameValue.trim();
     if (!newName) {
       showToast('新名称不能为空', 'error');
@@ -339,6 +354,11 @@ export default function FilesPage() {
    */
   const handleDelete = async () => {
     if (!selectedId || !deleteTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可删除文件', 'error');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await post(`/api/files/${selectedId}/delete`, {
@@ -427,10 +447,20 @@ export default function FilesPage() {
             </Select>
             {selectedId && (
               <>
-                <Button variant="secondary" size="sm" onClick={() => uploadRef.current?.click()}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => uploadRef.current?.click()}
+                  disabled={!canManage}
+                >
                   上传
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => setMkdirOpen(true)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setMkdirOpen(true)}
+                  disabled={!canManage}
+                >
                   新建目录
                 </Button>
                 <Button
@@ -527,12 +557,18 @@ export default function FilesPage() {
                                   </Button>
                                 </>
                               )}
-                              <Button variant="ghost" size="sm" onClick={() => openRename(item)}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openRename(item)}
+                                disabled={!canManage}
+                              >
                                 重命名
                               </Button>
                               <Button
                                 variant="danger"
                                 size="sm"
+                                disabled={!canManage}
                                 onClick={() =>
                                   setDeleteTarget({
                                     item,

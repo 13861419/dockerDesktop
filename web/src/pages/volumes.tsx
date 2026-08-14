@@ -137,6 +137,11 @@ export default function VolumesPage() {
       showToast('请输入数据卷名称', 'error');
       return;
     }
+    if (!canDelete) {
+      showToast('仅管理员可创建数据卷', 'error');
+      setCreateOpen(false);
+      return;
+    }
     setCreating(true);
     try {
       await post('/api/volumes', { name: volName, driver });
@@ -150,7 +155,7 @@ export default function VolumesPage() {
     } finally {
       setCreating(false);
     }
-  }, [name, driver, showToast]);
+  }, [name, driver, showToast, canDelete]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -312,7 +317,7 @@ export default function VolumesPage() {
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
               清理未使用卷
             </Button>
-            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+            <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canDelete}>
               新建卷
             </Button>
           </div>

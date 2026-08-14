@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post } from '../api/client';
 import { useToast } from '../components/Toast';
+import { isAdmin } from '../api/auth';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Select } from '../components/Form';
@@ -39,6 +40,9 @@ export default function HostTerminalPage() {
   const { showToast } = useToast();
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 是否能执行命令：宿主机命令执行为高危操作，仅管理员可用
+  const canManage = isAdmin();
 
   // 当前 shell
   const [shell, setShell] = useState('powershell');
@@ -113,6 +117,12 @@ export default function HostTerminalPage() {
       const trimmed = cmd.trim();
       if (!trimmed) return;
 
+      // 非管理员禁止执行宿主机命令（后端强制校验，这里是前端入口守卫）
+      if (!canManage) {
+        showToast('仅管理员可执行宿主机命令', 'error');
+        return;
+      }
+
       // 记录历史
       historyRef.current.push(trimmed);
       historyIdxRef.current = historyRef.current.length;
@@ -141,7 +151,7 @@ export default function HostTerminalPage() {
         setRunning(false);
       }
     },
-    [shell, cwd, pushLine],
+    [shell, cwd, pushLine, canManage, showToast],
   );
 
   /**
@@ -184,6 +194,7 @@ export default function HostTerminalPage() {
             className="ht-shell"
             value={shell}
             onChange={(e) => setShell(e.target.value)}
+            disabled={!canManage}
           >
             {shells.map((s) => (
               <option key={s} value={s}>{s === 'powershell' ? 'PowerShell' : 'CMD'}</option>
@@ -196,7 +207,9 @@ export default function HostTerminalPage() {
           <div className="ht-terminal__output" ref={outputRef}>
             {lines.length === 0 && (
               <div className="ht-output-line ht-output-line--muted">
-                就绪。输入命令并按回车执行（如 dir、Get-Process、ipconfig）。
+                {canManage
+                  ? '就绪。输入命令并按回车执行（如 dir、Get-Process、ipconfig）。'
+                  : '当前账号无管理员权限，无法执行宿主机命令。'}
               </div>
             )}
             {lines.map((l, i) => (
@@ -216,10 +229,10 @@ export default function HostTerminalPage() {
               ref={inputRef}
               className="ht-inputbar__input"
               value={command}
-              placeholder="输入命令..."
+              placeholder={canManage ? '输入命令...' : '仅管理员可执行命令'}
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={running}
+              disabled={running || !canManage}
               spellCheck={false}
               autoComplete="off"
             />

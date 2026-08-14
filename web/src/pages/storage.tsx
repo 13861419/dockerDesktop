@@ -11,6 +11,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { useToast } from '../components/Toast';
 import { get, post } from '../api/client';
+import { isAdmin } from '../api/auth';
 import './storage.less';
 
 /** df 概要字段（后端 /api/system/df 返回的 summary） */
@@ -100,6 +101,8 @@ function formatBytes(bytes?: number): string {
  */
 export default function StoragePage() {
   const { showToast } = useToast();
+  // 是否可清理：一键清理为破坏性操作，仅管理员可用；普通用户可只读查看统计
+  const canManage = isAdmin();
   const [summary, setSummary] = useState<DfSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -165,6 +168,11 @@ export default function StoragePage() {
    * 一键清理：调用后端 prune，成功后刷新统计并提示各回收空间
    */
   async function handlePrune() {
+    if (!canManage) {
+      showToast('仅管理员可执行清理', 'error');
+      setPruneOpen(false);
+      return;
+    }
     if (selected.size === 0) {
       showToast('请至少勾选一项清理类别', 'error');
       return;
@@ -318,11 +326,15 @@ export default function StoragePage() {
 
             <div className="storage-clean__actions">
               <div className="storage-clean__hint">
-                {selected.size > 0 ? `已选 ${selected.size} 项` : '勾选需要清理的类别后点击一键清理'}
+                {!canManage
+                  ? '仅管理员可执行一键清理'
+                  : selected.size > 0
+                    ? `已选 ${selected.size} 项`
+                    : '勾选需要清理的类别后点击一键清理'}
               </div>
               <Button
                 variant="danger"
-                disabled={selected.size === 0}
+                disabled={selected.size === 0 || !canManage}
                 onClick={() => setPruneOpen(true)}
               >
                 一键清理
