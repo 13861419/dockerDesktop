@@ -9,6 +9,7 @@
  */
 import { EventEmitter } from 'events';
 import { getDockerClient } from './client';
+import { getDb } from '../storage';
 
 /** 单个 Docker 事件（标准化后的结构，供前端消费） */
 export interface DockerEvent {
@@ -33,6 +34,13 @@ const RECENT_MAX = 200;
 /** 重连等待时间（毫秒） */
 const RECONNECT_DELAY = 5000;
 
+/** 事件落库批量 flush 间隔（毫秒） */
+const FLUSH_INTERVAL = 2000;
+/** 单批落库条数阈值（达到即提前 flush） */
+const FLUSH_BATCH = 100;
+/** 持久化保留的事件最大条数（超出删除最旧，防止无限增长） */
+const PERSIST_MAX = 50000;
+
 /** 最近事件环形缓冲（cap 最大 RECENT_MAX 条，尾部追加） */
 const recentEvents: DockerEvent[] = [];
 /** 实时事件订阅者集合（WebSocket 连接通过 onEvent 注册） */
@@ -43,6 +51,11 @@ let started = false;
 let listening = false;
 /** 当前活动的事件流（用于切换引擎时主动断开以触发基于新引擎的重连） */
 let activeStream: { destroy(): void } | null = null;
+
+/** 待落库事件缓冲（攒批批量写入 SQLite，减少高频写压力） */
+const persistBuffer: DockerEvent[] = [];
+/** 落库定时器句柄 */
+let flushTimer: NodeJS.Timeout | null = null;
 
 /** 用于在切换引擎/重启时通知订阅者重置缓存的事件 */
 export const eventBus = new EventEmitter();
@@ -114,12 +127,157 @@ function broadcast(ev: DockerEvent): void {
 }
 
 /**
+ * 将一条事件加入落库缓冲队列
+ * @param ev 标准化事件
+ */
+function queuePersist(ev: DockerEvent): void {
+  persistBuffer.push(ev);
+  // 达到批量阈值立即落库
+  if (persistBuffer.length >= FLUSH_BATCH) {
+    flushPersist();
+  }
+}
+
+/**
+ * 批量将缓冲事件写入 SQLite（单事务），并做保留上限清理
+ */
+function flushPersist(): void {
+  if (persistBuffer.length === 0) return;
+  const batch = persistBuffer.splice(0, persistBuffer.length);
+  try {
+    const d = getDb();
+    const ins = d.prepare(
+      'INSERT INTO docker_events (time, type, action, entity_id, scope, attributes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    d.exec('BEGIN');
+    const now = Math.floor(Date.now() / 1000);
+    for (const ev of batch) {
+      ins.run(
+        Number(ev.time) || Date.now(),
+        ev.type || '',
+        ev.action || '',
+        ev.id || '',
+        ev.scope || 'local',
+        JSON.stringify(ev.attributes || {}),
+        now,
+      );
+    }
+    d.exec('COMMIT');
+  } catch {
+    try {
+      getDb().exec('ROLLBACK');
+    } catch {
+      // 无活动事务时忽略
+    }
+  }
+  // 清理超出保留上限的最旧事件（POST-COMMIT 单独执行，避免与插入争用锁）
+  try {
+    getDb()
+      .prepare(
+        'DELETE FROM docker_events WHERE id NOT IN (SELECT id FROM docker_events ORDER BY id DESC LIMIT ?)',
+      )
+      .run(PERSIST_MAX);
+  } catch {
+    // 清理失败不影响事件写入
+  }
+}
+
+/**
+ * 启动落库定时器（幂等，随事件采集器一同启动）
+ */
+function startPersistFlusher(): void {
+  if (flushTimer) return;
+  flushTimer = setInterval(flushPersist, FLUSH_INTERVAL);
+  flushTimer.unref?.();
+}
+
+/**
+ * 查询持久化事件历史（倒序，支持类型/动作过滤 + 分页）
+ * @param opts 查询参数
+ * @param opts.type 事件类型过滤
+ * @param opts.action 动作过滤
+ * @param opts.limit 条数（默认 100，最大 500）
+  * @param opts.offset 偏移
+  * @returns 事件数组（不含 raw，仅含可序列化字段）
+  */
+export function queryPersistedEvents(opts: {
+  type?: string;
+  action?: string;
+  limit?: number;
+  offset?: number;
+}): Array<Omit<DockerEvent, 'raw'>> {
+  const limit = Math.min(Number(opts.limit) || 100, 500);
+  const offset = Number(opts.offset) || 0;
+  const where: string[] = [];
+  const params: any[] = [];
+  if (opts.type) {
+    where.push('type = ?');
+    params.push(opts.type);
+  }
+  if (opts.action) {
+    where.push('action = ?');
+    params.push(opts.action);
+  }
+  const sql = `SELECT time, type, action, entity_id, scope, attributes FROM docker_events ${
+    where.length ? 'WHERE ' + where.join(' AND ') : ''
+  } ORDER BY id DESC LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+  const rows = getDb().prepare(sql).all(...params) as Array<{
+    time: number;
+    type: string;
+    action: string;
+    entity_id: string;
+    scope: string;
+    attributes: string;
+  }>;
+  return rows.map((r) => {
+    let attrs: Record<string, string> = {};
+    try {
+      attrs = JSON.parse(r.attributes || '{}');
+    } catch {
+      // 解析失败保持空对象
+    }
+    return {
+      time: r.time,
+      type: r.type,
+      action: r.action,
+      id: r.entity_id,
+      scope: r.scope,
+      attributes: attrs,
+    };
+  });
+}
+
+/** 持久化历史中的可用类型（供筛选项下拉统计） */
+export function persistedEventTypes(): string[] {
+  const rows = getDb()
+    .prepare('SELECT DISTINCT type FROM docker_events WHERE type != ? ORDER BY type')
+    .all('') as Array<{ type: string }>;
+  return rows.map((r) => r.type);
+}
+
+/** 持久化历史中的可用动作（供筛选项下拉统计） */
+export function persistedEventActions(): string[] {
+  const rows = getDb()
+    .prepare('SELECT DISTINCT action FROM docker_events WHERE action != ? ORDER BY action')
+    .all('') as Array<{ action: string }>;
+  return rows.map((r) => r.action);
+}
+
+/** 删除全部持久化事件历史（清空） */
+export function clearPersistedEvents(): void {
+  getDb().prepare('DELETE FROM docker_events').run();
+}
+
+/**
  * 启动 Docker 事件监听器（幂等）。
  * 持续监听事件流，断线自动重连。
  */
 export function startEventMonitor(): void {
   if (started) return;
   started = true;
+  // 启动事件落库定时器（幂等）
+  startPersistFlusher();
 
   const listen = async () => {
     if (listening) return;
@@ -137,6 +295,7 @@ export function startEventMonitor(): void {
           const parsed = JSON.parse(line);
           const ev = normalize(parsed);
           pushRecent(ev);
+          queuePersist(ev);
           broadcast(ev);
         } catch {
           // 忽略无法解析的行

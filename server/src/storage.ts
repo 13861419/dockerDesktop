@@ -276,6 +276,20 @@ function createTables(): void {
       created_at  INTEGER NOT NULL             -- 构建时间（秒）
     );
     CREATE INDEX IF NOT EXISTS idx_build_history_created ON image_build_history(created_at DESC);
+
+    -- Docker 事件持久化表：采集器批量落库，供历史查询/导出（Docker 事件本身不持久化）
+    CREATE TABLE IF NOT EXISTS docker_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      time        INTEGER NOT NULL,            -- 事件产生时间（毫秒）
+      type        TEXT NOT NULL DEFAULT '',    -- container / image / volume / network / plugin / daemon
+      action      TEXT NOT NULL DEFAULT '',    -- start / stop / destroy 等
+      entity_id   TEXT NOT NULL DEFAULT '',    -- 事件主体标识（容器 id / 镜像名 / 卷名 / 网络名）
+      scope       TEXT NOT NULL DEFAULT 'local',
+      attributes  TEXT NOT NULL DEFAULT '{}',  -- 附加过滤属性（JSON）
+      created_at  INTEGER NOT NULL             -- 落库时间（秒，用于保留清理）
+    );
+    CREATE INDEX IF NOT EXISTS idx_docker_events_time ON docker_events(time DESC);
+    CREATE INDEX IF NOT EXISTS idx_docker_events_type ON docker_events(type);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

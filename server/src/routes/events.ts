@@ -1,10 +1,22 @@
 /**
  * Docker 事件流 REST API 路由
  *
- * 提供最近事件的查询接口（Docker 事件不持久化，来自内存环形缓冲）。
+ * 提供两类事件查询：
+ *  1. 实时内存事件（默认，来自内存环形缓冲，服务重启丢失）
+ *  2. 持久化历史事件（history=1，来自 SQLite docker_events 表，服务重启保留）
+ * 另提供历史导出（CSV）与清空历史接口。
  */
 import { Router, Request, Response } from 'express';
-import { getRecentEvents, DockerEvent } from '../docker/events';
+import {
+  getRecentEvents,
+  DockerEvent,
+  queryPersistedEvents,
+  persistedEventTypes,
+  persistedEventActions,
+  clearPersistedEvents,
+} from '../docker/events';
+import { requireAdmin } from '../auth';
+import { logOperation } from '../operationLog';
 
 const router = Router();
 
@@ -30,10 +42,12 @@ const VALID_TYPES = new Set(['container', 'image', 'volume', 'network', 'plugin'
 
 /**
  * GET /api/events
- * 获取最近事件，可选按类型 / 动作过滤
- * @query type  事件类型（container/image/volume/network 等）
- * @query action 动作（start/stop/destroy 等）
- * @query limit 数量（默认 100，最大 200）
+ * 获取事件。默认返回内存最近事件；history=1 时从持久化历史分页查询。
+ * @query type    事件类型（container/image/volume/network 等）
+ * @query action  动作（start/stop/destroy 等）
+ * @query limit   数量（默认 100，最大 500）
+ * @query offset  分页偏移（history 模式）
+ * @query history 传 1 表示查询持久化历史
  */
 router.get(
   '/',
@@ -41,24 +55,68 @@ router.get(
     const type = req.query.type ? String(req.query.type) : undefined;
     const action = req.query.action ? String(req.query.action) : undefined;
     const limit = Number(req.query.limit) || 100;
+    const isHistory = String(req.query.history) === '1';
 
-    let events: DockerEvent[] = getRecentEvents(limit);
-    if (type) {
-      events = events.filter((e) => e.type === type);
-    }
-    if (action) {
-      events = events.filter((e) => e.action === action);
-    }
-    // 从可用类型中提取出现过的类型，供前端筛选下拉
-    const allTypes = Array.from(
-      new Set<string>(getRecentEvents(200).map((e) => e.type)),
-    ).sort();
-    // 常见动作集合
-    const allActions = Array.from(
-      new Set<string>(getRecentEvents(200).map((e) => e.action)),
-    ).sort();
+    let events: Array<DockerEvent | Omit<DockerEvent, 'raw'>>;
+    let types: string[];
+    let actions: string[];
 
-    res.json({ events, types: allTypes, actions: allActions });
+    if (isHistory) {
+      const offset = Number(req.query.offset) || 0;
+      events = queryPersistedEvents({ type, action, limit: Math.min(limit, 500), offset });
+      types = persistedEventTypes();
+      actions = persistedEventActions();
+    } else {
+      events = getRecentEvents(Math.min(limit, 200));
+      if (type) events = events.filter((e) => e.type === type);
+      if (action) events = events.filter((e) => e.action === action);
+      // 从可用类型中提取出现过的类型，供前端筛选下拉
+      types = Array.from(new Set<string>(getRecentEvents(200).map((e) => e.type))).sort();
+      // 常见动作集合
+      actions = Array.from(new Set<string>(getRecentEvents(200).map((e) => e.action))).sort();
+    }
+
+    res.json({ events, types, actions, history: isHistory });
+  }),
+);
+
+/**
+ * GET /api/events/history/export
+ * 导出持久化事件历史为 CSV（可选按类型/动作过滤）
+ * @query type    事件类型过滤
+ * @query action  动作过滤
+ */
+router.get(
+  '/history/export',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const type = req.query.type ? String(req.query.type) : undefined;
+    const action = req.query.action ? String(req.query.action) : undefined;
+    const events = queryPersistedEvents({ type, action, limit: 10000, offset: 0 });
+    const esc = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = ['time,type,action,entity_id,scope'];
+    for (const e of events) {
+      lines.push([e.time, e.type, e.action, e.id, e.scope].map(esc).join(','));
+    }
+    const csv = lines.join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="docker-events.csv"');
+    // 添加 UTF-8 BOM，便于 Excel 正确识别中文
+    res.send('\uFEFF' + csv);
+  }),
+);
+
+/**
+ * DELETE /api/events/history
+ * 清空持久化事件历史（仅管理员）
+ */
+router.delete(
+  '/history',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    clearPersistedEvents();
+    logOperation(res.locals.username, '清空事件历史', '事件', '-');
+    res.json({ ok: true });
   }),
 );
 

@@ -5,10 +5,13 @@
  * 支持按类型 / 动作过滤，以及实时滚动开关与清屏。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get } from '../api/client';
+import { get, del, download } from '../api/client';
+import { isAdmin } from '../api/auth';
+import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
 import Button from '../components/Button';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Select } from '../components/Form';
 import './events.less';
 
@@ -62,6 +65,8 @@ function badgeClass(type: string): string {
  * Docker 事件流页面组件
  */
 export default function EventsPage() {
+  const { showToast } = useToast();
+  const canManage = isAdmin();
   // 事件列表（内存，最新的在头部）
   const [events, setEvents] = useState<DockerEvent[]>([]);
   // 加载状态
@@ -80,9 +85,21 @@ export default function EventsPage() {
   const listRef = useRef<HTMLDivElement>(null);
   // 事件总数（用于清屏后重新计数）
   const countRef = useRef(0);
+  // 查看模式：live=实时流 / history=持久化历史
+  const [mode, setMode] = useState<'live' | 'history'>('live');
+  // 历史加载状态
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // 历史分页偏移
+  const historyOffsetRef = useRef(0);
+  // 是否还有更多历史可加载
+  const [hasMore, setHasMore] = useState(false);
+  // 清空历史确认
+  const [clearTarget, setClearTarget] = useState(false);
 
   // 事件最大值保留（避免无限增长）
   const MAX_EVENTS = 300;
+  /** 历史分页每页条数 */
+  const HISTORY_PAGE = 100;
 
   /**
    * 向列表头部插入一条事件（去重按 time+type+action+id）
@@ -221,6 +238,107 @@ export default function EventsPage() {
     countRef.current = 0;
   }, []);
 
+  /**
+   * 切换查看模式：live <-> history
+   * 仅在 UI 层切换；实际加载由 mode effect 驱动
+   * @param next 目标模式
+   */
+  const switchMode = useCallback(async (next: 'live' | 'history') => {
+    setMode(next);
+  }, []);
+
+  /**
+   * 加载一页持久化历史（追加/替换到列表）
+   * @param reset 是否重置列表并回到首页
+   */
+  const loadHistoryPage = useCallback(
+    async (reset: boolean) => {
+      if (!reset && historyLoading) return;
+      setHistoryLoading(true);
+      try {
+        const params: Record<string, any> = { history: 1, limit: HISTORY_PAGE };
+        if (!reset) params.offset = historyOffsetRef.current;
+        if (typeFilter !== 'all') params.type = typeFilter;
+        if (actionFilter !== 'all') params.action = actionFilter;
+        const data = await get<EventListResponse & { history?: boolean }>('/api/events', params);
+        const list = data?.events || [];
+        // 服务端按新到旧返回；列表以"最新在上"展示
+        setEvents((prev) => {
+          const merged = reset ? [...list] : [...prev, ...list];
+          return merged.slice(0, 2000);
+        });
+        historyOffsetRef.current = (reset ? 0 : historyOffsetRef.current) + list.length;
+        setHasMore(list.length >= HISTORY_PAGE);
+      } catch (e: any) {
+        showToast(e?.message || '加载历史失败', 'error');
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [historyLoading, typeFilter, actionFilter, showToast],
+  );
+
+  /**
+   * 导出持久化事件历史（CSV）
+   */
+  const handleExport = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可导出事件历史', 'error');
+      return;
+    }
+    try {
+      await download('/api/events/history/export', 'docker-events.csv');
+      showToast('已开始导出事件历史');
+    } catch (e: any) {
+      showToast(e?.message || '导出失败', 'error');
+    }
+  }, [canManage, showToast]);
+
+  /**
+   * 清空全部持久化事件历史
+   */
+  const confirmClearHistory = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可清空事件历史', 'error');
+      setClearTarget(false);
+      return;
+    }
+    try {
+      await del('/api/events/history');
+      if (mode === 'history') {
+        setEvents([]);
+        historyOffsetRef.current = 0;
+        setHasMore(false);
+      }
+      setClearTarget(false);
+      showToast('事件历史已清空');
+    } catch (e: any) {
+      showToast(e?.message || '清空失败', 'error');
+    }
+  }, [canManage, mode, showToast]);
+
+  // 模式切换后驱动数据加载
+  useEffect(() => {
+    if (mode === 'history') {
+      setEvents([]);
+      historyOffsetRef.current = 0;
+      loadHistoryPage(true);
+    } else {
+      setEvents([]);
+      loadInitial();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // 历史模式下过滤条件变化时重新查询首页
+  useEffect(() => {
+    if (mode !== 'history') return;
+    historyOffsetRef.current = 0;
+    loadHistoryPage(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, actionFilter]);
+
   return (
     <div className="page">
       <div className="page__header">
@@ -266,11 +384,23 @@ export default function EventsPage() {
               />
               <span>自动置顶</span>
             </label>
+            <Button variant={mode === 'live' ? 'primary' : 'ghost'} size="sm" onClick={() => mode !== 'live' && switchMode('live')}>
+              实时
+            </Button>
+            <Button variant={mode === 'history' ? 'primary' : 'ghost'} size="sm" onClick={() => mode !== 'history' && switchMode('history')}>
+              历史
+            </Button>
+            {mode === 'history' && canManage && (
+              <>
+                <Button variant="ghost" size="sm" onClick={handleExport}>导出</Button>
+                <Button variant="ghost" size="sm" onClick={() => setClearTarget(true)}>清空历史</Button>
+              </>
+            )}
             <Button variant="ghost" size="sm" onClick={handleClear}>清空</Button>
           </div>
-          <span className={`events-status ${live ? 'events-status--live' : 'events-status--off'}`}>
+          <span className={`events-status ${mode === 'history' ? 'events-status--off' : live ? 'events-status--live' : 'events-status--off'}`}>
             <span className="events-status__dot" />
-            {live ? '实时连接中' : '连接断开'}
+            {mode === 'history' ? '历史模式' : live ? '实时连接中' : '连接断开'}
           </span>
         </div>
 
@@ -318,8 +448,28 @@ export default function EventsPage() {
               ))}
             </div>
           )}
+          {mode === 'history' && hasMore && (
+            <div className="events-more">
+              <Button variant="secondary" size="sm" loading={historyLoading} onClick={() => loadHistoryPage(false)}>
+                加载更多
+              </Button>
+            </div>
+          )}
+          {mode === 'history' && historyLoading && hasMore === false && filtered.length === 0 && (
+            <div className="empty" style={{ padding: '24px 0' }}>加载中...</div>
+          )}
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={clearTarget}
+        title="清空事件历史"
+        message="确定清空全部持久化的事件历史记录吗？此操作不可撤销。"
+        confirmText="清空"
+        danger
+        onConfirm={confirmClearHistory}
+        onCancel={() => setClearTarget(false)}
+      />
     </div>
   );
 }
