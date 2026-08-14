@@ -14,6 +14,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import { isAdmin } from '../api/auth';
 import './hub.less';
 
 /** 镜像源条目 */
@@ -103,6 +104,7 @@ function formatCount(n: number): string {
 export default function HubPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const canManage = isAdmin();
   // 搜索输入框内容
   const [queryInput, setQueryInput] = useState(DEFAULT_QUERY);
   // 当前提交的搜索关键字
@@ -170,6 +172,10 @@ export default function HubPage() {
    * 新增镜像源
    */
   const handleAddSource = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可新增镜像源', 'error');
+      return;
+    }
     const host = newSourceHost.trim();
     if (!host) {
       showToast('请输入镜像源地址', 'error');
@@ -187,25 +193,34 @@ export default function HubPage() {
     } finally {
       setSavingSource(false);
     }
-  }, [newSourceHost, newSourceName, loadSources, showToast]);
+  }, [canManage, newSourceHost, newSourceName, loadSources, showToast]);
 
   /**
    * 保存自定义搜索源基址
    */
   const handleSaveSearchSource = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可保存搜索源', 'error');
+      return;
+    }
     try {
       await post('/api/hub/search-source', { host: searchSource.trim() });
       showToast('搜索源已保存');
     } catch (e: any) {
       showToast(e?.message || '保存搜索源失败', 'error');
     }
-  }, [searchSource, showToast]);
+  }, [canManage, searchSource, showToast]);
 
   /**
    * 删除自定义镜像源
    */
   const confirmDeleteSource = useCallback(async () => {
     if (!deleteSourceId) return;
+    if (!canManage) {
+      showToast('仅管理员可删除镜像源', 'error');
+      setDeleteSourceId(null);
+      return;
+    }
     try {
       await del(`/api/hub/sources/${encodeURIComponent(deleteSourceId)}`);
       showToast('镜像源已删除');
@@ -214,7 +229,7 @@ export default function HubPage() {
     } catch (e: any) {
       showToast(e?.message || '删除镜像源失败', 'error');
     }
-  }, [deleteSourceId, loadSources, showToast]);
+  }, [canManage, deleteSourceId, loadSources, showToast]);
 
   /**
    * 切换镜像源启用/停用状态
@@ -222,6 +237,10 @@ export default function HubPage() {
    */
   const toggleSourceEnabled = useCallback(
     async (s: HubSource) => {
+      if (!canManage) {
+        showToast('仅管理员可启停镜像源', 'error');
+        return;
+      }
       try {
         await post(`/api/hub/sources/${encodeURIComponent(s.id)}/enabled`, {
           enabled: !s.enabled,
@@ -231,7 +250,7 @@ export default function HubPage() {
         showToast(e?.message || '操作失败', 'error');
       }
     },
-    [loadSources, showToast]
+    [canManage, loadSources, showToast]
   );
 
   /**
@@ -344,6 +363,11 @@ export default function HubPage() {
    */
   const handlePull = useCallback(async () => {
     if (!pullTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可拉取镜像', 'error');
+      setPullTarget(null);
+      return;
+    }
     const tag = pullTag || 'latest';
     const ref = `${pullTarget.full_name}:${tag}`;
     setPulling(true);
@@ -356,7 +380,7 @@ export default function HubPage() {
     } finally {
       setPulling(false);
     }
-  }, [pullTarget, pullTag, pullSource, showToast]);
+  }, [canManage, pullTarget, pullTag, pullSource, showToast]);
 
   /**
    * 从"常用镜像"快捷拉取指定镜像（走当前所选默认镜像源）
@@ -365,6 +389,10 @@ export default function HubPage() {
   const handlePullCommon = useCallback(
     async (name: string) => {
       if (pullingCommon) return;
+      if (!canManage) {
+        showToast('仅管理员可拉取镜像', 'error');
+        return;
+      }
       setPullingCommon(name);
       try {
         // 未显式选源时后端会自动用默认镜像源；显式传 pullSource 以跟随下拉
@@ -376,7 +404,7 @@ export default function HubPage() {
         setPullingCommon(null);
       }
     },
-    [pullingCommon, pullSource, showToast]
+    [canManage, pullingCommon, pullSource, showToast]
   );
 
   return (
@@ -396,7 +424,7 @@ export default function HubPage() {
                 搜索
               </Button>
             </form>
-            <Button variant="secondary" onClick={() => setSourcesOpen(true)}>
+            <Button variant="secondary" onClick={() => setSourcesOpen(true)} disabled={!canManage}>
               镜像源
             </Button>
           </div>
@@ -418,7 +446,7 @@ export default function HubPage() {
                 key={m.name}
                 className="hub-common__item"
                 onClick={() => handlePullCommon(m.name)}
-                disabled={pullingCommon !== null}
+                disabled={pullingCommon !== null || !canManage}
               >
                 <span className="hub-common__name">{m.name}</span>
                 {pullingCommon === m.name ? (
@@ -488,6 +516,7 @@ export default function HubPage() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        disabled={!canManage}
                         onClick={(e) => {
                           e.stopPropagation();
                           openPull(repo);
@@ -550,7 +579,7 @@ export default function HubPage() {
             <Button variant="secondary" onClick={() => setPullTarget(null)} disabled={pulling}>
               取消
             </Button>
-            <Button onClick={handlePull} loading={pulling}>
+            <Button onClick={handlePull} loading={pulling} disabled={!canManage}>
               拉取
             </Button>
           </>
@@ -647,6 +676,7 @@ export default function HubPage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={!canManage}
                       onClick={() => toggleSourceEnabled(s)}
                     >
                       {s.enabled === false ? '启用' : '停用'}
@@ -655,6 +685,7 @@ export default function HubPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={!canManage}
                         onClick={() => setDeleteSourceId(s.id)}
                       >
                         删除
@@ -682,7 +713,7 @@ export default function HubPage() {
               />
             </Field>
             <div className="hub-sources__add-btn">
-              <Button variant="primary" onClick={handleAddSource} loading={savingSource}>
+              <Button variant="primary" onClick={handleAddSource} loading={savingSource} disabled={!canManage}>
                 添加镜像源
               </Button>
             </div>
@@ -701,7 +732,7 @@ export default function HubPage() {
               />
             </Field>
             <div className="hub-sources__add-btn">
-              <Button variant="primary" onClick={handleSaveSearchSource}>
+              <Button variant="primary" onClick={handleSaveSearchSource} disabled={!canManage}>
                 保存搜索源
               </Button>
             </div>

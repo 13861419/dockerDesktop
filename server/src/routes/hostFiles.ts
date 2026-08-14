@@ -16,6 +16,7 @@ import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -123,6 +124,7 @@ router.get(
  */
 router.post(
   '/mkdir',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const parent = resolvePath(req.body?.path);
     const name = String(req.body?.name || '').trim();
@@ -166,6 +168,7 @@ router.post(
  */
 router.post(
   '/write',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const target = resolvePath(req.body?.path);
     assertSafePath(target);
@@ -184,6 +187,7 @@ router.post(
  */
 router.post(
   '/rename',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const from = resolvePath(req.body?.from);
     const to = resolvePath(req.body?.to);
@@ -203,6 +207,7 @@ router.post(
  */
 router.post(
   '/delete',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const target = resolvePath(req.body?.path);
     assertSafePath(target);
@@ -232,6 +237,7 @@ router.post(
  */
 router.post(
   '/upload',
+  requireAdmin,
   express.raw({ type: 'application/octet-stream', limit: '1gb' }),
   asyncHandler(async (req: Request, res: Response) => {
     const dir = resolvePath(String(req.query.path || ''));

@@ -122,7 +122,7 @@ function formatDate(iso: string): string {
  */
 export default function BackupsPage() {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
+  const canManage = isAdmin();
 
   const [backups, setBackups] = useState<BackupListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -168,15 +168,24 @@ export default function BackupsPage() {
    * 打开创建备份弹窗
    */
   const openCreate = useCallback(() => {
+    if (!canManage) {
+      showToast('仅管理员可创建备份', 'error');
+      return;
+    }
     setForm({ kind: 'database', name: '', source: '' });
     setErrors({});
     setCreateOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 提交创建备份
    */
   const handleCreate = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可创建备份', 'error');
+      setCreateOpen(false);
+      return;
+    }
     const err: { name?: string } = {};
     if (!form.name.trim()) err.name = '请输入名称';
     setErrors(err);
@@ -197,7 +206,7 @@ export default function BackupsPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, load, showToast]);
+  }, [canManage, form, load, showToast]);
 
   /**
    * 下载备份文件
@@ -217,6 +226,11 @@ export default function BackupsPage() {
    */
   const handleRestore = useCallback(async () => {
     if (!restoreTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可恢复备份', 'error');
+      setRestoreTarget(null);
+      return;
+    }
     setRestoring(true);
     try {
       const data = await post<RestoreResponse>(`/api/backups/${restoreTarget.id}/restore`);
@@ -233,14 +247,14 @@ export default function BackupsPage() {
     } finally {
       setRestoring(false);
     }
-  }, [restoreTarget, load, showToast]);
+  }, [canManage, restoreTarget, load, showToast]);
 
   /**
    * 确认删除备份
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete) {
+    if (!canManage) {
       showToast('仅管理员可删除备份', 'error');
       setDeleteTarget(null);
       return;
@@ -256,7 +270,7 @@ export default function BackupsPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, deleteTarget, load, showToast]);
+  }, [canManage, deleteTarget, load, showToast]);
 
   return (
     <div className="page">
@@ -266,7 +280,7 @@ export default function BackupsPage() {
       </div>
 
       <div className="toolbar">
-        <Button onClick={openCreate}>+ 创建备份</Button>
+        <Button onClick={openCreate} disabled={!canManage}>+ 创建备份</Button>
         <Button variant="ghost" onClick={load}>刷新</Button>
       </div>
 
@@ -322,10 +336,8 @@ export default function BackupsPage() {
                       <Button variant="ghost" size="sm" disabled={!b.exists} onClick={() => handleDownload(b)}>
                         下载
                       </Button>
-                      <Button variant="ghost" size="sm" disabled={!b.exists} onClick={() => setRestoreTarget(b)}>
-                        恢复
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(b)} disabled={!canDelete}>删除</Button>
+                      <Button variant="ghost" size="sm" disabled={!b.exists} onClick={() => setRestoreTarget(b)}>恢复</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(b)} disabled={!canManage}>删除</Button>
                     </div>
                   </td>
                 </tr>
@@ -343,7 +355,7 @@ export default function BackupsPage() {
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button loading={saving} onClick={handleCreate}>创建</Button>
+            <Button loading={saving} onClick={handleCreate} disabled={!canManage}>创建</Button>
           </div>
         }
       >

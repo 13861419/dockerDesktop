@@ -53,6 +53,7 @@ interface FormError {
  */
 export default function SitesPage() {
   const { showToast } = useToast();
+  const canManage = isAdmin();
   const canDelete = isAdmin();
   const certInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,6 +114,10 @@ export default function SitesPage() {
    * 应用（reload）反代配置
    */
   const applyConfig = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可应用反代配置', 'error');
+      return;
+    }
     setApplying(true);
     try {
       const data = await post<{ ok: boolean; message: string }>('/api/sites/reload');
@@ -122,23 +127,31 @@ export default function SitesPage() {
     } finally {
       setApplying(false);
     }
-  }, [showToast]);
+  }, [canManage, showToast]);
 
   /**
    * 打开新增弹窗
    */
   const openCreate = useCallback(() => {
+    if (!canManage) {
+      showToast('仅管理员可新增站点', 'error');
+      return;
+    }
     setEditing(null);
     setForm({ domain: '', upstreamHost: '', upstreamPort: '80', listenPort: '80', enableHttps: false, certPath: '' });
     setErrors({});
     setModalOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 打开编辑弹窗
    * @param s 站点
    */
   const openEdit = useCallback((s: Site) => {
+    if (!canManage) {
+      showToast('仅管理员可编辑站点', 'error');
+      return;
+    }
     setEditing(s);
     setForm({
       domain: s.domain,
@@ -150,12 +163,17 @@ export default function SitesPage() {
     });
     setErrors({});
     setModalOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 校验并提交
    */
   const handleSubmit = useCallback(async () => {
+    if (!canManage) {
+      showToast(editing ? '仅管理员可编辑站点' : '仅管理员可新增站点', 'error');
+      setModalOpen(false);
+      return;
+    }
     const err: FormError = {};
     if (!form.domain.trim()) err.domain = '请输入域名';
     if (!form.upstreamHost.trim()) err.upstreamHost = '请输入上游地址';
@@ -188,7 +206,7 @@ export default function SitesPage() {
     } finally {
       setSaving(false);
     }
-  }, [editing, form, load, showToast]);
+  }, [canManage, editing, form, load, showToast]);
 
   /**
    * 删除站点
@@ -219,6 +237,10 @@ export default function SitesPage() {
    */
   const handleToggle = useCallback(
     async (s: Site) => {
+      if (!canManage) {
+        showToast('仅管理员可启停站点', 'error');
+        return;
+      }
       try {
         await post(`/api/sites/${s.id}/toggle`);
         showToast(s.enabled ? '站点已停止' : '站点已启动');
@@ -227,7 +249,7 @@ export default function SitesPage() {
         showToast(e?.message || '操作失败', 'error');
       }
     },
-    [load, showToast],
+    [canManage, load, showToast],
   );
 
   /**
@@ -236,6 +258,10 @@ export default function SitesPage() {
    */
   const openCert = useCallback(
     async (s: Site) => {
+      if (!canManage) {
+        showToast('仅管理员可管理证书', 'error');
+        return;
+      }
       setCertSite(s);
       setCertPath(s.certPath);
       setKeyPath(s.certPath ? s.certPath.replace(/\.(crt|pem)$/i, '.key') : '');
@@ -248,7 +274,7 @@ export default function SitesPage() {
         setCertStatus(null);
       }
     },
-    [],
+    [canManage, showToast],
   );
 
   /**
@@ -256,6 +282,11 @@ export default function SitesPage() {
    */
   const handleSaveCert = useCallback(async () => {
     if (!certSite) return;
+    if (!canManage) {
+      showToast('仅管理员可管理证书', 'error');
+      setCertSite(null);
+      return;
+    }
     if (!certFile) {
       showToast('请选择证书文件', 'error');
       return;
@@ -292,7 +323,7 @@ export default function SitesPage() {
     } finally {
       setSavingCert(false);
     }
-  }, [certSite, certPath, keyPath, certFile, showToast]);
+  }, [canManage, certSite, certPath, keyPath, certFile, showToast]);
 
   return (
     <div className="page">
@@ -302,9 +333,9 @@ export default function SitesPage() {
       </div>
 
       <div className="toolbar">
-        <Button onClick={openCreate}>+ 新增站点</Button>
+        <Button onClick={openCreate} disabled={!canManage}>+ 新增站点</Button>
         <Button variant="ghost" onClick={load}>刷新</Button>
-        <Button variant="secondary" loading={applying} onClick={applyConfig}>应用配置</Button>
+        <Button variant="secondary" loading={applying} onClick={applyConfig} disabled={!canManage}>应用配置</Button>
       </div>
 
       <Card>
@@ -350,11 +381,11 @@ export default function SitesPage() {
                   </td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 6 }}>
-                      <Button variant="ghost" size="sm" onClick={() => handleToggle(s)}>
+                      <Button variant="ghost" size="sm" onClick={() => handleToggle(s)} disabled={!canManage}>
                         {s.enabled ? '停止' : '启动'}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openCert(s)}>证书</Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>编辑</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openCert(s)} disabled={!canManage}>证书</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(s)} disabled={!canManage}>编辑</Button>
                       <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(s)} disabled={!canDelete}>删除</Button>
                     </div>
                   </td>
@@ -378,7 +409,7 @@ export default function SitesPage() {
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button loading={saving} onClick={handleSubmit}>{editing ? '保存' : '创建'}</Button>
+            <Button loading={saving} onClick={handleSubmit} disabled={!canManage}>{editing ? '保存' : '创建'}</Button>
           </div>
         }
       >

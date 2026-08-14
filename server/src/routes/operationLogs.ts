@@ -6,7 +6,7 @@
  * - DELETE /api/operation-logs：清空全部操作日志
  */
 import { Router } from 'express';
-import { listOperationLogs, clearOperationLogs, exportOperationLogsCsv } from '../operationLog';
+import { listOperationLogs, clearOperationLogs, exportOperationLogsCsv, logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
 
 const router = Router();
@@ -74,6 +74,7 @@ router.get('/', (req: any, res: any) => {
 router.delete('/', requireAdmin, (_req: any, res: any) => {
   try {
     clearOperationLogs();
+    logOperation(res.locals.username, '清空操作日志', 'operationLog');
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || '清空操作日志失败' });

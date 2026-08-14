@@ -60,6 +60,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};
@@ -157,6 +158,7 @@ router.post(
  */
 router.post(
   '/:id/connect',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { container, aliases, ipv4Address } = req.body || {};
@@ -182,6 +184,7 @@ router.post(
  */
 router.post(
   '/:id/disconnect',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { container, force } = req.body || {};

@@ -165,6 +165,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { name, content, fileName } = req.body || {};
     if (!name || !content) {
@@ -204,6 +205,7 @@ router.get(
  */
 router.post(
   '/:name/up',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -222,6 +224,7 @@ router.post(
  */
 router.post(
   '/:name/down',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -244,6 +247,7 @@ router.post(
  */
 router.post(
   '/:name/restart',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -262,6 +266,7 @@ router.post(
  */
 router.post(
   '/:name/pull',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -280,6 +285,7 @@ router.post(
  */
 router.post(
   '/:name/build',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);

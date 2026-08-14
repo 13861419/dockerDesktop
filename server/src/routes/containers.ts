@@ -957,6 +957,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};
@@ -1045,6 +1046,7 @@ router.post(
  */
 router.post(
   '/:id/recreate',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const old = docker.getContainer(req.params.id);
@@ -1193,6 +1195,7 @@ router.post(
  */
 router.post(
   '/:id/update',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const container = docker.getContainer(req.params.id);
@@ -1312,6 +1315,7 @@ router.post(
  */
 router.post(
   '/:id/commit',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -1361,6 +1365,7 @@ const EXEC_TIMEOUT_MS = 10000;
  */
 router.post(
   '/:id/exec',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const container = docker.getContainer(req.params.id);

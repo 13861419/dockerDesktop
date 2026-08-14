@@ -97,6 +97,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const body = req.body || {};
     assertKind(body.kind);
@@ -139,6 +140,7 @@ router.get(
  */
 router.post(
   '/:id/restore',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const result = await restoreBackup(id);

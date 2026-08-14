@@ -496,6 +496,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { name, type, cron, enabled, config } = req.body || {};
     if (!name || !type) {
@@ -528,6 +529,7 @@ router.post(
  */
 router.put(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = getTaskRow(req.params.id);
     if (!row) {
@@ -560,6 +562,7 @@ router.put(
  */
 router.post(
   '/:id/enable',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = getTaskRow(req.params.id);
     if (!row) {
@@ -583,6 +586,7 @@ router.post(
  */
 router.post(
   '/:id/run',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const row = getTaskRow(req.params.id);
     if (!row) {

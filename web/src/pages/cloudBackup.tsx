@@ -55,7 +55,7 @@ const TYPE_LABEL: Record<CloudType, string> = {
  */
 export default function CloudBackupPage() {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
+  const canManage = isAdmin();
   const uploadRef = useRef<HTMLInputElement>(null);
 
   const [targets, setTargets] = useState<CloudTarget[]>([]);
@@ -120,17 +120,25 @@ export default function CloudBackupPage() {
    * 打开新增弹窗
    */
   const openCreate = useCallback(() => {
+    if (!canManage) {
+      showToast('仅管理员可新增云端目标', 'error');
+      return;
+    }
     setEditing(null);
     setForm({ type: 'webdav', name: '', endpoint: '', bucket: '', path: '', accessKey: '', secret: '', region: '' });
     setErrors({});
     setModalOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 打开编辑弹窗
    * @param t 目标
    */
   const openEdit = useCallback((t: CloudTarget) => {
+    if (!canManage) {
+      showToast('仅管理员可编辑云端目标', 'error');
+      return;
+    }
     setEditing(t);
     setForm({
       type: t.type,
@@ -144,12 +152,17 @@ export default function CloudBackupPage() {
     });
     setErrors({});
     setModalOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 校验并提交
    */
   const handleSubmit = useCallback(async () => {
+    if (!canManage) {
+      showToast(editing ? '仅管理员可编辑云端目标' : '仅管理员可新增云端目标', 'error');
+      setModalOpen(false);
+      return;
+    }
     const err: FormError = {};
     if (!form.name.trim()) err.name = '请输入名称';
     if (!form.endpoint.trim()) err.endpoint = '请输入端点地址';
@@ -182,14 +195,14 @@ export default function CloudBackupPage() {
     } finally {
       setSaving(false);
     }
-  }, [editing, form, load, showToast]);
+  }, [canManage, editing, form, load, showToast]);
 
   /**
    * 删除目标
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete) {
+    if (!canManage) {
       showToast('仅管理员可删除云端目标', 'error');
       setDeleteTarget(null);
       return;
@@ -205,13 +218,17 @@ export default function CloudBackupPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, deleteTarget, load, showToast]);
+  }, [canManage, deleteTarget, load, showToast]);
 
   /**
    * 测试连接
    * @param t 目标
    */
   const handleTest = useCallback(async (t: CloudTarget) => {
+    if (!canManage) {
+      showToast('仅管理员可测试云端目标', 'error');
+      return;
+    }
     setTestingId(t.id);
     try {
       const data = await post<{ ok: boolean; message: string }>(`/api/cloud/targets/${t.id}/test`);
@@ -221,12 +238,16 @@ export default function CloudBackupPage() {
     } finally {
       setTestingId(null);
     }
-  }, [showToast]);
+  }, [canManage, showToast]);
 
   /**
    * 上传文件到所选目标
    */
   const handleUpload = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可上传备份', 'error');
+      return;
+    }
     if (!uploadTargetId) {
       showToast('请选择目标', 'error');
       return;
@@ -262,7 +283,7 @@ export default function CloudBackupPage() {
     } finally {
       setUploading(false);
     }
-  }, [uploadTargetId, uploadFile, showToast]);
+  }, [canManage, uploadTargetId, uploadFile, showToast]);
 
   // 目标类型提示
   const endpointHint =
@@ -298,7 +319,7 @@ export default function CloudBackupPage() {
             </Button>
             {uploadFile && <span className="cb-upload__name">{uploadFile.name}</span>}
           </div>
-          <Button loading={uploading} disabled={!uploadFile || targets.length === 0} onClick={handleUpload}>
+          <Button loading={uploading} disabled={!uploadFile || targets.length === 0 || !canManage} onClick={handleUpload}>
             {uploading ? '上传中...' : '上传'}
           </Button>
         </div>
@@ -312,7 +333,7 @@ export default function CloudBackupPage() {
 
       {/* 目标列表 */}
       <div className="toolbar">
-        <Button onClick={openCreate}>+ 新增目标</Button>
+        <Button onClick={openCreate} disabled={!canManage}>+ 新增目标</Button>
         <Button variant="ghost" onClick={load}>刷新</Button>
       </div>
 
@@ -354,11 +375,11 @@ export default function CloudBackupPage() {
                   </td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 6 }}>
-                      <Button variant="ghost" size="sm" loading={testingId === t.id} onClick={() => handleTest(t)}>
+                      <Button variant="ghost" size="sm" loading={testingId === t.id} disabled={!canManage} onClick={() => handleTest(t)}>
                         测试连接
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canDelete}>删除</Button>
+                      <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEdit(t)}>编辑</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canManage}>删除</Button>
                     </div>
                   </td>
                 </tr>
@@ -381,7 +402,7 @@ export default function CloudBackupPage() {
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button loading={saving} onClick={handleSubmit}>{editing ? '保存' : '新增'}</Button>
+            <Button loading={saving} onClick={handleSubmit} disabled={!canManage}>{editing ? '保存' : '新增'}</Button>
           </div>
         }
       >

@@ -14,6 +14,8 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import { requireAdmin } from '../auth';
+import { logOperation } from '../operationLog';
 
 const router = Router();
 
@@ -216,6 +218,7 @@ router.get(
  */
 router.post(
   '/exec',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const command = String(req.body?.command || '').trim();
     const shell: Shell = req.body?.shell === 'cmd' ? 'cmd' : 'powershell';
@@ -241,6 +244,7 @@ router.post(
       const detail =
         err?.stderr || err?.stdout || err?.message || '命令执行失败';
       const killed = err?.killed ? '（进程被终止：可能超时）' : '';
+      logOperation(res.locals.username, '执行宿主机命令', 'hostTerminal', shell, `${cwd}: ${command.slice(0, 200)}; 失败: ${String(detail).slice(0, 200)}${killed}`, false);
       res.json({
         output: truncate(String(detail)) + killed,
         exitCode: err?.code ?? 1,

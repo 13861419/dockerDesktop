@@ -145,6 +145,7 @@ services:
  */
 export default function ComposePage() {
   const { showToast } = useToast();
+  const canManage = isAdmin();
   const canDelete = isAdmin();
   const [projects, setProjects] = useState<ComposeProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,6 +204,10 @@ export default function ComposePage() {
    */
   const runAction = useCallback(
     async (project: ComposeProject, action: string, successMsg: string, body?: object) => {
+      if (!canManage) {
+        showToast('仅管理员可操作 Compose 项目', 'error');
+        return;
+      }
       const name = project.name;
       setOpName(name);
       try {
@@ -215,7 +220,7 @@ export default function ComposePage() {
         setOpName(null);
       }
     },
-    [showToast]
+    [canManage, showToast]
   );
 
   /** 解析并设置项目操作中的名称（项目名可能含特殊字符，需编码） */
@@ -302,6 +307,11 @@ export default function ComposePage() {
 
   /** 新建 Compose 项目 */
   const handleCreate = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可新建 Compose 项目', 'error');
+      setCreateOpen(false);
+      return;
+    }
     const name = createName.trim();
     if (!name) {
       showToast('请输入项目名称', 'error');
@@ -326,7 +336,7 @@ export default function ComposePage() {
     } finally {
       setCreating(false);
     }
-  }, [createName, createContent, showToast]);
+  }, [canManage, createName, createContent, showToast]);
 
   /** 查看项目配置文件 */
   const handleViewConfig = useCallback(
@@ -375,6 +385,10 @@ export default function ComposePage() {
   /** 打开编辑弹窗并加载指定项目的 compose 文件内容 */
   const openEdit = useCallback(
     async (project: ComposeProject) => {
+      if (!canManage) {
+        showToast('仅管理员可编辑 Compose 项目', 'error');
+        return;
+      }
       setEditName(project.name);
       setEditOpen(true);
       setEditLoading(true);
@@ -390,11 +404,16 @@ export default function ComposePage() {
         setEditLoading(false);
       }
     },
-    [showToast]
+    [canManage, showToast]
   );
 
   /** 保存编辑后的 compose 文件（复用 POST /api/compose 同名覆盖端点） */
   const handleSaveEdit = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可编辑 Compose 项目', 'error');
+      setEditOpen(false);
+      return;
+    }
     const name = editName.trim();
     if (!name) {
       showToast('项目名称无效', 'error');
@@ -415,7 +434,7 @@ export default function ComposePage() {
     } finally {
       setSavingEdit(false);
     }
-  }, [editName, editContent, showToast]);
+  }, [canManage, editName, editContent, showToast]);
 
   /** 关闭编辑弹窗 */
   const closeEdit = useCallback(() => {
@@ -427,6 +446,11 @@ export default function ComposePage() {
   /** 执行停止（down）操作，带删卷选择 */
   const handleStopConfirm = useCallback(async () => {
     if (!stopTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可停止 Compose 项目', 'error');
+      setStopTarget(null);
+      return;
+    }
     setStopping(true);
     try {
       await post(projectUrl(stopTarget.name) + '/down', { volumes: stopVolumes });
@@ -440,7 +464,7 @@ export default function ComposePage() {
       return;
     }
     setStopping(false);
-  }, [stopTarget, stopVolumes, showToast]);
+  }, [canManage, stopTarget, stopVolumes, showToast]);
 
   /**
    * 打开日志弹窗并拉取最近日志
@@ -503,6 +527,7 @@ export default function ComposePage() {
             </Button>
             <Button
               variant="primary"
+              disabled={!canManage}
               onClick={() => {
                 setCreateFileName('');
                 setCreateTemplate('');
@@ -587,6 +612,7 @@ export default function ComposePage() {
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
+                        disabled={!canManage}
                         onClick={() => runAction(proj, 'up', '项目启动成功')}
                       >
                         启动
@@ -594,6 +620,7 @@ export default function ComposePage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={!canManage}
                         onClick={() => {
                           setStopVolumes(false);
                           setStopTarget(proj);
@@ -605,6 +632,7 @@ export default function ComposePage() {
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
+                        disabled={!canManage}
                         onClick={() => runAction(proj, 'restart', '项目重启成功')}
                       >
                         重启
@@ -613,6 +641,7 @@ export default function ComposePage() {
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
+                        disabled={!canManage}
                         onClick={() => runAction(proj, 'pull', '镜像拉取成功')}
                       >
                         拉取镜像
@@ -621,11 +650,12 @@ export default function ComposePage() {
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
+                        disabled={!canManage}
                         onClick={() => runAction(proj, 'build', '镜像构建成功')}
                       >
                         构建镜像
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(proj)}>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(proj)} disabled={!canManage}>
                         编辑
                       </Button>
                       <Button
@@ -677,7 +707,7 @@ export default function ComposePage() {
             >
               取消
             </Button>
-            <Button onClick={handleCreate} loading={creating}>
+            <Button onClick={handleCreate} loading={creating} disabled={!canManage}>
               创建
             </Button>
           </>
@@ -743,7 +773,7 @@ export default function ComposePage() {
             <Button variant="secondary" onClick={closeEdit} disabled={savingEdit}>
               取消
             </Button>
-            <Button onClick={handleSaveEdit} loading={savingEdit}>
+            <Button onClick={handleSaveEdit} loading={savingEdit} disabled={!canManage}>
               保存
             </Button>
           </>
@@ -813,7 +843,7 @@ export default function ComposePage() {
             <Button variant="secondary" onClick={() => setStopTarget(null)} disabled={stopping}>
               取消
             </Button>
-            <Button onClick={handleStopConfirm} loading={stopping}>
+            <Button onClick={handleStopConfirm} loading={stopping} disabled={!canManage}>
               停止
             </Button>
           </>
@@ -850,7 +880,7 @@ export default function ComposePage() {
             >
               取消
             </Button>
-            <Button variant="danger" onClick={handleDelete} loading={deleting}>
+            <Button variant="danger" onClick={handleDelete} loading={deleting} disabled={!canDelete}>
               删除
             </Button>
           </>

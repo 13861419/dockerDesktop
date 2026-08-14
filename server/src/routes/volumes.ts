@@ -59,6 +59,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};
@@ -105,6 +106,7 @@ router.delete(
  */
 router.post(
   '/prune',
+  requireAdmin,
   asyncHandler(async (_req: Request, res: Response) => {
     const docker = await getDockerClient();
     const result = await docker.pruneVolumes();

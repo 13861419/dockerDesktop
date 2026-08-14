@@ -88,7 +88,7 @@ async function downloadImage(name: string): Promise<void> {
 export default function ImagesPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const canDelete = isAdmin();
+  const canManage = isAdmin();
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -188,6 +188,11 @@ export default function ImagesPage() {
   }, [loadSources]);
 
   const handlePull = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可拉取镜像', 'error');
+      setPullOpen(false);
+      return;
+    }
     const ref = pullRef.trim();
     if (!ref) {
       showToast('请输入镜像名称', 'error');
@@ -206,11 +211,11 @@ export default function ImagesPage() {
     } finally {
       setPulling(false);
     }
-  }, [pullRef, pullSource, showToast]);
+  }, [canManage, pullRef, pullSource, showToast]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete) {
+    if (!canManage) {
       showToast('仅管理员可删除镜像', 'error');
       setDeleteTarget(null);
       return;
@@ -227,7 +232,7 @@ export default function ImagesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, deleteTarget, showToast]);
+  }, [canManage, deleteTarget, showToast]);
 
   /**
    * 执行镜像搜索（调用后端 docker search 接口，引擎侧检索）
@@ -266,6 +271,10 @@ export default function ImagesPage() {
    */
   const handlePullResult = useCallback(
     async (name: string) => {
+      if (!canManage) {
+        showToast('仅管理员可拉取镜像', 'error');
+        return;
+      }
       setPullResultRef(name);
       try {
         // 不传 source，由后端自动使用默认启用镜像源
@@ -278,11 +287,11 @@ export default function ImagesPage() {
         setPullResultRef('');
       }
     },
-    [showToast],
+    [canManage, showToast],
   );
 
   const handlePrune = useCallback(async () => {
-    if (!canDelete) {
+    if (!canManage) {
       showToast('仅管理员可清理镜像', 'error');
       setPruneOpen(false);
       return;
@@ -299,7 +308,7 @@ export default function ImagesPage() {
     } finally {
       setPruning(false);
     }
-  }, [canDelete, showToast]);
+  }, [canManage, showToast]);
 
   /** 返回镜像显示标签（无标签时显示 <none>） */
   const displayName = (img: ImageItem): string => img.RepoTags?.[0] || '<none>';
@@ -309,6 +318,10 @@ export default function ImagesPage() {
    * @param img 目标镜像
    */
   const openTag = useCallback((img: ImageItem) => {
+    if (!canManage) {
+      showToast('仅管理员可给镜像打标签', 'error');
+      return;
+    }
     const base = (img.RepoTags?.[0] || '').split('@')[0];
     const idx = base.lastIndexOf(':');
     // 仓库名里若不含 : 或 : 后紧跟 /（如 registry:5000/repo）则不拆分
@@ -323,13 +336,18 @@ export default function ImagesPage() {
       setTagTag('latest');
     }
     setTagTarget(img);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 提交打标签请求
    */
   const handleTag = useCallback(async () => {
     if (!tagTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可给镜像打标签', 'error');
+      setTagTarget(null);
+      return;
+    }
     const repo = tagRepo.trim();
     const tag = tagTag.trim() || 'latest';
     if (!repo) {
@@ -350,7 +368,7 @@ export default function ImagesPage() {
     } finally {
       setTagging(false);
     }
-  }, [tagTarget, tagRepo, tagTag, showToast]);
+  }, [canManage, tagTarget, tagRepo, tagTag, showToast]);
 
   /**
    * 导出指定镜像（下载 tar 文件）
@@ -376,6 +394,11 @@ export default function ImagesPage() {
    * 提交镜像导入请求（上传 tar 文件到后端 docker load）
    */
   const handleImport = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可导入镜像', 'error');
+      setImportOpen(false);
+      return;
+    }
     if (!importFile) {
       showToast('请先选择要导入的 .tar 镜像文件', 'error');
       return;
@@ -410,24 +433,33 @@ export default function ImagesPage() {
     } finally {
       setImporting(false);
     }
-  }, [importFile, showToast]);
+  }, [canManage, importFile, showToast]);
 
   /**
    * 打开推送弹窗：以当前镜像完整名称为默认推送目标
    * @param img 目标镜像
    */
   const openPush = useCallback((img: ImageItem) => {
+    if (!canManage) {
+      showToast('仅管理员可推送镜像', 'error');
+      return;
+    }
     setPushName(img.RepoTags?.[0] || img.Id);
     setPushUsername('');
     setPushPassword('');
     setPushTarget(img);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 提交镜像推送请求
    */
   const handlePush = useCallback(async () => {
     if (!pushTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可推送镜像', 'error');
+      setPushTarget(null);
+      return;
+    }
     const name = pushName.trim();
     if (!name) {
       showToast('请输入推送目标仓库名', 'error');
@@ -452,7 +484,7 @@ export default function ImagesPage() {
     } finally {
       setPushing(false);
     }
-  }, [pushTarget, pushName, pushUsername, pushPassword, showToast]);
+  }, [canManage, pushTarget, pushName, pushUsername, pushPassword, showToast]);
 
   /** 根据关键字过滤后的镜像列表（按镜像名或 ID 匹配） */
   const filteredImages = useMemo(() => {
@@ -538,16 +570,16 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canManage}>
               清理未使用镜像
             </Button>
-            <Button variant="secondary" onClick={() => setImportOpen(true)}>
+            <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={!canManage}>
               导入镜像
             </Button>
             <Button variant="secondary" onClick={openSearch}>
               搜索镜像
             </Button>
-            <Button variant="primary" onClick={() => setPullOpen(true)}>
+            <Button variant="primary" onClick={() => setPullOpen(true)} disabled={!canManage}>
               拉取镜像
             </Button>
           </div>
@@ -615,13 +647,13 @@ export default function ImagesPage() {
                       >
                         导出
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openTag(img)}>
+                      <Button variant="ghost" size="sm" onClick={() => openTag(img)} disabled={!canManage}>
                         打标签
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openPush(img)}>
+                      <Button variant="ghost" size="sm" onClick={() => openPush(img)} disabled={!canManage}>
                         推送
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)} disabled={!canDelete}>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)} disabled={!canManage}>
                         删除
                       </Button>
                     </div>
@@ -768,6 +800,7 @@ export default function ImagesPage() {
                           variant="ghost"
                           size="sm"
                           loading={pullResultRef === r.name}
+                          disabled={!canManage}
                           onClick={() => handlePullResult(r.name)}
                         >
                           拉取
@@ -794,7 +827,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setPullOpen(false)} disabled={pulling}>
               取消
             </Button>
-            <Button onClick={handlePull} loading={pulling}>
+            <Button onClick={handlePull} loading={pulling} disabled={!canManage}>
               拉取
             </Button>
           </>
@@ -835,7 +868,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setTagTarget(null)} disabled={tagging}>
               取消
             </Button>
-            <Button onClick={handleTag} loading={tagging}>
+            <Button onClick={handleTag} loading={tagging} disabled={!canManage}>
               确认
             </Button>
           </>
@@ -877,7 +910,7 @@ export default function ImagesPage() {
             >
               取消
             </Button>
-            <Button onClick={handleImport} loading={importing}>
+            <Button onClick={handleImport} loading={importing} disabled={!canManage}>
               导入
             </Button>
           </>
@@ -903,7 +936,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setPushTarget(null)} disabled={pushing}>
               取消
             </Button>
-            <Button onClick={handlePush} loading={pushing}>
+            <Button onClick={handlePush} loading={pushing} disabled={!canManage}>
               推送
             </Button>
           </>

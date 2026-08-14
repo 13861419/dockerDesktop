@@ -26,6 +26,7 @@ import {
 } from '../appstore/status';
 import { pullWithFailover } from '../docker/pull';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 import { getDb } from '../storage';
 
 const execAsync = promisify(exec);
@@ -375,6 +376,7 @@ async function isAppInstalled(appId: string): Promise<boolean> {
  */
 router.post(
   '/:id/install',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) {
@@ -530,6 +532,7 @@ async function runComposeLifecycle(app: AppDefinition, sub: string): Promise<str
  */
 router.post(
   '/:id/start',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) return void res.status(404).json({ error: '应用不存在' });
@@ -562,6 +565,7 @@ router.post(
  */
 router.post(
   '/:id/stop',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) return void res.status(404).json({ error: '应用不存在' });
@@ -594,6 +598,7 @@ router.post(
  */
 router.post(
   '/:id/restart',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) return void res.status(404).json({ error: '应用不存在' });
@@ -623,6 +628,7 @@ router.post(
  */
 router.post(
   '/:id/uninstall',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) return void res.status(404).json({ error: '应用不存在' });
@@ -665,6 +671,7 @@ router.post(
  */
 router.post(
   '/:id/upgrade',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) return void res.status(404).json({ error: '应用不存在' });
@@ -691,6 +698,7 @@ router.post(
  */
 router.post(
   '/:id/update-params',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const app = findApp(req.params.id);
     if (!app) return void res.status(404).json({ error: '应用不存在' });

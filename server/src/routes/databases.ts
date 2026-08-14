@@ -502,6 +502,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const b = req.body || {};
@@ -689,6 +690,7 @@ router.get(
  */
 router.post(
   '/:id/databases',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);

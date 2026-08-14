@@ -214,6 +214,7 @@ router.get(
  */
 router.post(
   '/pull',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { ref } = req.body || {};
@@ -352,6 +353,7 @@ router.post(
  */
 router.post(
   '/import',
+  requireAdmin,
   express.raw({ type: 'application/octet-stream', limit: '1gb' }),
   asyncHandler(
     async (req: Request, res: Response) => {
@@ -380,6 +382,7 @@ router.post(
  */
 router.post(
   '/push',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -434,6 +437,7 @@ router.delete(
  */
 router.post(
   '/tag',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -456,6 +460,7 @@ router.post(
  */
 router.post(
   '/prune',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();

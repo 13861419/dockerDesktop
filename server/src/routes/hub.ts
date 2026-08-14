@@ -6,6 +6,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
+import { logOperation } from '../operationLog';
 import {
   listSources,
   addSource,
@@ -125,6 +126,7 @@ router.get(
  */
 router.post(
   '/pull',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { ref } = req.body || {};
@@ -169,9 +171,11 @@ router.get(
  */
 router.post(
   '/sources',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { host, name } = req.body || {};
     const source = addSource(host, name);
+    logOperation(res.locals.username, '新增镜像源', 'hubSource', source.name || source.host, source.host);
     res.json({ ok: true, source });
   }),
 );
@@ -185,6 +189,7 @@ router.delete(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     removeSource(req.params.id);
+    logOperation(res.locals.username, '删除镜像源', 'hubSource', req.params.id);
     res.json({ ok: true });
   }),
 );
@@ -196,8 +201,11 @@ router.delete(
  */
 router.post(
   '/sources/:id/enabled',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    setSourceEnabled(req.params.id, req.body?.enabled === true);
+    const enabled = req.body?.enabled === true;
+    setSourceEnabled(req.params.id, enabled);
+    logOperation(res.locals.username, enabled ? '启用镜像源' : '停用镜像源', 'hubSource', req.params.id);
     res.json({ ok: true });
   }),
 );
@@ -220,8 +228,11 @@ router.get(
  */
 router.post(
   '/search-source',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    setSearchSource(String(req.body?.host || ''));
+    const host = String(req.body?.host || '');
+    setSearchSource(host);
+    logOperation(res.locals.username, host ? '设置镜像搜索源' : '清除镜像搜索源', 'hubSource', host || 'default');
     res.json({ ok: true });
   }),
 );

@@ -333,6 +333,7 @@ router.get(
  */
 router.post(
   '/targets',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const v = validateBody(req.body);
     const d = getDb();
@@ -352,6 +353,7 @@ router.post(
  */
 router.put(
   '/targets/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();
@@ -417,11 +419,13 @@ function resolveTarget(body: any): ResolvedTarget {
  */
 router.post(
   '/targets/:id/test',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const cfg = resolveTarget({ id });
     const probe = Buffer.from('dm-probe-' + Date.now(), 'utf8');
     const result = await performUpload(cfg, '.dm-probe.tmp', probe);
+    logOperation(res.locals.username, result.ok ? '测试云端目标' : '测试云端目标（失败）', '备份', cfg.name, result.message, result.ok);
     res.json({ ok: result.ok, message: result.ok ? '连接成功，已创建测试文件' : result.message });
   }),
 );
@@ -433,6 +437,7 @@ router.post(
  */
 router.post(
   '/upload',
+  requireAdmin,
   express.raw({ type: 'application/octet-stream', limit: '1gb' }),
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.query.id || '');

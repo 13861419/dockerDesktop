@@ -95,6 +95,7 @@ async function put<T = any>(url: string, body?: any): Promise<T> {
  */
 export default function DatabasesPage() {
   const { showToast } = useToast();
+  const canManage = isAdmin();
   const canDelete = isAdmin();
   const [instances, setInstances] = useState<DatabaseInstance[]>([]);
   const [recognized, setRecognized] = useState<RecognizedContainer[]>([]);
@@ -146,6 +147,11 @@ export default function DatabasesPage() {
    */
   const handleSave = useCallback(
     async (target: DatabaseInstance | null, values: InstanceFormValues) => {
+      if (!target && !canManage) {
+        showToast('仅管理员可登记数据库实例', 'error');
+        setRegisterOpen(false);
+        return;
+      }
       setSaving(true);
       try {
         // 编辑实例时若密码留空则保持原密码，不提交 password 字段
@@ -181,7 +187,7 @@ export default function DatabasesPage() {
         setSaving(false);
       }
     },
-    [showToast]
+    [canManage, showToast]
   );
 
   /**
@@ -317,7 +323,7 @@ export default function DatabasesPage() {
         </div>
 
         <div className="db-card__actions" style={{ justifyContent: 'flex-start', marginBottom: 16 }}>
-          <Button variant="primary" size="sm" onClick={() => setRegisterOpen(true)}>
+          <Button variant="primary" size="sm" onClick={() => setRegisterOpen(true)} disabled={!canManage}>
             登记实例
           </Button>
         </div>
@@ -340,7 +346,7 @@ export default function DatabasesPage() {
             title="暂无数据库实例"
             description="点击右上角「登记实例」添加或识别数据库容器"
             action={
-              <Button variant="primary" size="sm" onClick={() => setRegisterOpen(true)}>
+              <Button variant="primary" size="sm" onClick={() => setRegisterOpen(true)} disabled={!canManage}>
                 登记实例
               </Button>
             }
@@ -619,7 +625,7 @@ function DetailModal({
  */
 function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
+  const canManage = isAdmin();
   const [databases, setDatabases] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   // 新建库弹窗是否打开
@@ -683,6 +689,11 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
    * 新建数据库（mysql/mariadb 附带字符集参数）
    */
   const handleCreate = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可创建数据库', 'error');
+      setCreateOpen(false);
+      return;
+    }
     if (!createName.trim()) return;
     setCreating(true);
     try {
@@ -701,14 +712,14 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
     } finally {
       setCreating(false);
     }
-  }, [instance.id, instance.type, createName, createCharset, showToast, loadDatabases]);
+  }, [canManage, instance.id, instance.type, createName, createCharset, showToast, loadDatabases]);
 
   /**
    * 删除数据库（经确认框调用）
    */
   const handleDelete = useCallback(async () => {
     if (!deleteDb) return;
-    if (!canDelete) {
+    if (!canManage) {
       showToast('仅管理员可删除数据库', 'error');
       setDeleteDb(null);
       return;
@@ -726,14 +737,14 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, instance.id, deleteDb, activeDb, showToast, loadDatabases]);
+  }, [canManage, instance.id, deleteDb, activeDb, showToast, loadDatabases]);
 
   return (
     <div>
       <div className="db-detail__section">
         <span className="db-detail__section-title">数据库 ({databases.length})</span>
         <div className="db-detail__section-actions">
-          <Button variant="ghost" size="sm" onClick={() => setCreateOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setCreateOpen(true)} disabled={!canManage}>
             新建库
           </Button>
           <Button variant="ghost" size="sm" onClick={loadDatabases}>
@@ -762,7 +773,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
                 variant="ghost"
                 size="sm"
                 onClick={() => setDeleteDb(db)}
-                disabled={!canDelete}
+                disabled={!canManage}
               >
                 删除
               </Button>
@@ -810,7 +821,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
               variant="primary"
               size="md"
               loading={creating}
-              disabled={!createName.trim()}
+              disabled={!createName.trim() || !canManage}
               onClick={handleCreate}
             >
               创建

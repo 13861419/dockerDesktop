@@ -261,6 +261,7 @@ router.get(
  */
 router.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const v = validateInput(req.body);
     const d = getDb();
@@ -283,6 +284,7 @@ router.post(
  */
 router.put(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();
@@ -323,13 +325,15 @@ router.delete(
  */
 router.post(
   '/:id/toggle',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const d = getDb();
-    const row = d.prepare('SELECT enabled FROM sites WHERE id = ?').get(id) as { enabled: number } | undefined;
+    const row = d.prepare('SELECT domain, enabled FROM sites WHERE id = ?').get(id) as { domain: string; enabled: number } | undefined;
     if (!row) return res.status(404).json({ error: '站点不存在' });
     d.prepare('UPDATE sites SET enabled = ?, updated_at = ? WHERE id = ?').run(row.enabled ? 0 : 1, Date.now(), id);
     const result = await syncReverseProxy();
+    logOperation(res.locals.username, row.enabled ? '停用站点' : '启用站点', '反代', row.domain);
     res.json({ ok: true, enabled: !row.enabled, proxy: result });
   }),
 );
@@ -340,9 +344,11 @@ router.post(
  */
 router.post(
   '/reload',
-  asyncHandler(async (_req: Request, res: Response) => {
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
     const result = await syncReverseProxy();
     if (!result.ok) return res.status(502).json({ error: result.message, ok: false });
+    logOperation(res.locals.username, '重载反代配置', '反代', 'reverse-proxy', result.message);
     res.json({ ok: true, message: result.message });
   }),
 );
@@ -384,6 +390,7 @@ router.get(
  */
 router.post(
   '/:id/cert',
+  requireAdmin,
   express.raw({ type: 'application/octet-stream', limit: '10mb' }),
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);

@@ -128,7 +128,7 @@ async function put(url: string, body?: any): Promise<any> {
  */
 export default function TasksPage() {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
+  const canManage = isAdmin();
   const [tasks, setTasks] = useState<CronTask[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,6 +188,10 @@ export default function TasksPage() {
    * 打开「新建任务」弹窗：重置表单为默认值
    */
   const openCreate = useCallback(() => {
+    if (!canManage) {
+      showToast('仅管理员可新建任务', 'error');
+      return;
+    }
     setEditing(null);
     setFormName('');
     setFormType('prune');
@@ -202,13 +206,17 @@ export default function TasksPage() {
       buildCache: true,
     });
     setFormOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 打开「编辑任务」弹窗：用目标任务回填表单
    * @param task 要编辑的任务
    */
   const openEdit = useCallback((task: CronTask) => {
+    if (!canManage) {
+      showToast('仅管理员可编辑任务', 'error');
+      return;
+    }
     setEditing(task);
     setFormName(task.name);
     setFormType(task.type);
@@ -217,12 +225,17 @@ export default function TasksPage() {
     // 深拷贝 config，避免直接修改原任务对象
     setFormConfig(JSON.parse(JSON.stringify(task.config || {})));
     setFormOpen(true);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 提交新建/编辑：新建用 post，编辑用本地 put
    */
   const handleSave = useCallback(async () => {
+    if (!canManage) {
+      showToast(editing ? '仅管理员可编辑任务' : '仅管理员可新建任务', 'error');
+      setFormOpen(false);
+      return;
+    }
     if (!formName.trim()) {
       showToast('请填写任务名称', 'error');
       return;
@@ -260,7 +273,7 @@ export default function TasksPage() {
     } finally {
       setSaving(false);
     }
-  }, [editing, formName, formType, formCron, formEnabled, formConfig, showToast]);
+  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, showToast]);
 
   /**
    * 切换任务的启用/停用状态
@@ -268,6 +281,10 @@ export default function TasksPage() {
    */
   const handleToggle = useCallback(
     async (task: CronTask) => {
+      if (!canManage) {
+        showToast('仅管理员可启停任务', 'error');
+        return;
+      }
       const next = !task.enabled;
       try {
         await post(`/api/tasks/${task.id}/enable`, { enabled: next });
@@ -277,7 +294,7 @@ export default function TasksPage() {
         showToast(e?.message || '更新启用状态失败', 'error');
       }
     },
-    [showToast]
+    [canManage, showToast]
   );
 
   /**
@@ -286,6 +303,10 @@ export default function TasksPage() {
    */
   const handleRun = useCallback(
     async (task: CronTask) => {
+      if (!canManage) {
+        showToast('仅管理员可立即执行任务', 'error');
+        return;
+      }
       setRunId(task.id);
       try {
         const data = await post<{ ok: boolean; detail?: string }>(`/api/tasks/${task.id}/run`);
@@ -301,7 +322,7 @@ export default function TasksPage() {
         setRunId(null);
       }
     },
-    [showToast]
+    [canManage, showToast]
   );
 
   /**
@@ -309,7 +330,7 @@ export default function TasksPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete) {
+    if (!canManage) {
       showToast('仅管理员可删除任务', 'error');
       setDeleteTarget(null);
       return;
@@ -325,7 +346,7 @@ export default function TasksPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, deleteTarget, showToast]);
+  }, [canManage, deleteTarget, showToast]);
 
   /**
    * 拉取某任务的分页执行历史
@@ -413,7 +434,7 @@ export default function TasksPage() {
             <Button variant="secondary" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="primary" size="sm" onClick={openCreate}>
+            <Button variant="primary" size="sm" onClick={openCreate} disabled={!canManage}>
               + 新建任务
             </Button>
           </div>
@@ -470,6 +491,7 @@ export default function TasksPage() {
                       <input
                         type="checkbox"
                         checked={task.enabled}
+                        disabled={!canManage}
                         onChange={() => handleToggle(task)}
                       />
                       <span className="tasks__switch-slider" />
@@ -496,15 +518,15 @@ export default function TasksPage() {
                       variant="secondary"
                       size="sm"
                       loading={runId === task.id}
-                      disabled={!!runId}
+                      disabled={!!runId || !canManage}
                       onClick={() => handleRun(task)}
                     >
                       立即执行
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => openEdit(task)}>
+                    <Button variant="secondary" size="sm" onClick={() => openEdit(task)} disabled={!canManage}>
                       编辑
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(task)} disabled={!canDelete}>
+                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(task)} disabled={!canManage}>
                       删除
                     </Button>
                   </td>
@@ -526,7 +548,7 @@ export default function TasksPage() {
             <Button variant="ghost" size="md" onClick={() => setFormOpen(false)} disabled={saving}>
               取消
             </Button>
-            <Button variant="primary" size="md" loading={saving} onClick={handleSave}>
+            <Button variant="primary" size="md" loading={saving} onClick={handleSave} disabled={!canManage}>
               {editing ? '保存修改' : '创建任务'}
             </Button>
           </>

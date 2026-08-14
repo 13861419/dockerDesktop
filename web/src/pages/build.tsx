@@ -7,6 +7,7 @@
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { post } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -36,6 +37,7 @@ type LogStatus = 'idle' | 'running' | 'success' | 'error';
 export default function BuildPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const canManage = isAdmin();
 
   // 镜像名称
   const [name, setName] = useState('');
@@ -81,6 +83,10 @@ export default function BuildPage() {
    * 开始构建
    */
   const handleBuild = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可构建镜像', 'error');
+      return;
+    }
     if (!name.trim()) {
       showToast('请填写镜像名称', 'error');
       return;
@@ -120,7 +126,7 @@ export default function BuildPage() {
       setLogs((prev) => [...prev, `[错误] ${e?.message || '构建失败'}`]);
       showToast(e?.message || '构建请求失败', 'error');
     }
-  }, [name, context, dockerfile, noCache, args, showToast]);
+  }, [canManage, name, context, dockerfile, noCache, args, showToast]);
 
   /**
    * 重置表单
@@ -197,7 +203,7 @@ export default function BuildPage() {
           </label>
 
           <div className="build-actions">
-            <Button loading={running} disabled={running} onClick={handleBuild}>
+            <Button loading={running} disabled={running || !canManage} onClick={handleBuild}>
               {running ? '构建中...' : '开始构建'}
             </Button>
             <Button variant="ghost" onClick={handleReset} disabled={running}>清空日志</Button>

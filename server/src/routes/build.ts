@@ -8,6 +8,8 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { getDockerClient } from '../docker/client';
+import { requireAdmin } from '../auth';
+import { logOperation } from '../operationLog';
 
 const router = Router();
 
@@ -42,6 +44,7 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
  */
 router.post(
   '/image',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const body = req.body || {};
     const name = String(body.name || '').trim();
@@ -142,6 +145,7 @@ router.post(
         });
       });
 
+      logOperation(res.locals.username, '构建镜像', 'image', name, `上下文: ${contextAbs}; Dockerfile: ${dockerfile}; noCache: ${noCache}`);
       res.json({
         success: true,
         name,

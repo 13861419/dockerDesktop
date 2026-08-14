@@ -102,6 +102,7 @@ function toNum(v: any): number {
  */
 router.post(
   '/prune',
+  requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};

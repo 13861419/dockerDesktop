@@ -441,6 +441,10 @@ export default function ContainersPage() {
 
   /** 打开克隆弹窗，预填 <原名>-clone 作为新名称 */
   function openClone(id: string, name: string) {
+    if (!canDelete) {
+      showToast('仅管理员可克隆容器', 'error');
+      return;
+    }
     setCloneTarget({ id, name });
     setCloneValue(`${name}-clone`);
     setCloneOpen(true);
@@ -449,6 +453,11 @@ export default function ContainersPage() {
   /** 执行克隆（确认后调用后端接口） */
   async function confirmClone() {
     if (!cloneTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可克隆容器', 'error');
+      setCloneTarget(null);
+      return;
+    }
     const newName = cloneValue.trim();
     // 名称必填校验
     if (!newName) {
@@ -529,6 +538,12 @@ export default function ContainersPage() {
    */
   async function confirmEditImage() {
     if (!editImageTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员可替换容器镜像', 'error');
+      setEditImageTarget(null);
+      setEditImageOpen(false);
+      return;
+    }
     const newImage = editImageValue.trim();
     // 镜像必填校验
     if (!newImage) {
@@ -714,6 +729,10 @@ export default function ContainersPage() {
   }
   /** 重置创建表单草稿并打开弹窗 */
   function openCreate() {
+    if (!canDelete) {
+      showToast('仅管理员可创建容器', 'error');
+      return;
+    }
     setCreateName('');
     setCreateImage('');
     setCreateCommand('');
@@ -858,6 +877,11 @@ export default function ContainersPage() {
    * 校验镜像 / 容器名必填；将端口、挂载、环境变量草稿按后端格式组装后 POST /api/containers。
    */
   async function submitCreate() {
+    if (!canDelete) {
+      showToast('仅管理员可创建容器', 'error');
+      setCreateOpen(false);
+      return;
+    }
     // 必填校验
     if (!createName.trim()) {
       showToast('请填写容器名', 'error');
@@ -1090,6 +1114,7 @@ export default function ContainersPage() {
             variant="primary"
             size="sm"
             onClick={openCreate}
+            disabled={!canDelete}
             className="containers__create-btn"
           >
             创建容器
@@ -1237,6 +1262,7 @@ export default function ContainersPage() {
                               variant="secondary"
                               size="sm"
                               onClick={() => openEditImage(c.Id, name, c.Image)}
+                              disabled={!canDelete}
                             >
                               编辑镜像
                             </Button>
@@ -1244,6 +1270,7 @@ export default function ContainersPage() {
                               variant="secondary"
                               size="sm"
                               onClick={() => openClone(c.Id, name)}
+                              disabled={!canDelete}
                             >
                               克隆
                             </Button>

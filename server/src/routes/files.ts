@@ -19,6 +19,7 @@ import { Readable } from 'stream';
 import { getDockerClient } from '../docker/client';
 import Dockerode from 'dockerode';
 import { logOperation } from '../operationLog';
+import { requireAdmin } from '../auth';
 
 const router = Router();
 
@@ -547,6 +548,7 @@ router.get(
  */
 router.post(
   '/:containerId/upload',
+  requireAdmin,
   express.raw({ type: 'application/octet-stream', limit: '500mb' }),
   asyncHandler(
     async (req: Request, res: Response) => {
@@ -584,6 +586,7 @@ router.post(
  */
 router.post(
   '/:containerId/mkdir',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const container = await getContainerOr404(req.params.containerId);
@@ -614,6 +617,7 @@ router.post(
  */
 router.post(
   '/:containerId/rename',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const container = await getContainerOr404(req.params.containerId);
@@ -653,6 +657,7 @@ router.post(
  */
 router.post(
   '/:containerId/delete',
+  requireAdmin,
   asyncHandler(
     async (req: Request, res: Response) => {
       const container = await getContainerOr404(req.params.containerId);

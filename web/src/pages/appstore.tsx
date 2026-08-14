@@ -14,6 +14,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { AppStoreItem } from '../types';
 // 复用的状态徽标样式（已安装应用需展示运行/停止状态）
 import '../components/StatusBadge.less';
@@ -30,6 +31,7 @@ const APP_LABEL = '应用商店';
  */
 export default function AppStorePage() {
   const { showToast } = useToast();
+  const canManage = isAdmin();
   const [apps, setApps] = useState<AppStoreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -198,6 +200,11 @@ export default function AppStorePage() {
    */
   const handleInstall = useCallback(
     async (app: AppStoreItem) => {
+      if (!canManage) {
+        showToast('仅管理员可安装应用', 'error');
+        setInstallTarget(null);
+        return;
+      }
       setInstallingId(app.id);
       // compose 套件卷由模板配置，不参与安装提交
       const compose = isCompose(app);
@@ -240,7 +247,7 @@ export default function AppStorePage() {
         setInstallingId(null);
       }
     },
-    [showToast, installEnv, installPorts, installVolumes, installSource]
+    [canManage, showToast, installEnv, installPorts, installVolumes, installSource]
   );
 
   /**
@@ -248,6 +255,11 @@ export default function AppStorePage() {
    */
   const handleUninstall = useCallback(async () => {
     if (!uninstallTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可卸载应用', 'error');
+      setUninstallTarget(null);
+      return;
+    }
     const target = uninstallTarget;
     setUninstalling(true);
     try {
@@ -260,7 +272,7 @@ export default function AppStorePage() {
     } finally {
       setUninstalling(false);
     }
-  }, [uninstallTarget, showToast]);
+  }, [canManage, uninstallTarget, showToast]);
 
   /**
    * 打开参数修改弹窗：初始化 Compose 套件的环境变量与端口映射编辑值
@@ -268,6 +280,10 @@ export default function AppStorePage() {
    * @param app 目标应用（须为 Compose 套件，已安装）
    */
   const openParams = useCallback((app: AppStoreItem) => {
+    if (!canManage) {
+      showToast('仅管理员可修改应用参数', 'error');
+      return;
+    }
     const init: Record<string, string> = {};
     for (const e of app.env || []) {
       init[e.key] = e.value ?? '';
@@ -280,13 +296,18 @@ export default function AppStorePage() {
     setParamsEnv(init);
     setParamsPorts(ports);
     setParamsTarget(app);
-  }, []);
+  }, [canManage, showToast]);
 
   /**
    * 保存参数修改：调用 update-params 接口重新渲染并重建 Compose 套件
    */
   const handleUpdateParams = useCallback(async () => {
     if (!paramsTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可修改应用参数', 'error');
+      setParamsTarget(null);
+      return;
+    }
     setUpdatingParams(true);
     // 过滤空 container 的端口行；host 为空时转 undefined 不提交
     const ports = paramsPorts
@@ -310,7 +331,7 @@ export default function AppStorePage() {
     } finally {
       setUpdatingParams(false);
     }
-  }, [paramsTarget, paramsEnv, paramsPorts, showToast]);
+  }, [canManage, paramsTarget, paramsEnv, paramsPorts, showToast]);
 
   /**
    * 升级已安装的 Compose 套件（调用上游接口拉取新镜像并重建）
@@ -318,6 +339,10 @@ export default function AppStorePage() {
    */
   const handleUpgrade = useCallback(
     async (app: AppStoreItem) => {
+      if (!canManage) {
+        showToast('仅管理员可升级应用', 'error');
+        return;
+      }
       setActionId(app.id);
       try {
         const res = await post<{ version?: string; pullOut?: string; upOut?: string }>(
@@ -333,7 +358,7 @@ export default function AppStorePage() {
         setActionId(null);
       }
     },
-    [showToast]
+    [canManage, showToast]
   );
 
   /**
@@ -343,6 +368,10 @@ export default function AppStorePage() {
    */
   const handleControl = useCallback(
     async (app: AppStoreItem, action: 'start' | 'stop' | 'restart') => {
+      if (!canManage) {
+        showToast('仅管理员可操作应用', 'error');
+        return;
+      }
       setActionId(app.id);
       const actionText = action === 'start' ? '启动' : action === 'stop' ? '停止' : '重启';
       try {
@@ -440,7 +469,7 @@ export default function AppStorePage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!!actionId}
+                  disabled={!!actionId || !canManage}
                   loading={actionId === app.id}
                   onClick={() => handleControl(app, app.running ? 'stop' : 'start')}
                 >
@@ -449,7 +478,7 @@ export default function AppStorePage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={!!actionId}
+                  disabled={!!actionId || !canManage}
                   onClick={() => handleControl(app, 'restart')}
                 >
                   重启
@@ -457,7 +486,7 @@ export default function AppStorePage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!!actionId || updatingParams}
+                  disabled={!!actionId || updatingParams || !canManage}
                   loading={updatingParams}
                   onClick={() => openParams(app)}
                 >
@@ -466,7 +495,7 @@ export default function AppStorePage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!!actionId}
+                  disabled={!!actionId || !canManage}
                   loading={actionId === app.id}
                   onClick={() => handleUpgrade(app)}
                 >
@@ -476,7 +505,7 @@ export default function AppStorePage() {
                   variant="danger"
                   size="sm"
                   onClick={() => setUninstallTarget(app)}
-                  disabled={installing}
+                  disabled={installing || !canManage}
                 >
                   卸载
                 </Button>
@@ -487,7 +516,7 @@ export default function AppStorePage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!!actionId}
+                  disabled={!!actionId || !canManage}
                   loading={actionId === app.id}
                   onClick={() =>
                     handleControl(app, app.running ? 'stop' : 'start')
@@ -498,7 +527,7 @@ export default function AppStorePage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={!!actionId}
+                  disabled={!!actionId || !canManage}
                   onClick={() => handleControl(app, 'restart')}
                 >
                   重启
@@ -507,7 +536,7 @@ export default function AppStorePage() {
                   variant="danger"
                   size="sm"
                   onClick={() => setUninstallTarget(app)}
-                  disabled={installing}
+                  disabled={installing || !canManage}
                 >
                   卸载
                 </Button>
@@ -518,7 +547,7 @@ export default function AppStorePage() {
               variant="primary"
               size="sm"
               loading={installing}
-              disabled={!!installingId && !installing}
+              disabled={!canManage || (!!installingId && !installing)}
               onClick={() => openInstall(app)}
             >
               {installing ? '安装中' : '安装'}
@@ -625,7 +654,7 @@ export default function AppStorePage() {
               variant="primary"
               size="md"
               loading={installing}
-              disabled={!installTarget}
+              disabled={!installTarget || !canManage}
               onClick={() => installTarget && handleInstall(installTarget)}
             >
               确认安装
