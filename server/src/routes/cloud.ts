@@ -431,6 +431,24 @@ router.post(
 );
 
 /**
+ * 上传文件到指定云端目标（供备份归档等其它模块复用）
+ * @param targetId 云端目标 id
+ * @param filename 文件名（会拼接在目标基路径下）
+ * @param content 文件内容
+ * @returns 上传结果（ok、信息、文件大小、目标名）
+ * @throws 目标不存在 / 密钥缺失时抛错
+ */
+export async function uploadToCloudTarget(
+  targetId: string,
+  filename: string,
+  content: Buffer,
+): Promise<{ ok: boolean; message: string; size: number; target: string }> {
+  const cfg = resolveTarget({ id: targetId });
+  const result = await performUpload(cfg, filename, content);
+  return { ok: result.ok, message: result.message, size: content.length, target: cfg.name };
+}
+
+/**
  * POST /api/cloud/upload
  * 上传文件到云端目标
  * 请求体：express.raw（application/octet-stream），query 传 id=目标id & filename=文件名

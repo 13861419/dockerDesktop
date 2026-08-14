@@ -61,6 +61,16 @@ interface RestoreResponse {
   result: RestoreResult;
 }
 
+/** 云端目标（用于备份上传归档） */
+interface CloudTarget {
+  id: string;
+  name: string;
+  type: string;
+  endpoint: string;
+  path: string;
+  hasSecret: boolean;
+}
+
 /** 备份类型中文标签 */
 const KIND_LABEL: Record<BackupKind, string> = {
   database: '面板数据库',
@@ -142,6 +152,12 @@ export default function BackupsPage() {
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<BackupListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // 云上传弹窗
+  const [uploadTarget, setUploadTarget] = useState<BackupListItem | null>(null);
+  const [cloudTargets, setCloudTargets] = useState<CloudTarget[]>([]);
+  const [selectedCloudId, setSelectedCloudId] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   /**
    * 加载备份列表
@@ -272,6 +288,60 @@ export default function BackupsPage() {
     }
   }, [canManage, deleteTarget, load, showToast]);
 
+  /**
+   * 打开"上传到云端"弹窗并加载可用云端目标
+   * @param item 待上传的备份记录
+   */
+  const openUpload = useCallback(
+    async (item: BackupListItem) => {
+      if (!canManage) {
+        showToast('仅管理员可将备份上传到云端', 'error');
+        return;
+      }
+      setSelectedCloudId('');
+      setUploadTarget(item);
+      try {
+        const resp = await get<{ targets: CloudTarget[] }>('/api/cloud/targets');
+        const list = (resp?.targets || []).filter((t) => t.hasSecret);
+        setCloudTargets(list);
+        if (list.length === 1) setSelectedCloudId(list[0].id);
+      } catch {
+        setCloudTargets([]);
+      }
+    },
+    [canManage, showToast],
+  );
+
+  /**
+   * 确认将备份上传到所选云端目标
+   */
+  const confirmUploadCloud = useCallback(async () => {
+    if (!uploadTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可将备份上传到云端', 'error');
+      setUploadTarget(null);
+      return;
+    }
+    if (!selectedCloudId) {
+      showToast('请选择云端目标', 'error');
+      return;
+    }
+    setUploading(true);
+    try {
+      const resp = await post<{ ok: boolean; target: string; size: number; filename: string }>(
+        `/api/backups/${uploadTarget.id}/upload-to-cloud`,
+        { targetId: selectedCloudId },
+      );
+      showToast(`已上传到云端「${resp?.target}」`);
+      setUploadTarget(null);
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '上传失败', 'error');
+    } finally {
+      setUploading(false);
+    }
+  }, [canManage, uploadTarget, selectedCloudId, load, showToast]);
+
   return (
     <div className="page">
       <div className="page__header">
@@ -336,6 +406,7 @@ export default function BackupsPage() {
                       <Button variant="ghost" size="sm" disabled={!b.exists} onClick={() => handleDownload(b)}>
                         下载
                       </Button>
+                      <Button variant="ghost" size="sm" disabled={!b.exists || !canManage} onClick={() => openUpload(b)}>上传云端</Button>
                       <Button variant="ghost" size="sm" disabled={!b.exists} onClick={() => setRestoreTarget(b)}>恢复</Button>
                       <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(b)} disabled={!canManage}>删除</Button>
                     </div>
@@ -410,6 +481,37 @@ export default function BackupsPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* 上传到云端弹窗 */}
+      <Modal
+        open={!!uploadTarget}
+        title={`上传备份到云端：${uploadTarget?.name || ''}`}
+        onClose={() => setUploadTarget(null)}
+        footer={
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setUploadTarget(null)}>取消</Button>
+            <Button loading={uploading} onClick={confirmUploadCloud} disabled={!canManage || !selectedCloudId}>上传</Button>
+          </div>
+        }
+      >
+        {cloudTargets.length === 0 ? (
+          <Empty
+            title="暂无可用的云端目标"
+            description="请先到「云端备份」页面配置并测试一个 S3 / OSS / WebDAV 目标。"
+          />
+        ) : (
+          <Field label="选择云端目标">
+            <Select value={selectedCloudId} onChange={(e) => setSelectedCloudId(e.target.value)}>
+              <option value="">请选择目标</option>
+              {cloudTargets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}（{t.type.toUpperCase()} · {t.endpoint}）
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -21,6 +21,7 @@ import {
   readBackupManifest,
   restoreBackup,
 } from '../backup/manager';
+import { uploadToCloudTarget } from './cloud';
 import type { BackupKind } from '../backup/types';
 
 const router = Router();
@@ -173,6 +174,46 @@ router.delete(
     deleteBackupFile(id);
     logOperation(res.locals.username, '删除备份', '备份', manifest.name);
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/backups/:id/upload-to-cloud
+ * 将备份负载文件上传到指定云端目标（S3 / OSS / WebDAV）
+ * @body targetId 云端目标 id（见 /api/cloud/targets）
+ */
+router.post(
+  '/:id/upload-to-cloud',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const targetId = String(req.body?.targetId || '').trim();
+    if (!targetId) {
+      throw Object.assign(new Error('缺少云端目标 targetId'), { statusCode: 400 });
+    }
+    const manifest = readBackupManifest(id);
+    if (!manifest) {
+      throw Object.assign(new Error('备份不存在'), { statusCode: 404 });
+    }
+    if (!fs.existsSync(manifest.filePath)) {
+      throw Object.assign(new Error('备份负载文件缺失，请先创建/保留本地备份文件'), { statusCode: 404 });
+    }
+    const filePath = resolveDownloadFile(id);
+    const content = fs.readFileSync(filePath);
+    const filename = `${manifest.kind}-${manifest.id}-backup${path.extname(filePath)}`;
+    const result = await uploadToCloudTarget(targetId, filename, content);
+    logOperation(
+      res.locals.username,
+      result.ok ? '备份上传云端' : '备份上传云端（失败）',
+      '备份',
+      manifest.name,
+      `${filename} -> ${result.target}${result.ok ? '' : `：${result.message}`}`,
+      result.ok,
+    );
+    if (!result.ok) {
+      return res.status(502).json({ error: result.message });
+    }
+    res.json({ ok: true, id: manifest.id, target: result.target, size: result.size, filename });
   }),
 );
 
