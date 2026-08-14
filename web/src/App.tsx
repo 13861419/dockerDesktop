@@ -40,6 +40,7 @@ const CloudBackupPage = lazy(() => import('./pages/cloudBackup'));
 const SitesPage = lazy(() => import('./pages/sites'));
 const DatabasesPage = lazy(() => import('./pages/databases'));
 const BackupsPage = lazy(() => import('./pages/backups'));
+const FirewallPage = lazy(() => import('./pages/firewall'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -267,6 +268,16 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <DatabasesPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/firewall"
+                element={
+                  <PageSuspense>
+                    <RequireAdmin>
+                      <FirewallPage />
+                    </RequireAdmin>
                   </PageSuspense>
                 }
               />

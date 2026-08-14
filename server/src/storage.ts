@@ -290,6 +290,17 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_docker_events_time ON docker_events(time DESC);
     CREATE INDEX IF NOT EXISTS idx_docker_events_type ON docker_events(type);
+
+    -- 防火墙端口放行规则表：记录由本面板管理的 Windows 防火墙入站放行规则
+    CREATE TABLE IF NOT EXISTS firewall_ports (
+      id         TEXT PRIMARY KEY,          -- uuid
+      port       INTEGER NOT NULL,          -- 端口号（1-65535）
+      proto      TEXT NOT NULL DEFAULT 'tcp', -- tcp / udp
+      name       TEXT NOT NULL,             -- Windows 防火墙规则名（含面板前缀）
+      remark     TEXT,                      -- 备注
+      created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_firewall_ports_port_proto ON firewall_ports(port, proto);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
