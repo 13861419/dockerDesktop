@@ -7,6 +7,7 @@
 import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { onNewEvent, getRecentEvents, DockerEvent } from './events';
+import { registerWsHandler } from './wsRouter';
 
 /**
  * 将 Docker 事件 WebSocket 附加到指定 HTTP 服务器
@@ -16,15 +17,12 @@ export function setupEventWsServer(httpServer: HttpServer): void {
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Set<WebSocket>();
 
-  httpServer.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url || '', 'http://localhost');
-    if (url.pathname !== '/ws/events') {
-      socket.destroy();
-      return;
-    }
+  registerWsHandler(httpServer, (req, socket, head, url) => {
+    if (url.pathname !== '/ws/events') return false;
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws);
     });
+    return true;
   });
 
   wss.on('connection', (ws: WebSocket) => {

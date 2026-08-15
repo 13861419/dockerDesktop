@@ -11,6 +11,7 @@
 import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDockerClient } from './client';
+import { registerWsHandler } from './wsRouter';
 import type Dockerode from 'dockerode';
 
 /** 从 URL 中解析容器 ID：/ws/terminal/<id> */
@@ -26,16 +27,13 @@ function parsePath(pathname: string): string | null {
 export function setupTerminalServer(httpServer: HttpServer): void {
   const wss = new WebSocketServer({ noServer: true });
 
-  httpServer.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url || '', 'http://localhost');
+  registerWsHandler(httpServer, (req, socket, head, url) => {
     const containerId = parsePath(url.pathname);
-    if (!containerId) {
-      socket.destroy();
-      return;
-    }
+    if (!containerId) return false;
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req, containerId);
     });
+    return true;
   });
 
   wss.on('connection', (ws: WebSocket, _req: any, containerId: string) => {
