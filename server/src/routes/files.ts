@@ -347,7 +347,11 @@ function parseTarStream(
     stream.on('data', (chunk: Buffer | string) => {
       const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       buf = Buffer.concat([buf, b]);
-      raw = Buffer.concat([raw, b]);
+      // 仅单文件模式需要完整原始缓冲做端到端兜底提取；
+      // 列目录（only 为空）时不累积，避免整个容器 tar 常驻内存导致 OOM
+      if (only) {
+        raw = Buffer.concat([raw, b]);
+      }
       tryParse();
     });
     stream.on('error', (err) => reject(err));
@@ -450,8 +454,74 @@ function tarBuilderSingleFile(name: string, data: Buffer): Buffer {
 // ============ 容器文件接口 ============
 
 /**
+ * 解析 `ls -lA --time-style=+%s`（GNU）输出为单层文件条目。
+ * 兼容 busybox 等不带 epoch 时间的格式（此时 mtime 置 0，前端显示 '-'）。
+ * 输出形如：drwxr-xr-x 1 root root 22 1690000000 <name> / -rw-r--r-- 1 root root 12 1690000000 <name>
+ * @param output ls 输出
+ * @returns 单层文件条目集合
+ */
+function parseLsEntries(output: string): Array<{ name: string; type: 'dir' | 'file'; size: number; mtime: number }> {
+  const items: Array<{ name: string; type: 'dir' | 'file'; size: number; mtime: number }> = [];
+  // GNU：第 5 个字段为 size，第 6 个为 epoch 秒，剩余为（可能含空格的）文件名
+  const gnu = /^([dl-])([rwxsStT-]{9})\s+\S+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/;
+  // 基础（busybox）：无 epoch，时间为文本，文件名按最后一个空白段尽量截取
+  const basic = /^([dl-])([rwxsStT-]{9})\s+\S+\s+\S+\s+\S+\s+(\d+)\s+(.+)$/;
+  for (const raw of (output || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || /^total\s/.test(line)) continue;
+    let m = gnu.exec(line);
+    let mtime = 0;
+    let size = 0;
+    let name = '';
+    let dir = false;
+    if (m) {
+      dir = m[1] === 'd';
+      size = parseInt(m[3], 10) || 0;
+      mtime = (parseInt(m[4], 10) || 0) * 1000;
+      name = m[5].trim();
+    } else {
+      m = basic.exec(line);
+      if (!m) continue;
+      dir = m[1] === 'd';
+      size = parseInt(m[3], 10) || 0;
+      const rest = m[4];
+      const lastSpace = rest.lastIndexOf(' ');
+      name = (lastSpace >= 0 ? rest.slice(lastSpace + 1) : rest).trim();
+    }
+    // 过滤掉目录自身与上级目录条目
+    if (!name || name === '.' || name === '..') continue;
+    items.push({ name, type: dir ? 'dir' : 'file', size, mtime });
+  }
+  return items;
+}
+
+/**
+ * 用 docker exec `ls` 列出容器内指定目录的【单层】条目。
+ * 相比 getArchive（对目录返回整个递归 tar，大目录会撑爆内存/超时），
+ * exec ls 只返回当前一层，内存与耗时可控，文件管理因此在大容器上也可用。
+ * @param container 容器对象
+ * @param path 容器内目录（以 / 开头）
+ * @returns 单层文件条目集合
+ */
+async function listDirViaExec(
+  container: Dockerode.Container,
+  path: string,
+): Promise<Array<{ name: string; type: 'dir' | 'file'; size: number; mtime: number }>> {
+  // GNU 优先；若容器 ls 不支持 --time-style（如 busybox），回退到基础格式
+  let r = await execInContainer(container, ['sh', '-c', `ls -lA --time-style=+%s -- "${path}"`]);
+  if (r.exitCode !== 0) {
+    r = await execInContainer(container, ['sh', '-c', `ls -lA -- "${path}"`]);
+  }
+  if (r.exitCode !== 0) {
+    const msg = r.output?.trim() || '目录不存在或无法访问';
+    throw Object.assign(new Error(`列出目录失败：${msg}`), { statusCode: 400 });
+  }
+  return parseLsEntries(r.output || '');
+}
+
+/**
  * GET /api/files/:containerId/ls?path=
- * 列出容器内指定目录下的文件条目（用 getArchive 解析 tar，不依赖容器内命令）
+ * 列出容器内指定目录下的文件条目（用 docker exec ls 单层列出，避免递归整个容器文件系统）
  * 返回 { items: [{ name, type:'dir'|'file', size, mtime }] }
  */
 router.get(
@@ -462,16 +532,10 @@ router.get(
       res.status(400).json({ error: '请先启动容器' });
       return;
     }
-    const path = sanitizePath(req.query.path as string | undefined);
-    // getArchive({ path }) 返回该路径的 tar 流（目录则递归列出其中条目）
-    const stream = await container.getArchive({ path });
-    const { entries } = await parseTarStream(stream);
-    // 过滤掉上级目录自身条目（name 不含 / 的根条目），并去重
-    const seen = new Set<string>();
-    const items = entries
-      .filter((e) => e.name && !seen.has(e.name) && seen.add(e.name))
-      .map((e) => ({ name: e.name, type: e.type, size: e.size, mtime: e.mtime }));
-    logOperation(res.locals.username, '浏览目录', 'container', req.params.containerId, `路径: ${path}`);
+    const rawPath = sanitizePath(req.query.path as string | undefined);
+    const literal = rawPath === '/' ? '/' : rawPath.replace(/\/+$/, '') || '/';
+    const items = await listDirViaExec(container, literal);
+    logOperation(res.locals.username, '浏览目录', 'container', req.params.containerId, `路径: ${literal}`);
     res.json({ items });
   }),
 );
