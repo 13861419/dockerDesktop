@@ -79,8 +79,16 @@ function pushRecent(ev: DockerEvent): void {
  * @returns 标准化事件
  */
 function normalize(raw: any): DockerEvent {
+  const timeNano = Number(raw.timeNano);
+  const timeSec = Number(raw.time);
+  const time = Number.isFinite(timeNano) && timeNano > 0
+    ? Math.floor(timeNano / 1_000_000)
+    : Number.isFinite(timeSec) && timeSec > 0
+      ? timeSec * 1000
+      : Date.now();
+
   return {
-    time: Number(raw.time || raw.timeNano || Date.now()) * (raw.timeNano ? 1 : 1000),
+    time,
     type: raw.Type || 'unknown',
     action: raw.Action || '',
     id: raw.Actor?.ID || raw.id || '',
