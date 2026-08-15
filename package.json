@@ -11,8 +11,17 @@
     "dev:server": "npm run dev --workspace server",
     "dev:web": "npm run dev --workspace web",
     "build": "npm run build --workspace server && npm run build --workspace web",
+    "regression:files-events": "node scripts/regression-files-events.js",
+    "regression:databases": "node scripts/regression-databases.js",
+    "regression:appstore": "node scripts/regression-appstore.js",
+    "regression:images": "node scripts/regression-images.js",
+    "regression:overview": "node scripts/regression-overview.js",
+    "regression:volumes": "node scripts/regression-volumes.js",
     "package": "node packaging/build-release.js",
     "package:installer": "node packaging/build-installer.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
   },
   "engines": {
     "node": ">=22"

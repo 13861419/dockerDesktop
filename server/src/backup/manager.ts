@@ -9,10 +9,11 @@
  * 安全：所有由用户可控的 id/name 派生路径都必须经过 resolveSafePath 归一化，
  * 并校验结果位于 backups 根目录之内，杜绝路径穿越。
  *
- * 本阶段（第一阶段核心）：
- *   - database：可真实备份/恢复（对面板 SQLite 做 VACUUM INTO 快照 / 导入回滚）
- *   - volume / compose / site：仅创建清单记录与占位负载，恢复返回"暂不支持"结构，
- *     绝不触碰用户数据，保证正确性优先。
+ * 支持四类备份的创建与恢复：
+ *   - database：对面板 SQLite 做 VACUUM INTO 快照，恢复时导入回滚
+ *   - volume：用一次性 alpine 容器对命名卷 tar 打包 / 解包
+ *   - compose：对 Compose 项目目录 tar 打包 / 恢复时解包
+ *   - site：对站点 nginx 配置与证书 tar 打包 / 恢复时还原
  */
 import fs from 'fs';
 import path from 'path';
@@ -182,28 +183,6 @@ function listSiteRows() {
 }
 
 /**
- * 生成占位（骨架）负载文件，用于尚未实现真实数据搬运的备份类型
- * @param target 目标文件路径
- * @param kind 备份类型
- * @param source 源描述
- */
-function writePlaceholderPayload(target: string, kind: BackupKind, source: string): void {
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const body = JSON.stringify(
-    {
-      kind,
-      skeleton: true,
-      message: `${kind} 类型的真实备份尚未实现，此文件仅为占位负载。`,
-      source: source || '',
-      createdAt: Date.now(),
-    },
-    null,
-    2,
-  );
-  fs.writeFileSync(target, body, 'utf8');
-}
-
-/**
  * 保证 alpine 镜像存在（不存在则 pull）
  * @param docker Dockerode 实例
  */
@@ -323,8 +302,6 @@ export async function createBackup(input: { kind: BackupKind; name: string; sour
       // 无论打包成功与否都清理临时 stage 目录
       fs.rmSync(stage, { recursive: true, force: true });
     }
-  } else {
-    writePlaceholderPayload(filePath, kind, input.source);
   }
 
   const size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
@@ -373,8 +350,8 @@ export interface RestoreResult {
  * 恢复一条备份
  *
  * 流程：加载清单 → 校验类型/状态 → 标记 restoring → 执行恢复 → 标记 ready/failed。
- * 对尚未实现真实恢复的类型（volume/compose/site）返回"暂不支持"结构化结果，
- * 并恢复状态为 ready，绝不触碰用户数据。
+ * database 做 SQLite 导入回滚；volume 用一次性 alpine 容器解包回卷；
+ * compose 解包回项目目录；site 还原 nginx 配置与证书。
  *
  * @param id 备份记录 ID
  * @returns 恢复结果结构
