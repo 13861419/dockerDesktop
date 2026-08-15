@@ -13,7 +13,7 @@ import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import { NetworkItem, ContainerListItem } from '../types';
 import './networks.less';
 
@@ -56,7 +56,11 @@ function getSubnet(net: NetworkItem): string {
  */
 export default function NetworksPage() {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
+  // 是否可写（创建/删除/清理/连接/断开）：仅管理员可用；普通用户可只读浏览。
+  // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
+  const { canManage: canDelete, checking: checkingAdmin } = useCanManage();
+  const canManage = canDelete;
+  const checking = checkingAdmin;
   const [networks, setNetworks] = useState<NetworkItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -114,8 +118,8 @@ export default function NetworksPage() {
       showToast('请输入网络名称', 'error');
       return;
     }
-    if (!canDelete) {
-      showToast('仅管理员可创建网络', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可创建网络', 'error');
       setCreateOpen(false);
       return;
     }
@@ -145,12 +149,12 @@ export default function NetworksPage() {
     } finally {
       setCreating(false);
     }
-  }, [name, driver, subnet, gateway, ipRange, internal, ipv6, showToast, canDelete]);
+  }, [name, driver, subnet, gateway, ipRange, internal, ipv6, showToast, canDelete, checking]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete) {
-      showToast('仅管理员可删除网络', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可删除网络', 'error');
       setDeleteTarget(null);
       return;
     }
@@ -165,7 +169,7 @@ export default function NetworksPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, deleteTarget, showToast]);
+  }, [canDelete, checking, deleteTarget, showToast]);
 
   /**
    * 一键清理未使用网络
@@ -174,8 +178,8 @@ export default function NetworksPage() {
    * 成功后提示删除数量并刷新列表；若没有可清理的网络则提示。
    */
   const handlePrune = useCallback(async () => {
-    if (!canDelete) {
-      showToast('仅管理员可清理网络', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可清理网络', 'error');
       setPruneOpen(false);
       return;
     }
@@ -194,7 +198,7 @@ export default function NetworksPage() {
     } finally {
       setPruning(false);
     }
-  }, [canDelete, showToast]);
+  }, [canDelete, checking, showToast]);
 
   /**
    * 拉取全部容器列表（用于连接容器下拉选择）
@@ -259,8 +263,8 @@ export default function NetworksPage() {
    */
   const handleConnect = useCallback(async () => {
     if (!detailTarget) return;
-    if (!canDelete) {
-      showToast('仅管理员可连接容器到网络', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可连接容器到网络', 'error');
       return;
     }
     if (!connectContainer) {
@@ -282,7 +286,7 @@ export default function NetworksPage() {
     } finally {
       setConnecting(false);
     }
-  }, [detailTarget, connectContainer, connectIpv4, showToast, refreshDetail, canDelete]);
+  }, [detailTarget, connectContainer, connectIpv4, showToast, refreshDetail, canDelete, checking]);
 
   /**
    * 将容器从当前网络断开
@@ -291,8 +295,8 @@ export default function NetworksPage() {
   const handleDisconnect = useCallback(
     async (containerId: string) => {
       if (!detailTarget) return;
-      if (!canDelete) {
-        showToast('仅管理员可从网络断开容器', 'error');
+      if (!canDelete || checking) {
+        showToast(checking ? '正在确认权限，请稍候' : '仅管理员可从网络断开容器', 'error');
         return;
       }
       setDisconnectId(containerId);
@@ -308,7 +312,7 @@ export default function NetworksPage() {
         setDisconnectId(null);
       }
     },
-    [detailTarget, showToast, refreshDetail, canDelete]
+    [detailTarget, showToast, refreshDetail, canDelete, checking]
   );
 
   /** 已连接容器的标识集合（id 与名称），用于过滤下拉中已连接的容器 */

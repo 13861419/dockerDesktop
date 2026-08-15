@@ -15,7 +15,8 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, download } from '../api/client';
-import { getToken, isAdmin } from '../api/auth';
+import { getToken } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import { ContainerFileItem } from '../types';
 import './files.less';
 
@@ -64,8 +65,9 @@ function joinPath(dir: string, name: string): string {
  */
 export default function FilesPage() {
   const { showToast } = useToast();
-  // 是否可写（上传/新建目录/重命名/删除）：容器内文件写操作仅管理员可用，普通用户可只读浏览
-  const canManage = isAdmin();
+  // 是否可写（上传/新建目录/重命名/删除）：容器内文件写操作仅管理员可用，普通用户可只读浏览。
+  // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
+  const { canManage, checking } = useCanManage();
   // 容器下拉选项列表
   const [containers, setContainers] = useState<ContainerOption[]>([]);
   // 当前选中的容器 id（'' 表示未选择）
@@ -235,8 +237,9 @@ export default function FilesPage() {
    */
   const handleUpload = async (file: File) => {
     if (!selectedId) return;
-    if (!canManage) {
-      showToast('仅管理员可上传文件', 'error');
+    // 服务端角色未确认前（checking）也不放行写操作，避免误信被篡改的本地 role
+    if (!canManage || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可上传文件', 'error');
       if (uploadRef.current) uploadRef.current.value = '';
       return;
     }
@@ -281,8 +284,8 @@ export default function FilesPage() {
    */
   const handleMkdir = async () => {
     if (!selectedId) return;
-    if (!canManage) {
-      showToast('仅管理员可新建目录', 'error');
+    if (!canManage || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可新建目录', 'error');
       return;
     }
     const name = mkdirName.trim();
@@ -320,8 +323,8 @@ export default function FilesPage() {
    */
   const handleRename = async () => {
     if (!selectedId || !renameTarget) return;
-    if (!canManage) {
-      showToast('仅管理员可重命名', 'error');
+    if (!canManage || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可重命名', 'error');
       return;
     }
     const newName = renameValue.trim();
@@ -354,8 +357,8 @@ export default function FilesPage() {
    */
   const handleDelete = async () => {
     if (!selectedId || !deleteTarget) return;
-    if (!canManage) {
-      showToast('仅管理员可删除文件', 'error');
+    if (!canManage || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可删除文件', 'error');
       setDeleteTarget(null);
       return;
     }

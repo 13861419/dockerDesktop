@@ -11,7 +11,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { useToast } from '../components/Toast';
 import { get, post } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import './storage.less';
 
 /** df 概要字段（后端 /api/system/df 返回的 summary） */
@@ -101,8 +101,9 @@ function formatBytes(bytes?: number): string {
  */
 export default function StoragePage() {
   const { showToast } = useToast();
-  // 是否可清理：一键清理为破坏性操作，仅管理员可用；普通用户可只读查看统计
-  const canManage = isAdmin();
+  // 是否可清理：一键清理为破坏性操作，仅管理员可用；普通用户可只读查看统计。
+  // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
+  const { canManage, checking } = useCanManage();
   const [summary, setSummary] = useState<DfSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -168,8 +169,8 @@ export default function StoragePage() {
    * 一键清理：调用后端 prune，成功后刷新统计并提示各回收空间
    */
   async function handlePrune() {
-    if (!canManage) {
-      showToast('仅管理员可执行清理', 'error');
+    if (!canManage || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可执行清理', 'error');
       setPruneOpen(false);
       return;
     }

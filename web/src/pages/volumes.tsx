@@ -13,7 +13,7 @@ import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import { VolumeItem } from '../types';
 import './volumes.less';
 
@@ -78,7 +78,10 @@ function formatBytes(bytes: number): string {
  */
 export default function VolumesPage() {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
+  // 是否可写（创建/删除/清理）：仅管理员可用；普通用户可只读浏览。
+  // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
+  const { canManage, checking } = useCanManage();
+  const canDelete = canManage;
   const [volumes, setVolumes] = useState<VolumeItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -137,8 +140,8 @@ export default function VolumesPage() {
       showToast('请输入数据卷名称', 'error');
       return;
     }
-    if (!canDelete) {
-      showToast('仅管理员可创建数据卷', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可创建数据卷', 'error');
       setCreateOpen(false);
       return;
     }
@@ -155,12 +158,12 @@ export default function VolumesPage() {
     } finally {
       setCreating(false);
     }
-  }, [name, driver, showToast, canDelete]);
+  }, [name, driver, showToast, canDelete, checking]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete) {
-      showToast('仅管理员可删除数据卷', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可删除数据卷', 'error');
       setDeleteTarget(null);
       return;
     }
@@ -175,11 +178,11 @@ export default function VolumesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, deleteTarget, showToast]);
+  }, [canDelete, checking, deleteTarget, showToast]);
 
   const handlePrune = useCallback(async () => {
-    if (!canDelete) {
-      showToast('仅管理员可清理数据卷', 'error');
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可清理数据卷', 'error');
       setPruneOpen(false);
       return;
     }
@@ -194,7 +197,7 @@ export default function VolumesPage() {
     } finally {
       setPruning(false);
     }
-  }, [canDelete, showToast]);
+  }, [canDelete, checking, showToast]);
 
   /**
    * 打开卷详情弹窗并触发详情与使用容器列表的加载

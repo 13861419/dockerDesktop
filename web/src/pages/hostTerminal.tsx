@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post } from '../api/client';
 import { useToast } from '../components/Toast';
-import { isAdmin } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Select } from '../components/Form';
@@ -42,7 +42,8 @@ export default function HostTerminalPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 是否能执行命令：宿主机命令执行为高危操作，仅管理员可用
-  const canManage = isAdmin();
+  // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
+  const { canManage, checking } = useCanManage();
 
   // 当前 shell
   const [shell, setShell] = useState('powershell');
@@ -117,9 +118,10 @@ export default function HostTerminalPage() {
       const trimmed = cmd.trim();
       if (!trimmed) return;
 
-      // 非管理员禁止执行宿主机命令（后端强制校验，这里是前端入口守卫）
-      if (!canManage) {
-        showToast('仅管理员可执行宿主机命令', 'error');
+      // 非管理员禁止执行宿主机命令（后端强制校验，这里是前端入口守卫；
+      // 服务端角色未确认前（checking）也暂不放行，避免误信本地被篡改的 role）
+      if (!canManage || checking) {
+        showToast(checking ? '正在确认权限，请稍候' : '仅管理员可执行宿主机命令', 'error');
         return;
       }
 
@@ -151,7 +153,7 @@ export default function HostTerminalPage() {
         setRunning(false);
       }
     },
-    [shell, cwd, pushLine, canManage, showToast],
+    [shell, cwd, pushLine, canManage, checking, showToast],
   );
 
   /**
@@ -232,7 +234,7 @@ export default function HostTerminalPage() {
               placeholder={canManage ? '输入命令...' : '仅管理员可执行命令'}
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={running || !canManage}
+              disabled={running || !canManage || checking}
               spellCheck={false}
               autoComplete="off"
             />
