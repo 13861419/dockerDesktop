@@ -4,15 +4,26 @@
 
 ## ✨ 功能特性
 
-- **总览监控**：Docker 引擎信息、系统资源实时曲线（CPU / 内存 / 网络 / 磁盘）
+- **总览监控**：Docker 引擎信息、系统资源实时曲线（CPU / 内存 / 网络 / 磁盘分区）；支持 NVIDIA GPU 利用率 / 显存 / 温度监控（`nvidia-smi`）
 - **容器管理**：列表、启停/删除/重启/克隆、镜像过滤、查看日志与详情、内置 Web 终端（xterm.js + WebSocket）、设置重启策略等
 - **镜像管理**：列表、拉取/推送/导入/导出、删除、打标签、清理、镜像详情与构建历史；支持多镜像源自动切换与失败重试；展示构建时间与本地拉取时间
+- **构建镜像**：基于宿主机目录的 Dockerfile 独立构建（支持构建参数 / noCache），构建结果持久化为**构建历史**（可回溯日志、一键复用配置、清空）
 - **镜像源（Hub）**：配置国内镜像加速源（内置轩辕、1ms）、Docker Hub 在线搜索、常用镜像快捷拉取
-- **数据卷 / 网络**：列表、创建、删除、清理未使用
+- **数据卷 / 存储 / 网络**：卷与网络列表、创建、删除、清理未使用；存储使用统计与一键回收
 - **Compose**：编排文件查看与编辑、`docker compose up / down / pull / build`
 - **应用商店（AppStore）**：内置应用目录，一键安装部署
-- **事件监听**：实时查看 Docker 引擎事件流
-- **用户与鉴权**：登录鉴权、会话管理、用户增删/改密
+- **计划任务**：定时任务（周期 / 依存的容器操作等）管理
+- **文件管理**：容器内文件浏览 / 上传 / 下载 / 编辑
+- **宿主机文件 / 终端**：宿主机文件浏览与远程终端（xterm）
+- **Docker 引擎**：多 Docker 引擎端点管理（新增 / 编辑 / 设为当前 / 删除）
+- **数据库可视化**：容器数据库 / Redis 的可视化查询与信息查看（只读保护）
+- **备份恢复**：DATA / Compose / 卷 / 站点备份恢复中心；支持将备份文件**上传到云端**（S3 / OSS / WebDAV）
+- **云端备份**：S3 / OSS / WebDAV 目标配置（零第三方依赖，https 手写）、连通性测试、文件上传
+- **站点反代 / SSL**：基于反代容器的站点反向代理、启停与配置 reload、SSL 证书状态与替换
+- **防火墙**：Windows 防火墙入站端口放行管理（基于系统 `netsh`，管理员权限提示）
+- **事件流**：实时查看 Docker 引擎事件；事件**持久化到 SQLite**，可查询**历史**、**导出 CSV**、清空
+- **操作日志**：管理操作审计日志
+- **用户与鉴权**：登录鉴权、会话管理、用户增删/改密、RBAC（管理员专属页面 / 操作守卫）、内置权限边界自动化测试
 - **系统设置**：主题、语言等偏好设置
 
 ## 🧰 技术栈
@@ -36,6 +47,17 @@
 | `hub_sources`        | 镜像加速源列表（含内置默认源）                | `server/src/hubConfig.ts`        |
 | `setting`            | 键值配置（如自定义搜索源基址 `searchSource`） | `server/src/hubConfig.ts`        |
 | `image_pull_history` | 镜像 ID → 本地拉取时间戳（秒）映射           | `server/src/imagePullHistory.ts` |
+| `operation_logs`     | 管理员操作审计日志                       | `server/src/operationLog.ts`     |
+| `cron_tasks` / `cron_task_logs` | 计划任务定义与执行日志            | `server/src/routes/tasks.ts`     |
+| `appstore_instances` / `appstore_app_params` | 应用商店已安装实例与应用参数 | `server/src/appstore/`           |
+| `database_instances` | 数据库 / Redis 可视化实例定义            | `server/src/routes/databases.ts` |
+| `docker_engines`     | 多 Docker 引擎端点配置                | `server/src/routes/engines.ts`   |
+| `cloud_targets`      | 云端备份目标（S3 / OSS / WebDAV）    | `server/src/routes/cloud.ts`     |
+| `sites`              | 站点反代配置                          | `server/src/routes/sites.ts`     |
+| `backups`            | 备份记录（DATA / Compose / 卷 / 站点） | `server/src/backup/manager.ts`  |
+| `image_build_history`| 镜像构建历史（日志预览 / 耗时 / 结果）      | `server/src/routes/build.ts`     |
+| `docker_events`      | Docker 事件持久化历史（实时事件落库）       | `server/src/docker/events.ts`   |
+| `firewall_ports`     | Windows 防火墙放行端口规则              | `server/src/routes/firewall.ts`  |
 
 > **旧版兼容**：早期版本使用 JSON/文本文件存储（`data/users.json`、`data/hub-sources.json`、`data/hub-search-source.txt`、`data/image-pull-history.json`）。服务启动时会自动将旧文件数据迁移进 SQLite，并把旧文件重命名为 `.bak` 备份，实现平滑升级、不丢失任何现有配置。
 
