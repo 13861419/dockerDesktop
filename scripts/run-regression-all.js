@@ -21,6 +21,7 @@ const SCRIPTS = [
   'regression-volumes.js',
   'regression-hub.js',
   'regression-compose.js',
+  'regression-networks.js',
   'regression-containers.js',
 ];
 

@@ -20,6 +20,7 @@
     "regression:hub": "node scripts/regression-hub.js",
     "regression:containers": "node scripts/regression-containers.js",
     "regression:compose": "node scripts/regression-compose.js",
+    "regression:networks": "node scripts/regression-networks.js",
     "regression:all": "node scripts/run-regression-all.js",
     "mock:hub-search": "node scripts/mock-hub-search.js",
     "package": "node packaging/build-release.js",
