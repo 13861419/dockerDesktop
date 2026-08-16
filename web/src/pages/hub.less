@@ -309,13 +309,26 @@
 
 .hub-sources__item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
+}
+
+.hub-sources__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hub-sources__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .hub-sources__host {
@@ -328,6 +341,13 @@
   word-break: break-all;
 }
 
+.hub-sources__order {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .hub-sources__tag {
   flex-shrink: 0;
   padding: 0 6px;
@@ -338,9 +358,31 @@
   background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
+.hub-sources__default {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+}
+
 .hub-sources__name {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.hub-sources__health {
+  font-size: 12px;
+}
+
+.hub-sources__health.is-ok {
+  color: var(--success, #2f9e44);
+}
+
+.hub-sources__health.is-fail {
+  color: var(--danger, #e03131);
 }
 
 .hub-sources__actions {
@@ -348,9 +390,36 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .hub-sources__status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hub-sources__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hub-sources__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px dashed var(--border-color);
+  background: var(--bg-body);
+  border-radius: var(--radius-sm);
+}
+
+.hub-sources__edit-btn {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hub-sources__edit-hint {
   font-size: 12px;
   color: var(--text-muted);
 }

@@ -13,7 +13,7 @@ import Empty from '../components/Empty';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, del } from '../api/client';
+import { get, post, put, del } from '../api/client';
 import { isAdmin } from '../api/auth';
 import './hub.less';
 
@@ -24,6 +24,22 @@ interface HubSource {
   name?: string;
   builtin?: boolean;
   enabled?: boolean;
+  isDefault?: boolean;
+  sortOrder?: number;
+}
+
+/** 镜像源健康检测结果 */
+interface SourceHealth {
+  reachable: boolean;
+  latencyMs: number;
+  statusCode: number;
+  error?: string;
+}
+
+/** 单个镜像源的健康检测结果（含 id/host） */
+interface SourceHealthResult extends SourceHealth {
+  id: string;
+  host: string;
 }
 
 /** Docker Hub 搜索结果中的单个仓库 */
@@ -140,6 +156,18 @@ export default function HubPage() {
   const [savingSource, setSavingSource] = useState(false);
   // 待确认删除的镜像源 id
   const [deleteSourceId, setDeleteSourceId] = useState<string | null>(null);
+  // 正在编辑的镜像源 id（null 表示未进入编辑态）
+  const [editSourceId, setEditSourceId] = useState<string | null>(null);
+  // 编辑表单：host / name
+  const [editHost, setEditHost] = useState('');
+  const [editName, setEditName] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  // 正在测试连通性的镜像源 id（单测）
+  const [testingId, setTestingId] = useState<string | null>(null);
+  // 各镜像源最近一次健康检测结果（按 id 索引）
+  const [healthMap, setHealthMap] = useState<Record<string, SourceHealth>>({});
+  // 批量测试进行中
+  const [testingAll, setTestingAll] = useState(false);
 
   /**
    * 加载已配置的镜像源列表，并选定当前默认源（首个启用的源）
@@ -251,6 +279,139 @@ export default function HubPage() {
       }
     },
     [canManage, loadSources, showToast]
+  );
+
+  /**
+   * 将指定镜像源设为默认源
+   * @param s 目标镜像源
+   */
+  const handleSetDefault = useCallback(
+    async (s: HubSource) => {
+      if (!canManage) {
+        showToast('仅管理员可设置默认源', 'error');
+        return;
+      }
+      try {
+        await post(`/api/hub/sources/${encodeURIComponent(s.id)}/default`);
+        showToast(`已将「${s.name || s.host}」设为默认镜像源`);
+        await loadSources();
+      } catch (e: any) {
+        showToast(e?.message || '设置默认源失败', 'error');
+      }
+    },
+    [canManage, loadSources, showToast]
+  );
+
+  /**
+   * 打开编辑表单（内置源禁用 host 输入）
+   * @param s 目标镜像源
+   */
+  const openEdit = useCallback((s: HubSource) => {
+    setEditSourceId(s.id);
+    setEditHost(s.host);
+    setEditName(s.name || '');
+  }, []);
+
+  /**
+   * 保存镜像源编辑（内置源仅提交 name）
+   */
+  const handleSaveEdit = useCallback(async () => {
+    if (!editSourceId) return;
+    if (!canManage) {
+      showToast('仅管理员可编辑镜像源', 'error');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await put(`/api/hub/sources/${encodeURIComponent(editSourceId)}`, {
+        host: editHost.trim() || undefined,
+        name: editName.trim() || undefined,
+      });
+      showToast('镜像源已更新');
+      setEditSourceId(null);
+      await loadSources();
+    } catch (e: any) {
+      showToast(e?.message || '更新镜像源失败', 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [canManage, editSourceId, editHost, editName, loadSources, showToast]);
+
+  /**
+   * 测试单个镜像源连通性
+   * @param s 目标镜像源
+   */
+  const handleTestSource = useCallback(
+    async (s: HubSource) => {
+      setTestingId(s.id);
+      try {
+        const data = await get<SourceHealth>(
+          `/api/hub/sources/${encodeURIComponent(s.id)}/health`
+        );
+        setHealthMap((prev) => ({ ...prev, [s.id]: data }));
+      } catch (e: any) {
+        setHealthMap((prev) => ({
+          ...prev,
+          [s.id]: {
+            reachable: false,
+            latencyMs: 0,
+            statusCode: 0,
+            error: e?.message || '测试失败',
+          },
+        }));
+      } finally {
+        setTestingId(null);
+      }
+    },
+    []
+  );
+
+  /**
+   * 批量测试所有启用镜像源的连通性
+   */
+  const handleTestAll = useCallback(async () => {
+    setTestingAll(true);
+    try {
+      const data = await post<{ results: SourceHealthResult[] }>('/api/hub/sources/test', {});
+      const map: Record<string, SourceHealth> = {};
+      for (const r of data?.results || []) {
+        const { id, ...rest } = r;
+        map[id] = rest;
+      }
+      setHealthMap(map);
+      showToast('镜像源测试完成');
+    } catch (e: any) {
+      showToast(e?.message || '批量测试失败', 'error');
+    } finally {
+      setTestingAll(false);
+    }
+  }, [showToast]);
+
+  /**
+   * 调整镜像源顺序：把 s 移动到 delta 指定的方向（-1 上移 / +1 下移）
+   * @param s 目标镜像源
+   * @param delta 移动方向
+   */
+  const handleMoveSource = useCallback(
+    async (s: HubSource, delta: -1 | 1) => {
+      if (!canManage) {
+        showToast('仅管理员可调整顺序', 'error');
+        return;
+      }
+      const idx = sources.findIndex((x) => x.id === s.id);
+      const target = idx + delta;
+      if (idx < 0 || target < 0 || target >= sources.length) return;
+      // 交换 idx 与 target，生成新的 id 顺序
+      const ids = sources.map((x) => x.id);
+      [ids[idx], ids[target]] = [ids[target], ids[idx]];
+      try {
+        await post('/api/hub/sources/reorder', { ids });
+        await loadSources();
+      } catch (e: any) {
+        showToast(e?.message || '调整顺序失败', 'error');
+      }
+    },
+    [canManage, sources, loadSources, showToast]
   );
 
   /**
@@ -656,44 +817,154 @@ export default function HubPage() {
             在 Docker Hub 访问不稳定时，可在这里配置镜像加速源。拉取镜像时选择对应源即可，镜像引用会自动带上该源前缀。
           </div>
 
+          <div className="hub-sources__toolbar">
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={testingAll}
+              disabled={!canManage || sources.length === 0}
+              onClick={handleTestAll}
+            >
+              测试全部
+            </Button>
+          </div>
+
           <div className="hub-sources__list">
             {sources.length === 0 ? (
               <Empty title="暂无镜像源" description="请在下方添加" />
             ) : (
-              sources.map((s) => (
-                <div className="hub-sources__item" key={s.id}>
-                  <div className="hub-sources__info">
-                    <div className="hub-sources__host">
-                      {s.host}
-                      {s.builtin && <span className="hub-sources__tag">内置</span>}
-                      {s.name && <span className="hub-sources__name">{s.name}</span>}
+              sources.map((s, idx) => {
+                const health = healthMap[s.id];
+                const editing = editSourceId === s.id;
+                return (
+                  <div className="hub-sources__item" key={s.id}>
+                    <div className="hub-sources__main">
+                      <div className="hub-sources__info">
+                        <div className="hub-sources__host">
+                          <span className="hub-sources__order">#{(s.sortOrder ?? idx) + 1}</span>
+                          {s.host}
+                          {s.isDefault && <span className="hub-sources__default">默认</span>}
+                          {s.builtin && <span className="hub-sources__tag">内置</span>}
+                          {s.name && <span className="hub-sources__name">{s.name}</span>}
+                        </div>
+                        {health && (
+                          <div
+                            className={
+                              'hub-sources__health' + (health.reachable ? ' is-ok' : ' is-fail')
+                            }
+                          >
+                            {health.reachable
+                              ? `可达 · ${health.latencyMs}ms${health.statusCode === 401 ? ' · 需认证' : ''}`
+                              : `不可达 · ${health.error || ''}`}
+                          </div>
+                        )}
+                      </div>
+                      <div className="hub-sources__actions">
+                        <span className="hub-sources__status">
+                          {s.enabled === false ? '未启用' : '启用'}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage}
+                          loading={testingId === s.id}
+                          onClick={() => handleTestSource(s)}
+                        >
+                          测试
+                        </Button>
+                        {!s.isDefault && s.enabled !== false && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!canManage}
+                            onClick={() => handleSetDefault(s)}
+                          >
+                            设为默认
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage || idx === 0}
+                          onClick={() => handleMoveSource(s, -1)}
+                        >
+                          上移
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage || idx === sources.length - 1}
+                          onClick={() => handleMoveSource(s, 1)}
+                        >
+                          下移
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage}
+                          onClick={() => (editing ? setEditSourceId(null) : openEdit(s))}
+                        >
+                          {editing ? '取消' : '编辑'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage}
+                          onClick={() => toggleSourceEnabled(s)}
+                        >
+                          {s.enabled === false ? '启用' : '停用'}
+                        </Button>
+                        {!s.builtin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!canManage}
+                            onClick={() => setDeleteSourceId(s.id)}
+                          >
+                            删除
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="hub-sources__actions">
-                    <span className="hub-sources__status">
-                      {s.enabled === false ? '未启用' : '启用'}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={!canManage}
-                      onClick={() => toggleSourceEnabled(s)}
-                    >
-                      {s.enabled === false ? '启用' : '停用'}
-                    </Button>
-                    {!s.builtin && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={!canManage}
-                        onClick={() => setDeleteSourceId(s.id)}
-                      >
-                        删除
-                      </Button>
+
+                    {editing && (
+                      <div className="hub-sources__edit">
+                        <Field label="镜像源地址" required>
+                          <Input
+                            value={editHost}
+                            onChange={(e) => setEditHost(e.target.value)}
+                            placeholder="如 https://docker.xuanyuan.me"
+                            disabled={s.builtin}
+                          />
+                        </Field>
+                        <Field label="名称（可选）">
+                          <Input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            placeholder="如 轩辕镜像源"
+                          />
+                        </Field>
+                        <div className="hub-sources__edit-btn">
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            loading={savingEdit}
+                            disabled={!canManage}
+                            onClick={handleSaveEdit}
+                          >
+                            保存
+                          </Button>
+                        </div>
+                        {s.builtin && (
+                          <div className="hub-sources__edit-hint">
+                            内置源的主机地址不可修改，仅可编辑名称。
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 

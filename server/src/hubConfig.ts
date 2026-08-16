@@ -19,15 +19,21 @@ export interface HubSource {
   builtin?: boolean;
   /** 是否启用 */
   enabled?: boolean;
+  /** 是否为显式默认源（用户标记的优先拉取源） */
+  isDefault?: boolean;
+  /** 手动排序值，越小优先级越高 */
+  sortOrder?: number;
 }
 
-/** 数据库行结构（builtin/enabled 为 0/1 整数） */
+/** 数据库行结构（builtin/enabled/is_default 为 0/1 整数） */
 interface SourceRow {
   id: string;
   host: string;
   name: string | null;
   builtin: number;
   enabled: number;
+  is_default: number;
+  sort_order: number;
 }
 
 /** 内置默认镜像源列表 */
@@ -47,19 +53,24 @@ function hostnameOf(host: string): string {
 
 /**
  * 确保内置默认源存在于表中（新增内置源时自动补充，与旧 JSON 方案语义一致）
- * 幂等：已存在则跳过。
+ * 幂等：已存在则跳过。首个内置源同时被标记为显式默认源（is_default=1）。
  */
 function ensureBuiltinSources(): void {
   const d = getDb();
-  for (const s of DEFAULT_SOURCES) {
+  for (let i = 0; i < DEFAULT_SOURCES.length; i++) {
+    const s = DEFAULT_SOURCES[i];
     const exists = d.prepare('SELECT 1 AS x FROM hub_sources WHERE id = ?').get(s.id);
     if (!exists) {
-      d.prepare('INSERT INTO hub_sources (id, host, name, builtin, enabled) VALUES (?, ?, ?, ?, ?)').run(
+      d.prepare(
+        'INSERT INTO hub_sources (id, host, name, builtin, enabled, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).run(
         s.id,
         s.host,
         s.name || null,
         s.builtin ? 1 : 0,
         s.enabled ? 1 : 0,
+        i === 0 ? 1 : 0,
+        0,
       );
     }
   }
@@ -67,12 +78,15 @@ function ensureBuiltinSources(): void {
 
 /**
  * 读取镜像源列表（含内置默认源）
+ * 排序规则：手动 sort_order 升序优先 → 内置源在前 → 最后按 rowid 兜底
  * @returns 镜像源列表
  */
 function loadSources(): HubSource[] {
   ensureBuiltinSources();
   const rows = getDb()
-    .prepare('SELECT id, host, name, builtin, enabled FROM hub_sources ORDER BY builtin DESC, rowid')
+    .prepare(
+      'SELECT id, host, name, builtin, enabled, is_default, sort_order FROM hub_sources ORDER BY sort_order ASC, builtin DESC, rowid',
+    )
     .all() as unknown as SourceRow[];
   return rows.map((r) => ({
     id: r.id,
@@ -80,6 +94,8 @@ function loadSources(): HubSource[] {
     name: r.name ?? undefined,
     builtin: r.builtin === 1,
     enabled: r.enabled === 1,
+    isDefault: r.is_default === 1,
+    sortOrder: r.sort_order,
   }));
 }
 
@@ -105,18 +121,24 @@ export function addSource(host: string, name?: string): HubSource {
   if (!/^https?:\/\//i.test(h) && !/^[\w.-]+$/.test(h)) {
     throw new Error('镜像源地址格式不正确');
   }
-  const exists = getDb().prepare('SELECT 1 AS x FROM hub_sources WHERE host = ?').get(h.replace(/\/+$/, ''));
+  const d = getDb();
+  const exists = d.prepare('SELECT 1 AS x FROM hub_sources WHERE host = ?').get(h.replace(/\/+$/, ''));
   if (exists) throw new Error('该镜像源已存在');
+  // 新源 sort_order 取当前最大值 + 1，确保排在所有已有源之后
+  const maxRow = d.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM hub_sources').get() as {
+    next: number;
+  };
   const item: HubSource = {
     id: 'src_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     host: h,
     name: name?.trim() || undefined,
     builtin: false,
     enabled: true,
+    sortOrder: maxRow.next,
   };
-  getDb()
-    .prepare('INSERT INTO hub_sources (id, host, name, builtin, enabled) VALUES (?, ?, ?, ?, ?)')
-    .run(item.id, item.host, item.name || null, 0, 1);
+  d.prepare(
+    'INSERT INTO hub_sources (id, host, name, builtin, enabled, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(item.id, item.host, item.name || null, 0, 1, 0, maxRow.next);
   return { ...item };
 }
 
@@ -135,6 +157,143 @@ export function removeSource(id: string): void {
  */
 export function setSourceEnabled(id: string, enabled: boolean): void {
   getDb().prepare('UPDATE hub_sources SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id);
+}
+
+/**
+ * 更新镜像源的 host / name
+ * 内置源（builtin=1）不允许修改 host，但可改 name；自定义源两者皆可改。
+ * @param id 镜像源 id
+ * @param host 新主机地址（可选，传 undefined 表示不改）
+ * @param name 新名称（可选，传 undefined 表示不改）
+ * @throws 地址非法、重复或源不存在时抛错
+ */
+export function updateSource(id: string, host?: string, name?: string): void {
+  const d = getDb();
+  const row = d.prepare('SELECT host, builtin FROM hub_sources WHERE id = ?').get(id) as
+    | { host: string; builtin: number }
+    | undefined;
+  if (!row) throw new Error('镜像源不存在');
+
+  // 计算最终 host：内置源强制保留原 host，不允许修改
+  const newHost = (host || '').trim();
+  const finalHost = row.builtin === 1 ? row.host : newHost || row.host;
+  if (row.builtin === 0 && newHost) {
+    if (!/^https?:\/\//i.test(newHost) && !/^[\w.-]+$/.test(newHost)) {
+      throw new Error('镜像源地址格式不正确');
+    }
+    // 唯一性校验，排除自身
+    const dup = d
+      .prepare('SELECT 1 AS x FROM hub_sources WHERE host = ? AND id != ?')
+      .get(newHost.replace(/\/+$/, ''), id);
+    if (dup) throw new Error('该镜像源已存在');
+  }
+  const finalName = name === undefined ? undefined : name.trim() || null;
+  if (finalName === undefined) {
+    d.prepare('UPDATE hub_sources SET host = ? WHERE id = ?').run(finalHost, id);
+  } else {
+    d.prepare('UPDATE hub_sources SET host = ?, name = ? WHERE id = ?').run(finalHost, finalName, id);
+  }
+}
+
+/**
+ * 将指定镜像源设为显式默认源（清除其他源的默认标记）
+ * 目标源必须存在且处于启用状态。
+ * @param id 镜像源 id
+ * @throws 源不存在或未启用时抛错
+ */
+export function setDefaultSource(id: string): void {
+  const d = getDb();
+  const row = d.prepare('SELECT enabled FROM hub_sources WHERE id = ?').get(id) as
+    | { enabled: number }
+    | undefined;
+  if (!row) throw new Error('镜像源不存在');
+  if (row.enabled !== 1) throw new Error('仅可对启用状态的镜像源设为默认');
+  d.exec('BEGIN');
+  try {
+    d.prepare('UPDATE hub_sources SET is_default = 0').run();
+    d.prepare('UPDATE hub_sources SET is_default = 1 WHERE id = ?').run(id);
+    d.exec('COMMIT');
+  } catch (err) {
+    try {
+      d.exec('ROLLBACK');
+    } catch {
+      // 无活动事务时忽略
+    }
+    throw err;
+  }
+}
+
+/**
+ * 按给定 id 数组顺序重置所有镜像源的 sort_order
+ * @param ids 按期望顺序排列的镜像源 id 列表
+ */
+export function reorderSources(ids: string[]): void {
+  const d = getDb();
+  const stmt = d.prepare('UPDATE hub_sources SET sort_order = ? WHERE id = ?');
+  d.exec('BEGIN');
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      stmt.run(i, ids[i]);
+    }
+    d.exec('COMMIT');
+  } catch (err) {
+    try {
+      d.exec('ROLLBACK');
+    } catch {
+      // 无活动事务时忽略
+    }
+    throw err;
+  }
+}
+
+/** 镜像源健康检测结果 */
+export interface SourceHealth {
+  /** 是否可达（200 或 401 均视为可达） */
+  reachable: boolean;
+  /** 请求耗时（毫秒） */
+  latencyMs: number;
+  /** HTTP 状态码（请求失败时为 0） */
+  statusCode: number;
+  /** 失败时的错误信息 */
+  error?: string;
+}
+
+/**
+ * 测试单个镜像源的连通性（请求其 /v2/ 端点）
+ * 5 秒超时，401 视为可达（仅说明需认证）。
+ * @param host 源主机地址（可带 https:// 前缀）
+ * @returns 健康检测结果
+ */
+export async function testSourceHealth(host: string): Promise<SourceHealth> {
+  const base = (host || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (!base) return { reachable: false, latencyMs: 0, statusCode: 0, error: '镜像源地址为空' };
+  // 补全协议前缀
+  const url = /^https?:\/\//i.test(base) ? `${base}/v2/` : `https://${base}/v2/`;
+  const start = Date.now();
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    const latencyMs = Date.now() - start;
+    // 200 或 401 均说明源可达（401 仅表示需认证）
+    const reachable = resp.ok || resp.status === 401;
+    return {
+      reachable,
+      latencyMs,
+      statusCode: resp.status,
+      error: reachable ? undefined : `HTTP ${resp.status}`,
+    };
+  } catch (err: any) {
+    const latencyMs = Date.now() - start;
+    const msg =
+      err?.name === 'TimeoutError'
+        ? '请求超时'
+        : err?.message || '网络不可达';
+    return { reachable: false, latencyMs, statusCode: 0, error: msg };
+  }
 }
 
 /**
@@ -167,11 +326,11 @@ export function buildPullRef(ref: string, source?: string): string {
 }
 
 /**
- * 获取第一个启用镜像源的主机地址（无则返回空串）
+ * 获取默认镜像源的主机地址（优先显式默认源，否则第一个启用源，无则返回空串）
  * @returns 默认镜像源裸主机名，无启用源时返回 ''
  */
 export function getDefaultSourceHost(): string {
-  return loadSources().find((s) => s.enabled)?.host || '';
+  return getDefaultSource()?.host || '';
 }
 
 /** 自定义搜索源在 setting 表中的 key */
@@ -208,11 +367,12 @@ export function setSearchSource(host: string): void {
 }
 
 /**
- * 获取启用的镜像源中的第一个（作为默认拉取源）
- * @returns 第一个启用的源，若无则返回 undefined
+ * 获取默认镜像源：优先返回显式标记为默认且启用的源，否则第一个启用源
+ * @returns 默认镜像源，若无启用源则返回 undefined
  */
 export function getDefaultSource(): HubSource | undefined {
-  return loadSources().find((s) => s.enabled);
+  const list = loadSources();
+  return list.find((s) => s.isDefault && s.enabled) || list.find((s) => s.enabled);
 }
 
 /**

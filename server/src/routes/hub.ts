@@ -16,6 +16,10 @@ import {
   searchHubRepos,
   getSearchSource,
   setSearchSource,
+  updateSource,
+  setDefaultSource,
+  reorderSources,
+  testSourceHealth,
 } from '../hubConfig';
 import { requireAdmin } from '../auth';
 
@@ -181,6 +185,48 @@ router.post(
 );
 
 /**
+ * POST /api/hub/sources/reorder
+ * 按给定 id 数组顺序重置镜像源排序（静态路由，须置于 /:id 之前）
+ * body: { ids: string[] }
+ */
+router.post(
+  '/sources/reorder',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: any) => typeof x === 'string') : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ error: '缺少镜像源 id 列表 ids' });
+    }
+    reorderSources(ids);
+    logOperation(res.locals.username, '调整镜像源顺序', 'hubSource', ids.join(','));
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/hub/sources/test
+ * 批量测试镜像源连通性（静态路由，须置于 /:id 之前）
+ * body: { id? } —— 不传 id 则测试所有启用源
+ */
+router.post(
+  '/sources/test',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = req.body?.id;
+    const all = listSources();
+    const targets = id ? all.filter((s) => s.id === id) : all.filter((s) => s.enabled !== false);
+    const results = await Promise.all(
+      targets.map(async (s) => ({
+        id: s.id,
+        host: s.host,
+        ...(await testSourceHealth(s.host)),
+      })),
+    );
+    res.json({ ok: true, results });
+  }),
+);
+
+/**
  * DELETE /api/hub/sources/:id
  * 删除一个自定义镜像源
  */
@@ -207,6 +253,54 @@ router.post(
     setSourceEnabled(req.params.id, enabled);
     logOperation(res.locals.username, enabled ? '启用镜像源' : '停用镜像源', 'hubSource', req.params.id);
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * PUT /api/hub/sources/:id
+ * 更新镜像源的 host / name（内置源仅可改 name）
+ * body: { host?, name? }
+ */
+router.put(
+  '/sources/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { host, name } = req.body || {};
+    updateSource(req.params.id, host, name);
+    logOperation(res.locals.username, '编辑镜像源', 'hubSource', req.params.id, host || name || '');
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/hub/sources/:id/default
+ * 将指定镜像源设为显式默认源
+ */
+router.post(
+  '/sources/:id/default',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    setDefaultSource(req.params.id);
+    logOperation(res.locals.username, '设为默认镜像源', 'hubSource', req.params.id);
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * GET /api/hub/sources/:id/health
+ * 测试单个镜像源的连通性（与 /:id/enabled 互不冲突的子路径）
+ */
+router.get(
+  '/sources/:id/health',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const all = listSources();
+    const s = all.find((x) => x.id === req.params.id);
+    if (!s) {
+      return res.status(404).json({ error: '镜像源不存在' });
+    }
+    const health = await testSourceHealth(s.host);
+    res.json({ ok: true, id: s.id, host: s.host, ...health });
   }),
 );
 
