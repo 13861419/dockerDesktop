@@ -170,6 +170,11 @@ router.put(
       enabled: body.enabled !== undefined ? Boolean(body.enabled) : undefined,
       warnThreshold: body.warnThreshold !== undefined ? Number(body.warnThreshold) : undefined,
       dangerThreshold: body.dangerThreshold !== undefined ? Number(body.dangerThreshold) : undefined,
+      silentStart: body.silentStart !== undefined ? body.silentStart : undefined,
+      silentEnd: body.silentEnd !== undefined ? body.silentEnd : undefined,
+      workdaysOnly: body.workdaysOnly !== undefined ? Boolean(body.workdaysOnly) : undefined,
+      workStart: body.workStart !== undefined ? body.workStart : undefined,
+      workEnd: body.workEnd !== undefined ? body.workEnd : undefined,
     });
     logOperation(res.locals.username, '更新告警规则', '通知', type, '');
     res.json({ ok: true });

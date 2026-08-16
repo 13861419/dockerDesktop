@@ -27,6 +27,11 @@ interface AlertRule {
   enabled: boolean;
   warnThreshold: number;
   dangerThreshold: number;
+  silentStart: string | null;
+  silentEnd: string | null;
+  workdaysOnly: boolean;
+  workStart: string | null;
+  workEnd: string | null;
 }
 
 /** 渠道可见配置（敏感字段脱敏） */
@@ -162,10 +167,24 @@ export default function NotificationsPage() {
 
   // 规则编辑
   const [ruleModal, setRuleModal] = useState<AlertRule | null>(null);
-  const [ruleForm, setRuleForm] = useState<{ enabled: boolean; warnThreshold: string; dangerThreshold: string }>({
+  const [ruleForm, setRuleForm] = useState<{
+    enabled: boolean;
+    warnThreshold: string;
+    dangerThreshold: string;
+    silentStart: string;
+    silentEnd: string;
+    workdaysOnly: boolean;
+    workStart: string;
+    workEnd: string;
+  }>({
     enabled: true,
     warnThreshold: '75',
     dangerThreshold: '90',
+    silentStart: '',
+    silentEnd: '',
+    workdaysOnly: false,
+    workStart: '',
+    workEnd: '',
   });
   const [savingRule, setSavingRule] = useState(false);
 
@@ -394,6 +413,11 @@ export default function NotificationsPage() {
       enabled: rule.enabled,
       warnThreshold: String(rule.warnThreshold),
       dangerThreshold: String(rule.dangerThreshold),
+      silentStart: rule.silentStart || '',
+      silentEnd: rule.silentEnd || '',
+      workdaysOnly: rule.workdaysOnly,
+      workStart: rule.workStart || '',
+      workEnd: rule.workEnd || '',
     });
   }, []);
 
@@ -418,6 +442,11 @@ export default function NotificationsPage() {
         enabled: ruleForm.enabled,
         warnThreshold: warn,
         dangerThreshold: danger,
+        silentStart: ruleForm.silentStart || null,
+        silentEnd: ruleForm.silentEnd || null,
+        workdaysOnly: ruleForm.workdaysOnly,
+        workStart: ruleForm.workStart || null,
+        workEnd: ruleForm.workEnd || null,
       });
       showToast('规则已更新');
       setRuleModal(null);
@@ -487,6 +516,13 @@ export default function NotificationsPage() {
                   <td><strong>{RULE_NAMES[r.type] || r.type}</strong></td>
                   <td>
                     <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
+                    {(r.silentStart || r.workdaysOnly || r.workStart) && (
+                      <div className="notify-rule-tags">
+                        {r.silentStart && <span className="notify-tag" title={`静默时段 ${r.silentStart} - ${r.silentEnd || '?'}`}>静默</span>}
+                        {r.workdaysOnly && <span className="notify-tag" title="仅工作日告警">工作日</span>}
+                        {r.workStart && <span className="notify-tag" title={`工作时段 ${r.workStart} - ${r.workEnd || '?'}`}>工作时段</span>}
+                      </div>
+                    )}
                   </td>
                   <td>≥ {r.warnThreshold}%</td>
                   <td>≥ {r.dangerThreshold}%</td>
@@ -854,6 +890,61 @@ export default function NotificationsPage() {
             onChange={(e) => setRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
           />
         </Field>
+
+        <div className="notify-rule-section">静默时段</div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="开始（HH:mm）" hint="留空表示无静默时段">
+              <Input
+                type="time"
+                value={ruleForm.silentStart}
+                onChange={(e) => setRuleForm((f) => ({ ...f, silentStart: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="结束（HH:mm）">
+              <Input
+                type="time"
+                value={ruleForm.silentEnd}
+                onChange={(e) => setRuleForm((f) => ({ ...f, silentEnd: e.target.value }))}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <Field label="仅工作日告警">
+          <label className="notify-checkbox">
+            <input
+              type="checkbox"
+              checked={ruleForm.workdaysOnly}
+              onChange={(e) => setRuleForm((f) => ({ ...f, workdaysOnly: e.target.checked }))}
+            />
+            仅在周一至周五告警，周末静默
+          </label>
+        </Field>
+
+        <div className="notify-rule-section">工作时段</div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="开始（HH:mm）" hint="留空表示不限制工作时段">
+              <Input
+                type="time"
+                value={ruleForm.workStart}
+                onChange={(e) => setRuleForm((f) => ({ ...f, workStart: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="结束（HH:mm）">
+              <Input
+                type="time"
+                value={ruleForm.workEnd}
+                onChange={(e) => setRuleForm((f) => ({ ...f, workEnd: e.target.value }))}
+              />
+            </Field>
+          </div>
+        </div>
       </Modal>
 
       {/* 删除渠道确认 */}

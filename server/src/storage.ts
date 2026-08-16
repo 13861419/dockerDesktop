@@ -400,6 +400,17 @@ function createTables(): void {
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
+
+    -- Compose 模板库表：用户保存的常用 Compose 配置（YAML 文本），供新建项目时快速复用
+    CREATE TABLE IF NOT EXISTS compose_templates (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL UNIQUE,         -- 模板名称（唯一）
+      description TEXT,                         -- 描述（可选）
+      content     TEXT NOT NULL DEFAULT '',     -- compose 文件原文（YAML）
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_compose_templates_name ON compose_templates(name);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
@@ -419,6 +430,33 @@ function createTables(): void {
   // 迁移：为 hub_sources 表补充 sort_order 列（手动排序，值越小优先级越高，控制 failover 顺序）
   try {
     d.exec('ALTER TABLE hub_sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+
+  // 迁移：为 alert_rules 表补充告警静默/工作时间段字段（HH:mm 或 NULL 表示不启用）
+  try {
+    d.exec("ALTER TABLE alert_rules ADD COLUMN silent_start TEXT");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec("ALTER TABLE alert_rules ADD COLUMN silent_end TEXT");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE alert_rules ADD COLUMN workdays_only INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec("ALTER TABLE alert_rules ADD COLUMN work_start TEXT");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec("ALTER TABLE alert_rules ADD COLUMN work_end TEXT");
   } catch {
     // 列已存在则忽略
   }

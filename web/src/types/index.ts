@@ -183,6 +183,22 @@ export interface ComposeService {
   Ports: number[];
 }
 
+/** Compose 模板（/api/compose-templates 返回，存用户保存的常用 YAML 配置） */
+export interface ComposeTemplate {
+  /** 模板唯一标识 */
+  id: string;
+  /** 模板名称（唯一） */
+  name: string;
+  /** 模板描述（可选） */
+  description: string;
+  /** 完整的 docker-compose.yml 文本 */
+  content: string;
+  /** 创建时间（秒） */
+  createdAt: number;
+  /** 更新时间（秒） */
+  updatedAt: number;
+}
+
 /** 容器端口映射（/api/containers/:id/detail 返回结构） */
 export interface ContainerDetailPort {
   internal: string;

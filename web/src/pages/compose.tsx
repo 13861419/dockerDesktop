@@ -14,13 +14,13 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import { isAdmin } from '../api/auth';
-import { ComposeProject, ComposeService } from '../types';
+import { ComposeProject, ComposeService, ComposeTemplate } from '../types';
 import './compose.less';
 
 /**
- * 内置 docker-compose.yml 模板
+ * 内置 docker-compose.yml 模板（自有定义，其结构与用户 Compose 模板一致）
  */
-interface ComposeTemplate {
+const COMPOSE_TEMPLATES: {
   /** 模板唯一标识 */
   id: string;
   /** 模板名称（下拉中展示） */
@@ -29,12 +29,7 @@ interface ComposeTemplate {
   description: string;
   /** 完整的 docker-compose.yml 文本 */
   content: string;
-}
-
-/**
- * 内置模板数组：提供可直接使用的常用服务编排模板
- */
-const COMPOSE_TEMPLATES: ComposeTemplate[] = [
+}[] = [
   {
     id: 'wordpress',
     name: 'WordPress',
@@ -141,6 +136,21 @@ services:
 ];
 
 /**
+ * 根据下拉 value 查找对应的 Compose 模板（内置或用户自建）
+ * 用户模板的 value 以 'tpl:' 前缀标识模板 id，用于区分内置模板名与用户模板
+ * @param value 下拉 value（'' 表示空白）
+ * @param userTemplates 用户自建模板列表
+ * @returns 命中的模板，未命中则返回 undefined
+ */
+function findTemplateByValue(value: string, userTemplates: ComposeTemplate[]) {
+  if (!value) return undefined;
+  if (value.startsWith('tpl:')) {
+    return userTemplates.find((t) => 'tpl:' + t.id === value);
+  }
+  return COMPOSE_TEMPLATES.find((t) => t.id === value);
+}
+
+/**
  * Compose 项目管理页组件
  */
 export default function ComposePage() {
@@ -178,6 +188,14 @@ export default function ComposePage() {
   const [editContent, setEditContent] = useState('');
   const [editLoading, setEditLoading] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // 用户保存的 Compose 模板（来自 /api/compose-templates，用于"从模板新建"下拉）
+  const [userTemplates, setUserTemplates] = useState<ComposeTemplate[]>([]);
+  // 保存为模板弹窗状态
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveModalName, setSaveModalName] = useState('');
+  const [saveModalDesc, setSaveModalDesc] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   // 停止（down）确认弹窗状态：记录目标项目与是否删除数据卷
   const [stopTarget, setStopTarget] = useState<ComposeProject | null>(null);
@@ -288,22 +306,82 @@ export default function ComposePage() {
   );
 
   /**
-   * 选择内置模板：将所选模板的 content 填充到新建弹窗的文本框，并记录模板 id
-   * @param tplId 模板 id（'' 表示空白，不改变内容）
+   * 选择内置或用户模板：将所选模板的 content 填充到新建弹窗的文本框，并记录模板 value
+   * 用户模板 value 以 'tpl:' 前缀标识（见 findTemplateByValue）
+   * @param value 模板 value（'' 表示空白，不改变内容）
    */
   const handleTemplateChange = useCallback(
-    (tplId: string) => {
-      setCreateTemplate(tplId);
-      if (!tplId) return;
-      const tpl = COMPOSE_TEMPLATES.find((t) => t.id === tplId);
+    (value: string) => {
+      setCreateTemplate(value);
+      if (!value) return;
+      const tpl = findTemplateByValue(value, userTemplates);
       if (tpl) {
         // 选择模板后清除当前内容并填入模板内容
         setCreateContent(tpl.content);
         setCreateFileName('');
       }
     },
-    []
+    [userTemplates]
   );
+
+  /** 拉取用户保存的 Compose 模板列表，用于"从模板新建"下拉 */
+  const fetchUserTemplates = useCallback(async () => {
+    try {
+      const data = await get<ComposeTemplate[]>('/api/compose-templates');
+      setUserTemplates(data || []);
+    } catch {
+      // 拉取失败时保留空列表，不影响新建流程
+      setUserTemplates([]);
+    }
+  }, []);
+
+  /** 打开"保存为模板"弹窗：用当前项目名作默认模板名，内容取当前编辑内容 */
+  const openSaveTemplate = useCallback(() => {
+    if (!editContent.trim()) {
+      showToast('内容为空，暂无法保存为模板', 'error');
+      return;
+    }
+    // 默认以项目名作为模板名，名称唯一由后端校验
+    setSaveModalName(editName);
+    setSaveModalDesc('');
+    setSaveModalOpen(true);
+  }, [editName, editContent, showToast]);
+
+  /** 提交"保存为模板"：携带名称、描述与当前编辑内容写入模板库 */
+  const handleSaveTemplate = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可保存模板', 'error');
+      setSaveModalOpen(false);
+      return;
+    }
+    const name = saveModalName.trim();
+    if (!name) {
+      showToast('请输入模板名称', 'error');
+      return;
+    }
+    if (!editContent.trim()) {
+      showToast('内容为空，暂无法保存为模板', 'error');
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      await post('/api/compose-templates', {
+        name,
+        description: saveModalDesc.trim(),
+        content: editContent,
+      });
+      showToast('模板保存成功');
+      setSaveModalOpen(false);
+      setSaveModalName('');
+      setSaveModalDesc('');
+      // 重新拉取模板列表，使新模板立即出现在"从模板新建"下拉
+      fetchUserTemplates();
+    } catch (e: any) {
+      showToast(e?.message || '模板保存失败', 'error');
+    } finally {
+      setSavingTemplate(false);
+    }
+  }, [canManage, saveModalName, saveModalDesc, editContent, showToast, fetchUserTemplates]);
 
   /** 新建 Compose 项目 */
   const handleCreate = useCallback(async () => {
@@ -532,6 +610,8 @@ export default function ComposePage() {
                 setCreateFileName('');
                 setCreateTemplate('');
                 setCreateOpen(true);
+                // 打开新建弹窗时拉取用户模板列表，供"从模板新建"下拉使用
+                fetchUserTemplates();
               }}
             >
               新建项目
@@ -734,10 +814,19 @@ export default function ComposePage() {
                   {tpl.name}
                 </option>
               ))}
+              {userTemplates.length > 0 && (
+                <optgroup label="我的模板">
+                  {userTemplates.map((tpl) => (
+                    <option key={tpl.id} value={'tpl:' + tpl.id}>
+                      {tpl.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
             {createTemplate && (
               <div className="compose-tpl__preview">
-                {COMPOSE_TEMPLATES.find((t) => t.id === createTemplate)?.description}
+                {findTemplateByValue(createTemplate, userTemplates)?.description}
               </div>
             )}
           </div>
@@ -770,6 +859,15 @@ export default function ComposePage() {
         width={720}
         footer={
           <>
+            {!editLoading && (
+              <Button
+                variant="secondary"
+                onClick={openSaveTemplate}
+                disabled={savingEdit || !canManage}
+              >
+                保存为模板
+              </Button>
+            )}
             <Button variant="secondary" onClick={closeEdit} disabled={savingEdit}>
               取消
             </Button>
@@ -791,6 +889,44 @@ export default function ComposePage() {
             />
           </Field>
         )}
+      </Modal>
+
+      {/* 保存为模板弹窗 */}
+      <Modal
+        open={saveModalOpen}
+        title="保存为模板"
+        onClose={() => setSaveModalOpen(false)}
+        width={420}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setSaveModalOpen(false)}
+              disabled={savingTemplate}
+            >
+              取消
+            </Button>
+            <Button onClick={handleSaveTemplate} loading={savingTemplate} disabled={!canManage}>
+              保存
+            </Button>
+          </>
+        }
+      >
+        <Field label="模板名称" required>
+          <Input
+            value={saveModalName}
+            onChange={(e) => setSaveModalName(e.target.value)}
+            placeholder="例如：WordPress"
+            autoFocus
+          />
+        </Field>
+        <Field label="描述">
+          <Input
+            value={saveModalDesc}
+            onChange={(e) => setSaveModalDesc(e.target.value)}
+            placeholder="可选，记录模板用途"
+          />
+        </Field>
       </Modal>
 
       {/* 查看配置弹窗 */}

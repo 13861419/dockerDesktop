@@ -25,6 +25,23 @@ interface AlertRuleRow {
   warn_threshold: number;
   danger_threshold: number;
   updated_at: number;
+  silent_start: string | null;
+  silent_end: string | null;
+  workdays_only: number;
+  work_start: string | null;
+  work_end: string | null;
+}
+
+/** 归一化后的告警规则（含静默/工作时段配置） */
+interface AlertRule {
+  enabled: boolean;
+  warn: number;
+  danger: number;
+  silentStart: string | null;
+  silentEnd: string | null;
+  workdaysOnly: boolean;
+  workStart: string | null;
+  workEnd: string | null;
 }
 
 /** 告警记录行 */
@@ -65,9 +82,13 @@ const activeAlerts = new Map<string, AlertLevel>();
  * 读取告警规则表，缺省行自动补默认值
  * @returns 规则映射 { type -> rule }
  */
-function loadRules(): Record<AlertType, { enabled: boolean; warn: number; danger: number }> {
+function loadRules(): Record<AlertType, AlertRule> {
   const d = getDb();
-  const rows = d.prepare('SELECT type, enabled, warn_threshold, danger_threshold, updated_at FROM alert_rules').all() as unknown as AlertRuleRow[];
+  const rows = d
+    .prepare(
+      'SELECT type, enabled, warn_threshold, danger_threshold, updated_at, silent_start, silent_end, workdays_only, work_start, work_end FROM alert_rules',
+    )
+    .all() as unknown as AlertRuleRow[];
   const byType = new Map<string, AlertRuleRow>();
   for (const r of rows) byType.set(r.type, r);
 
@@ -75,18 +96,33 @@ function loadRules(): Record<AlertType, { enabled: boolean; warn: number; danger
   const ins = d.prepare(
     'INSERT OR IGNORE INTO alert_rules (type, enabled, warn_threshold, danger_threshold, updated_at) VALUES (?, ?, ?, ?, ?)',
   );
-  const result = {} as Record<AlertType, { enabled: boolean; warn: number; danger: number }>;
+  const result = {} as Record<AlertType, AlertRule>;
   for (const def of DEFAULT_RULES) {
     const row = byType.get(def.type);
+    const normalize = (r: AlertRuleRow): AlertRule => ({
+      enabled: r.enabled === 1,
+      warn: Number(r.warn_threshold),
+      danger: Number(r.danger_threshold),
+      silentStart: r.silent_start || null,
+      silentEnd: r.silent_end || null,
+      workdaysOnly: r.workdays_only === 1,
+      workStart: r.work_start || null,
+      workEnd: r.work_end || null,
+    });
     if (!row) {
       ins.run(def.type, 1, def.warn, def.danger, now);
-      result[def.type] = { enabled: true, warn: def.warn, danger: def.danger };
-    } else {
       result[def.type] = {
-        enabled: row.enabled === 1,
-        warn: Number(row.warn_threshold),
-        danger: Number(row.danger_threshold),
+        enabled: true,
+        warn: def.warn,
+        danger: def.danger,
+        silentStart: null,
+        silentEnd: null,
+        workdaysOnly: false,
+        workStart: null,
+        workEnd: null,
       };
+    } else {
+      result[def.type] = normalize(row);
     }
   }
   return result;
@@ -102,6 +138,67 @@ function evaluateLevel(percent: number, rule: { warn: number; danger: number }):
   if (percent >= rule.danger) return 'danger';
   if (percent >= rule.warn) return 'warn';
   return null;
+}
+
+/**
+ * 将 "HH:mm" 时间字符串转换为当日分钟数（0-1439）
+ * @param time 形如 "08:30" 的时间
+ * @returns 分钟数；非法输入返回 null
+ */
+function toMinutes(time: string | null): number | null {
+  if (!time) return null;
+  const m = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+  return h * 60 + mm;
+}
+
+/**
+ * 判断规则在当前时刻是否处于"静默"状态：
+ *  - 静默时段：当前时间落在 [silentStart, silentEnd] 内（支持跨午夜）
+ *  - 仅工作日：当前是周六/周日
+ *  - 工作时段：当前时间不在 [workStart, workEnd] 内
+ * 任一条件命中即视为静默；全部未配置返回 false（不禁言）
+ * @param rule 归一化规则
+ * @param now 当前时间
+ * @returns 是否处于静默
+ */
+function isInSilentWindow(rule: AlertRule, now: Date): boolean {
+  const cur = now.getHours() * 60 + now.getMinutes();
+
+  // 静默时段：配置了起止时间则判断是否在区间内（含跨午夜）
+  const sStart = toMinutes(rule.silentStart);
+  const sEnd = toMinutes(rule.silentEnd);
+  if (sStart !== null && sEnd !== null) {
+    if (sStart <= sEnd) {
+      if (cur >= sStart && cur <= sEnd) return true;
+    } else if (cur >= sStart || cur <= sEnd) {
+      // 跨午夜：如 22:00 - 06:00
+      return true;
+    }
+  }
+
+  // 仅工作日告警：周六(6) 或 周日(0) 静默
+  if (rule.workdaysOnly) {
+    const day = now.getDay();
+    if (day === 0 || day === 6) return true;
+  }
+
+  // 工作时段：配置了起止时间且当前不在区间内则静默
+  const wStart = toMinutes(rule.workStart);
+  const wEnd = toMinutes(rule.workEnd);
+  if (wStart !== null && wEnd !== null) {
+    if (wStart <= wEnd) {
+      if (cur < wStart || cur > wEnd) return true;
+    } else if (cur < wStart && cur > wEnd) {
+      // 工作时段跨午夜：均不在区间内才静默
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -235,6 +332,8 @@ async function check(): Promise<void> {
       if (prev) activeAlerts.delete(s.type);
       continue;
     }
+    // 处于静默/非工作时段：整体跳过该资源检测（不告警也不做恢复判定）
+    if (isInSilentWindow(rule, new Date())) continue;
     const level = evaluateLevel(s.percent, rule);
     if (level) {
       const escalated = prev === null || (level === 'danger' && prev !== 'danger');
@@ -290,6 +389,11 @@ export function getAlertRules(): Array<{
   enabled: boolean;
   warnThreshold: number;
   dangerThreshold: number;
+  silentStart: string | null;
+  silentEnd: string | null;
+  workdaysOnly: boolean;
+  workStart: string | null;
+  workEnd: string | null;
 }> {
   const rules = loadRules();
   return DEFAULT_RULES.map((def) => ({
@@ -298,22 +402,84 @@ export function getAlertRules(): Array<{
     enabled: rules[def.type].enabled,
     warnThreshold: rules[def.type].warn,
     dangerThreshold: rules[def.type].danger,
+    silentStart: rules[def.type].silentStart,
+    silentEnd: rules[def.type].silentEnd,
+    workdaysOnly: rules[def.type].workdaysOnly,
+    workStart: rules[def.type].workStart,
+    workEnd: rules[def.type].workEnd,
   }));
+}
+
+/**
+ * 校验并归一化单个 "HH:mm" 时间字段
+ * @param value 原始值；空字符串/undefined/null 视为未配置
+ * @returns 归一化时间字符串或 null
+ */
+function normalizeTime(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  if (s === '') return null;
+  if (!/^\d{2}:\d{2}$/.test(s)) {
+    throw Object.assign(new Error('时间格式需为 HH:mm（如 08:30）'), { statusCode: 400 });
+  }
+  const h = Number(s.slice(0, 2));
+  const m = Number(s.slice(3, 5));
+  if (h < 0 || h > 23 || m < 0 || m > 59) {
+    throw Object.assign(new Error('时间需在 00:00 - 23:59 之间'), { statusCode: 400 });
+  }
+  return s;
+}
+
+/**
+ * 校验并归一化时段起止（起不得大于止，跨午夜需显式由用户确认？此处按普通区间处理）
+ * @param start 起始时间（已归一化）
+ * @param end 结束时间（已归一化）
+ * @param label 字段中文名（用于报错）
+ */
+function validateRange(start: string | null, end: string | null, label: string): void {
+  if (!start || !end) return;
+  const sm = toMinutes(start);
+  const em = toMinutes(end);
+  if (sm === null || em === null) return;
+  if (sm > em) {
+    throw Object.assign(new Error(`${label}开始时间不能晚于结束时间`), { statusCode: 400 });
+  }
 }
 
 /**
  * 更新单条告警规则
  * @param type 资源类型
- * @param patch 待更新字段
+ * @param patch 待更新字段（含静默/工作时段配置）
  */
-export function updateAlertRule(type: string, patch: { enabled?: boolean; warnThreshold?: number; dangerThreshold?: number }): void {
+export function updateAlertRule(
+  type: string,
+  patch: {
+    enabled?: boolean;
+    warnThreshold?: number;
+    dangerThreshold?: number;
+    silentStart?: string | null;
+    silentEnd?: string | null;
+    workdaysOnly?: boolean;
+    workStart?: string | null;
+    workEnd?: string | null;
+  },
+): void {
   if (!['cpu', 'mem', 'disk'].includes(type)) {
     throw Object.assign(new Error('不支持的告警类型'), { statusCode: 400 });
   }
   const d = getDb();
   loadRules(); // 确保默认行存在
-  const row = d.prepare('SELECT warn_threshold, danger_threshold, enabled FROM alert_rules WHERE type = ?').get(type) as
-    | { warn_threshold: number; danger_threshold: number; enabled: number }
+  const row = d.prepare('SELECT warn_threshold, danger_threshold, enabled, silent_start, silent_end, workdays_only, work_start, work_end FROM alert_rules WHERE type = ?').get(type) as
+    | {
+        warn_threshold: number;
+        danger_threshold: number;
+        enabled: number;
+        silent_start: string | null;
+        silent_end: string | null;
+        workdays_only: number;
+        work_start: string | null;
+        work_end: string | null;
+      }
     | undefined;
   if (!row) throw Object.assign(new Error('告警规则不存在'), { statusCode: 404 });
 
@@ -326,10 +492,27 @@ export function updateAlertRule(type: string, patch: { enabled?: boolean; warnTh
     throw Object.assign(new Error('警告阈值不能高于危险阈值'), { statusCode: 400 });
   }
   const enabled = patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : row.enabled;
-  d.prepare('UPDATE alert_rules SET enabled = ?, warn_threshold = ?, danger_threshold = ?, updated_at = ? WHERE type = ?').run(
+
+  // 静默/工作时段字段校验与归一化
+  const silentStart = patch.silentStart !== undefined ? normalizeTime(patch.silentStart) : row.silent_start || null;
+  const silentEnd = patch.silentEnd !== undefined ? normalizeTime(patch.silentEnd) : row.silent_end || null;
+  const workStart = patch.workStart !== undefined ? normalizeTime(patch.workStart) : row.work_start || null;
+  const workEnd = patch.workEnd !== undefined ? normalizeTime(patch.workEnd) : row.work_end || null;
+  validateRange(silentStart, silentEnd, '静默时段');
+  validateRange(workStart, workEnd, '工作时段');
+  const workdaysOnly = patch.workdaysOnly !== undefined ? (patch.workdaysOnly ? 1 : 0) : row.workdays_only;
+
+  d.prepare(
+    'UPDATE alert_rules SET enabled = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, updated_at = ? WHERE type = ?',
+  ).run(
     enabled,
     warn,
     danger,
+    silentStart,
+    silentEnd,
+    workdaysOnly,
+    workStart,
+    workEnd,
     Date.now(),
     type,
   );
