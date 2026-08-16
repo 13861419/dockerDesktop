@@ -44,8 +44,8 @@ interface ChannelInfo {
 /** 告警记录 */
 interface AlertRecord {
   id: number;
-  type: 'cpu' | 'mem' | 'disk';
-  level: 'warn' | 'danger';
+  type: string;
+  level: string;
   message: string;
   value: number | null;
   channelId: string | null;
@@ -54,12 +54,29 @@ interface AlertRecord {
   createdAt: number;
 }
 
+const PAGE_SIZE = 20;
+
 /** 渠道类型中文名 */
 const CHANNEL_LABELS: Record<string, string> = {
   webhook: 'Webhook',
   email: '邮件',
   dingtalk: '钉钉',
   feishu: '飞书',
+};
+
+/** 告警记录类型中文名（含任务失败 type=task） */
+const TYPE_LABELS: Record<string, string> = {
+  cpu: 'CPU',
+  mem: '内存',
+  disk: '磁盘',
+  task: '任务',
+};
+
+/** 告警记录级别中文名（含恢复 recovery） */
+const LEVEL_LABELS: Record<string, string> = {
+  warn: '警告',
+  danger: '危险',
+  recovery: '已恢复',
 };
 
 /** 初始渠道表单结构（按类型动态渲染字段） */
@@ -124,6 +141,11 @@ export default function NotificationsPage() {
   // 记录
   const [records, setRecords] = useState<AlertRecord[]>([]);
   const [recordLoading, setRecordLoading] = useState(true);
+  const [recordTotal, setRecordTotal] = useState(0);
+  const [recordPage, setRecordPage] = useState(1);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
+  const [pushFilter, setPushFilter] = useState('');
 
   // 渠道新增/编辑弹窗
   const [channelModal, setChannelModal] = useState<{ editing: ChannelInfo | null; open: boolean }>({ editing: null, open: false });
@@ -148,33 +170,65 @@ export default function NotificationsPage() {
   const [savingRule, setSavingRule] = useState(false);
 
   /**
-   * 加载全部数据（规则、渠道、记录）
+   * 加载告警记录（分页 + 过滤）
+   */
+  const loadRecords = useCallback(
+    async (page = recordPage, type = typeFilter, level = levelFilter, push = pushFilter) => {
+      setRecordLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set('page', String(page));
+        params.set('pageSize', String(PAGE_SIZE));
+        if (type) params.set('type', type);
+        if (level) params.set('level', level);
+        if (push) params.set('pushStatus', push);
+        const rec = await get<{ records: AlertRecord[]; total: number }>(`/api/notifications/records?${params.toString()}`);
+        setRecords(rec?.records || []);
+        setRecordTotal(rec?.total || 0);
+      } catch (e: any) {
+        showToast(e?.message || '加载记录失败', 'error');
+      } finally {
+        setRecordLoading(false);
+      }
+    },
+    [recordPage, typeFilter, levelFilter, pushFilter, showToast],
+  );
+
+  /**
+   * 加载规则与渠道
    */
   const load = useCallback(async () => {
     setRuleLoading(true);
     setChannelLoading(true);
-    setRecordLoading(true);
     try {
-      const [r, c, rec] = await Promise.all([
+      const [r, c] = await Promise.all([
         get<{ rules: AlertRule[] }>('/api/notifications/rules'),
         get<{ channels: ChannelInfo[] }>('/api/notifications/channels'),
-        get<{ records: AlertRecord[] }>('/api/notifications/records?limit=100'),
       ]);
       setRules(r?.rules || []);
       setChannels(c?.channels || []);
-      setRecords(rec?.records || []);
     } catch (e: any) {
       showToast(e?.message || '加载失败', 'error');
     } finally {
       setRuleLoading(false);
       setChannelLoading(false);
-      setRecordLoading(false);
     }
   }, [showToast]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadRecords(1);
+    // 仅当过滤条件变化时重置到第一页
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, levelFilter, pushFilter]);
+
+  useEffect(() => {
+    loadRecords(recordPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordPage]);
 
   /**
    * 打开新增渠道弹窗
@@ -383,10 +437,11 @@ export default function NotificationsPage() {
       await post('/api/notifications/check');
       showToast('已触发检测');
       load();
+      loadRecords(recordPage);
     } catch (e: any) {
       showToast(e?.message || '检测失败', 'error');
     }
-  }, [load, showToast]);
+  }, [load, loadRecords, recordPage, showToast]);
 
   /**
    * 清空告警记录
@@ -395,11 +450,13 @@ export default function NotificationsPage() {
     try {
       await del('/api/notifications/records');
       showToast('告警记录已清空');
-      load();
+      setRecordPage(1);
+      setRecords([]);
+      setRecordTotal(0);
     } catch (e: any) {
       showToast(e?.message || '清空失败', 'error');
     }
-  }, [load, showToast]);
+  }, [showToast]);
 
   return (
     <div className="page">
@@ -503,11 +560,51 @@ export default function NotificationsPage() {
       {/* 告警记录 */}
       <Card
         className="notify-card"
-        title="告警记录"
+        title={`告警记录 (${recordTotal})`}
         extra={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Select
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setRecordPage(1);
+              }}
+              style={{ width: 110 }}
+            >
+              <option value="">全部类型</option>
+              <option value="cpu">CPU</option>
+              <option value="mem">内存</option>
+              <option value="disk">磁盘</option>
+              <option value="task">任务</option>
+            </Select>
+            <Select
+              value={levelFilter}
+              onChange={(e) => {
+                setLevelFilter(e.target.value);
+                setRecordPage(1);
+              }}
+              style={{ width: 110 }}
+            >
+              <option value="">全部级别</option>
+              <option value="warn">警告</option>
+              <option value="danger">危险</option>
+              <option value="recovery">已恢复</option>
+            </Select>
+            <Select
+              value={pushFilter}
+              onChange={(e) => {
+                setPushFilter(e.target.value);
+                setRecordPage(1);
+              }}
+              style={{ width: 110 }}
+            >
+              <option value="">全部推送</option>
+              <option value="ok">已推送</option>
+              <option value="failed">失败</option>
+              <option value="none">未推送</option>
+            </Select>
             <Button variant="ghost" size="sm" onClick={runCheck}>立即检测</Button>
-            <Button variant="ghost" size="sm" onClick={load}>刷新</Button>
+            <Button variant="ghost" size="sm" onClick={() => loadRecords(recordPage)}>刷新</Button>
             {records.length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearRecords}>清空</Button>
             )}
@@ -522,21 +619,23 @@ export default function NotificationsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '14%' }}>时间</th>
-                <th style={{ width: '12%' }}>级别</th>
-                <th style={{ width: '30%' }}>消息</th>
-                <th style={{ width: '12%' }}>使用率</th>
-                <th style={{ width: '14%' }}>推送</th>
-                <th style={{ width: '18%' }}>详情</th>
+                <th style={{ width: '12%' }}>时间</th>
+                <th style={{ width: '11%' }}>类型</th>
+                <th style={{ width: '10%' }}>级别</th>
+                <th style={{ width: '33%' }}>消息</th>
+                <th style={{ width: '10%' }}>使用率</th>
+                <th style={{ width: '11%' }}>推送</th>
+                <th style={{ width: '13%' }}>详情</th>
               </tr>
             </thead>
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>
                   <td className="notify-dim">{formatTime(r.createdAt)}</td>
+                  <td>{TYPE_LABELS[r.type] || r.type}</td>
                   <td>
                     <span className={`notify-level notify-level--${r.level}`}>
-                      {r.level === 'danger' ? '危险' : '警告'}
+                      {LEVEL_LABELS[r.level] || r.level}
                     </span>
                   </td>
                   <td>{r.message}</td>
@@ -553,6 +652,29 @@ export default function NotificationsPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {recordTotal > PAGE_SIZE && (
+          <div className="notify-pager">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={recordPage <= 1}
+              onClick={() => setRecordPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </Button>
+            <span className="notify-pager__info">
+              {recordPage} / {Math.max(1, Math.ceil(recordTotal / PAGE_SIZE))}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={recordPage >= Math.ceil(recordTotal / PAGE_SIZE)}
+              onClick={() => setRecordPage((p) => p + 1)}
+            >
+              下一页
+            </Button>
+          </div>
         )}
       </Card>
 

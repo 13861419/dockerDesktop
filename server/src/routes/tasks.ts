@@ -33,6 +33,7 @@ import {
 import { logOperation } from '../operationLog';
 import { getDockerClient } from '../docker/client';
 import { pullWithFailover } from '../docker/pull';
+import { reportTaskFailure } from '../alerting';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -454,6 +455,16 @@ async function dispatchTask(id: string): Promise<TaskRunResult> {
   // 更新任务最近执行状态与下次执行时间（与调度器同逻辑）
   const now = Date.now();
   const nextRun = nextRunTime(row.cron, now);
+
+  // 手动执行失败：推送告警（不阻塞任务执行）
+  if (!result.ok) {
+    try {
+      await reportTaskFailure(row.name || row.id, result.detail || '未知错误', '手动执行');
+    } catch {
+      // 告警失败不影响任务本身
+    }
+  }
+
   getDb()
     .prepare(
       `UPDATE cron_tasks

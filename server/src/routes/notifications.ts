@@ -177,14 +177,19 @@ router.put(
 );
 
 /**
- * GET /api/notifications/records?limit=50
- * 获取告警记录
+ * GET /api/notifications/records?page=1&pageSize=20&type=&level=&pushStatus=
+ * 获取告警记录（分页 + 过滤）
  */
 router.get(
   '/records',
   asyncHandler(async (req: Request, res: Response) => {
-    const limit = Number(req.query.limit) || 50;
-    res.json({ records: getAlertRecords(limit) });
+    const page = req.query.page !== undefined ? Number(req.query.page) : 1;
+    const pageSize = req.query.pageSize !== undefined ? Number(req.query.pageSize) : 20;
+    const type = String(req.query.type || '').trim() || undefined;
+    const level = String(req.query.level || '').trim() || undefined;
+    const pushStatus = String(req.query.pushStatus || '').trim() || undefined;
+    const result = getAlertRecords({ page, pageSize, type, level, pushStatus });
+    res.json(result);
   }),
 );
 

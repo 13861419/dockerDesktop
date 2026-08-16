@@ -14,9 +14,9 @@ import { getCurrentMonitor } from './docker/monitor';
 import { listChannels, sendAlert } from './notify';
 
 /** 资源类型 */
-export type AlertType = 'cpu' | 'mem' | 'disk';
+export type AlertType = 'cpu' | 'mem' | 'disk' | 'task';
 /** 告警级别 */
-export type AlertLevel = 'warn' | 'danger';
+export type AlertLevel = 'warn' | 'danger' | 'recovery';
 
 /** 告警规则行 */
 interface AlertRuleRow {
@@ -58,6 +58,8 @@ let started = false;
 let timer: NodeJS.Timeout | null = null;
 /** 最近触发去重表：key = `${type}:${level}` -> 上次触发时间戳 */
 const lastAlertAt = new Map<string, number>();
+/** 资源当前活跃告警级别：type -> 当前级别，用于恢复通知状态机 */
+const activeAlerts = new Map<string, AlertLevel>();
 
 /**
  * 读取告警规则表，缺省行自动补默认值
@@ -103,12 +105,12 @@ function evaluateLevel(percent: number, rule: { warn: number; danger: number }):
 }
 
 /**
- * 构建告警文案
+ * 构建资源告警文案（CPU/内存/磁盘）
  * @param type 资源类型
  * @param level 级别
  */
 function buildMessage(type: AlertType, level: AlertLevel, value: number): string {
-  const names: Record<AlertType, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘' };
+  const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘' };
   if (level === 'danger') {
     return `Docker 面板【${names[type]}】使用率过高：${value.toFixed(1)}%`;
   }
@@ -126,13 +128,13 @@ function pickEnabledChannel(): string | null {
 }
 
 /**
- * 记录一条告警并尝试推送
- * @param type 资源类型
- * @param level 级别
- * @param value 使用率
+ * 写入一条告警记录并尝试推送到启用渠道（通用）
+ * @param type 告警类型（资源或 task）
+ * @param level 级别（warn/danger/recovery）
+ * @param message 告警文案
+ * @param value 可选数值（如使用率）
  */
-async function fireAlert(type: AlertType, level: AlertLevel, value: number): Promise<void> {
-  const message = buildMessage(type, level, value);
+async function emitAlert(type: AlertType, level: AlertLevel, message: string, value: number | null): Promise<void> {
   const channelId = pickEnabledChannel();
   const d = getDb();
 
@@ -158,12 +160,32 @@ async function fireAlert(type: AlertType, level: AlertLevel, value: number): Pro
     'INSERT INTO alert_records (type, level, message, value, channel_id, push_status, push_detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   ).run(type, level, message, value, channelId, pushStatus, pushDetail, Date.now());
 
-  // 清理超量记录，最多保留最近 500 条
+  // 清理超量记录，最多保留最近 800 条
   try {
-    d.prepare('DELETE FROM alert_records WHERE id NOT IN (SELECT id FROM alert_records ORDER BY id DESC LIMIT 500)').run();
+    d.prepare('DELETE FROM alert_records WHERE id NOT IN (SELECT id FROM alert_records ORDER BY id DESC LIMIT 800)').run();
   } catch {
     // 清理失败不影响告警
   }
+}
+
+/**
+ * 资源告警（CPU/内存/磁盘）触发入口
+ * @param type 资源类型
+ * @param level 级别
+ * @param value 使用率
+ */
+async function fireAlert(type: AlertType, level: AlertLevel, value: number): Promise<void> {
+  await emitAlert(type, level, buildMessage(type, level, value), value);
+}
+
+/**
+ * 资源恢复通知：资源从告警态回落到阈值下方时触发
+ * @param type 资源类型
+ * @param value 使用率
+ */
+async function fireRecovery(type: AlertType, value: number): Promise<void> {
+  const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘' };
+  await emitAlert(type, 'recovery', `Docker 面板【${names[type]}】已恢复正常：${value.toFixed(1)}%`, value);
 }
 
 /**
@@ -171,14 +193,26 @@ async function fireAlert(type: AlertType, level: AlertLevel, value: number): Pro
  * @param type 资源类型
  * @param level 级别
  * @param value 使用率
+ * @param force 是否忽略静默间隔（级别升级或恢复时强制推送）
  */
-async function maybeFire(type: AlertType, level: AlertLevel, value: number): Promise<void> {
+async function maybeFire(type: AlertType, level: AlertLevel, value: number, force = false): Promise<void> {
   const key = `${type}:${level}`;
   const last = lastAlertAt.get(key) || 0;
   const now = Date.now();
-  if (now - last < REPEAT_INTERVAL) return; // 静默期内不重复
+  if (!force && now - last < REPEAT_INTERVAL) return; // 静默期内不重复
   lastAlertAt.set(key, now);
   await fireAlert(type, level, value);
+}
+
+/**
+ * 任务失败告警：由调度器在任务执行失败时调用（推送 + 落库）
+ * @param taskName 任务名称
+ * @param detail 失败详情
+ * @param source 触发来源（如 scheduled / manual）
+ */
+export async function reportTaskFailure(taskName: string, detail: string, source = 'scheduled'): Promise<void> {
+  const message = `Docker 面板【计划任务】「${taskName}」执行失败（${source}）：${detail || '未知错误'}`;
+  await emitAlert('task', 'danger', message, null);
 }
 
 /**
@@ -195,10 +229,22 @@ async function check(): Promise<void> {
   ];
   for (const s of samples) {
     const rule = rules[s.type];
-    if (!rule.enabled) continue;
+    const prev = activeAlerts.get(s.type) ?? null;
+    if (!rule.enabled) {
+      // 规则被停用：清除活跃态（不发送恢复，视为静默解除）
+      if (prev) activeAlerts.delete(s.type);
+      continue;
+    }
     const level = evaluateLevel(s.percent, rule);
     if (level) {
-      await maybeFire(s.type, level, s.percent);
+      const escalated = prev === null || (level === 'danger' && prev !== 'danger');
+      activeAlerts.set(s.type, level);
+      // 级别升级或从无到有时强制推送，否则按静默间隔去重
+      await maybeFire(s.type, level, s.percent, escalated);
+    } else if (prev) {
+      // 已恢复：推送恢复通知并清除活跃态
+      activeAlerts.delete(s.type);
+      await fireRecovery(s.type, s.percent);
     }
   }
 }
@@ -290,35 +336,65 @@ export function updateAlertRule(type: string, patch: { enabled?: boolean; warnTh
 }
 
 /**
- * 获取最近告警记录（按时间倒序）
- * @param limit 返回条数上限
+ * 获取告警记录（分页 + 过滤，按时间倒序）
+ * @param opts 查询参数（页码/每页条数/类型/级别/推送状态）
  */
-export function getAlertRecords(limit = 50): Array<{
-  id: number;
-  type: AlertType;
-  level: AlertLevel;
-  message: string;
-  value: number | null;
-  channelId: string | null;
-  pushStatus: string;
-  pushDetail: string | null;
-  createdAt: number;
-}> {
-  const n = Math.min(Math.max(Number(limit) || 50, 1), 500);
-  const rows = getDb()
-    .prepare('SELECT id, type, level, message, value, channel_id, push_status, push_detail, created_at FROM alert_records ORDER BY id DESC LIMIT ?')
-    .all(n) as unknown as AlertRecordRow[];
-  return rows.map((r) => ({
-    id: r.id,
-    type: r.type as AlertType,
-    level: r.level as AlertLevel,
-    message: r.message,
-    value: r.value,
-    channelId: r.channel_id,
-    pushStatus: r.push_status,
-    pushDetail: r.push_detail,
-    createdAt: r.created_at,
-  }));
+export function getAlertRecords(opts?: {
+  page?: number;
+  pageSize?: number;
+  type?: string;
+  level?: string;
+  pushStatus?: string;
+}): {
+  records: Array<{
+    id: number;
+    type: string;
+    level: string;
+    message: string;
+    value: number | null;
+    channelId: string | null;
+    pushStatus: string;
+    pushDetail: string | null;
+    createdAt: number;
+  }>;
+  total: number;
+} {
+  const page = Math.max(Number(opts?.page) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(opts?.pageSize) || 20, 1), 100);
+  const where: string[] = [];
+  const params: any[] = [];
+  if (opts?.type) {
+    where.push('type = ?');
+    params.push(opts.type);
+  }
+  if (opts?.level) {
+    where.push('level = ?');
+    params.push(opts.level);
+  }
+  if (opts?.pushStatus) {
+    where.push('push_status = ?');
+    params.push(opts.pushStatus);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const d = getDb();
+  const totalRow = d.prepare(`SELECT COUNT(*) AS c FROM alert_records ${whereSql}`).get(...params) as { c: number };
+  const rows = d
+    .prepare(`SELECT id, type, level, message, value, channel_id, push_status, push_detail, created_at FROM alert_records ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`)
+    .all(...params, pageSize, (page - 1) * pageSize) as unknown as AlertRecordRow[];
+  return {
+    records: rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      level: r.level,
+      message: r.message,
+      value: r.value,
+      channelId: r.channel_id,
+      pushStatus: r.push_status,
+      pushDetail: r.push_detail,
+      createdAt: r.created_at,
+    })),
+    total: totalRow.c,
+  };
 }
 
 /**

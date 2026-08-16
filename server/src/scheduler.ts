@@ -9,6 +9,7 @@
  * 采用 setInterval（默认 10s tick）+ timer.unref + started 标志的控制方式（与 monitor.ts 同风格）。
  */
 import { getDb } from './storage';
+import { reportTaskFailure } from './alerting';
 
 /** 单个任务的数据库行（snake_case 列映射） */
 export interface CronTaskRow {
@@ -164,6 +165,16 @@ async function executeTask(row: CronTaskRow): Promise<void> {
 
   const now = Date.now();
   const nextRun = nextRunTime(row.cron, now);
+
+  // 任务执行失败：推送告警（不阻塞任务执行，失败不影响状态更新）
+  if (!result.ok) {
+    try {
+      await reportTaskFailure(row.name || row.id, result.detail || '未知错误', '定时触发');
+    } catch {
+      // 告警失败不影响任务本身
+    }
+  }
+
   d.prepare(
     `UPDATE cron_tasks
      SET last_run_at = ?, last_status = ?, last_detail = ?, next_run_at = ?, updated_at = ?
