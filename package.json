@@ -19,6 +19,8 @@
     "regression:volumes": "node scripts/regression-volumes.js",
     "regression:hub": "node scripts/regression-hub.js",
     "regression:containers": "node scripts/regression-containers.js",
+    "regression:compose": "node scripts/regression-compose.js",
+    "regression:all": "node scripts/run-regression-all.js",
     "mock:hub-search": "node scripts/mock-hub-search.js",
     "package": "node packaging/build-release.js",
     "package:installer": "node packaging/build-installer.js"
