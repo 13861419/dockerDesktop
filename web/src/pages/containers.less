@@ -527,6 +527,46 @@
   background: #ef4444;
 }
 
+/* 从模板创建弹窗：模板选择列表 */
+.template-pick__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.template-pick__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color, rgba(120, 130, 160, 0.2));
+  border-radius: 8px;
+  background: var(--bg-body, rgba(31, 35, 51, 0.04));
+}
+
+.template-pick__info {
+  min-width: 0;
+}
+
+.template-pick__name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.template-pick__desc {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
 .stat-gauge__num {
   color: var(--text-primary);
   font-weight: 600;

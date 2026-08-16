@@ -178,6 +178,12 @@ export default function ContainerDetailPage() {
   const [cloneValue, setCloneValue] = useState('');
   const [cloneStart, setCloneStart] = useState(true);
   const [cloning, setCloning] = useState(false);
+
+  // 保存为容器模板弹窗状态
+  const [saveTplOpen, setSaveTplOpen] = useState(false);
+  const [saveTplName, setSaveTplName] = useState('');
+  const [saveTplDesc, setSaveTplDesc] = useState('');
+  const [saveTplSaving, setSaveTplSaving] = useState(false);
   // 执行命令弹窗状态
   const [execOpen, setExecOpen] = useState(false);
   const [execCmd, setExecCmd] = useState('');
@@ -837,6 +843,52 @@ export default function ContainerDetailPage() {
   }
 
   /**
+   * 打开"保存为模板"弹窗：拉取当前容器导出配置，预填模板名称（默认容器名）
+   */
+  async function openSaveTemplate() {
+    if (!id) return;
+    try {
+      const res = await get<any>(`/api/containers/${id}/config`);
+      const cfg = res?.config || res || {};
+      // 预填模板名称与描述
+      setSaveTplName(cfg?.name || detail?.name || '');
+      setSaveTplDesc(cfg?.description || '');
+      setSaveTplOpen(true);
+    } catch (e: any) {
+      showToast(`获取容器配置失败：${e?.message || '未知错误'}`, 'error');
+    }
+  }
+
+  /**
+   * 提交保存当前容器配置为模板（调用 POST /api/templates）
+   */
+  async function submitSaveTemplate() {
+    if (!id) return;
+    // 模板名称必填校验
+    if (!saveTplName.trim()) {
+      showToast('模板名称不能为空', 'error');
+      return;
+    }
+    setSaveTplSaving(true);
+    try {
+      const res = await get<any>(`/api/containers/${id}/config`);
+      const cfg = res?.config || res || {};
+      await post('/api/templates', {
+        name: saveTplName.trim(),
+        description: saveTplDesc.trim(),
+        image: cfg?.image || '',
+        config: cfg,
+      });
+      showToast('已保存为模板');
+      setSaveTplOpen(false);
+    } catch (e: any) {
+      showToast(`保存模板失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setSaveTplSaving(false);
+    }
+  }
+
+  /**
    * 打开历史日志查看弹窗
    */
   function openHistoryLogs() {
@@ -1217,6 +1269,9 @@ export default function ContainerDetailPage() {
           </Button>
           <Button variant="secondary" size="sm" onClick={exportConfig}>
             导出配置
+          </Button>
+          <Button variant="secondary" size="sm" onClick={openSaveTemplate}>
+            保存为模板
           </Button>
           <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}>
             删除
@@ -1847,6 +1902,45 @@ export default function ContainerDetailPage() {
           />
           创建后启动
         </label>
+      </Modal>
+
+      {/* 保存为容器模板弹窗 */}
+      <Modal
+        open={saveTplOpen}
+        title="保存为容器模板"
+        onClose={() => !saveTplSaving && setSaveTplOpen(false)}
+        width={520}
+        footer={
+          <div className="env-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setSaveTplOpen(false)} disabled={saveTplSaving}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={saveTplSaving} onClick={submitSaveTemplate}>
+              保存
+            </Button>
+          </div>
+        }
+      >
+        <div className="env-modal__tip">
+          将当前容器「{detail?.name || ''}」的完整配置保存为模板，日后可在容器页一键按模板创建。
+        </div>
+        <Field label="模板名称" required>
+          <Input
+            placeholder="模板名称"
+            value={saveTplName}
+            onChange={(e) => setSaveTplName(e.target.value)}
+            autoFocus
+            disabled={saveTplSaving}
+          />
+        </Field>
+        <Field label="描述（可选）">
+          <Input
+            placeholder="模板用途说明"
+            value={saveTplDesc}
+            onChange={(e) => setSaveTplDesc(e.target.value)}
+            disabled={saveTplSaving}
+          />
+        </Field>
       </Modal>
 
       {/* 提交为镜像弹窗 */}

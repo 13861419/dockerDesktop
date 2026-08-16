@@ -33,6 +33,7 @@ import cloudRouter from './routes/cloud';
 import sitesRouter from './routes/sites';
 import backupsRouter from './routes/backups';
 import firewallRouter from './routes/firewall';
+import templatesRouter from './routes/templates';
 import notificationsRouter from './routes/notifications';
 import authRouter from './routes/auth';
 import { requireAuth } from './auth';

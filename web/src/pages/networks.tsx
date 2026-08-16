@@ -51,6 +51,169 @@ function getSubnet(net: NetworkItem): string {
   return cfg && cfg.length > 0 && cfg[0]?.Subnet ? cfg[0].Subnet : '-';
 }
 
+/** 从带前缀的 IP 中剥离掩码（如 "172.20.0.5/16" → "172.20.0.5"），非法则原样返回 */
+function stripIpPrefix(ip: string): string {
+  if (!ip) return '';
+  const idx = ip.indexOf('/');
+  if (idx > 0) return ip.slice(0, idx);
+  return ip;
+}
+
+/** 拓扑图中网络节点的描述信息 */
+interface TopoNetNode {
+  x: number;
+  y: number;
+  name: string;
+  driver: string;
+  subnet: string;
+}
+
+/** 拓扑图中单个容器节点的描述信息（含锚点与形状颜色） */
+interface TopoContNode {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  ip: string;
+  running: boolean;
+}
+
+/** 拓扑图 SVG 画布尺寸 */
+const TOPO_WIDTH = 700;
+const TOPO_HEIGHT = 400;
+/** 网络节点（左列）宽度与高度 */
+const TOPO_NET_W = 170;
+const TOPO_NET_H = 84;
+/** 容器节点（右列）宽度与高度 */
+const TOPO_CONT_W = 190;
+const TOPO_CONT_H = 54;
+/** 两列水平间距 */
+const TOPO_COL_GAP = 70;
+/** 右列内单个容器节点纵向边距 */
+const TOPO_CONT_PAD_Y = 14;
+
+/**
+ * 计算网络拓扑图中各节点的坐标（两列布局：左侧网络节点，右侧容器节点纵向排布）
+ * @param netName 网络名称
+ * @param driver 网络驱动
+ * @param subnet 网络子网
+ * @param conts 已连接容器列表
+ * @returns 网络节点坐标与容器节点坐标数组
+ */
+function layoutTopology(
+  netName: string,
+  driver: string,
+  subnet: string,
+  conts: Array<{ id: string; name: string; ip: string; running: boolean }>
+): { net: TopoNetNode; conts: TopoContNode[] } {
+  const net: TopoNetNode = {
+    x: 24,
+    y: (TOPO_HEIGHT - TOPO_NET_H) / 2,
+    name: netName,
+    driver,
+    subnet,
+  };
+  // 右列起始 x：网络节点右侧 + 列间距
+  const colX = net.x + TOPO_NET_W + TOPO_COL_GAP;
+  // 右列可用的纵向总高度
+  const rowsArea = TOPO_HEIGHT - TOPO_CONT_PAD_Y * 2;
+  // 容器节点数较多时收缩纵向间距，避免超出画布
+  const rowH = Math.min(TOPO_CONT_H, rowsArea / Math.max(1, conts.length));
+  const contNodes = conts.map((c, i) => {
+    const count = Math.max(1, conts.length);
+    // 均匀垂直分布（节点数较少时上下留白，较多时铺满）
+    const startY = contourYStart(rowsArea, rowH, count);
+    return {
+      id: c.id,
+      x: colX,
+      y: startY + i * rowH,
+      name: c.name,
+      ip: c.ip,
+      running: c.running,
+    };
+  });
+  return { net, conts: contNodes };
+}
+
+/**
+ * 计算容器节点列的首行纵向起点，使整列在画布中垂直居中
+ * @param area 可用纵向高度
+ * @param rowH 每行高度
+ * @param count 节点数量
+ */
+function contourYStart(area: number, rowH: number, count: number): number {
+  return TOPO_CONT_PAD_Y + (area - rowH * count) / 2;
+}
+
+/**
+ * 渲染网络拓扑 SVG 画布（纯手写 SVG：网络节点 + 连线 + 容器节点）
+ * @param detail 网络 inspect 信息
+ * @param list 容器列表（用于判断运行状态）
+ */
+function renderTopology(detail: NetworkInspect, list: ContainerListItem[]): React.ReactElement {
+  const entries = detail.Containers ? Object.entries(detail.Containers) : [];
+  // 运行状态映射：以容器 id 或名称查找列表，未命中视为未运行（灰色）
+  const runningMap = new Map<string, boolean>();
+  for (const c of list) {
+    runningMap.set(c.Id, c.State === 'running');
+    runningMap.set(c.Names[0]?.replace(/^\//, '') || '', c.State === 'running');
+  }
+  const conts = entries.map(([cid, c]) => ({
+    id: cid,
+    name: c.Name || cid,
+    ip: stripIpPrefix(c.IPv4Address),
+    running: runningMap.get(cid) ?? runningMap.get(c.Name || '') ?? false,
+  }));
+  const subnet = detail.IPAM?.Config?.[0]?.Subnet || '-';
+  const { net, conts: nodes } = layoutTopology(detail.Name || '', detail.Driver || '', subnet, conts);
+
+  // 网络节点右侧边中点的连接线起点
+  const netEdgeX = net.x + TOPO_NET_W;
+  const netEdgeY = net.y + TOPO_NET_H / 2;
+
+  return (
+    <svg className="topo" viewBox={`0 0 ${TOPO_WIDTH} ${TOPO_HEIGHT}`} role="img" aria-label="网络拓扑">
+      {/* 网络节点到各容器节点的连接线 */}
+      {nodes.map((n) => (
+        <line
+          key={`line-${n.id}`}
+          className="topo-edge"
+          x1={netEdgeX}
+          y1={netEdgeY}
+          x2={n.x}
+          y2={n.y + TOPO_CONT_H / 2}
+        />
+      ))}
+      {/* 网络节点 */}
+      <g className="topo-net">
+        <rect x={net.x} y={net.y} width={TOPO_NET_W} height={TOPO_NET_H} rx={10} />
+        <text x={net.x + TOPO_NET_W / 2} y={net.y + 28} textAnchor="middle" className="topo-net__name">
+          {net.name}
+        </text>
+        <text x={net.x + TOPO_NET_W / 2} y={net.y + 48} textAnchor="middle" className="topo-net__sub">
+          driver: {net.driver}
+        </text>
+        <text x={net.x + TOPO_NET_W / 2} y={net.y + 66} textAnchor="middle" className="topo-net__sub">
+          {net.subnet}
+        </text>
+      </g>
+      {/* 容器节点 */}
+      {nodes.map((n) => (
+        <g key={`node-${n.id}`} className={`topo-cont ${n.running ? 'topo-cont--running' : ''}`}>
+          <rect x={n.x} y={n.y} width={TOPO_CONT_W} height={TOPO_CONT_H} rx={8} />
+          <circle cx={n.x + 16} cy={n.y + TOPO_CONT_H / 2} r={5} className="topo-cont__dot" />
+          <text x={n.x + 30} y={n.y + 22} className="topo-cont__name">
+            {n.name}
+          </text>
+          <text x={n.x + 30} y={n.y + 40} className="topo-cont__ip">
+            {n.ip || '-'}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 /**
  * 网络列表页组件
  */
@@ -87,6 +250,8 @@ export default function NetworksPage() {
   const [detailTarget, setDetailTarget] = useState<NetworkItem | null>(null);
   const [detailInfo, setDetailInfo] = useState<NetworkInspect | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 详情是否为“拓扑”视图（false 为列表视图，默认）
+  const [topoView, setTopoView] = useState(false);
   const [containers, setContainers] = useState<ContainerListItem[]>([]);
   const [connectContainer, setConnectContainer] = useState('');
   const [connectIpv4, setConnectIpv4] = useState('');
@@ -221,6 +386,7 @@ export default function NetworksPage() {
       setDetailTarget(net);
       setDetailInfo(null);
       setDetailLoading(true);
+      setTopoView(false);
       setConnectContainer('');
       setConnectIpv4('');
       try {
@@ -512,6 +678,29 @@ export default function NetworksPage() {
           <SkeletonRows rows={6} />
         ) : (
           <>
+            {/* 视图切换：列表 / 拓扑 */}
+            <div className="detail-tabs">
+              <button
+                type="button"
+                className={`detail-tabs__btn ${!topoView ? 'detail-tabs__btn--active' : ''}`}
+                onClick={() => setTopoView(false)}
+              >
+                列表
+              </button>
+              <button
+                type="button"
+                className={`detail-tabs__btn ${topoView ? 'detail-tabs__btn--active' : ''}`}
+                onClick={() => setTopoView(true)}
+              >
+                拓扑
+              </button>
+            </div>
+
+            {topoView && detailInfo ? (
+              // 拓扑视图：纯手写 SVG 可视化
+              renderTopology(detailInfo, containers)
+            ) : (
+              <>
             <div className="detail">
               <div className="detail__row">
                 <span className="detail__label">名称</span>
@@ -644,6 +833,8 @@ export default function NetworksPage() {
                 <Empty title="暂无可连接容器" description="当前全部容器已连接至该网络" />
               )}
             </div>
+              </>
+            )}
           </>
         )}
       </Modal>

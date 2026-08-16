@@ -55,6 +55,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/templates',
+    label: '容器模板',
+    adminOnly: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 6h16M4 12h16M4 18h16" />
+        <path d="M8 4 8 8M12 4v4M16 4v4" />
+      </svg>
+    ),
+  },
+  {
     to: '/images',
     label: '镜像',
     icon: (

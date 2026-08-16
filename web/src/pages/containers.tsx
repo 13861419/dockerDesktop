@@ -60,6 +60,17 @@ interface CreateEnv {
   value: string;
 }
 
+/** 容器模板项（对齐 /api/templates 返回结构） */
+interface TemplateItem {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  config: any;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** 分页每页条数可选值 */
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
@@ -155,6 +166,11 @@ export default function ContainersPage() {
   const [createPorts, setCreatePorts] = useState<CreatePort[]>([{ container: '', host: '', protocol: 'tcp' }]);
   const [createVolumes, setCreateVolumes] = useState<CreateVolume[]>([{ source: '', target: '', readonly: false }]);
   const [createEnvs, setCreateEnvs] = useState<CreateEnv[]>([{ key: '', value: '' }]);
+  // 从模板创建弹窗状态
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [templateList, setTemplateList] = useState<TemplateItem[]>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateApplying, setTemplateApplying] = useState('');
 
   // 编辑镜像弹窗状态
   const [editImageOpen, setEditImageOpen] = useState(false);
@@ -766,6 +782,64 @@ export default function ContainersPage() {
   }
 
   /**
+   * 将容器配置对象回填到创建表单草稿（供导入配置 / 从模板创建复用）。
+   * 兼容导出接口的 config 结构：env/ports/volumes 数组转表单列表。
+   * @param cfg 容器配置对象
+   */
+  function applyConfigToForm(cfg: any) {
+    const c = cfg || {};
+    setCreateName(String(c.name || '').trim());
+    setCreateImage(String(c.image || '').trim());
+    setCreateCommand(String(c.command || '').trim());
+    setCreateNetworkMode(String(c.networkMode || 'default'));
+    setCreateRestartPolicy(String(c.restartPolicy || 'no'));
+    setCreateTty(c.tty !== false);
+    setCreateEntrypoint(String(c.entrypoint || '').trim());
+    setCreateUser(String(c.user || '').trim());
+    setCreateWorkingDir(String(c.workingDir || '').trim());
+    setCreateHostname(String(c.hostname || '').trim());
+    setCreatePrivileged(c.privileged === true);
+    setCreateAutoRemove(c.autoRemove === true);
+
+    // env: ["K=V",...] -> [{key,value}]
+    const envArr = Array.isArray(c.env) ? c.env : [];
+    setCreateEnvs(
+      envArr.length
+        ? envArr.map((e: string) => {
+            const idx = String(e).indexOf('=');
+            return idx > -1
+              ? { key: String(e).slice(0, idx), value: String(e).slice(idx + 1) }
+              : { key: String(e), value: '' };
+          })
+        : [{ key: '', value: '' }],
+    );
+
+    // ports: [{host,container,protocol,hostIp}] -> [{container,host,protocol}]
+    const portArr = Array.isArray(c.ports) ? c.ports : [];
+    setCreatePorts(
+      portArr.length
+        ? portArr.map((p: any) => ({
+            container: String(p?.container ?? ''),
+            host: String(p?.host ?? ''),
+            protocol: p?.protocol || 'tcp',
+          }))
+        : [{ container: '', host: '', protocol: 'tcp' }],
+    );
+
+    // volumes: [{source,target,readonly}] -> 同构
+    const volArr = Array.isArray(c.volumes) ? c.volumes : [];
+    setCreateVolumes(
+      volArr.length
+        ? volArr.map((v: any) => ({
+            source: String(v?.source ?? ''),
+            target: String(v?.target ?? ''),
+            readonly: v?.readonly === true,
+          }))
+        : [{ source: '', target: '', readonly: false }],
+    );
+  }
+
+  /**
    * 导入容器配置文件（JSON），解析后回填到创建表单，便于一键按配置重建。
    * 支持导出接口生成的格式：{ schema, config:{...} } 或直接为创建配置对象。
    */
@@ -776,57 +850,7 @@ export default function ContainersPage() {
         const raw = JSON.parse(String(reader.result));
         // 兼容两种结构：{ config } 包装 或 顶层即配置
         const cfg = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
-        const c = cfg || {};
-        setCreateName(String(c.name || '').trim());
-        setCreateImage(String(c.image || '').trim());
-        setCreateCommand(String(c.command || '').trim());
-        setCreateNetworkMode(String(c.networkMode || 'default'));
-        setCreateRestartPolicy(String(c.restartPolicy || 'no'));
-        setCreateTty(c.tty !== false);
-        setCreateEntrypoint(String(c.entrypoint || '').trim());
-        setCreateUser(String(c.user || '').trim());
-        setCreateWorkingDir(String(c.workingDir || '').trim());
-        setCreateHostname(String(c.hostname || '').trim());
-        setCreatePrivileged(c.privileged === true);
-        setCreateAutoRemove(c.autoRemove === true);
-
-        // env: ["K=V",...] -> [{key,value}]
-        const envArr = Array.isArray(c.env) ? c.env : [];
-        setCreateEnvs(
-          envArr.length
-            ? envArr.map((e: string) => {
-                const idx = String(e).indexOf('=');
-                return idx > -1
-                  ? { key: String(e).slice(0, idx), value: String(e).slice(idx + 1) }
-                  : { key: String(e), value: '' };
-              })
-            : [{ key: '', value: '' }],
-        );
-
-        // ports: [{host,container,protocol,hostIp}] -> [{container,host,protocol}]
-        const portArr = Array.isArray(c.ports) ? c.ports : [];
-        setCreatePorts(
-          portArr.length
-            ? portArr.map((p: any) => ({
-                container: String(p?.container ?? ''),
-                host: String(p?.host ?? ''),
-                protocol: p?.protocol || 'tcp',
-              }))
-            : [{ container: '', host: '', protocol: 'tcp' }],
-        );
-
-        // volumes: [{source,target,readonly}] -> 同构
-        const volArr = Array.isArray(c.volumes) ? c.volumes : [];
-        setCreateVolumes(
-          volArr.length
-            ? volArr.map((v: any) => ({
-                source: String(v?.source ?? ''),
-                target: String(v?.target ?? ''),
-                readonly: v?.readonly === true,
-              }))
-            : [{ source: '', target: '', readonly: false }],
-        );
-
+        applyConfigToForm(cfg);
         setPage(1);
         setCreateOpen(true);
         showToast('配置已导入，请确认后创建');
@@ -838,6 +862,42 @@ export default function ContainersPage() {
     reader.readAsText(file);
     // 允许重复选择同一文件
     if (importFileRef.current) importFileRef.current.value = '';
+  }
+
+  /**
+   * 打开"从模板创建"弹窗：拉取模板列表供用户选择
+   */
+  async function openTemplatePicker() {
+    setTemplateLoading(true);
+    try {
+      const res = await get<TemplateItem[]>('/api/templates');
+      setTemplateList(res || []);
+      setTemplateOpen(true);
+    } catch (e: any) {
+      showToast(`获取模板列表失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setTemplateLoading(false);
+    }
+  }
+
+  /**
+   * 应用所选模板：将模板 config 回填到创建表单草稿并打开创建弹窗
+   * @param tpl 选中的模板项
+   */
+  async function applyTemplate(tpl: TemplateItem) {
+    setTemplateApplying(tpl.id);
+    try {
+      // 将模板 config 包装为 { config } 结构，复用 applyConfigToForm 回填
+      applyConfigToForm(tpl.config);
+      setPage(1);
+      setTemplateOpen(false);
+      setCreateOpen(true);
+      showToast(`已应用模板「${tpl.name}」，请确认后创建`);
+    } catch (e: any) {
+      showToast(`应用模板失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setTemplateApplying('');
+    }
   }
 
   /** 更新创建端口草稿中某个条目 */
@@ -1138,6 +1198,9 @@ export default function ContainersPage() {
           </Button>
           <Button variant="secondary" size="sm" onClick={() => importFileRef.current?.click()}>
             导入配置
+          </Button>
+          <Button variant="secondary" size="sm" onClick={openTemplatePicker} disabled={!canDelete}>
+            从模板创建
           </Button>
           <Button variant="secondary" size="sm" onClick={handleRefresh}>
             刷新
@@ -1560,6 +1623,51 @@ export default function ContainersPage() {
           if (file) handleImportConfig(file);
         }}
       />
+
+      {/* 从模板创建弹窗 */}
+      <Modal
+        open={templateOpen}
+        title="从模板创建容器"
+        onClose={() => setTemplateOpen(false)}
+        width={640}
+        footer={
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setTemplateOpen(false)}>取消</Button>
+          </div>
+        }
+      >
+        {templateLoading ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted, #888)' }}>
+            正在加载模板列表…
+          </div>
+        ) : templateList.length === 0 ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted, #888)' }}>
+            暂无模板，可到「容器模板」页或在容器详情页「保存为模板」创建。
+          </div>
+        ) : (
+          <div className="template-pick__list">
+            {templateList.map((t) => (
+              <div key={t.id} className="template-pick__item">
+                <div className="template-pick__info">
+                  <div className="template-pick__name">{t.name}</div>
+                  <div className="template-pick__desc">
+                    {t.image || '—'}
+                    {t.description ? ` · ${t.description}` : ''}
+                  </div>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={templateApplying === t.id}
+                  onClick={() => applyTemplate(t)}
+                >
+                  使用
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* 创建容器弹窗 */}
       <Modal

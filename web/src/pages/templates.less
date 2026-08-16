@@ -1,0 +1,77 @@
+/* 容器模板管理页样式 */
+.templates-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.templates-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.templates-page__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.templates-page__desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* 顶部工具栏 */
+.templates-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 表格单元格省略展示 */
+.templates-cell--ellipsis {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 操作按钮行 */
+.templates-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 弹窗底部操作区 */
+.templates-modal__footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* config JSON 文本域 */
+.templates-config__area {
+  width: 100%;
+  min-height: 160px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, rgba(120, 130, 160, 0.3));
+  border-radius: 6px;
+  background: var(--bg-body, transparent);
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* config 校验错误提示 */
+.templates-config__error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--danger, #dc2626);
+}

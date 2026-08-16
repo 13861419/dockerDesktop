@@ -41,6 +41,7 @@ const SitesPage = lazy(() => import('./pages/sites'));
 const DatabasesPage = lazy(() => import('./pages/databases'));
 const BackupsPage = lazy(() => import('./pages/backups'));
 const FirewallPage = lazy(() => import('./pages/firewall'));
+const TemplatesPage = lazy(() => import('./pages/templates'));
 const NotificationsPage = lazy(() => import('./pages/notifications'));
 
 /**
@@ -278,6 +279,16 @@ export default function App() {
                   <PageSuspense>
                     <RequireAdmin>
                       <FirewallPage />
+                    </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/templates"
+                element={
+                  <PageSuspense>
+                    <RequireAdmin>
+                      <TemplatesPage />
                     </RequireAdmin>
                   </PageSuspense>
                 }

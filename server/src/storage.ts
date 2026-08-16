@@ -371,6 +371,18 @@ function createTables(): void {
       tx_delta     INTEGER NOT NULL DEFAULT 0      -- 本次采样周期内发送增量（字节）
     );
     CREATE INDEX IF NOT EXISTS idx_container_metrics_id_ts ON container_metrics(container_id, ts DESC);
+
+    -- 容器模板库表：用户保存的容器部署模板（config 为容器配置 JSON，与 /config 导出兼容）
+    CREATE TABLE IF NOT EXISTS container_templates (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL UNIQUE,         -- 模板名称（唯一）
+      description TEXT,                        -- 描述（可选）
+      image      TEXT NOT NULL DEFAULT '',     -- 主镜像（便于列表展示与检索）
+      config     TEXT NOT NULL DEFAULT '{}',   -- 容器配置 JSON（docker-manager.container.config/v1 的 config 部分）
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_container_templates_name ON container_templates(name);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
