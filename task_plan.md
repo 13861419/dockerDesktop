@@ -1,33 +1,26 @@
-# Task Plan: Hub (Image Center) Regression — Local Mock Search Source
+# Task Plan: Containers Page Regression Coverage
 
 ## Goal
-Provide a usable image-search endpoint for the `/hub` regression when the test network cannot reach Docker Hub / mirror sources, so the search success path is actually exercised.
+Add deterministic browser regression coverage for the containers page, run it, fix any real defect it exposes, and re-verify the build.
 
 ## Phases
-- [x] Phase 1: Research public search sources + design local mock
-- [x] Phase 2: Implement local mock Docker Hub search service
-- [x] Phase 3: Configure mock as custom search source and run regression
-- [x] Phase 4: Verify /hub regression success path + build
-- [x] Phase 5: Check working tree / build
+- [x] Phase 1: Pick the next regression target and record the plan
+- [x] Phase 2: Research stable containers UI markers and interactions
+- [x] Phase 3: Create the browser regression script
+- [x] Phase 4: Run the regression and fix real issues
+- [x] Phase 5: Run build verification and summarize results
 
 ## Key Questions
-1. Is there a reachable public Docker Hub search endpoint in this network?
-2. Can a local mock reproduce the Docker Hub search protocol to drive the success path?
+1. Does the containers page render the list, state filters, and search without network/console errors?
+2. Do search empty-state and state-filter interactions stay stable without mutating Docker state?
 
 ## Decisions Made
-- Measured public candidates (dytt.online, lispy.org, 666860.xyz, hub.rat.dev, docker-0.unsee.tech, docker.1ms.run):
-  all unreachable (DNS/403/404/timeout) or returning non-array results → no public source is usable here.
-- Therefore implement a local mock search service (scripts/mock-hub-search.js) on 127.0.0.1:9530 that
-  implements both registry (/v2/search?term=) and web (/v2/search/repositories/?query=) protocols with
-  a legal { results: [...] } shape matching searchHubRepos()/toHubResult().
-- Configure via POST /api/hub/search-source to point the custom search source at the mock.
-- The regression script already accepts both success and graceful-degradation outcomes, so it stays robust.
+- Target `/containers` next because it is the core page and not yet covered by any regression script.
+- Keep the regression non-destructive: inspect shell, list/empty state, search empty state, and state filter only.
+- Do NOT click start/stop/restart/delete/replace-image/prune/create operations.
 
 ## Errors Encountered
-- Earlier "skeleton stuck" observations were an artifact of the script triggering a second concurrent
-  search; fixed by observing only the first auto-search, which shows correct graceful degradation.
-- Confirmed 502 root cause is upstream unreachable (env), not code.
+- None yet.
 
 ## Status
-**Completed** - mock search source verified; /hub regression now runs the search-success path (2 results,
-zero network/console errors) with the mock configured, and still passes gracefully-degradation otherwise.
+**Currently in Phase 3** - creating the containers page browser regression script.

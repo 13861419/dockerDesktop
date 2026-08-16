@@ -1,32 +1,22 @@
-# Notes: Hub Regression Searching Sources
+# Notes: Containers Page Regression
 
-## Available public search sources (verified in this network)
+## Sources
 
-Two public search sources return valid Docker Hub `results` arrays and are exercised by
-`npm run regression:hub` (both yield repoCount=20, zero network/console errors):
+### Source 1: web/src/pages/containers.tsx
+- Key points:
+  - 页面拉取 `/api/containers?all=true` 显示容器列表。
+  - 稳定文案：容器管理标题、`运行中` / `已停止` / 状态筛选 seg、`搜索 容器名 / 镜像 / ID`、`共 N 个容器`、`创建容器`、`清理未使用`、`全部镜像` 下拉。
+  - 列表表头：`容器名` / `镜像` / `状态` / `创建时间` 等。
+  - 空态文案：`暂无容器`、`未找到匹配的容器`、`暂无运行中的容器`。
+  - 搜索按 容器名/镜像/ID 模糊过滤；状态筛选 全部/运行中/已停止。
+  - 行级操作有 详情/启动/停止/重启/删除/克隆/替换镜像 等，均为破坏性或需谨慎，回归中不点击。
 
-1. `https://docker-0.unsee.tech` — direct reachable, standalone domain, verified OK.
-2. `https://docker.tbap.top` — discovered via 308 redirect from `docker.tbedu.top` (edu mirror).
+## Synthesized Findings
 
-Both serve the standard web search protocol `GET /v2/search/repositories/?query=` and return
-`{ count, results:[{repo_name, short_description, star_count, pull_count, is_official}] }`
-matching server searchHubRepos()/toHubResult().
-
-## Measured but unusable candidates (current network)
-- docker.m.daocloud.io → 401 (auth required; pull-only, no search interface)
-- docker.1ms.run → 404; docker.jiaxin.site/proxy.vvvv.ee → 400 (pull-only)
-- docker.hpcloud.cloud / dockerproxy.link → 200 but text/html (not JSON, arr=False)
-- docker.xuanyuan.me → 429 (rate-limited free tier)
-- docker.1panel.live / hub.xdark.top / xdark.top / dockerproxy.net / docker.ckyl.me → timeout
-- docker-0.unsee.tech basic /v2/search?term= sometimes times out; use /v2/search/repositories/?query= path
-- Many others: DNS fail (jobcher, baidubce, 163, ixdev, registry.cyou, melikeme, sunzishaokao)
-- hub.docker.com direct → timeout
-
-## Notes on reliability
-- These community sources can throttle/change anytime; recommend keeping multiple + local mock
-  (scripts/mock-hub-search.js) as fallback. The regression script accepts success OR graceful
-  degradation, so it stays robust whichever path runs.
-
-## Setup (done at runtime, not in git)
-POST /api/hub/search-source { host: "https://docker-0.unsee.tech" }
-
+### Regression Focus
+- 页面加载后应出现容器管理标题、状态筛选（运行中/已停止）、搜索框占位、共 X 个容器。
+- 空态应包含 `暂无容器` 或相关空态文案。
+- 搜索填入不匹配关键字后应出现 `未找到匹配的容器`。
+- 切换到「已停止」筛选不应报错。
+- 采集网络与控制台错误；不得出现 `拉取容器列表失败`。
+- 不触发任何启停/删除/重建等破坏性操作。
