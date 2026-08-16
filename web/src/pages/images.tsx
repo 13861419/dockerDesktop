@@ -82,6 +82,30 @@ async function downloadImage(name: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** 镜像优化建议数据（/api/images/suggestions 返回） */
+interface ImageSuggestions {
+  /** Top 10 大镜像 */
+  topLarge: { id: string; tags: string[]; size: number; created: number }[];
+  /** 长期未使用镜像 */
+  unused: { id: string; tags: string[]; size: number; lastPullAt?: number; daysSincePull: number }[];
+  /** 重复标签镜像 */
+  duplicates: { id: string; tags: string[] }[];
+  /** 所有镜像总大小 */
+  totalSize: number;
+  /** 悬空镜像数量 */
+  danglingCount: number;
+  /** 镜像总数 */
+  totalCount: number;
+}
+
+/** 优化建议统计卡片样式（通过 CSS 变量适配浅色/深色主题） */
+const suggestStatStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)',
+  border: '1px solid var(--border-color)',
+  borderRadius: 'var(--radius-md, 8px)',
+  padding: 16,
+};
+
 /**
  * 镜像列表页组件
  */
@@ -105,6 +129,13 @@ export default function ImagesPage() {
   const [pruneOpen, setPruneOpen] = useState(false);
   const [pruning, setPruning] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 镜像优化建议数据
+  const [suggestions, setSuggestions] = useState<ImageSuggestions | null>(null);
+  // "一键清理未使用镜像"确认框
+  const [pruneAllOpen, setPruneAllOpen] = useState(false);
+  const [pruningAll, setPruningAll] = useState(false);
+  // 未使用镜像详情弹窗
+  const [unusedOpen, setUnusedOpen] = useState(false);
   // 搜索关键字（按镜像名/ID 本地过滤）
   const [keyword, setKeyword] = useState('');
   /** 分页每页条数可选值 */
@@ -167,9 +198,20 @@ export default function ImagesPage() {
     }
   }, [showToast]);
 
+  /** 加载镜像优化建议数据（失败时静默置空，不影响主列表） */
+  const loadSuggestions = useCallback(async () => {
+    try {
+      const data = await get<ImageSuggestions>('/api/images/suggestions');
+      setSuggestions(data);
+    } catch {
+      setSuggestions(null);
+    }
+  }, []);
+
   useEffect(() => {
     fetchImages();
-  }, [fetchImages, refreshKey]);
+    loadSuggestions();
+  }, [fetchImages, loadSuggestions, refreshKey]);
 
   // 加载可选的镜像源列表
   const loadSources = useCallback(async () => {
@@ -298,8 +340,9 @@ export default function ImagesPage() {
     }
     setPruning(true);
     try {
-      const res = await post<any>('/api/images/prune');
-      const freed = res?.SpaceReclaimed != null ? formatSize(res.SpaceReclaimed) : '';
+      // all=false：仅清理悬空镜像（dangling）
+      const res = await post<any>('/api/images/prune', { all: false });
+      const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
       showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
       setPruneOpen(false);
       setRefreshKey((k) => k + 1);
@@ -307,6 +350,29 @@ export default function ImagesPage() {
       showToast(e?.message || '清理失败', 'error');
     } finally {
       setPruning(false);
+    }
+  }, [canManage, showToast]);
+
+  /**
+   * 一键清理所有未被容器使用的镜像（all=true，含非悬空未使用镜像）
+   */
+  const handlePruneAll = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可清理镜像', 'error');
+      setPruneAllOpen(false);
+      return;
+    }
+    setPruningAll(true);
+    try {
+      const res = await post<any>('/api/images/prune', { all: true });
+      const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
+      showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+      setPruneAllOpen(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '清理失败', 'error');
+    } finally {
+      setPruningAll(false);
     }
   }, [canManage, showToast]);
 
@@ -554,6 +620,83 @@ export default function ImagesPage() {
 
   return (
     <div className="page">
+      {/* 镜像优化建议卡片 */}
+      {suggestions && (
+        <div style={{ marginBottom: 16 }}>
+          <Card title="镜像优化建议">
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div style={suggestStatStyle}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>总镜像数</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {suggestions.totalCount}
+                </div>
+              </div>
+              <div style={suggestStatStyle}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>总大小</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {formatSize(suggestions.totalSize)}
+                </div>
+              </div>
+              <div style={suggestStatStyle}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>悬空镜像</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {suggestions.danglingCount}
+                </div>
+              </div>
+              <div
+                style={{ ...suggestStatStyle, cursor: 'pointer' }}
+                onClick={() => setUnusedOpen(true)}
+                title="点击查看未使用镜像详情"
+              >
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>未使用镜像</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--primary)' }}>
+                  {suggestions.unused.length}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>点击查看详情</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Top 5 大镜像
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>镜像</th>
+                  <th>大小</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suggestions.topLarge.slice(0, 5).map((img) => (
+                  <tr key={img.id}>
+                    <td className="col-name">
+                      <div className="name-main" title={img.tags.join(', ') || '<none>'}>
+                        {img.tags[0] || '<none>'}
+                      </div>
+                      {img.tags.length > 1 && (
+                        <div className="name-sub">+{img.tags.length - 1} 个标签</div>
+                      )}
+                    </td>
+                    <td>{formatSize(img.size)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <Button variant="danger" onClick={() => setPruneAllOpen(true)} disabled={!canManage}>
+                一键清理未使用镜像
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       <Card
         title="镜像"
         extra={
@@ -571,7 +714,7 @@ export default function ImagesPage() {
               刷新
             </Button>
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canManage}>
-              清理未使用镜像
+              清理悬空镜像
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={!canManage}>
               导入镜像
@@ -984,17 +1127,71 @@ export default function ImagesPage() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* 清理未使用镜像确认框 */}
+      {/* 清理悬空镜像确认框 */}
       <ConfirmDialog
         open={pruneOpen}
-        title="清理未使用镜像"
-        message="确定要清理所有未被容器引用的镜像吗？此操作不可恢复。"
+        title="清理悬空镜像"
+        message="确定要清理所有悬空镜像（无标签且未被引用）吗？此操作不可恢复。"
         confirmText="清理"
         danger
         loading={pruning}
         onConfirm={handlePrune}
         onCancel={() => setPruneOpen(false)}
       />
+
+      {/* 一键清理未使用镜像确认框 */}
+      <ConfirmDialog
+        open={pruneAllOpen}
+        title="一键清理未使用镜像"
+        message="确定要清理所有未被容器使用的镜像吗？将删除全部未使用镜像（含非悬空镜像），此操作不可恢复。"
+        confirmText="清理"
+        danger
+        loading={pruningAll}
+        onConfirm={handlePruneAll}
+        onCancel={() => setPruneAllOpen(false)}
+      />
+
+      {/* 未使用镜像详情弹窗 */}
+      <Modal
+        open={unusedOpen}
+        title="未使用镜像详情"
+        width={680}
+        onClose={() => setUnusedOpen(false)}
+        footer={
+          <Button variant="secondary" onClick={() => setUnusedOpen(false)}>
+            关闭
+          </Button>
+        }
+      >
+        {!suggestions || suggestions.unused.length === 0 ? (
+          <Empty title="暂无未使用镜像" description="没有超过 30 天未使用的镜像" />
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>镜像</th>
+                <th>大小</th>
+                <th>最近拉取</th>
+                <th>未使用天数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suggestions.unused.map((img) => (
+                <tr key={img.id}>
+                  <td className="col-name">
+                    <div className="name-main" title={img.tags.join(', ') || '<none>'}>
+                      {img.tags[0] || '<none>'}
+                    </div>
+                  </td>
+                  <td>{formatSize(img.size)}</td>
+                  <td>{formatTime(img.lastPullAt)}</td>
+                  <td>{img.daysSincePull} 天</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Modal>
     </div>
   );
 }

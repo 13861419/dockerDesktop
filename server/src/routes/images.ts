@@ -130,6 +130,102 @@ function asyncHandler(
 }
 
 /**
+ * 计算镜像优化建议数据
+ *
+ * 汇总 Top 大镜像、长期未使用镜像、重复标签镜像、总大小与悬空镜像数量，
+ * 供前端"优化建议"卡片展示。判定镜像是否被使用时，综合容器 ImageID 与
+ * 容器 Image 字段（镜像名）两方面匹配。
+ * @param docker dockerode 客户端
+ * @returns 建议数据对象
+ */
+async function computeImageSuggestions(docker: Awaited<ReturnType<typeof getDockerClient>>) {
+  // 列出镜像（含悬空镜像，不含中间层）与全部容器（含已停止），用于判断镜像是否被使用
+  const images = (await docker.listImages({ all: false })) as any[];
+  const containers = (await docker.listContainers({ all: true })) as any[];
+
+  // 收集所有容器引用的镜像 Id 与镜像名，用于判断镜像是否被使用
+  const usedImageIds = new Set<string>();
+  const usedImageNames = new Set<string>();
+  for (const c of containers) {
+    if (c.ImageID) usedImageIds.add(c.ImageID);
+    if (c.Image) usedImageNames.add(c.Image);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  let totalSize = 0;
+  let danglingCount = 0;
+  // 按 image Id 分组（listImages 通常每 Id 一条，分组以兼容边界情况）
+  const byId = new Map<string, any[]>();
+  for (const img of images) {
+    const id = img.Id;
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id)!.push(img);
+    totalSize += img.Size || 0;
+    // 无仓库标签的镜像即为悬空（dangling）镜像
+    if (!img.RepoTags || img.RepoTags.length === 0) danglingCount++;
+  }
+
+  // 重复镜像：同一 image Id 指向多个 RepoTags
+  const duplicates: { id: string; tags: string[] }[] = [];
+  for (const [id, group] of byId) {
+    const tags = group.flatMap((img) => img.RepoTags || []);
+    const uniqueTags = Array.from(new Set(tags));
+    if (uniqueTags.length > 1) {
+      duplicates.push({ id, tags: uniqueTags });
+    }
+  }
+
+  /**
+   * 判断镜像是否被任意容器使用
+   * @param img 镜像条目
+   */
+  const isUsed = (img: any): boolean => {
+    if (img.Id && usedImageIds.has(img.Id)) return true;
+    const tags = img.RepoTags || [];
+    return tags.some((t: string) => usedImageNames.has(t));
+  };
+
+  // Top 10 大镜像（按 Size 降序）
+  const topLarge = [...images]
+    .sort((a, b) => (b.Size || 0) - (a.Size || 0))
+    .slice(0, 10)
+    .map((img) => ({
+      id: img.Id,
+      tags: img.RepoTags || [],
+      size: img.Size || 0,
+      created: img.Created || 0,
+    }));
+
+  // 长期未使用镜像：无容器使用 + 超过 30 天未拉取（无拉取记录时回退到构建时间）
+  const unused = images
+    .filter((img) => !isUsed(img))
+    .map((img) => {
+      const lastPullAt = img.Id ? getPullTime(img.Id) : undefined;
+      // 拉取时间缺失时以镜像构建时间作为最近活动时间
+      const reference = lastPullAt != null ? lastPullAt : img.Created || 0;
+      const daysSincePull = reference ? Math.floor((now - reference) / 86400) : 0;
+      return {
+        id: img.Id,
+        tags: img.RepoTags || [],
+        size: img.Size || 0,
+        lastPullAt,
+        daysSincePull,
+      };
+    })
+    .filter((item) => item.daysSincePull > 30)
+    .sort((a, b) => b.daysSincePull - a.daysSincePull);
+
+  return {
+    topLarge,
+    unused,
+    duplicates,
+    totalSize,
+    danglingCount,
+    totalCount: images.length,
+  };
+}
+
+/**
  * GET /api/images
  * 获取镜像列表，可通过 all=true 包含中间层镜像
  * 返回时合并每个镜像的本地拉取时间（pullTime，秒），供前端展示"拉取时间"列。
@@ -146,6 +242,50 @@ router.get(
       return pullTime ? { ...img, pullTime } : img;
     });
     res.json(withPullTime);
+  }),
+);
+
+/**
+ * GET /api/images/suggestions
+ * 返回镜像优化建议：Top 大镜像、长期未使用镜像、重复标签镜像、总大小、悬空镜像数量
+ * 注意：需在 /:name 之前定义，避免 suggestions 被 :name 捕获
+ */
+router.get(
+  '/suggestions',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const data = await computeImageSuggestions(docker);
+    res.json(data);
+  }),
+);
+
+/**
+ * GET /api/images/:name/impact
+ * 返回指定镜像被哪些容器使用（relatedContainers），复用镜像详情页的关联容器判定逻辑
+ * 注意：需在 /:name 之前定义，避免 impact 被 :name 捕获
+ */
+router.get(
+  '/:name/impact',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const name = req.params.name;
+    // 先 inspect 拿到镜像的 Id 与 RepoTags，用于和容器匹配
+    const info: any = await docker.getImage(name).inspect();
+    const imageId = info?.Id;
+    const repoTags: string[] = Array.isArray(info?.RepoTags) ? info.RepoTags : [];
+    const containers = (await docker.listContainers({ all: true })) as any[];
+    // 容器使用该镜像的判定：ImageID 相等，或 Image 字段命中某个 RepoTag
+    const relatedContainers = containers
+      .filter((c) => {
+        if (imageId && c.ImageID === imageId) return true;
+        return repoTags.some((t) => c.Image === t);
+      })
+      .map((c) => ({
+        id: c.Id,
+        name: (c.Names && c.Names[0]?.replace(/^\//, '')) || (c.Id || '').slice(0, 12),
+        state: c.State,
+      }));
+    res.json({ id: imageId, tags: repoTags, relatedContainers });
   }),
 );
 
@@ -456,7 +596,10 @@ router.post(
 /**
  * POST /api/images/prune
  * 清理未被使用的镜像
- * body: { dangling?: boolean }
+ * body: { all?: boolean }
+ *   - all=true：清理所有未被容器使用的镜像（dangling=false，含非悬空未使用镜像）
+ *   - all=false 或默认：仅清理悬空镜像（dangling=true，无标签镜像）
+ * 返回 { ok, deleted, spaceReclaimed }
  */
 router.post(
   '/prune',
@@ -464,21 +607,29 @@ router.post(
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
-      const dangling = req.body?.dangling !== false;
+      const all = req.body?.all === true;
+      // all=true 时 dangling=false（清理所有未使用镜像）；否则保持 dangling=true
+      const dangling = !all;
       const result = await docker.pruneImages({ dangling });
-      // 汇总清理详情：列出被清理的镜像（缺少仓库/标签则记录镜像ID）与释放空间
+      // 汇总清理详情：列出被清理的镜像（Untagged/Deleted）与释放空间
       const deleted: string[] = [];
       for (const item of result.ImagesDeleted || []) {
         const name = item.Untagged || item.Deleted || '';
         if (name && !deleted.includes(name)) deleted.push(name);
       }
-      const size = result.SpaceReclaimed || 0;
-      const spaceText = size > 0 ? `释放空间: ${fmtBytes(size)}` : '无空间回收';
+      const spaceReclaimed = result.SpaceReclaimed || 0;
+      const spaceText = spaceReclaimed > 0 ? `释放空间: ${fmtBytes(spaceReclaimed)}` : '无空间回收';
       const listText = deleted.length
         ? `清理镜像(${deleted.length}个): ${deleted.join(', ')}`
         : '未找到可清理的镜像';
-      logOperation(res.locals.username, '清理镜像', 'image', null, `dangling: ${dangling}; ${listText}; ${spaceText}`);
-      res.json(result);
+      logOperation(
+        res.locals.username,
+        '清理镜像',
+        'image',
+        null,
+        `${all ? '全部未使用' : '悬空'}; ${listText}; ${spaceText}`,
+      );
+      res.json({ ok: true, deleted, spaceReclaimed });
     },
     () => ({ action: '清理镜像', targetType: 'image', detail: 'docker image prune' }),
   ),

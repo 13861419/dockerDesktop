@@ -355,6 +355,22 @@ function createTables(): void {
       images             INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_host_metrics_ts ON host_metrics(ts DESC);
+
+    -- 容器资源指标采样表：采集器对每个运行中容器降采样落库，供容器详情页历史趋势查询
+    CREATE TABLE IF NOT EXISTS container_metrics (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      container_id TEXT NOT NULL,                  -- 容器 id（完整 64 字符）
+      ts           INTEGER NOT NULL,               -- 采样时间（毫秒）
+      cpu_percent  REAL NOT NULL,                  -- CPU 使用率（0-100，已按核数归一化）
+      mem_usage    INTEGER NOT NULL,               -- 内存使用量（字节）
+      mem_limit    INTEGER NOT NULL,               -- 内存上限（字节）
+      mem_percent  REAL NOT NULL,                  -- 内存使用率（0-100）
+      net_rx       INTEGER NOT NULL,               -- 累计接收字节
+      net_tx       INTEGER NOT NULL,               -- 累计发送字节
+      rx_delta     INTEGER NOT NULL DEFAULT 0,     -- 本次采样周期内接收增量（字节）
+      tx_delta     INTEGER NOT NULL DEFAULT 0      -- 本次采样周期内发送增量（字节）
+    );
+    CREATE INDEX IF NOT EXISTS idx_container_metrics_id_ts ON container_metrics(container_id, ts DESC);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

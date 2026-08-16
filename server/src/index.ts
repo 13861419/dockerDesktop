@@ -5,6 +5,7 @@
  */
 import app from './app';
 import { startMonitor } from './docker/monitor';
+import { startContainerMetrics } from './docker/containerMetrics';
 import { setupTerminalServer } from './docker/terminal';
 import { setupEventWsServer } from './docker/eventWs';
 import { startEventMonitor } from './docker/events';
@@ -37,6 +38,15 @@ const server = app.listen(PORT, HOST, () => {
       console.error('监控采集器启动失败:', err);
     }
   }, 500);
+
+  // 启动容器资源指标采集器（异步，依赖 Docker 客户端就绪，略晚于主机监控）
+  setTimeout(() => {
+    try {
+      startContainerMetrics();
+    } catch (err) {
+      console.error('容器指标采集器启动失败:', err);
+    }
+  }, 700);
 
   // 启动 Docker 事件采集器（异步，不影响服务启动）
   setTimeout(() => {

@@ -21,13 +21,14 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { PageLoading } from '../components/Loading';
 import LineChart from '../components/LineChart';
 import ContainerTerminal from '../components/ContainerTerminal';
+import FileExplorer from '../components/FileExplorer';
 import { useContainerLogs } from '../hooks/useContainerLogs';
 import { useToast } from '../components/Toast';
 import { ContainerPortConflicts, ContainerListItem } from '../types';
 import './containerDetail.less';
 
 /** Tab 类型 */
-type TabKey = 'detail' | 'logs' | 'terminal' | 'stats';
+type TabKey = 'detail' | 'logs' | 'terminal' | 'stats' | 'files';
 
 /** Tab 配置 */
 const TABS: Array<{ key: TabKey; label: string }> = [
@@ -35,6 +36,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'logs', label: '日志' },
   { key: 'terminal', label: '终端' },
   { key: 'stats', label: '资源监控' },
+  { key: 'files', label: '文件' },
 ];
 
 /**
@@ -80,6 +82,44 @@ function formatDuration(startedAt: string): string {
   if (days > 0) return `${days}天${hours}小时${minutes}分`;
   if (hours > 0) return `${hours}小时${minutes}分`;
   return `${minutes}分`;
+}
+
+/** 容器历史资源指标数据点（与后端 ContainerMetricPoint 对应） */
+interface ContainerMetricPoint {
+  timestamp: number;
+  cpuPercent: number;
+  memUsage: number;
+  memLimit: number;
+  memPercent: number;
+  netRx: number;
+  netTx: number;
+  rxDelta: number;
+  txDelta: number;
+}
+
+/** 资源监控时间范围：实时 / 1 小时 / 24 小时 / 7 天 */
+type StatsRange = 'realtime' | '1h' | '24h' | '7d';
+
+/**
+ * 将毫秒时间戳格式化为历史曲线 X 轴标签（MM-DD HH:mm）
+ * @param ts 毫秒时间戳
+ */
+function formatHistTime(ts: number): string {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * 将毫秒时间戳格式化为实时曲线 X 轴标签（HH:MM:SS）
+ * @param ts 毫秒时间戳
+ */
+function formatRealtimeTime(ts: number): string {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /**
@@ -182,6 +222,14 @@ export default function ContainerDetailPage() {
   const [stats, setStats] = useState<ContainerStats | null>(null);
   const [cpuHist, setCpuHist] = useState<number[]>([]);
   const [memHist, setMemHist] = useState<number[]>([]);
+  // 实时曲线各点的 X 轴时间标签（与 cpuHist/memHist 一一对应，HH:MM:SS）
+  const [realtimeLabels, setRealtimeLabels] = useState<string[]>([]);
+  // 资源监控时间范围（实时 / 1h / 24h / 7d），切换后影响曲线数据来源与轮询行为
+  const [statsRange, setStatsRange] = useState<StatsRange>('realtime');
+  // 历史趋势数据点（仅 1h/24h/7d 模式使用，来自 /stats/history 接口）
+  const [metricsPoints, setMetricsPoints] = useState<ContainerMetricPoint[]>([]);
+  // 历史趋势加载中状态（用于首拉空数据时展示加载提示）
+  const [metricsLoading, setMetricsLoading] = useState(false);
 
   /**
    * 拉取容器完整详情
@@ -314,19 +362,28 @@ export default function ContainerDetailPage() {
   }, [id]);
 
   /**
-   * 进入资源监控 Tab 时拉取初始统计，并定时刷新 + 积累历史曲线
+   * 实时模式：进入资源监控 Tab 时拉取初始统计，并每 2 秒轮询 + 积累实时曲线
+   *
+   * 仅在 statsRange === 'realtime' 时启用轮询；切换到历史模式时停止轮询，
+   * 再次切回实时时清空缓冲重新积累，避免新旧数据混叠。
    */
   useEffect(() => {
-    if (tab !== 'stats' || !id) return;
+    if (tab !== 'stats' || !id || statsRange !== 'realtime') return;
     let alive = true;
+    // 切换到实时模式时清空历史缓冲，重新积累曲线
+    setCpuHist([]);
+    setMemHist([]);
+    setRealtimeLabels([]);
     fetchStats();
     const timer = window.setInterval(async () => {
       try {
         const s = await get<ContainerStats>(`/api/containers/${encodeURIComponent(id)}/stats`);
         if (!alive) return;
         setStats(s);
+        const ts = Date.now();
         setCpuHist((prev) => [...prev.slice(-29), Number(s.cpuPercent.toFixed(1))]);
         setMemHist((prev) => [...prev.slice(-29), Number(s.memory.percent.toFixed(1))]);
+        setRealtimeLabels((prev) => [...prev.slice(-29), formatRealtimeTime(ts)]);
       } catch {
         // 单个采样失败忽略
       }
@@ -335,7 +392,40 @@ export default function ContainerDetailPage() {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [tab, id, fetchStats]);
+  }, [tab, id, statsRange, fetchStats]);
+
+  /**
+   * 历史模式：选择 1h/24h/7d 时拉取历史趋势，并每 30 秒刷新以获取最新采样点
+   *
+   * 切换时间范围或容器时重新拉取；拉取失败时清空数据点避免展示残留。
+   */
+  useEffect(() => {
+    if (tab !== 'stats' || !id || statsRange === 'realtime') return;
+    let alive = true;
+    const load = async () => {
+      setMetricsLoading(true);
+      try {
+        const data = await get<{ points: ContainerMetricPoint[] }>(
+          `/api/containers/${encodeURIComponent(id)}/stats/history`,
+          { range: statsRange }
+        );
+        if (!alive) return;
+        setMetricsPoints(data?.points || []);
+      } catch {
+        if (!alive) return;
+        setMetricsPoints([]);
+      } finally {
+        if (alive) setMetricsLoading(false);
+      }
+    };
+    load();
+    // 每 30 秒刷新一次历史数据，获取最新采样点
+    const timer = window.setInterval(load, 30000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [tab, id, statsRange]);
 
   /**
    * 重启容器
@@ -1036,12 +1126,42 @@ export default function ContainerDetailPage() {
   /** 是否已退出（停止） */
   const exited = detail?.state === 'exited';
 
-  /** 资源监控网格数值 */
-  const cpuValue = stats ? stats.cpuPercent.toFixed(1) + '%' : '-';
-  const memValue = stats
-    ? `${formatBytes(stats.memory.usage)} / ${formatBytes(stats.memory.limit)}`
-    : '-';
-  const netValue = stats ? `${formatBytes(stats.network.rx)} / ${formatBytes(stats.network.tx)}` : '-';
+  /** 资源监控网格数值：实时模式取最新 stats，历史模式取最新历史点 */
+  const latestHist = metricsPoints.length > 0 ? metricsPoints[metricsPoints.length - 1] : null;
+  const cpuValue =
+    statsRange === 'realtime'
+      ? stats
+        ? stats.cpuPercent.toFixed(1) + '%'
+        : '-'
+      : latestHist
+        ? latestHist.cpuPercent.toFixed(1) + '%'
+        : '-';
+  const memValue =
+    statsRange === 'realtime'
+      ? stats
+        ? `${formatBytes(stats.memory.usage)} / ${formatBytes(stats.memory.limit)}`
+        : '-'
+      : latestHist
+        ? `${formatBytes(latestHist.memUsage)} / ${formatBytes(latestHist.memLimit)}`
+        : '-';
+  const netValue =
+    statsRange === 'realtime'
+      ? stats
+        ? `${formatBytes(stats.network.rx)} / ${formatBytes(stats.network.tx)}`
+        : '-'
+      : latestHist
+        ? `${formatBytes(latestHist.netRx)} / ${formatBytes(latestHist.netTx)}`
+        : '-';
+
+  /** 曲线数据：实时模式用内存缓冲，历史模式用历史数据点映射 */
+  const chartCpu =
+    statsRange === 'realtime' ? cpuHist : metricsPoints.map((p) => Number(p.cpuPercent.toFixed(1)));
+  const chartMem =
+    statsRange === 'realtime' ? memHist : metricsPoints.map((p) => Number(p.memPercent.toFixed(1)));
+  const chartLabels =
+    statsRange === 'realtime'
+      ? realtimeLabels
+      : metricsPoints.map((p) => formatHistTime(p.timestamp));
 
   if (loading) return <PageLoading />;
 
@@ -1542,16 +1662,59 @@ export default function ContainerDetailPage() {
                   <div className="stat-value mono">{netValue}</div>
                 </Card>
               </div>
-              <Card title="资源曲线">
-                <LineChart
-                  series={[
-                    { name: 'CPU %', color: '#6366f1', data: cpuHist },
-                    { name: '内存 %', color: '#22c55e', data: memHist },
-                  ]}
-                  unit="%"
-                  max={100}
-                />
+              <Card
+                title="资源曲线"
+                extra={
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {(['realtime', '1h', '24h', '7d'] as StatsRange[]).map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setStatsRange(r)}
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: 12,
+                          lineHeight: 1.4,
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          border:
+                            statsRange === r ? '1px solid #6366f1' : '1px solid #e5e7eb',
+                          background: statsRange === r ? '#eef2ff' : '#fff',
+                          color: statsRange === r ? '#6366f1' : '#6b7280',
+                        }}
+                      >
+                        {r === 'realtime' ? '实时' : r}
+                      </button>
+                    ))}
+                  </div>
+                }
+              >
+                {statsRange !== 'realtime' && metricsLoading && metricsPoints.length === 0 ? (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                    加载历史数据中…
+                  </div>
+                ) : chartCpu.length === 0 ? (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                    暂无数据
+                  </div>
+                ) : (
+                  <LineChart
+                    series={[
+                      { name: 'CPU %', color: '#6366f1', data: chartCpu },
+                      { name: '内存 %', color: '#22c55e', data: chartMem },
+                    ]}
+                    labels={chartLabels}
+                    unit="%"
+                    max={100}
+                  />
+                )}
               </Card>
+            </div>
+          )}
+
+          {/* 文件管理 Tab */}
+          {tab === 'files' && (
+            <div className="files-panel">
+              <FileExplorer containerId={id!} />
             </div>
           )}
         </>

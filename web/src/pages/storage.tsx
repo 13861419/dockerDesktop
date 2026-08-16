@@ -3,6 +3,7 @@
  *
  * 顶部展示磁盘使用统计（镜像 / 容器 / 卷 / build cache），
  * 下方提供各类别勾选后的「一键清理」（含二次确认），清理后自动刷新统计。
+ * 额外提供按粒度选择的「镜像清理」：悬空镜像（dangling）与全部未使用镜像。
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import Card from '../components/Card';
@@ -96,6 +97,9 @@ function formatBytes(bytes?: number): string {
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+/** 镜像清理粒度：dangling=仅悬空镜像，all=所有未使用镜像 */
+type ImagePruneMode = 'dangling' | 'all';
+
 /**
  * 系统存储管理页组件
  */
@@ -114,6 +118,12 @@ export default function StoragePage() {
   const [pruning, setPruning] = useState(false);
   // 宿主机磁盘分区使用情况（来自实时监控）
   const [disks, setDisks] = useState<DiskPartition[]>([]);
+  // 镜像清理：待确认的清理粒度（null 表示确认框关闭）
+  const [imgPruneMode, setImgPruneMode] = useState<ImagePruneMode | null>(null);
+  // 镜像清理进行中
+  const [imgPruning, setImgPruning] = useState(false);
+  // 上次镜像清理释放的空间（展示在卡片底部）
+  const [imgFreed, setImgFreed] = useState('');
 
   /**
    * 拉取 df 磁盘统计
@@ -215,6 +225,41 @@ export default function StoragePage() {
     }
   }
 
+  /**
+   * 镜像清理：按粒度调用 /api/images/prune，成功后刷新统计并展示回收空间
+   */
+  async function handleImagePrune() {
+    if (!canManage || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可执行清理', 'error');
+      setImgPruneMode(null);
+      return;
+    }
+    if (!imgPruneMode) return;
+    setImgPruning(true);
+    try {
+      // all=true 清理全部未使用镜像；all=false 仅清理悬空镜像
+      const all = imgPruneMode === 'all';
+      const res = await post<{ ok: boolean; deleted: string[]; spaceReclaimed: number }>(
+        '/api/images/prune',
+        { all }
+      );
+      const freed = res?.spaceReclaimed != null ? formatBytes(res.spaceReclaimed) : '';
+      setImgFreed(freed);
+      showToast(
+        freed
+          ? `清理完成，释放 ${freed}${res?.deleted?.length ? `（${res.deleted.length} 项）` : ''}`
+          : '清理完成，未找到可清理的镜像'
+      );
+      setImgPruneMode(null);
+      // 清理后刷新统计
+      loadDf();
+    } catch (e: any) {
+      showToast(e?.message || '清理失败', 'error');
+    } finally {
+      setImgPruning(false);
+    }
+  }
+
   return (
     <div className="storage-page">
       {/* 顶部统计卡片 */}
@@ -294,6 +339,41 @@ export default function StoragePage() {
         )}
       </Card>
 
+      {/* 镜像清理（按粒度选择） */}
+      <Card title="镜像清理">
+        <div className="storage-clean">
+          <div className="storage-clean__item">
+            <div className="storage-clean__info">
+              <div className="storage-clean__name">清理无标签镜像（dangling）</div>
+              <div className="storage-clean__desc">仅清理无标签且未被引用的悬空镜像，风险较低</div>
+            </div>
+            <Button
+              variant="secondary"
+              disabled={!canManage || imgPruning}
+              onClick={() => setImgPruneMode('dangling')}
+            >
+              清理
+            </Button>
+          </div>
+          <div className="storage-clean__item">
+            <div className="storage-clean__info">
+              <div className="storage-clean__name">清理所有未使用镜像</div>
+              <div className="storage-clean__desc">清理所有未被容器使用的镜像（含非悬空镜像），释放更多空间</div>
+            </div>
+            <Button
+              variant="danger"
+              disabled={!canManage || imgPruning}
+              onClick={() => setImgPruneMode('all')}
+            >
+              清理
+            </Button>
+          </div>
+          {imgFreed && (
+            <div className="storage-clean__hint">上次镜像清理释放空间：{imgFreed}</div>
+          )}
+        </div>
+      </Card>
+
       {/* 清理区块 */}
       <Card title="清理">
         {loadError || !summary ? (
@@ -355,6 +435,22 @@ export default function StoragePage() {
         loading={pruning}
         onConfirm={handlePrune}
         onCancel={() => setPruneOpen(false)}
+      />
+
+      {/* 镜像清理二次确认（按粒度动态标题与提示） */}
+      <ConfirmDialog
+        open={!!imgPruneMode}
+        title={imgPruneMode === 'all' ? '清理所有未使用镜像' : '清理无标签镜像'}
+        message={
+          imgPruneMode === 'all'
+            ? '确定要清理所有未被容器使用的镜像吗？将删除全部未使用镜像（含非悬空镜像），此操作不可恢复。'
+            : '确定要清理所有悬空镜像（无标签且未被引用）吗？此操作不可恢复。'
+        }
+        confirmText="清理"
+        danger
+        loading={imgPruning}
+        onConfirm={handleImagePrune}
+        onCancel={() => setImgPruneMode(null)}
       />
     </div>
   );

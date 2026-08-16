@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { parseStats } from '../docker/stats';
+import { getContainerMetricsHistory } from '../docker/containerMetrics';
 import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
@@ -960,6 +961,23 @@ router.get(
     const container = docker.getContainer(req.params.id);
     const stats = await container.stats({ stream: false });
     res.json(await parseStats(stats));
+  }),
+);
+
+/**
+ * GET /api/containers/:id/stats/history?range=1h|24h|7d
+ * 获取容器历史资源指标趋势（从 container_metrics 降采样查询）。
+ *
+ * range 取值：1h（默认，每 60 秒一点）/ 24h（每 600 秒一点）/ 7d（每 1800 秒一点）。
+ * 返回：{ points: ContainerMetricPoint[] }
+ */
+router.get(
+  '/:id/stats/history',
+  asyncHandler(async (req: Request, res: Response) => {
+    const rawRange = String(req.query.range || '1h');
+    const range = rawRange === '24h' || rawRange === '7d' ? rawRange : '1h';
+    const points = getContainerMetricsHistory(req.params.id, range);
+    res.json({ points });
   }),
 );
 
