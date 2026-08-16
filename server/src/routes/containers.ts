@@ -44,6 +44,8 @@ async function formatContainer(container: Dockerode.Container, info?: Dockerode.
     labels: inspect.Config?.Labels || {},
     restartPolicy: inspect.HostConfig?.RestartPolicy?.Name || 'no',
     command: (inspect.Config?.Cmd || []).join(' '),
+    // 健康检查状态（未配置 Healthcheck 时为 'none'）
+    health: inspect.State?.Health?.Status || 'none',
   };
 }
 
@@ -205,7 +207,20 @@ router.get(
     const docker = await getDockerClient();
     const all = req.query.all !== 'false';
     const containers = await docker.listContainers({ all });
-    res.json(containers);
+    // 并发 inspect 每个容器以提取健康检查状态（health）
+    // 注意：会对每个容器发起一次 Docker Engine 请求，容器数量较多时可能略慢
+    const containersWithHealth = await Promise.all(
+      containers.map(async (c) => {
+        try {
+          const info = await docker.getContainer(c.Id).inspect();
+          return { ...c, health: info.State?.Health?.Status || 'none' };
+        } catch {
+          // inspect 失败时降级为 'none'，不影响列表整体返回
+          return { ...c, health: 'none' };
+        }
+      }),
+    );
+    res.json(containersWithHealth);
   }),
 );
 

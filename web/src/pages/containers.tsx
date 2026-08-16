@@ -1217,7 +1217,14 @@ export default function ContainersPage() {
                         </td>
                         <td className="cell-image">{c.Image || '-'}</td>
                         <td>
-                          <StatusBadge status={c.State} />
+                          <span className="cell-status">
+                            <StatusBadge status={c.State} />
+                            {c.health && c.health !== 'none' && (
+                              <span className={`health-badge health-badge--${c.health}`}>
+                                {c.health}
+                              </span>
+                            )}
+                          </span>
                         </td>
                         <td className="cell-ports">{renderPortCell(c)}</td>
                         {renderStatCells(c)}

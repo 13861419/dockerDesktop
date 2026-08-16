@@ -553,4 +553,49 @@
   font-size: 12px;
 }
 
+/* 状态列内：状态徽章与健康徽章横向排列容器 */
+.cell-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 健康检查徽章（容器列表状态列追加展示，风格与 StatusBadge 一致） */
+.health-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid var(--border-color);
+
+  /* 小圆点，颜色随状态变化 */
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  &--healthy {
+    color: var(--color-running, #22c55e);
+    border-color: #bbf7d0;
+  }
+
+  &--unhealthy {
+    color: var(--color-error, #ef4444);
+    border-color: #fecaca;
+  }
+
+  &--starting {
+    color: var(--color-paused, #f59e0b);
+    border-color: #fde68a;
+  }
+}
+
 

@@ -71,6 +71,8 @@ export interface ContainerListItem {
   Labels: Record<string, string>;
   State: string;
   Status: string;
+  /** 健康检查状态（none 表示未配置健康检查或 inspect 失败） */
+  health?: 'starting' | 'healthy' | 'unhealthy' | 'none';
   SizeRw?: number;
   SizeRootFs?: number;
 }
