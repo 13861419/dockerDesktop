@@ -293,7 +293,7 @@ function createTables(): void {
 
     -- 防火墙端口放行规则表：记录由本面板管理的 Windows 防火墙入站放行规则
     CREATE TABLE IF NOT EXISTS firewall_ports (
-      id         TEXT PRIMARY KEY,          -- uuid
+      id         TEXT PRIMARY KEY,
       port       INTEGER NOT NULL,          -- 端口号（1-65535）
       proto      TEXT NOT NULL DEFAULT 'tcp', -- tcp / udp
       name       TEXT NOT NULL,             -- Windows 防火墙规则名（含面板前缀）
@@ -301,6 +301,40 @@ function createTables(): void {
       created_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_firewall_ports_port_proto ON firewall_ports(port, proto);
+
+    -- 通知渠道表：告警推送目标（Webhook / 邮件 / 钉钉 / 飞书），敏感凭据加密存储
+    CREATE TABLE IF NOT EXISTS notify_channels (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      type       TEXT NOT NULL,             -- webhook | email | dingtalk | feishu
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      config     TEXT NOT NULL DEFAULT '{}', -- 类型相关配置（URL/收件人等），敏感字段加密
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    -- 告警规则表：资源告警阈值与开关（cpu/mem/disk 各一行，cpu 阈值等）
+    CREATE TABLE IF NOT EXISTS alert_rules (
+      type        TEXT PRIMARY KEY,         -- cpu | mem | disk
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      warn_threshold  REAL NOT NULL DEFAULT 75, -- 警告阈值（使用率 %）
+      danger_threshold REAL NOT NULL DEFAULT 90, -- 危险阈值（使用率 %）
+      updated_at  INTEGER NOT NULL
+    );
+
+    -- 告警记录表：每次触发的告警事件（含推送结果）
+    CREATE TABLE IF NOT EXISTS alert_records (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      type        TEXT NOT NULL,            -- cpu | mem | disk
+      level       TEXT NOT NULL,            -- warn | danger
+      message     TEXT NOT NULL,
+      value       REAL,                     -- 触发时的使用率值
+      channel_id  TEXT,                     -- 实际推送使用的渠道（无渠道/失败时为空）
+      push_status TEXT NOT NULL DEFAULT 'none', -- none | ok | failed
+      push_detail TEXT,
+      created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_records_created ON alert_records(created_at DESC);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

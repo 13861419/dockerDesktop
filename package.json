@@ -35,6 +35,7 @@
     "regression:hostterminal": "node scripts/regression-hostterminal.js",
     "regression:containerdetail": "node scripts/regression-containerdetail.js",
     "regression:imagedetail": "node scripts/regression-imagedetail.js",
+    "regression:notifications": "node scripts/regression-notifications.js",
     "regression:all": "node scripts/run-regression-all.js",
     "mock:hub-search": "node scripts/mock-hub-search.js",
     "package": "node packaging/build-release.js",

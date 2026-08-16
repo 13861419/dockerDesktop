@@ -76,6 +76,10 @@ export const get = <T = any>(url: string, params?: Record<string, any>) => {
 export const post = <T = any>(url: string, body?: any) =>
   request<T>(url, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+/** PUT 请求 */
+export const put = <T = any>(url: string, body?: any) =>
+  request<T>(url, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) });
+
 /** DELETE 请求 */
 export const del = <T = any>(url: string, params?: Record<string, any>) => {
   const qs = params

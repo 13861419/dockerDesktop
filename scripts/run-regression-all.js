@@ -36,6 +36,7 @@ const SCRIPTS = [
   'regression-hostterminal.js',
   'regression-containerdetail.js',
   'regression-imagedetail.js',
+  'regression-notifications.js',
   'regression-containers.js',
 ];
 

@@ -1,0 +1,83 @@
+/* 告警中心页面样式 */
+
+.notify-card {
+  margin-top: 16px;
+}
+
+.notify-dim {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notify-state {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-muted, #eef0f5);
+  color: var(--text-muted);
+}
+
+.notify-state--on {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--success, #10b981);
+}
+
+.notify-level {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notify-level--warn {
+  background: rgba(245, 158, 11, 0.14);
+  color: #d97706;
+}
+
+.notify-level--danger {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--danger, #dc2626);
+}
+
+.notify-push {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notify-push--ok {
+  color: var(--success, #10b981);
+}
+
+.notify-push--failed {
+  color: var(--danger, #dc2626);
+}
+
+.notify-push--none {
+  color: var(--text-muted);
+}
+
+.notify-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.notify-form-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--danger, #dc2626);
+  background: rgba(220, 38, 38, 0.08);
+}

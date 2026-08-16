@@ -9,6 +9,7 @@ import { setupTerminalServer } from './docker/terminal';
 import { setupEventWsServer } from './docker/eventWs';
 import { startEventMonitor } from './docker/events';
 import { startScheduler, stopScheduler } from './scheduler';
+import { startAlerting, stopAlerting } from './alerting';
 import { initStorage, closeDb } from './storage';
 import { ensureInitialUser } from './users';
 
@@ -54,6 +55,15 @@ const server = app.listen(PORT, HOST, () => {
       console.error('计划任务调度器启动失败:', err);
     }
   }, 800);
+
+  // 启动资源告警服务（异步，依赖监控采集器就绪，稍晚启动）
+  setTimeout(() => {
+    try {
+      startAlerting();
+    } catch (err) {
+      console.error('告警服务启动失败:', err);
+    }
+  }, 1500);
 });
 
 // 挂载容器 WebSocket 终端
@@ -74,6 +84,7 @@ try {
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT'] as const) {
   process.on(sig, () => {
     stopScheduler();
+    stopAlerting();
     closeDb();
     process.exit(0);
   });

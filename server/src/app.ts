@@ -33,6 +33,7 @@ import cloudRouter from './routes/cloud';
 import sitesRouter from './routes/sites';
 import backupsRouter from './routes/backups';
 import firewallRouter from './routes/firewall';
+import notificationsRouter from './routes/notifications';
 import authRouter from './routes/auth';
 import { requireAuth } from './auth';
 
@@ -81,6 +82,7 @@ app.use('/api/cloud', requireAuth, cloudRouter);
 app.use('/api/sites', requireAuth, sitesRouter);
 app.use('/api/backups', requireAuth, backupsRouter);
 app.use('/api/firewall', requireAuth, firewallRouter);
+app.use('/api/notifications', requireAuth, notificationsRouter);
 
 // 生产模式：托管前端静态文件（单进程部署）
 if (process.env.NODE_ENV === 'production') {
