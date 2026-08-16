@@ -144,3 +144,19 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
   next();
 }
+
+/** 支持的角色类型 */
+export type Role = 'admin' | 'operator' | 'user';
+
+/**
+ * 运维人员权限中间件：允许 admin 或 operator 角色访问（须在 requireAuth 之后使用）
+ * 用于放宽需要「能管理容器等资源但不一定是系统管理员」的操作，
+ * 而用户管理 / 系统恢复 / 引擎切换等仍保持 requireAdmin 不变。
+ */
+export function requireOperator(req: Request, res: Response, next: NextFunction) {
+  const role = res.locals.user?.role;
+  if (role !== 'admin' && role !== 'operator') {
+    return res.status(403).json({ error: '该操作需要运维或管理员权限' });
+  }
+  next();
+}

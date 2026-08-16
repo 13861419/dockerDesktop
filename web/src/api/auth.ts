@@ -11,7 +11,7 @@ const TOKEN_KEY = 'docker_manager_token';
 const ROLE_KEY = 'docker_manager_role';
 
 /** 前端识别的用户角色 */
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'operator' | 'user';
 
 /**
  * 读取本地存储的 token
@@ -34,7 +34,10 @@ export function setToken(token: string): void {
  * @returns 当前用户角色，未缓存时按普通用户处理
  */
 export function getRole(): UserRole {
-  return localStorage.getItem(ROLE_KEY) === 'admin' ? 'admin' : 'user';
+  const role = localStorage.getItem(ROLE_KEY);
+  // 支持 admin / operator / user 三种角色的还原
+  if (role === 'admin' || role === 'operator') return role;
+  return 'user';
 }
 
 /**
@@ -51,6 +54,16 @@ export function setRole(role: UserRole): void {
  */
 export function isAdmin(): boolean {
   return getRole() === 'admin';
+}
+
+/**
+ * 判断当前用户是否具备「运维操作」权限（admin 或 operator）
+ * 用于控制容器等资源的创建 / 删除 / 重命名等生命周期管理能力。
+ * @returns true 表示当前用户是 admin 或 operator
+ */
+export function canOperate(): boolean {
+  const r = getRole();
+  return r === 'admin' || r === 'operator';
 }
 
 /**

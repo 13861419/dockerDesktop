@@ -282,7 +282,10 @@ router.post(
       return res.status(400).json({ error: '密码至少 6 位' });
     }
     try {
-      addUser(String(username), String(password), role === 'admin' ? 'admin' : 'user');
+      // 角色白名单：管理员 / 运维 / 普通用户三选一，非法值按普通用户处理
+      const normalizedRole: 'admin' | 'operator' | 'user' =
+        role === 'operator' ? 'operator' : role === 'admin' ? 'admin' : 'user';
+      addUser(String(username), String(password), normalizedRole);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || '新增用户失败' });

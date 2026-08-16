@@ -11,7 +11,7 @@ export interface UserRecord {
   username: string;
   salt: string;
   passwordHash: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'operator' | 'user';
   createdAt: number;
 }
 

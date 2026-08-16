@@ -10,7 +10,7 @@ import { getContainerMetricsHistory } from '../docker/containerMetrics';
 import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireOperator } from '../auth';
 
 const router = Router();
 
@@ -308,6 +308,105 @@ router.get(
   }),
 );
 
+// ============ 容器批量操作 ============
+
+/**
+ * 批量容器操作投递函数：对一组容器 id 并发执行同一 dockerode 操作，逐项容错。
+ * 任一容器失败不影响其他容器，返回每个容器的执行结果与成败计数。
+ * @param ids 容器 id 数组
+ * @param op 针对单个容器执行并返回 Promise 的操作函数
+ * @returns 统一结果结构
+ */
+async function runBatch(
+  ids: string[],
+  op: (id: string) => Promise<void>,
+): Promise<{ success: number; fail: number; results: Array<{ id: string; ok: boolean; error?: string }> }> {
+  const docker = await getDockerClient();
+  const settled = await Promise.all(
+    ids.map(async (id: string) => {
+      try {
+        await op(id);
+        return { id, ok: true } as const;
+      } catch (err: any) {
+        return { id, ok: false, error: err?.message || '操作失败' } as const;
+      }
+    }),
+  );
+  return {
+    success: settled.filter((r) => r.ok).length,
+    fail: settled.filter((r) => !r.ok).length,
+    results: settled.map((r) => ({ id: r.id, ok: r.ok, error: r.ok ? undefined : r.error })),
+  };
+}
+
+/**
+ * POST /api/containers/batch/start
+ * 批量启动容器，body: { ids: string[] }
+ * 并发执行 start，逐项容错，返回轻量统计结果。
+ * 注意：静态路由必须放在 /:id 之前，否则会被 /:id 遮蔽。
+ */
+router.post(
+  '/batch/start',
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ error: '未指定容器' });
+    const docker = await getDockerClient();
+    const r = await runBatch(ids, (id) => docker.getContainer(id).start());
+    res.json({ ok: r.fail === 0, ...r });
+  }),
+);
+
+/**
+ * POST /api/containers/batch/stop
+ * 批量停止容器，body: { ids: string[] }
+ * 并发执行 stop，逐项容错，返回轻量统计结果。
+ */
+router.post(
+  '/batch/stop',
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ error: '未指定容器' });
+    const docker = await getDockerClient();
+    const r = await runBatch(ids, (id) => docker.getContainer(id).stop({ t: 10 }));
+    res.json({ ok: r.fail === 0, ...r });
+  }),
+);
+
+/**
+ * POST /api/containers/batch/restart
+ * 批量重启容器，body: { ids: string[] }
+ * 并发执行 restart，逐项容错，返回轻量统计结果。
+ */
+router.post(
+  '/batch/restart',
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ error: '未指定容器' });
+    const docker = await getDockerClient();
+    const r = await runBatch(ids, (id) => docker.getContainer(id).restart({ t: 10 }));
+    res.json({ ok: r.fail === 0, ...r });
+  }),
+);
+
+/**
+ * POST /api/containers/batch/delete
+ * 批量删除容器，body: { ids: string[], force?: boolean, v?: boolean }
+ * 仅 operator 及以上可调用（与单容器删除权限一致）。并发执行 remove，逐项容错。
+ */
+router.post(
+  '/batch/delete',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ error: '未指定容器' });
+    const docker = await getDockerClient();
+    const force = req.body?.force === true;
+    const v = req.body?.v === true;
+    const r = await runBatch(ids, (id) => docker.getContainer(id).remove({ force, v }));
+    res.json({ ok: r.fail === 0, ...r });
+  }),
+);
+
 // ============ 容器详情 ============
 
 /**
@@ -451,7 +550,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -991,7 +1090,7 @@ router.get(
  */
 router.post(
   '/',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};
@@ -1295,7 +1394,7 @@ router.post(
  */
 router.post(
   '/:id/clone',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const old = docker.getContainer(req.params.id);

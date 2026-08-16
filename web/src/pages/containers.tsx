@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get, post, del } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { canOperate } from '../api/auth';
 import { ContainerListItem, ContainerPortConflicts, ImageItem } from '../types';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -96,7 +96,8 @@ const RESTART_OPTIONS: Array<{ value: string; label: string }> = [
 export default function ContainersPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const canDelete = isAdmin();
+  // 容器生命周期操作权限：后端已放开给 operator（admin 或 operator 均可管理容器生命周期）
+  const canDelete = canOperate();
   const [list, setList] = useState<ContainerListItem[]>([]);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
   const [loadError, setLoadError] = useState('');
@@ -656,19 +657,6 @@ export default function ContainersPage() {
     return `确定要启动选中的 ${count} 个容器吗？`;
   }
 
-  /** 根据操作类型对单个容器执行对应接口调用 */
-  async function runBatchItem(id: string, action: BatchAction) {
-    if (action === 'delete') {
-      await del(`/api/containers/${id}`, { force: true });
-    } else if (action === 'stop') {
-      await post(`/api/containers/${id}/stop`);
-    } else if (action === 'restart') {
-      await post(`/api/containers/${id}/restart`);
-    } else {
-      await post(`/api/containers/${id}/start`);
-    }
-  }
-
   /** 批量操作标签（用于成功提示） */
   function batchActionLabel(action: BatchAction): string {
     if (action === 'delete') return '删除';
@@ -680,26 +668,41 @@ export default function ContainersPage() {
   /**
    * 执行批量操作（启动 / 停止 / 删除）
    *
-   * 逐项调用对应接口，逐个统计成功与失败数量，全部处理完成后刷新列表并提示结果。
+   * 一次性调用后端批量接口（并发执行 + 逐项容错），全部处理完成后刷新列表并提示结果。
    */
   async function confirmBatch() {
     if (!batchAction || selectedIds.length === 0) return;
     if (batchAction === 'delete' && !canDelete) {
-      showToast('仅管理员可批量删除容器', 'error');
+      showToast('仅管理员或运维人员可批量删除容器', 'error');
       setBatchAction(null);
       return;
     }
     setBatchLoading(true);
     let success = 0;
     let fail = 0;
-    // 依次处理每个选中的容器
-    for (const id of selectedIds) {
-      try {
-        await runBatchItem(id, batchAction);
-        success += 1;
-      } catch {
-        fail += 1;
+    try {
+      if (batchAction === 'delete') {
+        const r = await post<{ success: number; fail: number }>('/api/containers/batch/delete', {
+          ids: selectedIds,
+          force: true,
+        });
+        success = r?.success ?? 0;
+        fail = r?.fail ?? 0;
+      } else if (batchAction === 'stop') {
+        const r = await post<{ success: number; fail: number }>('/api/containers/batch/stop', { ids: selectedIds });
+        success = r?.success ?? 0;
+        fail = r?.fail ?? 0;
+      } else if (batchAction === 'restart') {
+        const r = await post<{ success: number; fail: number }>('/api/containers/batch/restart', { ids: selectedIds });
+        success = r?.success ?? 0;
+        fail = r?.fail ?? 0;
+      } else {
+        const r = await post<{ success: number; fail: number }>('/api/containers/batch/start', { ids: selectedIds });
+        success = r?.success ?? 0;
+        fail = r?.fail ?? 0;
       }
+    } catch {
+      fail = selectedIds.length;
     }
     setBatchAction(null);
     setSelectedIds([]);
