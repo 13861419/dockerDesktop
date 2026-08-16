@@ -237,3 +237,167 @@
   color: #fff;
   font-weight: 600;
 }
+
+/* ===== 统计卡片区 ===== */
+.oplog-stats {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr 1fr;
+  gap: 16px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface, #fff);
+}
+
+/* 总数卡 */
+.oplog-stats__total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--radius-md, 8px);
+  background: rgba(59, 130, 246, 0.08);
+}
+.oplog-stats__total-num {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1;
+}
+.oplog-stats__total-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 分组统计块 */
+.oplog-stats__block {
+  min-width: 0;
+}
+.oplog-stats__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+.oplog-stats__empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+/* 横向条形：目标类型 / 结果 */
+.oplog-stats__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.oplog-stats__row-label {
+  width: 72px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.oplog-stats__bar-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.oplog-stats__bar {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+.oplog-stats__bar--ok {
+  background: #22c55e;
+}
+.oplog-stats__bar--fail {
+  background: #ef4444;
+}
+.oplog-stats__row-count {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 结果分布 */
+.oplog-stats__result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.oplog-stats__result-item {
+  display: grid;
+  grid-template-columns: 48px auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.oplog-stats__result-num {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+.oplog-stats__result-item--ok .oplog-stats__result-num {
+  color: #22c55e;
+}
+.oplog-stats__result-item--fail .oplog-stats__result-num {
+  color: #ef4444;
+}
+.oplog-stats__result-label {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 操作动作 TOP 10 列表 */
+.oplog-stats__action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.oplog-stats__action-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--border-color);
+}
+.oplog-stats__action-item:last-child {
+  border-bottom: none;
+}
+.oplog-stats__action-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.oplog-stats__action-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 窄屏下统计卡片垂直堆叠 */
+@media (max-width: 1100px) {
+  .oplog-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .oplog-stats {
+    grid-template-columns: 1fr;
+  }
+}

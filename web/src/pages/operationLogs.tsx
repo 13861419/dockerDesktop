@@ -67,6 +67,14 @@ interface LogPage {
   operators: string[];
 }
 
+/** 统计接口返回结构 */
+interface StatsData {
+  byType: Array<{ target_type: string; count: number }>;
+  bySuccess: Array<{ success: number; count: number }>;
+  byAction: Array<{ action: string; count: number }>;
+  total: number;
+}
+
 /** 将毫秒时间戳格式化为可读时间 */
 function formatTime(ms: number): string {
   if (!ms) return '-';
@@ -75,6 +83,32 @@ function formatTime(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
     d.getHours()
   )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * 构建与列表一致的过滤查询参数（供列表 / 统计 / 导出复用）
+ * @param typeFilter 目标类型筛选值
+ * @param usernameFilter 操作人筛选值
+ * @param resultFilter 结果筛选值（'true' / 'false' / ''）
+ * @param startTime 起始时间（datetime-local 字符串）
+ * @param endTime 结束时间（datetime-local 字符串）
+ * @returns 过滤参数对象
+ */
+function buildFilterParams(
+  typeFilter: string,
+  usernameFilter: string,
+  resultFilter: string,
+  startTime: string,
+  endTime: string,
+): Record<string, any> {
+  return {
+    ...(typeFilter ? { targetType: typeFilter } : {}),
+    ...(usernameFilter ? { username: usernameFilter } : {}),
+    ...(resultFilter ? { success: resultFilter } : {}),
+    ...(startTime ? { startTime: new Date(startTime).getTime() } : {}),
+    // endTime 取当天 23:59:59.999，确保包含结束日当天全部记录
+    ...(endTime ? { endTime: new Date(endTime).getTime() + 86399999 } : {}),
+  };
 }
 
 export default function OperationLogsPage() {
@@ -98,6 +132,8 @@ export default function OperationLogsPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // 统计卡片数据（随筛选条件变化）
+  const [stats, setStats] = useState<StatsData | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,11 +141,7 @@ export default function OperationLogsPage() {
       const params: Record<string, any> = {
         page,
         pageSize,
-        ...(typeFilter ? { targetType: typeFilter } : {}),
-        ...(usernameFilter ? { username: usernameFilter } : {}),
-        ...(resultFilter ? { success: resultFilter } : {}),
-        ...(startTime ? { startTime: new Date(startTime).getTime() } : {}),
-        ...(endTime ? { endTime: new Date(endTime).getTime() + 86399999 } : {}),
+        ...buildFilterParams(typeFilter, usernameFilter, resultFilter, startTime, endTime),
       };
       const data = await get<LogPage>('/api/operation-logs', params);
       setLogs(data.items || []);
@@ -126,6 +158,15 @@ export default function OperationLogsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 加载统计卡片：随筛选条件变化，与列表并行请求
+  useEffect(() => {
+    if (!isAdmin()) return;
+    const params = buildFilterParams(typeFilter, usernameFilter, resultFilter, startTime, endTime);
+    get<StatsData>('/api/operation-logs/stats', params)
+      .then((data) => setStats(data || null))
+      .catch(() => setStats(null));
+  }, [typeFilter, usernameFilter, resultFilter, startTime, endTime]);
 
   const changePageSize = (n: number) => {
     setPageSize(n);
@@ -178,26 +219,24 @@ export default function OperationLogsPage() {
     }
   };
 
-  // 按当前筛选条件导出 CSV（携带与列表一致的过滤参数）
-  const handleExport = async () => {
+  /**
+   * 导出工具：按当前筛选条件触发指定格式的文件下载
+   * @param format 导出格式（csv / json）
+   */
+  const handleExport = async (format: 'csv' | 'json') => {
     if (total === 0) {
       showToast('当前无日志可导出', 'info');
       return;
     }
     setExporting(true);
     try {
-      const params: Record<string, any> = {
-        ...(typeFilter ? { targetType: typeFilter } : {}),
-        ...(usernameFilter ? { username: usernameFilter } : {}),
-        ...(resultFilter ? { success: resultFilter } : {}),
-        ...(startTime ? { startTime: new Date(startTime).getTime() } : {}),
-        ...(endTime ? { endTime: new Date(endTime).getTime() + 86399999 } : {}),
-      };
+      const params = buildFilterParams(typeFilter, usernameFilter, resultFilter, startTime, endTime);
       const qs = Object.entries(params)
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
         .join('&');
-      await download(`/api/operation-logs/export${qs ? '?' + qs : ''}`);
-      showToast('日志已导出', 'success');
+      const suffix = qs ? '&' + qs : '';
+      await download(`/api/operation-logs/export?format=${format}${suffix}`);
+      showToast(format === 'json' ? '日志已导出为 JSON' : '日志已导出', 'success');
     } catch (e: any) {
       showToast(e?.message || '导出失败', 'error');
     } finally {
@@ -208,6 +247,15 @@ export default function OperationLogsPage() {
   const safePage = Math.min(page, totalPages);
   const pageStart = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
   const pageEnd = Math.min(safePage * pageSize, total);
+
+  // 从 bySuccess 中提取成功 / 失败计数（缺省按 0 处理）
+  const successCount = stats?.bySuccess.find((s) => s.success === 1)?.count || 0;
+  const failCount = stats?.bySuccess.find((s) => s.success === 0)?.count || 0;
+  const statsTotal = stats?.total || 0;
+  // 结果占比（%）与最大目标类型计数（用于横向条形图宽度基准）
+  const successPct = statsTotal ? Math.round((successCount / statsTotal) * 100) : 0;
+  const failPct = statsTotal ? Math.round((failCount / statsTotal) * 100) : 0;
+  const maxTypeCount = Math.max(1, ...(stats?.byType.map((t) => t.count) || []));
 
   return (
     <div className="logs-page">
@@ -276,14 +324,93 @@ export default function OperationLogsPage() {
             <Button variant="secondary" size="sm" onClick={load}>
               刷新
             </Button>
-            <Button variant="secondary" size="sm" onClick={handleExport} disabled={total === 0 || exporting}>
+            <Button variant="secondary" size="sm" onClick={() => handleExport('csv')} disabled={total === 0 || exporting}>
               {exporting ? '导出中...' : '导出 CSV'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => handleExport('json')} disabled={total === 0 || exporting}>
+              {exporting ? '导出中...' : '导出 JSON'}
             </Button>
             <Button variant="danger" size="sm" onClick={() => setConfirmClear(true)} disabled={total === 0 || !canClear}>
               清空
             </Button>
           </div>
         </div>
+
+        {/* 统计卡片区（仅管理员展示，随筛选条件变化） */}
+        {canClear && stats && statsTotal > 0 && (
+          <div className="oplog-stats">
+            <div className="oplog-stats__total">
+              <span className="oplog-stats__total-num">{statsTotal}</span>
+              <span className="oplog-stats__total-label">匹配操作数</span>
+            </div>
+
+            <div className="oplog-stats__block">
+              <h4 className="oplog-stats__title">按目标类型</h4>
+              {stats.byType.length === 0 ? (
+                <div className="oplog-stats__empty">无数据</div>
+              ) : (
+                stats.byType.map((t) => (
+                  <div className="oplog-stats__row" key={t.target_type || '-'}>
+                    <span className="oplog-stats__row-label">
+                      {TYPE_OPTIONS.find((o) => o.value === t.target_type)?.label || t.target_type || '-'}
+                    </span>
+                    <div className="oplog-stats__bar-track">
+                      <div
+                        className="oplog-stats__bar"
+                        style={{ width: `${Math.round((t.count / maxTypeCount) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="oplog-stats__row-count">{t.count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="oplog-stats__block">
+              <h4 className="oplog-stats__title">按结果</h4>
+              <div className="oplog-stats__result">
+                <div className="oplog-stats__result-item oplog-stats__result-item--ok">
+                  <span className="oplog-stats__result-num">{successCount}</span>
+                  <span className="oplog-stats__result-label">成功 ({successPct}%)</span>
+                  <div className="oplog-stats__bar-track">
+                    <div
+                      className="oplog-stats__bar oplog-stats__bar--ok"
+                      style={{ width: `${successPct}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="oplog-stats__result-item oplog-stats__result-item--fail">
+                  <span className="oplog-stats__result-num">{failCount}</span>
+                  <span className="oplog-stats__result-label">失败 ({failPct}%)</span>
+                  <div className="oplog-stats__bar-track">
+                    <div
+                      className="oplog-stats__bar oplog-stats__bar--fail"
+                      style={{ width: `${failPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="oplog-stats__block">
+              <h4 className="oplog-stats__title">操作动作 TOP 10</h4>
+              {stats.byAction.length === 0 ? (
+                <div className="oplog-stats__empty">无数据</div>
+              ) : (
+                <ol className="oplog-stats__action-list">
+                  {stats.byAction.map((a, idx) => (
+                    <li className="oplog-stats__action-item" key={`${a.action}-${idx}`}>
+                      <span className="oplog-stats__action-name" title={a.action}>
+                        {a.action}
+                      </span>
+                      <span className="oplog-stats__action-count">{a.count}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <SkeletonRows rows={8} />

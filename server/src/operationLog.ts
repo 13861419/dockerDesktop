@@ -45,6 +45,58 @@ export interface LogQuery {
   success?: boolean;
 }
 
+/**
+ * 仅含过滤条件（不含分页字段）的查询参数
+ * 供列表 / 统计 / 导出共用，保证过滤语义一致
+ */
+export type LogFilter = Pick<
+  LogQuery,
+  'username' | 'targetType' | 'startTime' | 'endTime' | 'success'
+>;
+
+/** 统计结果 */
+export interface LogStats {
+  /** 按目标类型分组 */
+  byType: Array<{ target_type: string; count: number }>;
+  /** 按结果分组（success: 1 成功 / 0 失败） */
+  bySuccess: Array<{ success: number; count: number }>;
+  /** 按操作动作分组（TOP 10，按 count 降序） */
+  byAction: Array<{ action: string; count: number }>;
+  /** 匹配过滤条件的总条数 */
+  total: number;
+}
+
+/**
+ * 根据过滤条件拼装 WHERE 子句与对应参数
+ * @param query 过滤条件
+ * @returns { where, params } 其中 where 为 'WHERE ...' 或空串，params 为按序绑定参数
+ */
+function buildWhere(query: LogFilter = {}): { where: string; params: Array<string | number> } {
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (query.username) {
+    where.push('username = ?');
+    params.push(query.username);
+  }
+  if (query.targetType) {
+    where.push('target_type = ?');
+    params.push(query.targetType);
+  }
+  if (query.startTime !== undefined) {
+    where.push('created_at >= ?');
+    params.push(query.startTime);
+  }
+  if (query.endTime !== undefined) {
+    where.push('created_at <= ?');
+    params.push(query.endTime);
+  }
+  if (query.success !== undefined) {
+    where.push('success = ?');
+    params.push(query.success ? 1 : 0);
+  }
+  return { where: where.length ? 'WHERE ' + where.join(' AND ') : '', params };
+}
+
 /** 分页查询结果 */
 export interface LogPageResult {
   items: OperationLogRecord[];
@@ -96,29 +148,7 @@ export function listOperationLogs(query: LogQuery = {}): LogPageResult {
   const page = Math.max(1, query.page || 1);
   const pageSize = Math.min(100, Math.max(1, query.pageSize || 20));
 
-  const where: string[] = [];
-  const params: Array<string | number> = [];
-  if (query.username) {
-    where.push('username = ?');
-    params.push(query.username);
-  }
-  if (query.targetType) {
-    where.push('target_type = ?');
-    params.push(query.targetType);
-  }
-  if (query.startTime !== undefined) {
-    where.push('created_at >= ?');
-    params.push(query.startTime);
-  }
-  if (query.endTime !== undefined) {
-    where.push('created_at <= ?');
-    params.push(query.endTime);
-  }
-  if (query.success !== undefined) {
-    where.push('success = ?');
-    params.push(query.success ? 1 : 0);
-  }
-  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const { where: whereSql, params } = buildWhere(query);
 
   const total = (d.prepare(`SELECT count(*) AS c FROM operation_logs ${whereSql}`).get(...params) as { c: number }).c;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -171,29 +201,7 @@ export function clearOperationLogs(): void {
  */
 export function exportOperationLogsCsv(query: LogQuery = {}): string {
   const d = getDb();
-  const where: string[] = [];
-  const params: Array<string | number> = [];
-  if (query.username) {
-    where.push('username = ?');
-    params.push(query.username);
-  }
-  if (query.targetType) {
-    where.push('target_type = ?');
-    params.push(query.targetType);
-  }
-  if (query.startTime !== undefined) {
-    where.push('created_at >= ?');
-    params.push(query.startTime);
-  }
-  if (query.endTime !== undefined) {
-    where.push('created_at <= ?');
-    params.push(query.endTime);
-  }
-  if (query.success !== undefined) {
-    where.push('success = ?');
-    params.push(query.success ? 1 : 0);
-  }
-  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const { where: whereSql, params } = buildWhere(query);
   const rows = d
     .prepare(
       `SELECT username, action, target_type, target_name, detail, success, created_at
@@ -232,4 +240,73 @@ export function exportOperationLogsCsv(query: LogQuery = {}): string {
   }
   // 前置 UTF-8 BOM，保证中文在 Excel 中不乱码
   return '\ufeff' + lines.join('\r\n');
+}
+
+/**
+ * 按过滤条件统计操作日志（用于前端统计卡片展示）
+ * @param query 过滤条件（忽略 page/pageSize）
+ * @returns 按目标类型 / 结果 / 操作动作的分组统计及匹配总条数
+ */
+export function summarizeOperationLogs(query: LogQuery = {}): LogStats {
+  const d = getDb();
+  const { where: whereSql, params } = buildWhere(query);
+
+  // 按目标类型分组（有记录的类型，按条数降序）
+  const byType = d
+    .prepare(
+      `SELECT target_type, count(*) AS count FROM operation_logs ${whereSql}
+       GROUP BY target_type ORDER BY count DESC`,
+    )
+    .all(...params) as unknown as Array<{ target_type: string; count: number }>;
+
+  // 按结果分组（success: 1 成功 / 0 失败）
+  const bySuccess = d
+    .prepare(
+      `SELECT success, count(*) AS count FROM operation_logs ${whereSql}
+       GROUP BY success`,
+    )
+    .all(...params) as unknown as Array<{ success: number; count: number }>;
+
+  // 按操作动作分组，仅取 TOP 10（按条数降序）
+  const byAction = d
+    .prepare(
+      `SELECT action, count(*) AS count FROM operation_logs ${whereSql}
+       GROUP BY action ORDER BY count DESC LIMIT 10`,
+    )
+    .all(...params) as unknown as Array<{ action: string; count: number }>;
+
+  // 匹配过滤条件的总条数
+  const total = (d.prepare(`SELECT count(*) AS c FROM operation_logs ${whereSql}`).get(...params) as { c: number }).c;
+
+  return { byType, bySuccess, byAction, total };
+}
+
+/**
+ * 按过滤条件导出全部操作日志为 JSON 数组字符串（不受分页限制，用于"导出 JSON"功能）
+ * @param query 过滤条件（忽略 page/pageSize）
+ * @returns JSON 数组文本（含 id/username/action/targetType/targetName/detail/success/createdAt）
+ */
+export function exportOperationLogsJson(query: LogQuery = {}): string {
+  const d = getDb();
+  const { where: whereSql, params } = buildWhere(query);
+  const rows = d
+    .prepare(
+      `SELECT username, action, target_type, target_name, detail, success, created_at
+       FROM operation_logs ${whereSql}
+       ORDER BY id DESC`,
+    )
+    .all(...params) as unknown as LogRow[];
+
+  // 属性名映射为驼峰式导出结构，createdAt 保留毫秒时间戳
+  const data = rows.map((r) => ({
+    id: r.id,
+    username: r.username,
+    action: r.action,
+    targetType: r.target_type,
+    targetName: r.target_name,
+    detail: r.detail,
+    success: r.success === 1,
+    createdAt: r.created_at,
+  }));
+  return JSON.stringify(data, null, 2);
 }

@@ -407,6 +407,34 @@ router.post(
   }),
 );
 
+/**
+ * POST /api/containers/batch/update
+ * 批量在线更新容器资源限制与重启策略，body: { ids, memLimit?, cpuLimit?, restartPolicy?, maxRetry? }
+ * 逐容器组装 HostConfig 增量（与单容器 /:id/update 共用 applyUpdateBodyToHostConfig），
+ * 并发执行 update，逐项容错，返回 { ok, success, fail, results }。
+ * 仅 operator 及以上可调用（与单容器 update 一致的运维操作语义）。
+ * 注意：静态路由必须放在 /:id 之前，否则会被 /:id 遮蔽。
+ */
+router.post(
+  '/batch/update',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ error: '未指定容器' });
+    const docker = await getDockerClient();
+    const r = await runBatch(ids, async (id) => {
+      const container = docker.getContainer(id);
+      // 以当前 HostConfig 为基线，避免把未提供的字段清空
+      const inspect = await container.inspect();
+      const hc: any = { ...(inspect.HostConfig || {}) };
+      // 复用与单容器 update 一致的增量组装逻辑
+      applyUpdateBodyToHostConfig(req.body || {}, hc);
+      await container.update(hc);
+    });
+    res.json({ ok: r.fail === 0, ...r });
+  }),
+);
+
 // ============ 容器详情 ============
 
 /**
@@ -1313,6 +1341,59 @@ router.post(
 // ============ 容器在线更新（docker update） ============
 
 /**
+ * 将「更新配置」请求体对 HostConfig 的增量改动应用到基线 hc 上。
+ *
+ * 仅覆盖请求中显式提供的字段（null/undefined/'' 视为未提供），未提供的字段保持 hc 现状。
+ * 供单容器 /:id/update 与批量 /batch/update 复用，保证两者组装逻辑完全一致。
+ *
+ * 内存处理：显式传 memLimit 时设 Memory，若未显式传 memSwap 则按 docker 默认 swap=2x 内存
+ * 同步 MemorySwap，避免 EINVAL。
+ * CPU 处理：显式传 cpuLimit 时，>0 设 NanoCpus 并删除 CpuQuota（NanoCpus 与 CpuQuota 不能并存），
+ * 0 则清空（取消限制）。
+ *
+ * @param b 请求体（可能包含 restartPolicy/maxRetry/memLimit/memSwap/memReservation/cpuLimit/cpuShares/cpusetCpus）
+ * @param hc 以当前 HostConfig 为基线的目标对象（会被原地修改）
+ */
+function applyUpdateBodyToHostConfig(b: any, hc: any): void {
+  // 重启策略
+  if (typeof b.restartPolicy === 'string' && b.restartPolicy) {
+    hc.RestartPolicy = { Name: b.restartPolicy, MaximumRetryCount: Number(b.maxRetry) || 0 };
+  }
+
+  // 内存相关：显式传 memLimit 才更新；同时按 docker 默认 swap=2x 内存同步 MemorySwap，避免 EINVAL
+  if (b.memLimit !== undefined && b.memLimit !== null && b.memLimit !== '') {
+    const mem = Number(b.memLimit) || 0;
+    hc.Memory = mem > 0 ? mem : 0;
+    if (b.memSwap === undefined || b.memSwap === null || b.memSwap === '') {
+      hc.MemorySwap = mem > 0 ? mem * 2 : 0;
+    }
+  }
+  if (b.memSwap !== undefined && b.memSwap !== null && b.memSwap !== '') {
+    hc.MemorySwap = Number(b.memSwap) || 0;
+  }
+  if (b.memReservation !== undefined && b.memReservation !== null && b.memReservation !== '') {
+    hc.MemoryReservation = Number(b.memReservation) || 0;
+  }
+
+  // CPU 相关
+  if (b.cpuLimit !== undefined && b.cpuLimit !== null && b.cpuLimit !== '') {
+    const ncpus = Number(b.cpuLimit) || 0;
+    if (ncpus > 0) {
+      hc.NanoCpus = ncpus;
+      delete hc.CpuQuota;
+    } else {
+      hc.NanoCpus = 0;
+    }
+  }
+  if (b.cpuShares !== undefined && b.cpuShares !== null && b.cpuShares !== '') {
+    hc.CpuShares = Number(b.cpuShares) || 0;
+  }
+  if (typeof b.cpusetCpus === 'string') {
+    hc.CpusetCpus = b.cpusetCpus.trim() || undefined;
+  }
+}
+
+/**
  * POST /api/containers/:id/update
  * 在线更新运行中容器的资源限制与重启策略（对应 docker update，无需重建、不改变容器 ID）。
  * 仅覆盖请求中显式提供的字段，未提供的保持现状。
@@ -1338,43 +1419,8 @@ router.post(
 
     // 以当前 HostConfig 为基线，避免把未提供的字段清空
     const hc: any = { ...(inspect.HostConfig || {}) };
-
-    // 重启策略
-    if (typeof b.restartPolicy === 'string' && b.restartPolicy) {
-      hc.RestartPolicy = { Name: b.restartPolicy, MaximumRetryCount: Number(b.maxRetry) || 0 };
-    }
-
-    // 内存相关：显式传 memLimit 才更新；同时按 docker 默认 swap=2x 内存同步 MemorySwap，避免 EINVAL
-    if (b.memLimit !== undefined && b.memLimit !== null && b.memLimit !== '') {
-      const mem = Number(b.memLimit) || 0;
-      hc.Memory = mem > 0 ? mem : 0;
-      if (b.memSwap === undefined || b.memSwap === null || b.memSwap === '') {
-        hc.MemorySwap = mem > 0 ? mem * 2 : 0;
-      }
-    }
-    if (b.memSwap !== undefined && b.memSwap !== null && b.memSwap !== '') {
-      hc.MemorySwap = Number(b.memSwap) || 0;
-    }
-    if (b.memReservation !== undefined && b.memReservation !== null && b.memReservation !== '') {
-      hc.MemoryReservation = Number(b.memReservation) || 0;
-    }
-
-    // CPU 相关
-    if (b.cpuLimit !== undefined && b.cpuLimit !== null && b.cpuLimit !== '') {
-      const ncpus = Number(b.cpuLimit) || 0;
-      if (ncpus > 0) {
-        hc.NanoCpus = ncpus;
-        delete hc.CpuQuota;
-      } else {
-        hc.NanoCpus = 0;
-      }
-    }
-    if (b.cpuShares !== undefined && b.cpuShares !== null && b.cpuShares !== '') {
-      hc.CpuShares = Number(b.cpuShares) || 0;
-    }
-    if (typeof b.cpusetCpus === 'string') {
-      hc.CpusetCpus = b.cpusetCpus.trim() || undefined;
-    }
+    // 将请求体中的增量改动应用到 hc（与批量更新共用同一组装逻辑）
+    applyUpdateBodyToHostConfig(b, hc);
 
     // 在线更新（docker update）；失败会抛出，由 asyncHandler 统一处理
     await container.update(hc);

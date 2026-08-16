@@ -2,11 +2,19 @@
  * 操作审计日志 API 路由
  *
  * - GET /api/operation-logs?page=&pageSize=&username=&targetType=&startTime=&endTime=&success=：分页查询（最新在前）
- * - GET /api/operation-logs/export?username=&targetType=&startTime=&endTime=&success=：按过滤条件导出 CSV
+ * - GET /api/operation-logs/export?format=&username=&targetType=&startTime=&endTime=&success=：按过滤条件导出 CSV / JSON
+ * - GET /api/operation-logs/stats?username=&targetType=&startTime=&endTime=&success=：按过滤条件统计
  * - DELETE /api/operation-logs：清空全部操作日志
  */
 import { Router } from 'express';
-import { listOperationLogs, clearOperationLogs, exportOperationLogsCsv, logOperation } from '../operationLog';
+import {
+  listOperationLogs,
+  clearOperationLogs,
+  exportOperationLogsCsv,
+  exportOperationLogsJson,
+  summarizeOperationLogs,
+  logOperation,
+} from '../operationLog';
 import { requireAdmin } from '../auth';
 
 const router = Router();
@@ -26,7 +34,8 @@ function boolOrUndefined(v: any): boolean | undefined {
 
 /**
  * GET /api/operation-logs/export
- * 按过滤条件导出操作日志为 CSV（不受分页限制）
+ * 按过滤条件导出操作日志（不受分页限制）
+ * 支持 format 参数：默认 csv；format=json 时导出 JSON 数组
  */
 router.get('/export', requireAdmin, (req: any, res: any) => {
   try {
@@ -35,7 +44,24 @@ router.get('/export', requireAdmin, (req: any, res: any) => {
     const startTime = numOrUndefined(req.query.startTime);
     const endTime = numOrUndefined(req.query.endTime);
     const success = boolOrUndefined(req.query.success);
-    const csv = exportOperationLogsCsv({ username, targetType, startTime, endTime, success });
+    const format = req.query.format ? String(req.query.format).toLowerCase() : 'csv';
+
+    const filter = { username, targetType, startTime, endTime, success };
+
+    // JSON 导出：返回 application/json，文件名以 .json 结尾
+    if (format === 'json') {
+      const json = exportOperationLogsJson(filter);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="operation-logs-${Date.now()}.json"`,
+      );
+      res.send(json);
+      return;
+    }
+
+    // 默认 CSV 导出
+    const csv = exportOperationLogsCsv(filter);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
@@ -44,6 +70,24 @@ router.get('/export', requireAdmin, (req: any, res: any) => {
     res.send(csv);
   } catch (e: any) {
     res.status(500).json({ error: e?.message || '导出操作日志失败' });
+  }
+});
+
+/**
+ * GET /api/operation-logs/stats
+ * 按过滤条件统计操作日志（目标类型 / 结果 / 操作动作分布），供前端统计卡片展示
+ */
+router.get('/stats', requireAdmin, (req: any, res: any) => {
+  try {
+    const username = req.query.username ? String(req.query.username) : undefined;
+    const targetType = req.query.targetType ? String(req.query.targetType) : undefined;
+    const startTime = numOrUndefined(req.query.startTime);
+    const endTime = numOrUndefined(req.query.endTime);
+    const success = boolOrUndefined(req.query.success);
+    const stats = summarizeOperationLogs({ username, targetType, startTime, endTime, success });
+    res.json(stats);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || '统计操作日志失败' });
   }
 });
 

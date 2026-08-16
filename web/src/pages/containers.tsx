@@ -24,7 +24,7 @@ import './containers.less';
 type Filter = 'all' | 'running';
 
 /** 批量操作类型 */
-type BatchAction = 'start' | 'stop' | 'restart' | 'delete';
+type BatchAction = 'start' | 'stop' | 'restart' | 'delete' | 'update';
 
 /** 列表排序键 */
 type SortKey = 'name' | 'status' | 'created' | 'cpu' | 'mem';
@@ -117,6 +117,11 @@ export default function ContainersPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
+  // 批量「编辑资源」弹窗状态：CPU 核数 / 内存 GB（留空=不修改），loading 控制提交中
+  const [batchEditOpen, setBatchEditOpen] = useState(false);
+  const [batchEditCpu, setBatchEditCpu] = useState('');
+  const [batchEditMem, setBatchEditMem] = useState('');
+  const [batchEditLoading, setBatchEditLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
   // 重命名弹窗状态
@@ -719,6 +724,64 @@ export default function ContainersPage() {
   }
 
   /**
+   * 批量在线更新选中容器的资源限制（CPU / 内存）。
+   * 留空的字段不传，表示不修改；填值则完成单位换算（CPU 核数 -> 纳核，内存 GB -> 字节）。
+   * 调用 POST /api/containers/batch/update 后按 success/fail 提示并刷新列表。
+   */
+  async function confirmBatchEdit() {
+    if (selectedIds.length === 0) return;
+    if (!canDelete) {
+      showToast('仅管理员或运维人员可编辑资源限制', 'error');
+      setBatchEditOpen(false);
+      return;
+    }
+    const body: Record<string, unknown> = { ids: selectedIds };
+    // CPU：留空表示不修改；填 0 表示取消限制；否则核数转纳核
+    if (batchEditCpu.trim() !== '') {
+      const cpus = parseFloat(batchEditCpu);
+      if (isNaN(cpus) || cpus < 0) {
+        showToast('请输入有效的 CPU 核数（如 1 或 1.5）', 'error');
+        return;
+      }
+      body.cpuLimit = Math.round(cpus * 1e9);
+    }
+    // 内存：留空表示不修改；填 0 表示取消限制；否则 GB 转字节
+    if (batchEditMem.trim() !== '') {
+      const gb = parseFloat(batchEditMem);
+      if (isNaN(gb) || gb < 0) {
+        showToast('请输入有效的内存大小（GB，如 2）', 'error');
+        return;
+      }
+      body.memLimit = Math.round(gb * 1024 * 1024 * 1024);
+    }
+    // 至少需填写一项，否则无任何可更新内容
+    if (body.cpuLimit === undefined && body.memLimit === undefined) {
+      showToast('请至少填写 CPU 或内存限制其一', 'error');
+      return;
+    }
+    setBatchEditLoading(true);
+    try {
+      const r = await post<{ success: number; fail: number }>('/api/containers/batch/update', body);
+      const success = r?.success ?? 0;
+      const fail = r?.fail ?? 0;
+      setBatchEditOpen(false);
+      setSelectedIds([]);
+      if (fail === 0) {
+        showToast(`已更新 ${success} 个容器的资源限制`);
+      } else if (success === 0) {
+        showToast(`更新失败 ${fail} 个容器`, 'error');
+      } else {
+        showToast(`更新成功 ${success} 个，失败 ${fail} 个容器`, 'info');
+      }
+      load();
+    } catch (e: any) {
+      showToast(`批量更新失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setBatchEditLoading(false);
+    }
+  }
+
+  /**
    * 清理未使用资源（悬空镜像 / 未使用网络 / 未使用卷 / build cache）。
    * 仅清理未使用资源，不会删除任何运行中的容器。
    */
@@ -1181,6 +1244,22 @@ export default function ContainersPage() {
               <Button variant="secondary" size="sm" onClick={() => setBatchAction('restart')}>
                 批量重启
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (!canDelete) {
+                    showToast('仅管理员或运维人员可编辑资源限制', 'error');
+                    return;
+                  }
+                  setBatchEditCpu('');
+                  setBatchEditMem('');
+                  setBatchEditOpen(true);
+                }}
+                disabled={!canDelete}
+              >
+                编辑资源
+              </Button>
               <Button variant="danger" size="sm" onClick={() => setBatchAction('delete')} disabled={!canDelete}>
                 批量删除
               </Button>
@@ -1589,6 +1668,57 @@ export default function ContainersPage() {
             )}
           </div>
         </Field>
+      </Modal>
+
+      {/* 批量编辑资源弹窗（CPU / 内存限制，对应 docker update） */}
+      <Modal
+        open={batchEditOpen}
+        title="批量编辑资源限制"
+        onClose={() => !batchEditLoading && setBatchEditOpen(false)}
+        width={520}
+        footer={
+          <div className="create-modal__footer">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => setBatchEditOpen(false)}
+              disabled={batchEditLoading}
+            >
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={batchEditLoading} onClick={confirmBatchEdit}>
+              保存
+            </Button>
+          </div>
+        }
+      >
+        <div className="batch-edit__tip">
+          将为选中的 {selectedIds.length} 个容器在线更新资源限制，无需重建、不中断运行。留空的字段将保持现状。
+        </div>
+        <div className="create-modal__grid">
+          <Field label="CPU 限制（核数，留空不修改；填 0 取消限制）" hint="如 1 或 1.5">
+            <Input
+              type="number"
+              min={0}
+              step="0.1"
+              placeholder="如 1 或 1.5"
+              value={batchEditCpu}
+              onChange={(e) => setBatchEditCpu(e.target.value)}
+              disabled={batchEditLoading}
+            />
+          </Field>
+          <Field label="内存限制（GB，留空不修改；填 0 取消限制）" hint="如 2">
+            <Input
+              type="number"
+              min={0}
+              step="0.5"
+              placeholder="如 2"
+              value={batchEditMem}
+              onChange={(e) => setBatchEditMem(e.target.value)}
+              disabled={batchEditLoading}
+            />
+          </Field>
+        </div>
       </Modal>
 
       {/* 批量操作确认对话框 */}
