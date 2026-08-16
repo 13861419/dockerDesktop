@@ -13,7 +13,7 @@ import { Field, Input, Select } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, del, ApiError } from '../api/client';
+import { get, post, del, download, ApiError } from '../api/client';
 import { getToken, isAdmin } from '../api/auth';
 import {
   DatabaseInstance,
@@ -807,6 +807,8 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       </div>
       <SqlQueryPanel instance={instance} activeDb={activeDb} databases={databases} />
 
+      <DbBackupPanel instance={instance} databases={databases} payloadDb={activeDb} />
+
       {/* 新建库弹窗 */}
       <Modal
         open={createOpen}
@@ -1169,6 +1171,210 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
         loading={deleting}
         onConfirm={handleDeleteKey}
         onCancel={() => setDeleteKey(null)}
+      />
+    </div>
+  );
+}
+
+/**
+ * 数据级备份面板：列出实例的备份文件，支持发起备份、下载与删除
+ * @param param0 面板属性
+ */
+function DbBackupPanel({
+  instance,
+  databases,
+  payloadDb,
+}: {
+  instance: DatabaseInstance;
+  databases: string[];
+  payloadDb: string;
+}) {
+  const { showToast } = useToast();
+  const canManage = isAdmin();
+  const [backups, setBackups] = useState<Array<{ file: string; size: number; createdAt: number }>>([]);
+  const [loading, setLoading] = useState(true);
+  // 备份的目标库
+  const [targetDb, setTargetDb] = useState(payloadDb);
+  const [backingUp, setBackingUp] = useState(false);
+  // 待删除的备份文件
+  const [deleteFile, setDeleteFile] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  /**
+   * 加载该实例的备份列表
+   */
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await get<{ backups: Array<{ file: string; size: number; createdAt: number }> }>(
+        `/api/databases/${instance.id}/backups`
+      );
+      setBackups(data?.backups || []);
+    } catch (e: any) {
+      showToast(e?.message || '加载备份列表失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [instance.id, showToast]);
+
+  useEffect(() => {
+    if (canManage) load();
+  }, [canManage, load]);
+
+  // 外部选中库变化时同步备份目标库
+  useEffect(() => {
+    if (payloadDb && databases.includes(payloadDb)) setTargetDb(payloadDb);
+  }, [payloadDb, databases]);
+
+  /**
+   * 发起一次备份
+   */
+  const handleBackup = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可发起备份', 'error');
+      return;
+    }
+    if (!targetDb.trim()) {
+      showToast('请选择要备份的库', 'error');
+      return;
+    }
+    setBackingUp(true);
+    try {
+      await post(`/api/databases/${instance.id}/backups`, { db: targetDb.trim() });
+      showToast('备份已发起');
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '备份失败', 'error');
+    } finally {
+      setBackingUp(false);
+    }
+  }, [canManage, instance.id, targetDb, load, showToast]);
+
+  /**
+   * 确认删除备份文件
+   */
+  const handleDelete = useCallback(async () => {
+    if (!deleteFile) return;
+    if (!canManage) {
+      showToast('仅管理员可删除备份', 'error');
+      setDeleteFile(null);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await del(`/api/databases/${instance.id}/backups/${encodeURIComponent(deleteFile)}`);
+      showToast('已删除备份文件');
+      setDeleteFile(null);
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }, [canManage, instance.id, deleteFile, load, showToast]);
+
+  /**
+   * 格式化文件大小
+   * @param bytes 字节数
+   */
+  function formatSize(bytes: number): string {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let n = bytes;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i += 1;
+    }
+    return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
+  }
+
+  /**
+   * 格式化时间
+   * @param ms 毫秒时间戳
+   */
+  function formatTime(ms: number): string {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  return (
+    <div className="db-backup">
+      <div className="db-detail__section">
+        <span className="db-detail__section-title">数据备份 ({backups.length})</span>
+        <div className="db-detail__section-actions">
+          {databases.length > 0 && (
+            <Select value={targetDb} onChange={(e) => setTargetDb(e.target.value)} style={{ width: 160 }}>
+              {databases.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </Select>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            loading={backingUp}
+            disabled={!canManage || databases.length === 0}
+            onClick={handleBackup}
+          >
+            备份
+          </Button>
+          <Button variant="ghost" size="sm" onClick={load} disabled={!canManage}>
+            刷新
+          </Button>
+        </div>
+      </div>
+
+      <div className="db-sql__hint" style={{ marginBottom: 8 }}>
+        将所选库导出为压缩 SQL 文件（逻辑备份），可下载留存。Redis 暂不支持。
+      </div>
+
+      {loading ? (
+        <SkeletonRows rows={3} />
+      ) : backups.length === 0 ? (
+        <div className="db-list__empty">暂无备份文件，选择库后点击「备份」创建。</div>
+      ) : (
+        <div className="db-list">
+          {backups.map((b) => (
+            <div className="db-list__row" key={b.file}>
+              <span className="db-list__name" style={{ cursor: 'default' }} title={b.file}>
+                {b.file}
+              </span>
+              <span className="db-list__meta">
+                {formatSize(b.size)} · {formatTime(b.createdAt)}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  download(`/api/databases/${instance.id}/backups/${encodeURIComponent(b.file)}/download`)
+                }
+                disabled={!canManage}
+              >
+                下载
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setDeleteFile(b.file)} disabled={!canManage}>
+                删除
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 删除备份确认框 */}
+      <ConfirmDialog
+        open={!!deleteFile}
+        title="删除备份文件"
+        message={`确定要删除备份文件 "${deleteFile || ''}" 吗？删除后不可恢复。`}
+        confirmText="删除"
+        danger
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteFile(null)}
       />
     </div>
   );

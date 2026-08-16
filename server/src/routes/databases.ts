@@ -11,6 +11,7 @@
  * 仅在本次命令执行时解密使用，绝不上报前端、不打日志。
  */
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import Dockerode from 'dockerode';
@@ -19,6 +20,12 @@ import { getDb, encryptSecret, decryptSecret } from '../storage';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
 import { APP_LABEL_KEY, APP_CATALOG } from '../appstore/catalog';
+import {
+  createDbBackup,
+  listDbBackups,
+  resolveBackupFile,
+  deleteDbBackup,
+} from '../dbBackup';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -930,6 +937,83 @@ router.delete(
       res.json({ ok: true, deleted });
     },
     (req: Request) => ({ action: '删除 Redis 键', targetType: 'database', targetName: req.params.id }),
+  ),
+);
+
+// ==================== 数据级备份（导出/列表/下载/删除） ====================
+
+/**
+ * GET /api/databases/:id/backups
+ * 列出某数据库实例的全部数据级备份文件
+ * @param id 实例 id
+ */
+router.get(
+  '/:id/backups',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = await requireInstance(req.params.id);
+    res.json({ backups: listDbBackups(row.id) });
+  }),
+);
+
+/**
+ * POST /api/databases/:id/backups
+ * 发起一次数据级备份（逻辑导出指定库为压缩 SQL 文件）
+ * body={ db }
+ * @param id 实例 id
+ */
+router.post(
+  '/:id/backups',
+  requireAdmin,
+  asyncHandler(
+    async (req: Request, res: Response) => {
+      const row = await requireInstance(req.params.id);
+      const result = await createDbBackup(row, String(req.body?.db || ''));
+      logOperation(res.locals.username, '数据库数据备份', 'database', row.name, `库: ${req.body?.db}`);
+      res.status(201).json({ backup: result });
+    },
+    (req: Request) => ({ action: '数据库数据备份', targetType: 'database', targetName: req.params.id }),
+  ),
+);
+
+/**
+ * GET /api/databases/:id/backups/:file/download
+ * 下载指定备份文件
+ * @param id 实例 id
+ * @param file 备份文件名
+ */
+router.get(
+  '/:id/backups/:file/download',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = await requireInstance(req.params.id);
+    const filePath = resolveBackupFile(row.id, String(req.params.file));
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      return res.status(404).json({ error: '备份文件不存在' });
+    }
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', `attachment; filename="db-backup-${String(req.params.file).replace(/[^a-zA-Z0-9._-]/g, '_')}"`);
+    fs.createReadStream(filePath).pipe(res);
+  }),
+);
+
+/**
+ * DELETE /api/databases/:id/backups/:file
+ * 删除指定备份文件
+ * @param id 实例 id
+ * @param file 备份文件名
+ */
+router.delete(
+  '/:id/backups/:file',
+  requireAdmin,
+  asyncHandler(
+    async (req: Request, res: Response) => {
+      const row = await requireInstance(req.params.id);
+      deleteDbBackup(row.id, String(req.params.file));
+      logOperation(res.locals.username, '删除数据库备份', 'database', row.name, String(req.params.file));
+      res.json({ ok: true });
+    },
+    (req: Request) => ({ action: '删除数据库备份', targetType: 'database', targetName: req.params.id }),
   ),
 );
 
