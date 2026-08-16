@@ -46,6 +46,33 @@ interface MonitorHistory {
   points: MonitorPoint[];
 }
 
+/** 历史趋势时间范围（与后端 MetricsRange 一致） */
+type MetricsRange = '10m' | '1h' | '24h' | '7d';
+
+/** /api/monitor/history/range 返回的精简监控点（剔除 disks/gpu/alerts 等嵌套结构） */
+interface MetricPoint {
+  timestamp: number;
+  cpu: { percent: number; cores: number };
+  mem: { percent: number; used: number; total: number };
+  disk: { percent: number; used: number; total: number };
+  net: { rx: number; tx: number };
+  containers: { running: number; total: number };
+  images: number;
+}
+
+/** /api/monitor/history/range 返回结构 */
+interface MetricRangeResponse {
+  points: MetricPoint[];
+}
+
+/** 曲线渲染所需的最小数据结构（MonitorPoint 与 MetricPoint 均结构兼容） */
+interface ChartPoint {
+  timestamp: number;
+  cpu: { percent: number };
+  mem: { percent: number };
+  disk: { percent: number };
+}
+
 /** 曲线所需的序列数据 */
 interface SeriesData {
   name: string;
@@ -55,6 +82,14 @@ interface SeriesData {
 
 /** 前端本地曲线保留的最大点数（2 秒一点，300 点约 10 分钟，与服务端 minutes=10 一致） */
 const MAX_POINTS = 300;
+
+/** 时间范围切换选项（按钮组，默认 10 分钟即实时轮询模式） */
+const RANGE_OPTIONS: Array<{ value: MetricsRange; label: string }> = [
+  { value: '10m', label: '10分钟' },
+  { value: '1h', label: '1小时' },
+  { value: '24h', label: '24小时' },
+  { value: '7d', label: '7天' },
+];
 
 /**
  * 字节数格式化为 GB 字符串
@@ -74,6 +109,23 @@ function formatPercent(value: number): string {
 }
 
 /**
+ * 格式化 X 轴时间标签
+ *
+ * 10 分钟跨度用 HH:MM:SS（秒级，便于观察实时变化）；
+ * 1 小时及以上跨度用 MM-DD HH:mm（日期+时分，避免长跨度下秒级标签拥挤）。
+ * @param ts 时间戳（毫秒）
+ * @param range 当前时间范围
+ */
+function formatTimeLabel(ts: number, range: MetricsRange): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (range === '10m') {
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
  * 总览页组件
  */
 export default function OverviewPage() {
@@ -86,6 +138,12 @@ export default function OverviewPage() {
   const [now, setNow] = useState<MonitorPoint | null>(null);
   const pointsRef = useRef<MonitorPoint[]>([]);
   const [hist, setHist] = useState<MonitorPoint[]>([]);
+
+  // ---- 历史趋势状态 ----
+  /** 当前选中的时间范围，默认 10 分钟（实时轮询模式） */
+  const [range, setRange] = useState<MetricsRange>('10m');
+  /** 长跨度（1h/24h/7d）历史趋势数据；10m 模式下不使用 */
+  const [rangeHist, setRangeHist] = useState<MetricPoint[]>([]);
 
   /**
    * 拉取总览数据
@@ -145,21 +203,46 @@ export default function OverviewPage() {
     }
   }
 
+  /**
+   * 拉取长跨度历史趋势数据（1h/24h/7d）
+   *
+   * 仅在切换到非 10m 范围时调用；拉取后停止实时追加，曲线以历史数据渲染。
+   * @param r 时间范围
+   */
+  async function loadRange(r: MetricsRange) {
+    try {
+      const res = await get<MetricRangeResponse>('/api/monitor/history/range', { range: r });
+      setRangeHist(Array.isArray(res?.points) ? res.points : []);
+    } catch {
+      // 历史趋势拉取失败静默处理，保留空曲线
+      setRangeHist([]);
+    }
+  }
+
+  // 总览数据仅在挂载时拉取一次
   useEffect(() => {
     load();
-    // 初始化监控：拉取当前点 + 首次整体拉取历史曲线
-    loadNow();
-    loadHistory(true);
-    // 每 2 秒轮询一次，仅刷新当前值并把最新点追加到本地曲线（避免每次全量重拉 history）
-    const timer = setInterval(() => {
-      loadNow();
-    }, 2000);
-    // 组件卸载时清理定时器
-    return () => {
-      clearInterval(timer);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 监控数据随时间范围切换：
+  // - 10m：恢复实时轮询（拉取当前点 + 首次整体历史，随后每 2 秒追加新点）
+  // - 1h/24h/7d：拉取一次历史趋势，停止实时追加
+  useEffect(() => {
+    if (range === '10m') {
+      loadNow();
+      loadHistory(true);
+      // 每 2 秒轮询一次，仅刷新当前值并把最新点追加到本地曲线（避免每次全量重拉 history）
+      const timer = setInterval(() => {
+        loadNow();
+      }, 2000);
+      // 切换或卸载时清理定时器
+      return () => clearInterval(timer);
+    }
+    // 长跨度模式：拉取历史趋势，不启动轮询
+    loadRange(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range]);
 
   if (loading) return <PageLoading />;
 
@@ -202,16 +285,14 @@ export default function OverviewPage() {
   ];
 
   // ---- 监控数据换算 ----
-  const cpuSeries: SeriesData = { name: 'CPU', color: 'var(--primary, #6366f1)', data: hist.map((p) => p.cpu.percent) };
-  const memSeries: SeriesData = { name: '内存', color: '#22c55e', data: hist.map((p) => p.mem.percent) };
-  const diskSeries: SeriesData = { name: '磁盘', color: '#f59e0b', data: hist.map((p) => p.disk.percent) };
+  // 曲线数据源：10m 用本地实时缓冲，长跨度用历史趋势；两者结构兼容 ChartPoint
+  const chartData: ChartPoint[] = range === '10m' ? hist : rangeHist;
+  const cpuSeries: SeriesData = { name: 'CPU', color: 'var(--primary, #6366f1)', data: chartData.map((p) => p.cpu.percent) };
+  const memSeries: SeriesData = { name: '内存', color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
+  const diskSeries: SeriesData = { name: '磁盘', color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
 
-  // X 轴时间标签（与曲线数据点一一对应，格式如 14:05:32）
-  const timeLabels = hist.map((p) => {
-    const d = new Date(p.timestamp);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  });
+  // X 轴时间标签：10m 用 HH:MM:SS，长跨度用 MM-DD HH:mm
+  const timeLabels = chartData.map((p) => formatTimeLabel(p.timestamp, range));
 
   // 各磁盘分区明细（来自实时监控点）
   const diskPartitions = now?.disks || [];
@@ -300,6 +381,31 @@ export default function OverviewPage() {
       {/* 资源监控区 */}
       <div className="overview__monitor">
         <Card title="资源监控">
+          {/* 时间范围切换：10 分钟实时轮询 / 1h·24h·7d 历史趋势 */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            {RANGE_OPTIONS.map((opt) => {
+              const active = range === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setRange(opt.value)}
+                  style={{
+                    padding: '4px 12px',
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: '1px solid var(--border, #e5e7eb)',
+                    background: active ? 'var(--primary, #6366f1)' : 'transparent',
+                    color: active ? '#fff' : 'var(--text-secondary, #6b7280)',
+                    cursor: 'pointer',
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="monitor__now">
             {monitorCards.map((m) => {
               const pct = (m as { percent?: number }).percent;

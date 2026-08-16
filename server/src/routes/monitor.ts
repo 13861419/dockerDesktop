@@ -5,7 +5,7 @@
  * 供首页仪表盘展示。
  */
 import { Router, Request, Response } from 'express';
-import { getCurrentMonitor, getMonitorHistory } from '../docker/monitor';
+import { getCurrentMonitor, getMonitorHistory, getMetricsRange, type MetricsRange } from '../docker/monitor';
 
 const router = Router();
 
@@ -49,6 +49,25 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const minutes = Number(req.query.minutes) || 10;
     const points = getMonitorHistory(minutes);
+    res.json({ points });
+  }),
+);
+
+/** 合法的时间范围取值，用于校验 query 参数 */
+const VALID_RANGES: MetricsRange[] = ['10m', '1h', '24h', '7d'];
+
+/**
+ * GET /api/monitor/history/range?range=1h
+ * 获取指定时间范围的历史监控趋势（10m|1h|24h|7d，默认 1h）
+ *
+ * 10m 走内存缓冲；1h/24h/7d 走 host_metrics 持久化数据并降采样。
+ */
+router.get(
+  '/history/range',
+  asyncHandler(async (req: Request, res: Response) => {
+    const raw = String(req.query.range || '1h');
+    const range: MetricsRange = (VALID_RANGES as string[]).includes(raw) ? (raw as MetricsRange) : '1h';
+    const points = getMetricsRange(range);
     res.json({ points });
   }),
 );

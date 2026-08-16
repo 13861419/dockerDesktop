@@ -10,6 +10,7 @@
  */
 import Dockerode from 'dockerode';
 import { getDockerClient, isWindows } from './client';
+import { getDb } from '../storage';
 
 /** 单个磁盘分区信息 */
 export interface DiskPartition {
@@ -99,6 +100,15 @@ let timer: NodeJS.Timeout | null = null;
 
 /** 最近一次采集到的实时点 */
 let latest: MonitorPoint | null = null;
+
+/** 落库降采样间隔（毫秒）：每 30 秒向 host_metrics 写入一条聚合记录，避免高频采集撑大数据库 */
+const PERSIST_INTERVAL_MS = 30000;
+/** 最近一次落库时间戳（毫秒） */
+let lastPersistTs = 0;
+/** 落库次数计数器，用于触发周期性旧数据清理（每 20 次约 10 分钟清一次） */
+let persistCount = 0;
+/** host_metrics 旧数据保留时长（毫秒）：7 天 */
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * 计算系统 CPU 使用率（基于 os.cpus() 两次采样）
@@ -408,6 +418,8 @@ async function collect() {
     latest = point;
     history.push(point);
     if (history.length > MAX_POINTS) history.shift();
+    // 降采样落库：每 30 秒向 host_metrics 写入一条记录，供跨小时/跨天历史趋势查询
+    persistPoint(point);
   } catch (err) {
     // 采集失败不中断（Docker 可能临时不可用）
     console.error('[monitor] 采集失败:', (err as Error)?.message);
@@ -440,6 +452,207 @@ export function getCurrentMonitor(): MonitorPoint | null {
 export function getMonitorHistory(minutes = 10): MonitorPoint[] {
   const cutoff = Date.now() - minutes * 60 * 1000;
   return history.filter((p) => p.timestamp >= cutoff);
+}
+
+// ==================== 监控数据持久化与历史趋势 ====================
+
+/** host_metrics 表行结构（仅供内部查询映射使用，字段与表定义一一对应） */
+interface HostMetricRow {
+  ts: number;
+  cpu_percent: number;
+  cpu_cores: number;
+  mem_percent: number;
+  mem_used: number;
+  mem_total: number;
+  disk_percent: number;
+  disk_used: number;
+  disk_total: number;
+  net_rx: number;
+  net_tx: number;
+  containers_running: number;
+  containers_total: number;
+  images: number;
+}
+
+/** 历史趋势查询返回的精简监控点（剔除 disks/gpu/alerts 等嵌套结构，便于前端复用渲染） */
+export interface MetricPoint {
+  /** 采样时间戳（毫秒） */
+  timestamp: number;
+  /** CPU 使用率与核数 */
+  cpu: { percent: number; cores: number };
+  /** 内存使用率与绝对值 */
+  mem: { percent: number; used: number; total: number };
+  /** 磁盘使用率与绝对值 */
+  disk: { percent: number; used: number; total: number };
+  /** 网络累计收发字节 */
+  net: { rx: number; tx: number };
+  /** 容器运行/总数 */
+  containers: { running: number; total: number };
+  /** 镜像数量 */
+  images: number;
+}
+
+/** 历史趋势查询支持的时间范围 */
+export type MetricsRange = '10m' | '1h' | '24h' | '7d';
+
+/** 各时间范围对应的回溯毫秒数 */
+const RANGE_MS: Record<MetricsRange, number> = {
+  '10m': 10 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+};
+
+/** 各时间范围降采样桶大小（毫秒）；10m 直接用内存缓冲无需降采样 */
+const RANGE_BUCKET_MS: Record<Exclude<MetricsRange, '10m'>, number> = {
+  '1h': 60 * 1000, // 每 60 秒一点，最多 60 点
+  '24h': 600 * 1000, // 每 600 秒一点，最多 144 点
+  '7d': 1800 * 1000, // 每 1800 秒一点，最多 336 点
+};
+
+/**
+ * 将采样点降采样落库到 host_metrics（每 30 秒一条）
+ *
+ * 同时维护落库计数器，每 20 次（约 10 分钟）清理一次 7 天前的旧数据，
+ * 防止数据库无限膨胀。落库失败不中断采集。
+ * @param point 当前采样点
+ */
+function persistPoint(point: MonitorPoint): void {
+  const now = point.timestamp;
+  if (now - lastPersistTs < PERSIST_INTERVAL_MS) return;
+  lastPersistTs = now;
+  try {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO host_metrics
+        (ts, cpu_percent, cpu_cores, mem_percent, mem_used, mem_total,
+         disk_percent, disk_used, disk_total, net_rx, net_tx,
+         containers_running, containers_total, images)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      point.timestamp,
+      point.cpu.percent,
+      point.cpu.cores,
+      point.mem.percent,
+      point.mem.used,
+      point.mem.total,
+      point.disk.percent,
+      point.disk.used,
+      point.disk.total,
+      point.net.rx,
+      point.net.tx,
+      point.containers.running,
+      point.containers.total,
+      point.images,
+    );
+    persistCount += 1;
+    // 每 20 次落库（约 10 分钟）清理一次 7 天前的旧数据
+    if (persistCount % 20 === 0) {
+      const cutoff = Date.now() - RETENTION_MS;
+      db.prepare('DELETE FROM host_metrics WHERE ts < ?').run(cutoff);
+    }
+  } catch (err) {
+    // 落库失败不中断采集（数据库可能临时不可用）
+    console.error('[monitor] 落库失败:', (err as Error)?.message);
+  }
+}
+
+/**
+ * 将全量行按时间桶降采样，每个桶取最后一条（更贴近实时末值）
+ *
+ * 输入需按 ts 升序排列；输出的时间点为各桶内最后一条记录。
+ * @param rows 已按 ts 升序排列的原始行
+ * @param bucketMs 桶大小（毫秒）
+ * @returns 降采样后的行数组
+ */
+function downsample(rows: HostMetricRow[], bucketMs: number): HostMetricRow[] {
+  if (rows.length === 0) return [];
+  const out: HostMetricRow[] = [];
+  let currentBucket = Math.floor(rows[0].ts / bucketMs);
+  let lastInBucket: HostMetricRow = rows[0];
+  for (let i = 1; i < rows.length; i++) {
+    const bucket = Math.floor(rows[i].ts / bucketMs);
+    if (bucket !== currentBucket) {
+      // 进入新桶：提交上一桶的最后一条
+      out.push(lastInBucket);
+      currentBucket = bucket;
+      lastInBucket = rows[i];
+    } else {
+      // 桶内持续覆盖，保留最后一条
+      lastInBucket = rows[i];
+    }
+  }
+  // 提交最后一桶
+  out.push(lastInBucket);
+  return out;
+}
+
+/**
+ * 将内存 MonitorPoint 映射为精简 MetricPoint
+ * @param p 内存监控点
+ * @returns 精简监控点
+ */
+function mapMonitorPoint(p: MonitorPoint): MetricPoint {
+  return {
+    timestamp: p.timestamp,
+    cpu: { percent: p.cpu.percent, cores: p.cpu.cores },
+    mem: { percent: p.mem.percent, used: p.mem.used, total: p.mem.total },
+    disk: { percent: p.disk.percent, used: p.disk.used, total: p.disk.total },
+    net: { rx: p.net.rx, tx: p.net.tx },
+    containers: { running: p.containers.running, total: p.containers.total },
+    images: p.images,
+  };
+}
+
+/**
+ * 将 host_metrics 表行映射为精简 MetricPoint
+ * @param r 数据库行
+ * @returns 精简监控点
+ */
+function mapHostMetricRow(r: HostMetricRow): MetricPoint {
+  return {
+    timestamp: r.ts,
+    cpu: { percent: r.cpu_percent, cores: r.cpu_cores },
+    mem: { percent: r.mem_percent, used: r.mem_used, total: r.mem_total },
+    disk: { percent: r.disk_percent, used: r.disk_used, total: r.disk_total },
+    net: { rx: r.net_rx, tx: r.net_tx },
+    containers: { running: r.containers_running, total: r.containers_total },
+    images: r.images,
+  };
+}
+
+/**
+ * 查询指定时间范围的历史监控趋势
+ *
+ * - 10m：直接返回内存缓冲（与 getMonitorHistory(10) 一致，实时性好）
+ * - 1h/24h/7d：从 host_metrics 查询并按桶降采样，避免返回过多点
+ *
+ * @param range 时间范围，默认 1h
+ * @returns 精简监控点数组（按时间升序）
+ */
+export function getMetricsRange(range: MetricsRange = '1h'): MetricPoint[] {
+  if (range === '10m') {
+    return getMonitorHistory(10).map(mapMonitorPoint);
+  }
+  const since = Date.now() - RANGE_MS[range];
+  const bucketMs = RANGE_BUCKET_MS[range];
+  let rows: HostMetricRow[] = [];
+  try {
+    rows = getDb()
+      .prepare(
+        `SELECT ts, cpu_percent, cpu_cores, mem_percent, mem_used, mem_total,
+                disk_percent, disk_used, disk_total, net_rx, net_tx,
+                containers_running, containers_total, images
+         FROM host_metrics
+         WHERE ts >= ?
+         ORDER BY ts ASC`,
+      )
+      .all(since) as unknown as HostMetricRow[];
+  } catch (err) {
+    console.error('[monitor] 历史趋势查询失败:', (err as Error)?.message);
+    return [];
+  }
+  return downsample(rows, bucketMs).map(mapHostMetricRow);
 }
 
 /**

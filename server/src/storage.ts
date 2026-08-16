@@ -335,6 +335,26 @@ function createTables(): void {
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_alert_records_created ON alert_records(created_at DESC);
+
+    -- 主机监控指标采样表：采集器降采样落库，供跨小时/跨天历史趋势查询（重启不丢失）
+    CREATE TABLE IF NOT EXISTS host_metrics (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts                 INTEGER NOT NULL,             -- 采样时间（毫秒）
+      cpu_percent        REAL NOT NULL,
+      cpu_cores          INTEGER NOT NULL,
+      mem_percent        REAL NOT NULL,
+      mem_used           INTEGER NOT NULL,
+      mem_total          INTEGER NOT NULL,
+      disk_percent       REAL NOT NULL,
+      disk_used          INTEGER NOT NULL,
+      disk_total         INTEGER NOT NULL,
+      net_rx             INTEGER NOT NULL,             -- 累计接收字节
+      net_tx             INTEGER NOT NULL,             -- 累计发送字节
+      containers_running INTEGER NOT NULL,
+      containers_total   INTEGER NOT NULL,
+      images             INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_host_metrics_ts ON host_metrics(ts DESC);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
@@ -342,6 +362,20 @@ function createTables(): void {
     d.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
   } catch {
     // 列已存在则忽略（首次创建即含该列）
+  }
+
+  // 迁移：为 hub_sources 表补充 is_default 列（显式默认源标记，0=非默认 1=默认）
+  try {
+    d.exec('ALTER TABLE hub_sources ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+
+  // 迁移：为 hub_sources 表补充 sort_order 列（手动排序，值越小优先级越高，控制 failover 顺序）
+  try {
+    d.exec('ALTER TABLE hub_sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
   }
 }
 
