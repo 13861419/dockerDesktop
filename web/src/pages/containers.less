@@ -192,6 +192,26 @@
   .cell-created {
     color: var(--text-muted);
   }
+
+  .cell-limit {
+    white-space: nowrap;
+
+    /* CPU / 内存限制两行竖排展示 */
+    &__line {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+
+      em {
+        font-style: normal;
+        font-family: var(--mono-font, 'Consolas', 'Courier New', monospace);
+        color: var(--text-secondary);
+      }
+    }
+  }
 }
 
 .containers__actions {

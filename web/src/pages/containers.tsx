@@ -1178,6 +1178,32 @@ export default function ContainersPage() {
     return d.toLocaleString('zh-CN', { hour12: false });
   }
 
+  /**
+   * 格式化 CPU 限制值（NanoCpus 纳核）。
+   * 0 或非法值返回 '不限'；否则转换为核数，整数核省略小数。
+   * @param nano NanoCpus 纳核数
+   * @returns 形如 '2 Core' / '0.5 Core' 或 '不限'
+   */
+  function formatCpuLimit(nano: number | undefined): string {
+    if (nano === undefined || Number.isNaN(nano) || nano <= 0) return '不限';
+    const cores = nano / 1e9;
+    return `${Number.isInteger(cores) ? cores : cores.toFixed(2)} Core`;
+  }
+
+  /**
+   * 格式化内存限制值（字节）。
+   * 0 返回 '不限'；<1GB 显示 MB，否则显示 GB（保留两位小数）。
+   * @param bytes 内存限制字节数
+   * @returns 形如 '512 MB' / '2.00 GB' 或 '不限'
+   */
+  function formatMemLimit(bytes: number | undefined): string {
+    if (bytes === undefined || Number.isNaN(bytes) || bytes <= 0) return '不限';
+    if (bytes < 1024 * 1024 * 1024) {
+      return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+    }
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+
   if (loading) return <PageLoading />;
 
   return (
@@ -1336,6 +1362,7 @@ export default function ContainersPage() {
                     <th className="th-sort" onClick={() => toggleSort('mem')}>
                       内存 <span className="th-sort__ind">{sortIndicator('mem')}</span>
                     </th>
+                    <th>资源限制</th>
                     <th className="th-sort" onClick={() => toggleSort('created')}>
                       创建时间 <span className="th-sort__ind">{sortIndicator('created')}</span>
                     </th>
@@ -1373,6 +1400,14 @@ export default function ContainersPage() {
                         </td>
                         <td className="cell-ports">{renderPortCell(c)}</td>
                         {renderStatCells(c)}
+                        <td className="cell-limit">
+                          <span className="cell-limit__line">
+                            CPU <em>{formatCpuLimit(c.cpuLimit)}</em>
+                          </span>
+                          <span className="cell-limit__line">
+                            内存 <em>{formatMemLimit(c.memLimit)}</em>
+                          </span>
+                        </td>
                         <td className="cell-created">{formatCreated(c.Created)}</td>
                         <td className="col-actions">
                           <div className="containers__actions">

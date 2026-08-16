@@ -47,6 +47,10 @@ async function formatContainer(container: Dockerode.Container, info?: Dockerode.
     command: (inspect.Config?.Cmd || []).join(' '),
     // 健康检查状态（未配置 Healthcheck 时为 'none'）
     health: inspect.State?.Health?.Status || 'none',
+    // CPU 限制（NanoCpus 纳核，0 表示不限制）
+    cpuLimit: inspect.HostConfig?.NanoCpus || 0,
+    // 内存限制（字节，0 表示不限制）
+    memLimit: inspect.HostConfig?.Memory || 0,
   };
 }
 
@@ -214,10 +218,15 @@ router.get(
       containers.map(async (c) => {
         try {
           const info = await docker.getContainer(c.Id).inspect();
-          return { ...c, health: info.State?.Health?.Status || 'none' };
+          return {
+            ...c,
+            health: info.State?.Health?.Status || 'none',
+            cpuLimit: info.HostConfig?.NanoCpus || 0,
+            memLimit: info.HostConfig?.Memory || 0,
+          };
         } catch {
           // inspect 失败时降级为 'none'，不影响列表整体返回
-          return { ...c, health: 'none' };
+          return { ...c, health: 'none', cpuLimit: 0, memLimit: 0 };
         }
       }),
     );

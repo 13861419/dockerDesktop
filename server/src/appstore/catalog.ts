@@ -3,10 +3,21 @@
  *
  * 内置常用应用的静态元数据目录。由于项目无业务数据库，所有应用数据均来源于
  * 本目录定义，容器安装状态则通过容器 label 与 Docker 引擎关联。
+ *
+ * 自「应用商店支持用户自定义应用」起，应用集合由「内置目录 + 数据库自定义应用」合并：
+ *  - APP_CATALOG 仍为内置静态数组（保持不变）
+ *  - loadCustomApps() 从 appstore_custom_apps 表读取用户自定义应用
+ *  - getAllApps() 合并两者作为对外统一的应用集合
+ *  - findApp() 优先在内置查找，找不到再查自定义
  */
+
+import { getDb } from '../storage';
 
 /** 应用标签键：用于在容器上标记所属应用 id */
 export const APP_LABEL_KEY = 'com.dockermanager.app';
+
+/** 自定义应用 id 前缀：用于区分内置应用与该前缀下的用户自定义应用 */
+export const CUSTOM_APP_PREFIX = 'custom-';
 
 /** 端口映射定义 */
 export interface AppPort {
@@ -81,6 +92,8 @@ export interface AppDefinition {
   tags?: string[];
   /** Compose 套件定义（存在则以多容器编排方式安装） */
   compose?: AppComposeDef;
+  /** 是否为用户自定义应用（仅 appstore_custom_apps 表来源的应用有此标记） */
+  isCustom?: boolean;
 }
 
 /** 内置应用目录 */
@@ -409,10 +422,99 @@ export function renderComposeTemplate(template: string, values: Record<string, s
 }
 
 /**
+ * 从 appstore_custom_apps 表读取全部用户自定义应用并组装为 AppDefinition 列表。
+ *
+ * 表中的 ports/env/volumes/tags 以 JSON 字符串存储，读取时安全解析：
+ *  - 解析成功且为数组则使用
+ *  - 解析失败或格式非法时回退为空数组（容错，避免单条坏数据拖垮整个目录）
+ * compose 字段可选，存在时解析为 AppComposeDef；解析失败则忽略该 compose（回退单容器）。
+ * @returns 自定义应用定义列表
+ */
+export function loadCustomApps(): AppDefinition[] {
+  const rows = (
+    getDb()
+      .prepare(
+        'SELECT id, name, description, category, image, icon, ports, env, volumes, tags, compose FROM appstore_custom_apps',
+      )
+      .all() as unknown as Array<{
+      id: string;
+      name: string;
+      description: string;
+      category: string;
+      image: string;
+      icon: string;
+      ports: string;
+      env: string;
+      volumes: string;
+      tags: string;
+      compose: string | null;
+    }>
+  ) || [];
+
+  /**
+   * 安全解析 JSON 数组，解析失败（含非数组）返回空数组
+   * @param raw 原始 JSON 字符串
+   * @returns 解析后的数组
+   */
+  function safeParseArray(raw: string): any[] {
+    try {
+      const value = JSON.parse(raw);
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return rows.map((row) => {
+    // 组装自定义应用定义，统一标记 isCustom
+    const app: AppDefinition = {
+      id: row.id,
+      name: row.name,
+      description: row.description || '',
+      category: row.category || '自定义',
+      image: row.image,
+      icon: row.icon || '📦',
+      ports: safeParseArray(row.ports || '[]'),
+      env: safeParseArray(row.env || '[]'),
+      volumes: safeParseArray(row.volumes || '[]'),
+      tags: safeParseArray(row.tags || '[]'),
+      isCustom: true,
+    };
+    // compose 可选：存在时安全解析为 AppComposeDef，失败则忽略
+    if (row.compose) {
+      try {
+        const parsed = JSON.parse(row.compose);
+        if (parsed && typeof parsed === 'object') {
+          app.compose = parsed as AppComposeDef;
+        }
+      } catch {
+        // compose 解析失败则忽略该字段，按单容器应用处理
+      }
+    }
+    return app;
+  });
+}
+
+/**
+ * 获取全部应用定义（内置 + 用户自定义合并）
+ * 保持内置应用在前、自定义应用在后的稳定顺序。
+ * @returns 全部应用定义列表
+ */
+export function getAllApps(): AppDefinition[] {
+  return [...APP_CATALOG, ...loadCustomApps()];
+}
+
+/**
  * 根据应用 id 查找应用定义
  * @param id 应用 id
  * @returns 匹配的应用定义，未找到时返回 undefined
  */
 export function findApp(id: string): AppDefinition | undefined {
-  return APP_CATALOG.find((app) => app.id === id);
+  // 优先在内置目录中查找
+  const builtin = APP_CATALOG.find((app) => app.id === id);
+  if (builtin) return builtin;
+  // 内置未命中且非自定义前缀直接返回（避免无谓的数据库查询）
+  if (!id || !id.startsWith(CUSTOM_APP_PREFIX)) return undefined;
+  // 再从用户自定义应用表中查找
+  return loadCustomApps().find((app) => app.id === id);
 }

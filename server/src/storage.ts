@@ -383,6 +383,23 @@ function createTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_container_templates_name ON container_templates(name);
+
+    -- 应用商店自定义应用表：用户新增的应用定义（与内置目录一起展示、可安装），字段复刻 AppDefinition
+    CREATE TABLE IF NOT EXISTS appstore_custom_apps (
+      id          TEXT PRIMARY KEY,            -- 应用 id（custom- 前缀避免与内置冲突）
+      name        TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category    TEXT NOT NULL DEFAULT '自定义',
+      image       TEXT NOT NULL,
+      icon        TEXT NOT NULL DEFAULT '📦',
+      ports       TEXT NOT NULL DEFAULT '[]',  -- JSON 数组
+      env         TEXT NOT NULL DEFAULT '[]',  -- JSON 数组
+      volumes     TEXT NOT NULL DEFAULT '[]',  -- JSON 数组
+      tags        TEXT NOT NULL DEFAULT '[]',  -- JSON 数组
+      compose     TEXT,                        -- compose 定义 JSON（可选，未填为单容器应用）
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

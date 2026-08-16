@@ -13,7 +13,7 @@ import { Field, Input, Select } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post } from '../api/client';
+import { get, post, put, del } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { AppStoreItem } from '../types';
 // 复用的状态徽标样式（已安装应用需展示运行/停止状态）
@@ -81,6 +81,36 @@ export default function AppStorePage() {
   >([]);
   // 参数修改是否进行中
   const [updatingParams, setUpdatingParams] = useState(false);
+  // 自定义应用新增/编辑弹窗是否打开（target 为 null 表示新增，有值表示编辑）
+  const [customModalOpen, setCustomModalOpen] = useState(false);
+  // 待编辑的自定义应用（null 表示新增模式）
+  const [customTarget, setCustomTarget] = useState<AppStoreItem | null>(null);
+  // 自定义应用表单各字段
+  const [customName, setCustomName] = useState('');
+  const [customDescription, setCustomDescription] = useState('');
+  const [customCategory, setCustomCategory] = useState('');
+  const [customImage, setCustomImage] = useState('');
+  const [customIcon, setCustomIcon] = useState('');
+  // 自定义应用表单的标签（以逗号/空格分隔的字符串）
+  const [customTags, setCustomTags] = useState('');
+  // 自定义应用表单的端口映射列表
+  const [customPorts, setCustomPorts] = useState<
+    Array<{ container: string; host: string; protocol: string }>
+  >([]);
+  // 自定义应用表单的环境变量列表
+  const [customEnv, setCustomEnv] = useState<
+    Array<{ key: string; value: string; desc: string }>
+  >([]);
+  // 自定义应用表单的挂载卷列表
+  const [customVolumes, setCustomVolumes] = useState<
+    Array<{ source: string; target: string; readonly: boolean }>
+  >([]);
+  // 自定义应用保存是否进行中
+  const [customSaving, setCustomSaving] = useState(false);
+  // 待删除的自定义应用（用于二次确认）
+  const [deleteTarget, setDeleteTarget] = useState<AppStoreItem | null>(null);
+  // 删除是否进行中
+  const [deleting, setDeleting] = useState(false);
 
   /**
    * 拉取应用商店列表
@@ -388,6 +418,170 @@ export default function AppStorePage() {
     [showToast]
   );
 
+  /**
+   * 判断应用是否为用户自定义应用（id 以 custom- 前缀）
+   * @param app 应用项
+   * @returns 是否为自定义应用
+   */
+  const isCustomApp = (app: AppStoreItem): boolean =>
+    !!app.isCustom || app.id.startsWith('custom-');
+
+  /**
+   * 打开自定义应用新增弹窗：清空所有表单字段并初始化为空值
+   */
+  const openCustomAdd = useCallback(() => {
+    setCustomTarget(null);
+    setCustomName('');
+    setCustomDescription('');
+    setCustomCategory('');
+    setCustomImage('');
+    setCustomIcon('📦');
+    setCustomTags('');
+    setCustomPorts([]);
+    setCustomEnv([]);
+    setCustomVolumes([]);
+    setCustomModalOpen(true);
+  }, []);
+
+  /**
+   * 打开自定义应用编辑弹窗：用当前应用的值预填表单字段
+   * @param app 待编辑的自定义应用
+   */
+  const openCustomEdit = useCallback(
+    (app: AppStoreItem) => {
+      setCustomTarget(app);
+      setCustomName(app.name);
+      setCustomDescription(app.description || '');
+      setCustomCategory(app.category || '');
+      setCustomImage(app.image || '');
+      setCustomIcon(app.icon || '📦');
+      // 标签以逗号/空格分隔展示为一串
+      setCustomTags((app.tags || []).join(' '));
+      // 端口映射（container/host 数字转字符串，protocol 默认 tcp）
+      const ports = (app.ports || []).map((p) => ({
+        container: String(p.container),
+        host: p.host !== undefined ? String(p.host) : '',
+        protocol: 'tcp',
+      }));
+      setCustomPorts(ports);
+      // 环境变量
+      const envs = (app.env || []).map((e) => ({
+        key: e.key,
+        value: e.value ?? '',
+        desc: e.desc ?? '',
+      }));
+      setCustomEnv(envs);
+      // 挂载卷
+      const vols = (app.volumes || []).map((v) => ({
+        source: v.host ?? '',
+        target: v.container,
+        readonly: false,
+      }));
+      setCustomVolumes(vols);
+      setCustomModalOpen(true);
+    },
+    []
+  );
+
+  /**
+   * 保存自定义应用（新增走 POST，编辑走 PUT），成功后刷新列表
+   */
+  const handleCustomSave = useCallback(async () => {
+    if (!canManage) {
+      showToast('仅管理员可管理自定义应用', 'error');
+      return;
+    }
+    if (!customName.trim()) {
+      showToast('请填写应用名称', 'error');
+      return;
+    }
+    if (!customImage.trim()) {
+      showToast('请填写镜像名称', 'error');
+      return;
+    }
+    setCustomSaving(true);
+    // 组装提交数据：端口过滤空 container；挂载过滤空 source/target；环境变量过滤空 key
+    const ports = customPorts
+      .filter((p) => p.container.trim() !== '')
+      .map((p) => ({
+        container: p.container.trim(),
+        host: p.host.trim() || undefined,
+        protocol: p.protocol || 'tcp',
+      }));
+    const env = customEnv
+      .filter((e) => e.key.trim() !== '')
+      .map((e) => ({
+        key: e.key.trim(),
+        value: e.value,
+        desc: e.desc || undefined,
+      }));
+    const volumes = customVolumes
+      .filter((v) => v.source.trim() !== '' && v.target.trim() !== '')
+      .map((v) => ({
+        source: v.source.trim(),
+        target: v.target.trim(),
+        readonly: v.readonly,
+      }));
+    // 标签：按逗号/空格/顿号拆分，过滤空项
+    const tags = customTags
+      .split(/[\s,，、]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const body = {
+      name: customName.trim(),
+      description: customDescription,
+      category: customCategory || undefined,
+      image: customImage.trim(),
+      icon: customIcon || '📦',
+      ports,
+      env,
+      volumes,
+      tags,
+    };
+    try {
+      if (customTarget) {
+        // 编辑：PUT 更新现有自定义应用
+        await put(`/api/appstore/custom/${customTarget.id}`, body);
+        showToast(`${customTarget.name} 更新成功`);
+      } else {
+        // 新增：POST 创建自定义应用
+        await post('/api/appstore/custom', body);
+        showToast('自定义应用创建成功');
+      }
+      setCustomModalOpen(false);
+      setCustomTarget(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '保存自定义应用失败', 'error');
+    } finally {
+      setCustomSaving(false);
+    }
+  }, [canManage, showToast, customTarget, customName, customDescription, customCategory, customImage, customIcon, customTags, customPorts, customEnv, customVolumes]);
+
+  /**
+   * 删除自定义应用（经确认框调用）
+   */
+  const handleCustomDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    if (!canManage) {
+      showToast('仅管理员可删除自定义应用', 'error');
+      setDeleteTarget(null);
+      return;
+    }
+    const target = deleteTarget;
+    setDeleting(true);
+    try {
+      await del(`/api/appstore/custom/${target.id}`);
+      showToast(`自定义应用 "${target.name}" 已删除`);
+      setDeleteTarget(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '删除自定义应用失败', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }, [canManage, deleteTarget, showToast]);
+
   /** 渲染应用端口信息 */
   const renderPortInfo = (app: AppStoreItem) => {
     if (app.port) return app.port;
@@ -462,6 +656,26 @@ export default function AppStorePage() {
           <Button variant="ghost" size="sm" onClick={() => setDetailTarget(app)}>
             详情
           </Button>
+          {isCustomApp(app) && canManage && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={customSaving || !!deleting}
+                onClick={() => openCustomEdit(app)}
+              >
+                编辑
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={customSaving || !!deleting}
+                onClick={() => setDeleteTarget(app)}
+              >
+                删除
+              </Button>
+            </>
+          )}
           {app.installed ? (
             compose ? (
               // Compose 已安装：提供 启停/重启/参数/升级/卸载
@@ -596,6 +810,11 @@ export default function AppStorePage() {
                 已安装 ({installedCount})
               </button>
             </div>
+            {canManage && (
+              <Button variant="primary" size="sm" onClick={openCustomAdd}>
+                新增自定义应用
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
@@ -694,6 +913,51 @@ export default function AppStorePage() {
         )}
       </Modal>
 
+      {/* 自定义应用新增/编辑弹窗 */}
+      <Modal
+        open={customModalOpen}
+        title={customTarget ? `编辑自定义应用 ${customTarget.name}` : '新增自定义应用'}
+        onClose={() => !customSaving && setCustomModalOpen(false)}
+        width={600}
+        footer={
+          <div className="appstore-install__footer">
+            <Button variant="ghost" size="md" onClick={() => setCustomModalOpen(false)} disabled={customSaving}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              loading={customSaving}
+              disabled={!canManage}
+              onClick={handleCustomSave}
+            >
+              {customTarget ? '保存修改' : '创建应用'}
+            </Button>
+          </div>
+        }
+      >
+        <CustomAppForm
+          name={customName}
+          setName={setCustomName}
+          description={customDescription}
+          setDescription={setCustomDescription}
+          category={customCategory}
+          setCategory={setCustomCategory}
+          image={customImage}
+          setImage={setCustomImage}
+          icon={customIcon}
+          setIcon={setCustomIcon}
+          tags={customTags}
+          setTags={setCustomTags}
+          customPorts={customPorts}
+          setCustomPorts={setCustomPorts}
+          customEnv={customEnv}
+          setCustomEnv={setCustomEnv}
+          customVolumes={customVolumes}
+          setCustomVolumes={setCustomVolumes}
+        />
+      </Modal>
+
       {/* 卸载确认框 */}
       <ConfirmDialog
         open={!!uninstallTarget}
@@ -708,6 +972,18 @@ export default function AppStorePage() {
         loading={uninstalling}
         onConfirm={handleUninstall}
         onCancel={() => setUninstallTarget(null)}
+      />
+
+      {/* 自定义应用删除确认框 */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="删除自定义应用"
+        message={`确定要删除自定义应用 "${deleteTarget?.name || ''}" 吗？删除后该应用定义将不可恢复。`}
+        confirmText="删除"
+        danger
+        loading={deleting}
+        onConfirm={handleCustomDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );
@@ -1054,6 +1330,316 @@ function InstallConfigPanel({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * 自定义应用新增/编辑表单：基础字段（名称/镜像/分类/图标/描述/标签）
+ * 以及可增删编辑的环境变量、端口映射、挂载卷列表。
+ * 端口/卷/env 的行编辑逻辑复用 appstore-install__ 样式。
+ * @param param0 表单字段与控制回调
+ */
+function CustomAppForm({
+  name,
+  setName,
+  description,
+  setDescription,
+  category,
+  setCategory,
+  image,
+  setImage,
+  icon,
+  setIcon,
+  tags,
+  setTags,
+  customPorts,
+  setCustomPorts,
+  customEnv,
+  setCustomEnv,
+  customVolumes,
+  setCustomVolumes,
+}: {
+  name: string;
+  setName: (v: string) => void;
+  description: string;
+  setDescription: (v: string) => void;
+  category: string;
+  setCategory: (v: string) => void;
+  image: string;
+  setImage: (v: string) => void;
+  icon: string;
+  setIcon: (v: string) => void;
+  tags: string;
+  setTags: (v: string) => void;
+  customPorts: Array<{ container: string; host: string; protocol: string }>;
+  setCustomPorts: React.Dispatch<
+    React.SetStateAction<Array<{ container: string; host: string; protocol: string }>>
+  >;
+  customEnv: Array<{ key: string; value: string; desc: string }>;
+  setCustomEnv: React.Dispatch<
+    React.SetStateAction<Array<{ key: string; value: string; desc: string }>>
+  >;
+  customVolumes: Array<{ source: string; target: string; readonly: boolean }>;
+  setCustomVolumes: React.Dispatch<
+    React.SetStateAction<Array<{ source: string; target: string; readonly: boolean }>>
+  >;
+}) {
+  /**
+   * 更新单条环境变量行
+   * @param index 行索引
+   * @param field 字段名
+   * @param value 字段新值
+   */
+  const updateEnvRow = (index: number, field: 'key' | 'value' | 'desc', value: string) => {
+    setCustomEnv((prev) => prev.map((e, i) => (i === index ? { ...e, [field]: value } : e)));
+  };
+
+  /**
+   * 删除单条环境变量行
+   * @param index 行索引
+   */
+  const removeEnvRow = (index: number) => {
+    setCustomEnv((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /**
+   * 增加一条空环境变量行
+   */
+  const addEnvRow = () => {
+    setCustomEnv((prev) => [...prev, { key: '', value: '', desc: '' }]);
+  };
+
+  /**
+   * 更新单条端口映射行
+   * @param index 行索引
+   * @param field 字段名
+   * @param value 字段新值
+   */
+  const updatePortRow = (
+    index: number,
+    field: 'container' | 'host' | 'protocol',
+    value: string
+  ) => {
+    setCustomPorts((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
+  };
+
+  /**
+   * 删除单条端口映射行
+   * @param index 行索引
+   */
+  const removePortRow = (index: number) => {
+    setCustomPorts((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /**
+   * 增加一条空端口映射行
+   */
+  const addPortRow = () => {
+    setCustomPorts((prev) => [...prev, { container: '', host: '', protocol: 'tcp' }]);
+  };
+
+  /**
+   * 更新单条挂载卷行
+   * @param index 行索引
+   * @param field 字段名
+   * @param value 字段新值
+   */
+  const updateVolumeRow = (
+    index: number,
+    field: 'source' | 'target' | 'readonly',
+    value: string | boolean
+  ) => {
+    setCustomVolumes((prev) => prev.map((v, i) => (i === index ? { ...v, [field]: value } : v)));
+  };
+
+  /**
+   * 删除单条挂载卷行
+   * @param index 行索引
+   */
+  const removeVolumeRow = (index: number) => {
+    setCustomVolumes((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /**
+   * 增加一条空挂载卷行
+   */
+  const addVolumeRow = () => {
+    setCustomVolumes((prev) => [...prev, { source: '', target: '', readonly: false }]);
+  };
+
+  return (
+    <div className="appstore-install">
+      <div className="appstore-install__tip">
+        定义一个镜像应用，保存后将出现在应用商店网格中，可像内置应用一样安装/卸载。
+      </div>
+
+      <div className="appstore-install__fields">
+        <Field label="应用名称" required>
+          <Input
+            value={name}
+            placeholder="如：MyApp"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
+        <Field label="镜像名称" required hint="如：nginx:latest">
+          <Input
+            value={image}
+            placeholder="镜像名:标签"
+            onChange={(e) => setImage(e.target.value)}
+          />
+        </Field>
+        <Field label="分类">
+          <Input
+            value={category}
+            placeholder="如：数据库 / 开发工具（留空为“自定义”）"
+            onChange={(e) => setCategory(e.target.value)}
+          />
+        </Field>
+        <Field label="图标" hint="使用一个 emoji 作为图标">
+          <Input value={icon} placeholder="📦" onChange={(e) => setIcon(e.target.value)} />
+        </Field>
+        <Field label="描述">
+          <Input
+            value={description}
+            placeholder="简要描述该应用"
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </Field>
+        <Field label="标签" hint="多个标签用空格或逗号分隔">
+          <Input
+            value={tags}
+            placeholder="web proxy http"
+            onChange={(e) => setTags(e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="appstore-install__sec">环境变量</div>
+      {customEnv.length === 0 ? (
+        <div className="appstore-install__none">暂无环境变量，可手动添加。</div>
+      ) : (
+        <div className="appstore-install__rows">
+          {customEnv.map((e, index) => (
+            <div className="appstore-install__row" key={index}>
+              <Field label="键" className="appstore-install__cell">
+                <Input
+                  value={e.key}
+                  placeholder="KEY"
+                  onChange={(ev) => updateEnvRow(index, 'key', ev.target.value)}
+                />
+              </Field>
+              <Field label="值" className="appstore-install__cell">
+                <Input
+                  value={e.value}
+                  placeholder="默认值"
+                  onChange={(ev) => updateEnvRow(index, 'value', ev.target.value)}
+                />
+              </Field>
+              <Field label="说明" className="appstore-install__cell">
+                <Input
+                  value={e.desc}
+                  placeholder="可空"
+                  onChange={(ev) => updateEnvRow(index, 'desc', ev.target.value)}
+                />
+              </Field>
+              <Button variant="ghost" size="sm" onClick={() => removeEnvRow(index)}>
+                删除
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="appstore-install__add">
+        <Button variant="secondary" size="sm" onClick={addEnvRow}>
+          + 添加环境变量
+        </Button>
+      </div>
+
+      <div className="appstore-install__sec">端口映射</div>
+      {customPorts.length === 0 ? (
+        <div className="appstore-install__none">暂无端口映射，可手动添加。</div>
+      ) : (
+        <div className="appstore-install__rows">
+          {customPorts.map((p, index) => (
+            <div className="appstore-install__row" key={index}>
+              <Field label="容器端口" className="appstore-install__cell">
+                <Input
+                  value={p.container}
+                  placeholder="8080"
+                  onChange={(ev) => updatePortRow(index, 'container', ev.target.value)}
+                />
+              </Field>
+              <Field label="宿主机端口" className="appstore-install__cell">
+                <Input
+                  value={p.host}
+                  placeholder="可空"
+                  onChange={(ev) => updatePortRow(index, 'host', ev.target.value)}
+                />
+              </Field>
+              <Field label="协议" className="appstore-install__cell appstore-install__cell--proto">
+                <Select
+                  value={p.protocol}
+                  onChange={(ev) => updatePortRow(index, 'protocol', ev.target.value)}
+                >
+                  <option value="tcp">tcp</option>
+                  <option value="udp">udp</option>
+                </Select>
+              </Field>
+              <Button variant="ghost" size="sm" onClick={() => removePortRow(index)}>
+                删除
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="appstore-install__add">
+        <Button variant="secondary" size="sm" onClick={addPortRow}>
+          + 添加端口
+        </Button>
+      </div>
+
+      <div className="appstore-install__sec">挂载卷</div>
+      {customVolumes.length === 0 ? (
+        <div className="appstore-install__none">暂无挂载卷，可手动添加。</div>
+      ) : (
+        <div className="appstore-install__rows">
+          {customVolumes.map((v, index) => (
+            <div className="appstore-install__row" key={index}>
+              <Field label="来源" className="appstore-install__cell">
+                <Input
+                  value={v.source}
+                  placeholder="宿主机路径或卷名"
+                  onChange={(ev) => updateVolumeRow(index, 'source', ev.target.value)}
+                />
+              </Field>
+              <Field label="容器路径" className="appstore-install__cell">
+                <Input
+                  value={v.target}
+                  placeholder="/data"
+                  onChange={(ev) => updateVolumeRow(index, 'target', ev.target.value)}
+                />
+              </Field>
+              <label className="appstore-install__check">
+                <input
+                  type="checkbox"
+                  checked={v.readonly}
+                  onChange={(ev) => updateVolumeRow(index, 'readonly', ev.target.checked)}
+                />
+                只读
+              </label>
+              <Button variant="ghost" size="sm" onClick={() => removeVolumeRow(index)}>
+                删除
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="appstore-install__add">
+        <Button variant="secondary" size="sm" onClick={addVolumeRow}>
+          + 添加挂载
+        </Button>
+      </div>
     </div>
   );
 }

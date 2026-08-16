@@ -73,6 +73,10 @@ export interface ContainerListItem {
   Status: string;
   /** 健康检查状态（none 表示未配置健康检查或 inspect 失败） */
   health?: 'starting' | 'healthy' | 'unhealthy' | 'none';
+  /** CPU 限制（NanoCpus 纳核，0 表示不限制） */
+  cpuLimit?: number;
+  /** 内存限制（字节，0 表示不限制） */
+  memLimit?: number;
   SizeRw?: number;
   SizeRootFs?: number;
 }
@@ -293,6 +297,8 @@ export interface AppStoreApp {
   volumes?: Array<{ container: string; host?: string }>;
   /** 标签 */
   tags?: string[];
+  /** 是否为用户自定义应用（id 以 custom- 前缀的为自定义，true 时前端显示编辑/删除入口） */
+  isCustom?: boolean;
 }
 
 /** 应用商店应用及其实时安装状态（/api/appstore 返回的单个应用项） */

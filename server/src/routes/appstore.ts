@@ -9,13 +9,16 @@ import Dockerode from 'dockerode';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getDockerClient } from '../docker/client';
 import {
   APP_LABEL_KEY,
   AppDefinition,
-  APP_CATALOG,
+  AppComposeDef,
+  CUSTOM_APP_PREFIX,
+  getAllApps,
   findApp,
   renderComposeTemplate,
 } from '../appstore/catalog';
@@ -147,7 +150,7 @@ async function getComposeRuntimeInfo(): Promise<
   const docker = await getDockerClient();
   const containers = await docker.listContainers({ all: true });
   const map = new Map<string, { running: boolean; version: string | null }>();
-  for (const app of APP_CATALOG) {
+  for (const app of getAllApps()) {
     if (!app.compose) continue;
     const project = `dm-${app.id}`;
     const related = containers.filter(
@@ -194,7 +197,7 @@ router.get(
     const composeInfo = await getComposeRuntimeInfo();
     // 并发计算每个应用的安装状态；compose 套件通过实例记录判断是否已安装
     const apps = await Promise.all(
-      APP_CATALOG.map(async (app) => {
+      getAllApps().map(async (app) => {
         if (app.compose) {
           const installed = !!getInstanceRow(app.id) || fs.existsSync(path.join(COMPOSE_ROOT, `dm-${app.id}`));
           const info = composeInfo.get(app.id);
@@ -229,7 +232,7 @@ router.get(
     const byLabel = await listContainersByAppLabel();
     const composeInfo = await getComposeRuntimeInfo();
     const statuses: Record<string, AppStatus> = {};
-    for (const app of APP_CATALOG) {
+    for (const app of getAllApps()) {
       if (app.compose) {
         const installed = !!getInstanceRow(app.id) || fs.existsSync(path.join(COMPOSE_ROOT, `dm-${app.id}`));
         const info = composeInfo.get(app.id);
@@ -243,6 +246,222 @@ router.get(
       statuses[app.id] = mapContainerToStatus(app, byLabel.get(app.id));
     }
     res.json({ statuses });
+  }),
+);
+
+// ============ 自定义应用 CRUD ============
+
+/**
+ * 从请求体提取可写入自定义应用的安全字段。
+ * ports/env/volumes/tags 仅接受数组，否则回退 undefined（不更新该字段）。
+ * @param body 请求体
+ * @param opts 是否仅提取可分片更新字段（编辑时沿用旧值，避免覆盖未传字段）
+ * @returns 可写入数据库的字段映射
+ */
+function pickCustomAppFields(body: any): {
+  name?: string;
+  description?: string;
+  category?: string;
+  image?: string;
+  icon?: string;
+  ports?: unknown[];
+  env?: unknown[];
+  volumes?: unknown[];
+  tags?: unknown[];
+  compose?: AppComposeDef | null;
+} {
+  const fields: {
+    name?: string;
+    description?: string;
+    category?: string;
+    image?: string;
+    icon?: string;
+    ports?: unknown[];
+    env?: unknown[];
+    volumes?: unknown[];
+    tags?: unknown[];
+    compose?: AppComposeDef | null;
+  } = {};
+  if (typeof body?.name === 'string') fields.name = body.name.trim();
+  if (typeof body?.description === 'string') fields.description = body.description;
+  if (typeof body?.category === 'string') fields.category = body.category;
+  if (typeof body?.image === 'string') fields.image = body.image.trim();
+  if (typeof body?.icon === 'string') fields.icon = body.icon;
+  if (Array.isArray(body?.ports)) fields.ports = body.ports;
+  if (Array.isArray(body?.env)) fields.env = body.env;
+  if (Array.isArray(body?.volumes)) fields.volumes = body.volumes;
+  if (Array.isArray(body?.tags)) fields.tags = body.tags;
+  // compose 可选：对象则透传，显式 null 表示置空（转为单容器应用）
+  if (body && 'compose' in body) {
+    fields.compose = body.compose && typeof body.compose === 'object' ? body.compose : null;
+  }
+  return fields;
+}
+
+/**
+ * 生成唯一的自定义应用 id（custom- 前缀 + 时间戳 + 随机串）
+ * 若与数据库已有 id 冲突则重新生成，直至唯一。
+ * @returns 唯一的应用 id
+ */
+function genCustomAppId(): string {
+  let id = '';
+  let exists = true;
+  while (exists) {
+    id = `${CUSTOM_APP_PREFIX}${Date.now().toString(36)}${crypto.randomBytes(4).toString('hex')}`;
+    const row = getDb()
+      .prepare('SELECT id FROM appstore_custom_apps WHERE id = ?')
+      .get(id);
+    exists = !!row;
+  }
+  return id;
+}
+
+/**
+ * POST /api/appstore/custom
+ * 新增自定义应用：组装字段写入 appstore_custom_apps 表并返回新建条目。
+ * body: { name, description?, category?, image, icon?, ports?, env?, volumes?, tags?, compose? }
+ */
+router.post(
+  '/custom',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const fields = pickCustomAppFields(req.body);
+    // name / image 为必填项
+    if (!fields.name) {
+      res.status(400).json({ error: '应用名称不能为空' });
+      return;
+    }
+    if (!fields.image) {
+      res.status(400).json({ error: '镜像名称不能为空' });
+      return;
+    }
+    const id = genCustomAppId();
+    const now = Date.now();
+    getDb()
+      .prepare(
+        `INSERT INTO appstore_custom_apps
+          (id, name, description, category, image, icon, ports, env, volumes, tags, compose, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        fields.name,
+        fields.description ?? '',
+        fields.category ?? '自定义',
+        fields.image,
+        fields.icon ?? '📦',
+        JSON.stringify(fields.ports ?? []),
+        JSON.stringify(fields.env ?? []),
+        JSON.stringify(fields.volumes ?? []),
+        JSON.stringify(fields.tags ?? []),
+        fields.compose ? JSON.stringify(fields.compose) : null,
+        now,
+        now,
+      );
+    const app = findApp(id);
+    logOperation(res.locals.username, '新增自定义应用', 'app', id, fields.name);
+    res.json({ app });
+  }),
+);
+
+/**
+ * PUT /api/appstore/custom/:id
+ * 编辑自定义应用：仅允许更新 custom- 前缀的应用（内置应用不可修改）。
+ * body: { name, description?, category?, image, icon?, ports?, env?, volumes?, tags?, compose? }
+ */
+router.put(
+  '/custom/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = req.params.id;
+    // 仅允许编辑自定义应用
+    if (!id || !id.startsWith(CUSTOM_APP_PREFIX)) {
+      res.status(400).json({ error: '内置应用不可修改' });
+      return;
+    }
+    const existing = getDb()
+      .prepare('SELECT id FROM appstore_custom_apps WHERE id = ?')
+      .get(id);
+    if (!existing) {
+      res.status(404).json({ error: '自定义应用不存在' });
+      return;
+    }
+    // 读取已有条目，作为未提供字段的默认值
+    const row = getDb()
+      .prepare(
+        'SELECT name, description, category, image, icon, ports, env, volumes, tags, compose FROM appstore_custom_apps WHERE id = ?',
+      )
+      .get(id) as any;
+    const fields = pickCustomAppFields(req.body);
+    // 编辑时若未提供 name/image，沿用数据库里已有的值
+    const name = fields.name ?? row?.name ?? '';
+    const image = fields.image ?? row?.image ?? '';
+    if (!name || !image) {
+      res.status(400).json({ error: '应用名称与镜像不能为空' });
+      return;
+    }
+    getDb()
+      .prepare(
+        `UPDATE appstore_custom_apps SET
+           name = ?, description = ?, category = ?, image = ?, icon = ?,
+           ports = ?, env = ?, volumes = ?, tags = ?, compose = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        name,
+        fields.description ?? row.description ?? '',
+        fields.category ?? row.category ?? '自定义',
+        image,
+        fields.icon ?? row.icon ?? '📦',
+        fields.ports !== undefined ? JSON.stringify(fields.ports) : row.ports,
+        fields.env !== undefined ? JSON.stringify(fields.env) : row.env,
+        fields.volumes !== undefined ? JSON.stringify(fields.volumes) : row.volumes,
+        fields.tags !== undefined ? JSON.stringify(fields.tags) : row.tags,
+        fields.compose === undefined
+          ? row.compose
+          : fields.compose
+            ? JSON.stringify(fields.compose)
+            : null,
+        Date.now(),
+        id,
+      );
+    const app = findApp(id);
+    logOperation(res.locals.username, '编辑自定义应用', 'app', id, name);
+    res.json({ app });
+  }),
+);
+
+/**
+ * DELETE /api/appstore/custom/:id
+ * 删除自定义应用：校验该应用未被安装（appstore_instances 表中无该 app_id），已安装则返回 400。
+ */
+router.delete(
+  '/custom/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = req.params.id;
+    if (!id || !id.startsWith(CUSTOM_APP_PREFIX)) {
+      res.status(400).json({ error: '内置应用不可删除' });
+      return;
+    }
+    const existing = getDb()
+      .prepare('SELECT id FROM appstore_custom_apps WHERE id = ?')
+      .get(id);
+    if (!existing) {
+      res.status(404).json({ error: '自定义应用不存在' });
+      return;
+    }
+    // 校验未被安装：appstore_instances 中有该 app_id 则禁止删除
+    const instance = getDb()
+      .prepare('SELECT id FROM appstore_instances WHERE app_id = ?')
+      .get(id);
+    if (instance) {
+      res.status(400).json({ error: '该应用已安装，请先卸载后再删除' });
+      return;
+    }
+    getDb().prepare('DELETE FROM appstore_custom_apps WHERE id = ?').run(id);
+    logOperation(res.locals.username, '删除自定义应用', 'app', id);
+    res.json({ ok: true });
   }),
 );
 
