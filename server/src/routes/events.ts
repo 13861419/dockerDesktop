@@ -14,8 +14,11 @@ import {
   persistedEventTypes,
   persistedEventActions,
   clearPersistedEvents,
+  countPersistedEventsByType,
+  countPersistedEventsByAction,
+  countEventsTimeline,
 } from '../docker/events';
-import { requireAdmin } from '../auth';
+import { requireAuth, requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
 
 const router = Router();
@@ -117,6 +120,40 @@ router.delete(
     clearPersistedEvents();
     logOperation(res.locals.username, '清空事件历史', '事件', '-');
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * GET /api/events/stats
+ * 获取持久化事件统计（按类型/动作分组 + 时间线聚合），供前端统计图表展示。
+ * @query bucket  聚合粒度：hour=1小时(3600000ms)、day=1天(86400000ms)，默认 hour
+ * @query from    起始毫秒时间戳（可选，默认 24 小时前）
+ * @query to      结束毫秒时间戳（可选，默认当前时间）
+ * @query type    事件类型过滤（可选）
+ * @query action  动作过滤（可选）
+ * @returns { byType: {type,count}[], byAction: {action,count}[], timeline: {bucket,count}[] }
+ */
+router.get(
+  '/stats',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const HOUR = 3_600_000;
+    const DAY = 86_400_000;
+    // bucket 粒度映射
+    const bucketMs = String(req.query.bucket) === 'day' ? DAY : HOUR;
+    const now = Date.now();
+    // 时间范围：未传 from/to 时默认近 24 小时
+    const from = Number(req.query.from) || now - 24 * HOUR;
+    const to = Number(req.query.to) || now;
+    // 可选过滤
+    const type = req.query.type ? String(req.query.type) : undefined;
+    const action = req.query.action ? String(req.query.action) : undefined;
+
+    const byType = countPersistedEventsByType(from, to, type, action);
+    const byAction = countPersistedEventsByAction(from, to, type, action);
+    const timeline = countEventsTimeline(bucketMs, from, to, type, action);
+
+    res.json({ byType, byAction, timeline });
   }),
 );
 

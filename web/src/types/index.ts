@@ -476,3 +476,48 @@ export interface RedisInfo {
   keyspace?: string;
   [key: string]: any;
 }
+
+/** ===================== 健康体检 ===================== */
+
+/** 健康级别：healthy 健康 / warning 警告 / danger 危险 */
+export type HealthLevel = 'healthy' | 'warning' | 'danger';
+
+/** 体检条目（/api/health-check 返回的 items 项） */
+export interface HealthItem {
+  /** 条目唯一标识（如 engine / cpu / disk / danglingImages 等） */
+  key: string;
+  /** 条目标题 */
+  title: string;
+  /** 健康级别 */
+  level: HealthLevel;
+  /** 概要描述 */
+  message: string;
+  /** 更详细的说明（可选） */
+  detail?: string;
+}
+
+/** 健康体检汇总统计（/api/health-check 返回的 summary） */
+export interface HealthCheckSummary {
+  /** 容器总数 */
+  containers: number;
+  /** 镜像总数 */
+  images: number;
+  /** 数据卷总数 */
+  volumes: number;
+  /** 网络总数 */
+  networks: number;
+  /** 可回收空间（字节） */
+  reclaimable: number;
+}
+
+/** 健康体检结果（/api/health-check 返回） */
+export interface HealthCheck {
+  /** 健康评分（0-100） */
+  score: number;
+  /** 总体健康级别 */
+  level: HealthLevel;
+  /** 汇总统计 */
+  summary: HealthCheckSummary;
+  /** 逐项体检结果 */
+  items: HealthItem[];
+}

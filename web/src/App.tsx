@@ -43,6 +43,7 @@ const BackupsPage = lazy(() => import('./pages/backups'));
 const FirewallPage = lazy(() => import('./pages/firewall'));
 const TemplatesPage = lazy(() => import('./pages/templates'));
 const NotificationsPage = lazy(() => import('./pages/notifications'));
+const HealthPage = lazy(() => import('./pages/health'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -78,6 +79,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <OverviewPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/health"
+                element={
+                  <PageSuspense>
+                    <HealthPage />
                   </PageSuspense>
                 }
               />

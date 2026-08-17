@@ -278,6 +278,101 @@ export function clearPersistedEvents(): void {
 }
 
 /**
+ * 按类型统计时间范围内的持久化事件数量（Top 排名用，数量倒序）
+ * @param from 起始毫秒时间戳（含）
+ * @param to 结束毫秒时间戳（含）
+ * @param type 可选：事件类型过滤
+ * @param action 可选：动作过滤
+ * @returns { type, count }[]，按 count 降序
+ */
+export function countPersistedEventsByType(
+  from: number,
+  to: number,
+  type?: string,
+  action?: string,
+): Array<{ type: string; count: number }> {
+  const where: string[] = ['time >= ? AND time <= ?'];
+  const params: any[] = [from, to];
+  if (type) {
+    where.push('type = ?');
+    params.push(type);
+  }
+  if (action) {
+    where.push('action = ?');
+    params.push(action);
+  }
+  const sql = `SELECT type, COUNT(*) c FROM docker_events WHERE ${where.join(
+    ' AND ',
+  )} GROUP BY type ORDER BY c DESC`;
+  const rows = getDb().prepare(sql).all(...params) as Array<{ type: string; c: number }>;
+  return rows.map((r) => ({ type: r.type, count: r.c }));
+}
+
+/**
+ * 按动作统计时间范围内的持久化事件数量（Top 排名用，数量倒序）
+ * @param from 起始毫秒时间戳（含）
+ * @param to 结束毫秒时间戳（含）
+ * @param type 可选：事件类型过滤
+ * @param action 可选：动作过滤
+ * @returns { action, count }[]，按 count 降序
+ */
+export function countPersistedEventsByAction(
+  from: number,
+  to: number,
+  type?: string,
+  action?: string,
+): Array<{ action: string; count: number }> {
+  const where: string[] = ['time >= ? AND time <= ?'];
+  const params: any[] = [from, to];
+  if (type) {
+    where.push('type = ?');
+    params.push(type);
+  }
+  if (action) {
+    where.push('action = ?');
+    params.push(action);
+  }
+  const sql = `SELECT action, COUNT(*) c FROM docker_events WHERE ${where.join(
+    ' AND ',
+  )} GROUP BY action ORDER BY c DESC`;
+  const rows = getDb().prepare(sql).all(...params) as Array<{ action: string; c: number }>;
+  return rows.map((r) => ({ action: r.action, count: r.c }));
+}
+
+/**
+ * 按时间桶聚合统计时间范围内的持久化事件数量（用于折线图时间线）
+ * @param bucketMs 桶大小（毫秒，如 3600000=1 小时、86400000=1 天）
+ * @param from 起始毫秒时间戳（含）
+ * @param to 结束毫秒时间戳（含）
+ * @param type 可选：事件类型过滤
+ * @param action 可选：动作过滤
+ * @returns { bucket, count }[]，bucket 为毫秒时间桶序号（time / bucketMs 下取整），按 bucket 升序
+ */
+export function countEventsTimeline(
+  bucketMs: number,
+  from: number,
+  to: number,
+  type?: string,
+  action?: string,
+): Array<{ bucket: number; count: number }> {
+  const where: string[] = ['time >= ? AND time <= ?'];
+  const params: any[] = [from, to, bucketMs];
+  if (type) {
+    where.push('type = ?');
+    params.push(type);
+  }
+  if (action) {
+    where.push('action = ?');
+    params.push(action);
+  }
+  const sql = `SELECT (time / ?) as bucket, COUNT(*) c FROM docker_events WHERE ${where.join(
+    ' AND ',
+  )} GROUP BY bucket ORDER BY bucket`;
+  const rows = getDb().prepare(sql).all(...params) as Array<{ bucket: number; c: number }>;
+  return rows.map((r) => ({ bucket: r.bucket, count: r.c }));
+}
+
+/**
  * 启动 Docker 事件监听器（幂等）。
  * 持续监听事件流，断线自动重连。
  */

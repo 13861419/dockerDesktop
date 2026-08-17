@@ -164,4 +164,201 @@
   text-align: center;
 }
 
+/* ===== 事件统计区块 ===== */
+.events-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 统计区块头部：标题 + 时间范围/粒度控制 */
+.events-stats__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.events-stats__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.events-stats__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.events-stats__ranges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.events-stats__bucket {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* 统计主体：左侧折线图 + 右侧类型/动作 */
+.events-stats__body {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .events-stats__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.events-stats__chart {
+  min-width: 0;
+}
+
+.events-stats__total {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.events-stats__total strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.events-stats__side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.events-stats__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.events-stats__empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+/* 按类型分布：色块 + 名称 + 进度条 + 百分比 + 数量 */
+.events-stats__types {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.events-stats__type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.events-stats__type-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.events-stats__type-name {
+  width: 70px;
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+
+.events-stats__type-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-muted, #eef0f5);
+  overflow: hidden;
+}
+
+.events-stats__type-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.events-stats__type-pct {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.events-stats__type-count {
+  width: 44px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Top 动作排名：横向进度条列表 */
+.events-stats__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.events-stats__action {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.events-stats__action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.events-stats__action-name {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+}
+
+.events-stats__action-count {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  flex-shrink: 0;
+}
+
+.events-stats__action-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-muted, #eef0f5);
+  overflow: hidden;
+}
+
+.events-stats__action-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: #6366f1;
+  transition: width 0.3s ease;
+}
+
 /* 暗色模式下徽标自动适配（由 less 变量主题决定，这里保持通用） */

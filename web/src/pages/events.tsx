@@ -13,6 +13,7 @@ import Empty from '../components/Empty';
 import Button from '../components/Button';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Select } from '../components/Form';
+import LineChart from '../components/LineChart';
 import './events.less';
 
 /** 单个 Docker 事件 */
@@ -29,6 +30,36 @@ interface DockerEvent {
 interface EventListResponse {
   events: DockerEvent[];
 }
+
+/** 事件统计的单个计数项（按类型/动作） */
+interface CountItem {
+  type?: string;
+  action?: string;
+  count: number;
+}
+
+/** 事件统计时间线单点 */
+interface TimelinePoint {
+  bucket: number;
+  count: number;
+}
+
+/** /api/events/stats 响应 */
+interface EventStatsResponse {
+  byType: CountItem[];
+  byAction: CountItem[];
+  timeline: TimelinePoint[];
+}
+
+/** 统计时间范围预设 */
+type RangeKey = '24h' | '7d' | '30d';
+
+/** 时间范围预设映射：ms 偏移 */
+const RANGE_PRESETS: Record<RangeKey, number> = {
+  '24h': 24 * 3600 * 1000,
+  '7d': 7 * 24 * 3600 * 1000,
+  '30d': 30 * 24 * 3600 * 1000,
+};
 
 /** 浏览器 WebSocket 的兼容别名（Node 环境下无此类型，避免类型冲突） */
 declare const WebSocket: any;
@@ -61,6 +92,32 @@ function badgeClass(type: string): string {
     default: return 'events-badge--tombstone';
   }
 }
+
+/**
+ * 将时间桶毫秒值格式化为折线图的 X 轴标签
+ * bucket < 1 天粒度时显示 HH:mm，否则显示 MM-DD
+ * @param bucket 桶起始毫秒时间戳
+ * @param isDayBucket 是否按天聚合
+ * @returns 标签文本
+ */
+function formatBucketLabel(bucket: number, isDayBucket: boolean): string {
+  const d = new Date(bucket);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (isDayBucket) {
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 类型徽标颜色映射（用于统计图例/色块，与徽标类保持一致） */
+const TYPE_COLORS: Record<string, string> = {
+  container: '#0369a1',
+  image: '#6d28d9',
+  volume: '#b45309',
+  network: '#15803d',
+  plugin: '#be185d',
+  daemon: '#b91c1c',
+};
 
 /**
  * Docker 事件流页面组件
@@ -96,6 +153,15 @@ export default function EventsPage() {
   const [hasMore, setHasMore] = useState(false);
   // 清空历史确认
   const [clearTarget, setClearTarget] = useState(false);
+
+  // 事件统计：时间范围预设（近24小时/近7天/近30天）
+  const [rangeKey, setRangeKey] = useState<RangeKey>('24h');
+  // 事件统计：聚合粒度（hour=小时 / day=天）
+  const [statsBucket, setStatsBucket] = useState<'hour' | 'day'>('hour');
+  // 事件统计数据
+  const [stats, setStats] = useState<EventStatsResponse | null>(null);
+  // 事件统计加载状态
+  const [statsLoading, setStatsLoading] = useState(false);
 
   // 事件最大值保留（避免无限增长）
   const MAX_EVENTS = 300;
@@ -135,6 +201,35 @@ export default function EventsPage() {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * 拉取事件统计（按时间范围预设 + 类型/动作筛选 + 聚合粒度）
+   */
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const from = Date.now() - RANGE_PRESETS[rangeKey];
+      const to = Date.now();
+      const params: Record<string, any> = {
+        bucket: statsBucket,
+        from,
+        to,
+      };
+      if (typeFilter !== 'all') params.type = typeFilter;
+      if (actionFilter !== 'all') params.action = actionFilter;
+      const data = await get<EventStatsResponse>('/api/events/stats', params);
+      setStats(data || { byType: [], byAction: [], timeline: [] });
+    } catch (e: any) {
+      showToast(e?.message || '加载事件统计失败', 'error');
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [rangeKey, statsBucket, typeFilter, actionFilter, showToast]);
+
+  // 时间范围 / 聚合粒度 / 类型 / 动作变化时重新拉取统计
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   /**
    * 建立（或重建）WebSocket 实时连接，断线自动重连
@@ -229,6 +324,30 @@ export default function EventsPage() {
           (actionFilter === 'all' || e.action === actionFilter),
       ),
     [events, typeFilter, actionFilter],
+  );
+
+  // 统计：折线图数据（按 bucket 有序生成标签与计数序列）
+  const chartData = useMemo(() => {
+    const pts = stats?.timeline || [];
+    const labels = pts.map((p) =>
+      formatBucketLabel(p.bucket * (statsBucket === 'day' ? 86_400_000 : 3_600_000), statsBucket === 'day'),
+    );
+    const data = pts.map((p) => p.count);
+    return { labels, data, total: data.reduce((s, v) => s + v, 0) };
+  }, [stats, statsBucket]);
+
+  // 统计：按类型总计（供左侧占比展示）
+  const typeTotal = useMemo(
+    () => (stats?.byType || []).reduce((s, item) => s + item.count, 0),
+    [stats],
+  );
+
+  // 统计：Top 动作排名（取前 8 名）
+  const topActions = useMemo(() => (stats?.byAction || []).slice(0, 8), [stats]);
+  // Top 动作最大值（用于进度条宽度归一化）
+  const topActionMax = useMemo(
+    () => (topActions.length ? Math.max(...topActions.map((a) => a.count)) : 1),
+    [topActions],
   );
 
   /**
@@ -346,6 +465,119 @@ export default function EventsPage() {
         <h1 className="page__title">事件流</h1>
         <p className="page__desc">实时查看 Docker 引擎事件（容器 / 镜像 / 数据卷 / 网络 等）</p>
       </div>
+
+      <Card>
+        <div className="events-stats">
+          <div className="events-stats__head">
+            <div className="events-stats__title">事件统计</div>
+            <div className="events-stats__controls">
+              <div className="events-stats__ranges">
+                {(Object.keys(RANGE_PRESETS) as RangeKey[]).map((key) => (
+                  <Button
+                    key={key}
+                    variant={rangeKey === key ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setRangeKey(key)}
+                  >
+                    {key === '24h' ? '近24小时' : key === '7d' ? '近7天' : '近30天'}
+                  </Button>
+                ))}
+              </div>
+              <div className="events-stats__bucket">
+                <span>粒度</span>
+                <Select
+                  value={statsBucket}
+                  onChange={(e) => setStatsBucket(e.target.value as 'hour' | 'day')}
+                  style={{ minWidth: 90 }}
+                >
+                  <option value="hour">按小时</option>
+                  <option value="day">按天</option>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="events-stats__body">
+            <div className="events-stats__chart">
+              {statsLoading && !stats ? (
+                <div className="empty" style={{ padding: '40px 0' }}>统计加载中...</div>
+              ) : chartData.data.length === 0 ? (
+                <div className="empty" style={{ padding: '40px 0' }}>当前时间范围内暂无统计</div>
+              ) : (
+                <LineChart
+                  series={[{ name: '事件数', color: '#6366f1', data: chartData.data }]}
+                  labels={chartData.labels}
+                  height={180}
+                  unit="条"
+                />
+              )}
+              <div className="events-stats__total">
+                合计事件数：<strong>{chartData.total}</strong> 条
+              </div>
+            </div>
+
+            <div className="events-stats__side">
+              <div className="events-stats__section">
+                <div className="events-stats__section-title">按类型分布</div>
+                {typeTotal === 0 ? (
+                  <div className="events-stats__empty">暂无数据</div>
+                ) : (
+                  <div className="events-stats__types">
+                    {(stats?.byType || []).map((item) => {
+                      const name = item.type || 'other';
+                      const pct = Math.round((item.count / typeTotal) * 100);
+                      return (
+                        <div className="events-stats__type" key={name}>
+                          <span
+                            className="events-stats__type-dot"
+                            style={{ background: TYPE_COLORS[name] || '#6b7280' }}
+                          />
+                          <span className="events-stats__type-name">{name}</span>
+                          <span className="events-stats__type-bar">
+                            <span
+                              className="events-stats__type-bar-fill"
+                              style={{
+                                width: `${pct}%`,
+                                background: TYPE_COLORS[name] || '#6b7280',
+                              }}
+                            />
+                          </span>
+                          <span className="events-stats__type-pct">{pct}%</span>
+                          <span className="events-stats__type-count">{item.count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="events-stats__section">
+                <div className="events-stats__section-title">Top 动作</div>
+                {topActions.length === 0 ? (
+                  <div className="events-stats__empty">暂无数据</div>
+                ) : (
+                  <div className="events-stats__actions">
+                    {topActions.map((item) => (
+                      <div className="events-stats__action" key={item.action}>
+                        <div className="events-stats__action-row">
+                          <span className="events-stats__action-name">{item.action || 'unknown'}</span>
+                          <span className="events-stats__action-count">{item.count}</span>
+                        </div>
+                        <div className="events-stats__action-bar">
+                          <span
+                            className="events-stats__action-bar-fill"
+                            style={{ width: `${Math.round((item.count / topActionMax) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <div className="events-toolbar">

@@ -45,6 +45,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/health',
+    label: '健康体检',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 3c4 2.5 6 6 6 9a6 6 0 0 1-12 0c0-3 2-6.5 6-9Z" />
+        <path d="M15 12h-2l-1 2-1-4-1 2H9" />
+      </svg>
+    ),
+  },
+  {
     to: '/containers',
     label: '容器',
     icon: (

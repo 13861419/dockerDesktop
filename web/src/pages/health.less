@@ -1,0 +1,208 @@
+/* 健康体检页样式 */
+.health-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 0;
+    color: var(--color-error);
+  }
+}
+
+/* 健康级别配色 */
+.hl--healthy {
+  --hl-color: #22c55e;
+  --hl-bg: rgba(34, 197, 94, 0.12);
+}
+
+.hl--warning {
+  --hl-color: #f59e0b;
+  --hl-bg: rgba(245, 158, 11, 0.12);
+}
+
+.hl--danger {
+  --hl-color: #ef4444;
+  --hl-bg: rgba(239, 68, 68, 0.12);
+}
+
+/* 顶部英雄区：等级徽标 + 总分 */
+.health-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px;
+  border-radius: var(--radius-md, 12px);
+  background: var(--primary-soft, #eef2ff);
+  border: 1px solid var(--border-color, #e5e7eb);
+
+  &__badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    color: var(--hl-color, #22c55e);
+    background: var(--hl-bg, rgba(34, 197, 94, 0.12));
+    box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.03);
+  }
+
+  &__level {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__score {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__score-num {
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+  }
+
+  &__score-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+}
+
+/* 汇总数据条 */
+.health__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.health__stat {
+  padding: 18px 16px;
+  border-radius: var(--radius-md, 12px);
+  background: var(--primary-soft, #eef2ff);
+  border: 1px solid var(--border-color, #e5e7eb);
+
+  &-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--primary, #6366f1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &-label {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+}
+
+/* 体检条目列表 */
+.health__items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.health__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-left: 3px solid var(--hl-color, #22c55e);
+  background: var(--card-bg, #fff);
+
+  &-icon {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: var(--hl-color, #22c55e);
+    background: var(--hl-bg, rgba(34, 197, 94, 0.12));
+  }
+
+  &-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &-message {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  &-detail {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-tertiary, #9ca3af);
+    line-height: 1.5;
+  }
+
+  &-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &-tag {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--hl-color, #22c55e);
+    background: var(--hl-bg, rgba(34, 197, 94, 0.12));
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+
+  &-clean {
+    font-size: 12px;
+    color: var(--primary, #6366f1);
+    background: transparent;
+    border: 1px solid var(--primary, #6366f1);
+    border-radius: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: var(--primary, #6366f1);
+      color: #fff;
+    }
+  }
+}
