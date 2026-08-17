@@ -43,6 +43,7 @@ const BackupsPage = lazy(() => import('./pages/backups'));
 const FirewallPage = lazy(() => import('./pages/firewall'));
 const TemplatesPage = lazy(() => import('./pages/templates'));
 const NotificationsPage = lazy(() => import('./pages/notifications'));
+const SwarmPage = lazy(() => import('./pages/swarm'));
 const HealthPage = lazy(() => import('./pages/health'));
 
 /**
@@ -308,6 +309,16 @@ export default function App() {
                   <PageSuspense>
                     <RequireAdmin>
                       <NotificationsPage />
+                    </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/swarm"
+                element={
+                  <PageSuspense>
+                    <RequireAdmin>
+                      <SwarmPage />
                     </RequireAdmin>
                   </PageSuspense>
                 }

@@ -218,6 +218,18 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/swarm',
+    label: 'Swarm',
+    adminOnly: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 2 4 6v6l8 4 8-4V6z" />
+        <path d="M4 12v6l8 4 8-4v-6" />
+        <path d="M12 8l-2-1M12 8l2-1" />
+      </svg>
+    ),
+  },
+  {
     to: '/backups',
     label: '备份恢复',
     icon: (

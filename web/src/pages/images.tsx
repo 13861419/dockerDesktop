@@ -14,7 +14,7 @@ import { Field, Input, Select } from '../components/Form';
 import { PageLoading, SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
-import { getToken, isAdmin } from '../api/auth';
+import { getToken, isAdmin, canOperate } from '../api/auth';
 import { ImageItem } from '../types';
 import './images.less';
 
@@ -171,6 +171,18 @@ export default function ImagesPage() {
   const [pushing, setPushing] = useState(false);
   // 导出进行中的镜像名（用于行内按钮 loading 显示）
   const [exportingName, setExportingName] = useState('');
+  // 待迁移的镜像（用于打开迁移弹窗）
+  const [transferTarget, setTransferTarget] = useState<ImageItem | null>(null);
+  // 迁移弹窗中的引擎列表（来自 /api/engines）
+  const [engineList, setEngineList] = useState<{ id: string; name: string; isCurrent: boolean }[]>([]);
+  // 迁移弹窗中的源引擎 id
+  const [transferSourceId, setTransferSourceId] = useState('');
+  // 迁移弹窗中的目标引擎 id
+  const [transferTargetId, setTransferTargetId] = useState('');
+  // 迁移弹窗中的目标标签（默认沿用源镜像标签）
+  const [transferTag, setTransferTag] = useState('');
+  // 迁移是否进行中
+  const [transferring, setTransferring] = useState(false);
   // 搜索镜像弹窗是否打开（区别于顶部本地过滤搜索框）
   const [searchOpen, setSearchOpen] = useState(false);
   // 搜索弹窗中的关键字输入
@@ -455,6 +467,81 @@ export default function ImagesPage() {
     },
     [showToast],
   );
+
+  /**
+   * 打开跨引擎迁移弹窗：拉取引擎列表，默认源引擎为当前引擎，目标引擎选第一个其他引擎，
+   * 目标标签默认沿用源镜像标签
+   * @param img 待迁移的镜像
+   */
+  const openTransfer = useCallback(
+    async (img: ImageItem) => {
+      if (!canOperate()) {
+        showToast('仅运维或管理员可迁移镜像', 'error');
+        return;
+      }
+      const name = img.RepoTags?.[0] || img.Id;
+      // 从镜像名中解析出标签（xxx:tag 的 tag 部分，无则默认为 latest）
+      const base = name.split('@')[0];
+      const idx = base.lastIndexOf(':');
+      const slash = base.lastIndexOf('/');
+      const defaultTag = idx > -1 && idx > slash ? base.slice(idx + 1) : 'latest';
+      setTransferTag(defaultTag);
+      setTransferTarget(img);
+      try {
+        const data = await get<{ engines: { id: string; name: string; isCurrent: boolean }[] }>('/api/engines');
+        const list = data?.engines || [];
+        setEngineList(list);
+        // 默认源引擎为当前引擎，目标引擎为第一个非当前引擎
+        const cur = list.find((e) => e.isCurrent);
+        setTransferSourceId(cur?.id || list[0]?.id || '');
+        const others = list.filter((e) => e.id !== (cur?.id || list[0]?.id));
+        setTransferTargetId(others[0]?.id || '');
+      } catch (e: any) {
+        showToast(e?.message || '加载引擎列表失败', 'error');
+      }
+    },
+    [showToast],
+  );
+
+  /**
+   * 提交跨引擎迁移请求
+   */
+  const handleTransfer = useCallback(async () => {
+    if (!transferTarget) return;
+    if (!canOperate()) {
+      showToast('仅运维或管理员可迁移镜像', 'error');
+      setTransferTarget(null);
+      return;
+    }
+    if (!transferSourceId || !transferTargetId) {
+      showToast('请选择源引擎与目标引擎', 'error');
+      return;
+    }
+    if (transferSourceId === transferTargetId) {
+      showToast('源引擎与目标引擎不能相同', 'error');
+      return;
+    }
+    const name = transferTarget.RepoTags?.[0] || transferTarget.Id;
+    setTransferring(true);
+    try {
+      const data = await post<{ ok: boolean; loaded?: string; error?: string }>('/api/transfer/images', {
+        image: name,
+        sourceEngineId: transferSourceId,
+        targetEngineId: transferTargetId,
+        tag: transferTag.trim() || undefined,
+      });
+      if (!data?.ok) {
+        throw new Error(data?.error || '镜像迁移失败');
+      }
+      showToast(`镜像迁移成功（${data?.loaded || name}）`);
+      setTransferTarget(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '镜像迁移失败', 'error');
+    } finally {
+      setTransferring(false);
+    }
+  }, [transferTarget, transferSourceId, transferTargetId, transferTag, showToast]);
 
   /**
    * 提交镜像导入请求（上传 tar 文件到后端 docker load）
@@ -790,6 +877,14 @@ export default function ImagesPage() {
                       >
                         导出
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={!canOperate()}
+                        onClick={() => openTransfer(img)}
+                      >
+                        迁移
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => openTag(img)} disabled={!canManage}>
                         打标签
                       </Button>
@@ -1109,6 +1204,74 @@ export default function ImagesPage() {
                 value={pushPassword}
                 onChange={(e) => setPushPassword(e.target.value)}
                 placeholder="密码"
+              />
+            </Field>
+          </>
+        )}
+      </Modal>
+
+      {/* 跨引擎迁移镜像弹窗 */}
+      <Modal
+        open={!!transferTarget}
+        title={transferTarget ? `迁移镜像` : '迁移镜像'}
+        onClose={() => !transferring && setTransferTarget(null)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setTransferTarget(null)}
+              disabled={transferring}
+            >
+              取消
+            </Button>
+            <Button onClick={handleTransfer} loading={transferring} disabled={!canOperate()}>
+              迁移
+            </Button>
+          </>
+        }
+      >
+        {transferTarget && (
+          <>
+            <Field label="原镜像" hint={displayName(transferTarget)} />
+            <Field label="源引擎" required hint="当前镜像所在引擎">
+              <Select
+                value={transferSourceId}
+                onChange={(e) => setTransferSourceId(e.target.value)}
+              >
+                <option value="" disabled>
+                  请选择源引擎
+                </option>
+                {engineList.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                    {e.isCurrent ? '（当前）' : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="目标引擎" required hint="镜像将被迁移到此引擎">
+              <Select
+                value={transferTargetId}
+                onChange={(e) => setTransferTargetId(e.target.value)}
+              >
+                <option value="" disabled>
+                  请选择目标引擎
+                </option>
+                {engineList
+                  .filter((e) => e.id !== transferSourceId)
+                  .map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                      {e.isCurrent ? '（当前）' : ''}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            <Field label="目标标签" hint="留空默认沿用源镜像标签">
+              <Input
+                value={transferTag}
+                onChange={(e) => setTransferTag(e.target.value)}
+                placeholder="latest"
               />
             </Field>
           </>

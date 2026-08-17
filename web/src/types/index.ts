@@ -521,3 +521,57 @@ export interface HealthCheck {
   /** 逐项体检结果 */
   items: HealthItem[];
 }
+
+/** Swarm 集群状态（/api/swarm/status） */
+export interface SwarmStatus {
+  /** 是否已启用 swarm（LocalNodeState === 'active'） */
+  enabled: boolean;
+  /** 节点本地状态：inactive/pending/active/error/locked */
+  localNodeState: string;
+  /** 本节点是否为 swarm 管理器 */
+  controlAvailable: boolean;
+  /** 集群节点数 */
+  nodes?: number;
+  /** 管理器数量 */
+  managers?: number;
+  /** 本节点 ID */
+  nodeID?: string;
+}
+
+/** Swarm 服务列项（/api/swarm/services） */
+export interface SwarmServiceItem {
+  /** 服务 id */
+  id: string;
+  /** 服务名 */
+  name: string;
+  /** 镜像 */
+  image: string;
+  /** 模式：global/replicated */
+  mode: string;
+  /** 当前运行副本数 */
+  runningTasks: number;
+  /** 期望副本数（replicated 模式） */
+  desired: number;
+  /** 更新时间（毫秒） */
+  updatedAt: number;
+}
+
+/** 镜像跨引擎迁移请求（POST /api/transfer/images） */
+export interface TransferImageRequest {
+  /** 源镜像引用 */
+  image: string;
+  /** 源引擎 id */
+  sourceEngineId: string;
+  /** 目标引擎 id */
+  targetEngineId: string;
+  /** 目标 tag（可选，默认沿用源） */
+  tag?: string;
+}
+
+/** 镜像跨引擎迁移结果 */
+export interface TransferImageResult {
+  ok: boolean;
+  /** 目标引擎中加载的镜像信息 */
+  loaded?: string;
+  error?: string;
+}

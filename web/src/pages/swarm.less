@@ -1,0 +1,168 @@
+/**
+ * Swarm 服务管理页面样式
+ */
+.swarm-page {
+  padding: 20px;
+}
+
+.swarm-page__title {
+  margin: 0 0 16px;
+  font-size: 20px;
+  color: var(--text-primary);
+}
+
+/* ---- Swarm 状态条 ---- */
+.swarm-status {
+  margin-bottom: 16px;
+}
+
+.swarm-status__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: center;
+}
+
+.swarm-status__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.swarm-status__item--right {
+  margin-left: auto;
+  flex-direction: row;
+}
+
+.swarm-status__label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.swarm-status__value {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.swarm-status__value--mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.swarm-status__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.swarm-status__badge--on {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.swarm-status__badge--off {
+  color: var(--text-secondary);
+  background: rgba(128, 128, 128, 0.14);
+}
+
+.swarm-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ---- 服务列表（复用 data-table 基础样式） ---- */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-body);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.col-actions {
+  width: 150px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.col-name {
+  max-width: 320px;
+}
+
+.name-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.col-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 运行副本数 */
+.swarm-task {
+  display: inline-block;
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.swarm-task--partial {
+  background: rgba(249, 115, 22, 0.14);
+  color: #f97316;
+}
+
+.swarm-page__time {
+  color: var(--text-secondary);
+}
+
+.swarm-page__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.swarm-modal__footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}

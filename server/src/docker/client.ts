@@ -137,6 +137,18 @@ export async function testEngineEndpoint(endpoint: string): Promise<boolean> {
 }
 
 /**
+ * 按指定端点创建 dockerode 客户端实例（不参与缓存、不影响当前引擎）
+ *
+ * 供跨引擎操作（如镜像迁移）使用：可针对源/目标引擎分别建立独立的
+ * dockerode 实例，而不会改动 getDockerClient() 对"当前引擎"的缓存逻辑。
+ * @param endpoint 目标引擎端点（npipe:// / unix:// / tcp:// 或 socket 路径）
+ * @returns 指向该端点的 dockerode 实例
+ */
+export function getDockerClientForEndpoint(endpoint: string): Dockerode {
+  return new Dockerode(resolveEndpoint(endpoint));
+}
+
+/**
  * 获取 dockerode 客户端实例
  *
  * 若配置了"当前引擎"，则直连该引擎端点；否则回退到环境变量 DOCKER_HOST
