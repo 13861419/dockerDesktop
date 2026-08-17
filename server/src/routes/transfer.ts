@@ -169,4 +169,95 @@ router.post(
   }),
 );
 
+/**
+ * POST /api/transfer/batch
+ * 将指定镜像从源引擎批量分发到多个目标引擎（逐个 save→load 流式直通）。
+ *
+ * 主体与单镜像迁移一致，但对目标引擎列表逐个执行；单个目标失败不影响其它目标，
+ * 每个目标单独产出成功/失败结果。
+ *
+ * @body image           源引擎上的镜像引用（如 nginx:latest）
+ * @body sourceEngineId  源引擎 id
+ * @body targetEngineIds 目标引擎 id 数组
+ * @body tag             （可选）到各目标引擎后的统一标签；未提供时沿用源镜像标签
+ */
+router.post(
+  '/batch',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { image, sourceEngineId, targetEngineIds, tag } = req.body || {};
+
+    // 参数校验
+    if (!image || typeof image !== 'string') {
+      return res.status(400).json({ error: '缺少镜像引用 image' });
+    }
+    if (!sourceEngineId || typeof sourceEngineId !== 'string') {
+      return res.status(400).json({ error: '缺少源引擎 sourceEngineId' });
+    }
+    const targets: string[] = Array.isArray(targetEngineIds)
+      ? (targetEngineIds as unknown[]).filter(
+          (t): t is string => typeof t === 'string' && t.length > 0 && t !== (sourceEngineId as string),
+        )
+      : [];
+    if (targets.length === 0) {
+      return res.status(400).json({ error: '请至少选择一个与源引擎不同的目标引擎' });
+    }
+
+    const d = getDb();
+    const srcRow = d
+      .prepare('SELECT id, name, endpoint FROM docker_engines WHERE id = ?')
+      .get(sourceEngineId) as EngineEndpointRow | undefined;
+    if (!srcRow) {
+      return res.status(400).json({ error: '源引擎不存在' });
+    }
+
+    // 准备目标引擎列表（跳过不存在或等于源引擎的项）
+    const targetRows: EngineEndpointRow[] = [];
+    for (const id of targets) {
+      const row = d
+        .prepare('SELECT id, name, endpoint FROM docker_engines WHERE id = ?')
+        .get(id) as EngineEndpointRow | undefined;
+      if (row) targetRows.push(row);
+    }
+    if (targetRows.length === 0) {
+      return res.status(400).json({ error: '目标引擎均不存在或无效' });
+    }
+
+    const srcDocker = getDockerClientForEndpoint(srcRow.endpoint);
+
+    // 逐个目标引擎执行迁移（串行，避免同一源端多个并发 save 占用资源）
+    const results: Array<{ engineId: string; name: string; ok: boolean; loaded?: string; error?: string }> = [];
+    for (const dst of targetRows) {
+      try {
+        const dstDocker = getDockerClientForEndpoint(dst.endpoint);
+        const stream = await srcDocker.getImage(image).get();
+        const out = await dstDocker.loadImage(stream);
+        const loadedList = await collectLoadedImages(out);
+        const loadedName = loadedList[0] || image;
+
+        // 可选的目标标签重打（失败不阻断）
+        if (tag && typeof tag === 'string' && tag.trim() && tag.trim() !== image.split('@')[0]) {
+          try {
+            await dstDocker.getImage(loadedName).tag({
+              repo: tag.split(':')[0],
+              tag: tag.includes(':') ? tag.split(':').slice(1).join(':') : 'latest',
+            });
+          } catch {
+            /* 忽略打标签失败 */
+          }
+        }
+
+        results.push({ engineId: dst.id, name: dst.name, ok: true, loaded: tag && tag.trim() ? tag : loadedName });
+        logOperation(res.locals.username, '批量分发镜像', 'image', image, `→ ${dst.name} 成功`);
+      } catch (e: any) {
+        results.push({ engineId: dst.id, name: dst.name, ok: false, error: e?.message || '分发失败' });
+        logOperation(res.locals.username, '批量分发镜像', 'image', image, `→ ${dst.name} 失败: ${e?.message || ''}`, false);
+      }
+    }
+
+    const okCount = results.filter((r) => r.ok).length;
+    res.json({ ok: true, total: results.length, okCount, failedCount: results.length - okCount, results });
+  }),
+);
+
 export default router;

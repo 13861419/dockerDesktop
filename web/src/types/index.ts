@@ -576,6 +576,130 @@ export interface TransferImageResult {
   error?: string;
 }
 
+/** ===================== 跨引擎聚合总览 ===================== */
+
+/** 单个引擎的资源统计 */
+export interface EngineResources {
+  /** CPU 核数 */
+  nCPU: number;
+  /** 内存总量（字节） */
+  memTotal: number;
+  /** 已用内存（字节） */
+  memUsed: number;
+  /** CPU 使用率（百分比） */
+  cpuPercent: number;
+}
+
+/** 单个引擎的对象计数 */
+export interface EngineCounts {
+  /** 容器总数 */
+  containers: number;
+  /** 运行中容器数 */
+  running: number;
+  /** 镜像数 */
+  images: number;
+  /** 数据卷数 */
+  volumes: number;
+  /** 网络数 */
+  networks: number;
+}
+
+/** 单个引擎的版本信息 */
+export interface EngineVersion {
+  /** Docker 版本号 */
+  version?: string;
+  /** API 版本号 */
+  apiVersion?: string;
+  /** 操作系统 */
+  os?: string;
+  /** 架构 */
+  arch?: string;
+  /** 内核版本 */
+  kernel?: string;
+}
+
+/** 聚合总览中的单个引擎 */
+export interface EngineAggregate {
+  /** 引擎 id */
+  id: string;
+  /** 引擎名称 */
+  name: string;
+  /** 引擎端点 */
+  endpoint: string;
+  /** 是否为当前引擎 */
+  isCurrent: boolean;
+  /** 是否在线 */
+  online: boolean;
+  /** 离线或探测失败时的错误信息 */
+  error?: string;
+  /** 版本信息 */
+  version?: EngineVersion;
+  /** 资源统计 */
+  resources?: EngineResources;
+  /** 对象计数 */
+  counts?: EngineCounts;
+}
+
+/** 全部引擎聚合后的汇总统计 */
+export interface EngineAggregateSummary {
+  /** 容器总数 */
+  containers: number;
+  /** 运行中容器数 */
+  running: number;
+  /** 镜像数 */
+  images: number;
+  /** 数据卷数 */
+  volumes: number;
+  /** 网络数 */
+  networks: number;
+  /** CPU 总核数 */
+  nCPU: number;
+  /** 内存总量（字节） */
+  memTotal: number;
+}
+
+/** GET /api/aggregate/engines 返回 */
+export interface EngineAggregateResponse {
+  /** 各引擎聚合信息 */
+  engines: EngineAggregate[];
+  /** 汇总统计 */
+  totals: EngineAggregateSummary;
+  /** 引擎总数 */
+  engineCount: number;
+  /** 在线引擎数 */
+  onlineCount: number;
+}
+
+/** ===================== 批量镜像分发 ===================== */
+
+/** 批量分发中单个目标引擎的结果 */
+export interface TransferBatchResult {
+  /** 目标引擎 id */
+  engineId: string;
+  /** 目标引擎名称 */
+  name: string;
+  /** 是否成功 */
+  ok: boolean;
+  /** 成功时加载的镜像信息 */
+  loaded?: string;
+  /** 失败原因 */
+  error?: string;
+}
+
+/** POST /api/transfer/batch 返回 */
+export interface TransferBatchResponse {
+  /** 是否整体成功 */
+  ok: boolean;
+  /** 目标引擎总数 */
+  total: number;
+  /** 成功数 */
+  okCount: number;
+  /** 失败数 */
+  failedCount: number;
+  /** 逐目标结果 */
+  results: TransferBatchResult[];
+}
+
 /** ===================== Compose 结构视图 ===================== */
 
 /** Compose 端口映射（/api/compose/:name/structure 返回） */

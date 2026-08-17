@@ -34,3 +34,107 @@
   color: var(--text-muted);
   line-height: 1.6;
 }
+
+/* ===================== 跨引擎聚合总览 ===================== */
+
+/* 顶部统计行 */
+.en-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.en-summary__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
+  border-radius: var(--radius-md, 8px);
+}
+
+.en-summary__label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.en-summary__value {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.en-summary__value--tiny {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 引擎小卡片网格 */
+.en-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.en-card {
+  padding: 14px;
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
+  border-radius: var(--radius-md, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.en-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.en-card__name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.en-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.en-card__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+
+.en-card__error {
+  font-size: 12px;
+  color: var(--danger, #dc2626);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 状态徽标：在线 / 离线 */
+.en-badge--online {
+  background: rgba(22, 163, 74, 0.14);
+  color: #16a34a;
+}
+
+.en-badge--offline {
+  background: rgba(220, 38, 38, 0.14);
+  color: #dc2626;
+}

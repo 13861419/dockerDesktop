@@ -38,6 +38,7 @@ import templatesRouter from './routes/templates';
 import swarmRouter from './routes/swarm';
 import composeTemplatesRouter from './routes/composeTemplates';
 import volumeFilesRouter from './routes/volumeFiles';
+import aggregateRouter from './routes/aggregate';
 import notificationsRouter from './routes/notifications';
 import transferRouter from './routes/transfer';
 import authRouter from './routes/auth';
@@ -94,6 +95,7 @@ app.use('/api/templates', requireAuth, templatesRouter);
 app.use('/api/swarm', requireAuth, swarmRouter);
 app.use('/api/transfer', requireAuth, transferRouter);
 app.use('/api/volume-files', requireAuth, volumeFilesRouter);
+app.use('/api/aggregate', requireAuth, aggregateRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）
