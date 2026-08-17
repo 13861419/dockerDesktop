@@ -8,6 +8,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
 import { post } from '../api/client';
 import { clearToken, isAdmin } from '../api/auth';
+import GlobalSearch from './GlobalSearch';
 import './Layout.less';
 
 interface NavItem {
@@ -426,6 +427,10 @@ export default function Layout() {
       {/* 主内容区 */}
       <main className="main">
         <div className="main__content">
+          <div className="main__toolbar">
+            <div className="main__title">Docker 管理面板</div>
+            <GlobalSearch />
+          </div>
           <Outlet />
         </div>
       </main>

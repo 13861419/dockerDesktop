@@ -40,6 +40,7 @@ import composeTemplatesRouter from './routes/composeTemplates';
 import volumeFilesRouter from './routes/volumeFiles';
 import aggregateRouter from './routes/aggregate';
 import orchestrateRouter from './routes/orchestrate';
+import searchRouter from './routes/search';
 import notificationsRouter from './routes/notifications';
 import transferRouter from './routes/transfer';
 import authRouter from './routes/auth';
@@ -98,6 +99,7 @@ app.use('/api/transfer', requireAuth, transferRouter);
 app.use('/api/volume-files', requireAuth, volumeFilesRouter);
 app.use('/api/aggregate', requireAuth, aggregateRouter);
 app.use('/api/orchestrate', requireAuth, orchestrateRouter);
+app.use('/api/search', requireAuth, searchRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）

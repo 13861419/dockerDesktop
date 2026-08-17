@@ -1,0 +1,199 @@
+/**
+ * 全局搜索组件样式
+ *
+ * 输入框 + 结果下拉面板，复用全局主题变量，适配浅色 / 深色主题。
+ */
+.global-search {
+  position: relative;
+  width: 320px;
+  flex-shrink: 0;
+}
+
+/* 输入框包裹容器：内置搜索图标 */
+.global-search__box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+}
+
+/* 聚焦态：主色边框 + 柔和光圈 */
+.global-search__box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  color: var(--primary);
+}
+
+.global-search__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.global-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.global-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+/* 清空按钮：弱化显示，悬浮加深 */
+.global-search__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.global-search__clear:hover {
+  color: var(--text-primary);
+  background: var(--nav-hover-bg);
+}
+
+/* 下拉面板 */
+.global-search__dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  z-index: 50;
+  padding: 6px;
+}
+
+/* 分组 */
+.global-search__group {
+  margin-bottom: 4px;
+}
+
+.global-search__group:last-child {
+  margin-bottom: 0;
+}
+
+/* 分组标题 */
+.global-search__group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* “更多”按钮 */
+.global-search__more {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.global-search__more:hover {
+  background: var(--primary-soft);
+}
+
+/* 条目 */
+.global-search__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.global-search__item:hover,
+.global-search__item--active {
+  background: var(--nav-hover-bg);
+}
+
+.global-search__item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search__item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态提示（加载 / 空 / 错误） */
+.global-search__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.global-search__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: gs-spin 0.7s linear infinite;
+}
+
+@keyframes gs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 键盘操作提示（底部） */
+.global-search__hint {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+}
