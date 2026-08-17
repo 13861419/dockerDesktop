@@ -13,7 +13,7 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { Field, Input, Select } from '../components/Form';
+import { Field, Input, Select, TextArea } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
@@ -25,6 +25,7 @@ import {
   CronTaskLogPage,
   CronTaskLogItem,
   TaskType,
+  ContainerListItem,
 } from '../types';
 import './tasks.less';
 
@@ -35,13 +36,18 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'pull', label: '拉取镜像', badge: 'purple' },
   { value: 'composeUp', label: '拉起 compose', badge: 'green' },
   { value: 'composeDown', label: '停止 compose', badge: 'orange' },
+  { value: 'restart', label: '重启容器', badge: 'red' },
+  { value: 'command', label: '自定义命令', badge: 'teal' },
+  { value: 'healthcheck', label: '容器健康检查', badge: 'slate' },
 ];
 
 /** cron 表达式快捷预设：说明 + 表达式 */
 const CRON_PRESETS: Array<{ label: string; cron: string }> = [
+  { label: '每分钟', cron: '* * * * *' },
   { label: '每小时', cron: '0 * * * *' },
-  { label: '每天凌晨 3 点', cron: '0 3 * * *' },
-  { label: '每周日 2 点', cron: '0 2 * * 0' },
+  { label: '每天', cron: '0 0 * * *' },
+  { label: '每周一', cron: '0 0 * * 1' },
+  { label: '每月 1 号', cron: '0 0 1 * *' },
 ];
 
 /** 新增任务弹窗默认的 cron 表达式 */
@@ -70,6 +76,15 @@ function formatTime(ms: number | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
     d.getHours()
   )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * 提取容器显示名称（去前导斜杠），用于容器多选列表展示
+ * @param c 容器列表项
+ * @returns 显示名称，回退到容器 Id
+ */
+function containerDisplayName(c: ContainerListItem): string {
+  return (c.Names && c.Names[0]?.replace(/^\//, '')) || c.Id;
 }
 
 /**
@@ -131,6 +146,8 @@ export default function TasksPage() {
   const canManage = isAdmin();
   const [tasks, setTasks] = useState<CronTask[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
+  // 容器列表（供 restart/healthcheck 类型的容器多选使用）
+  const [containers, setContainers] = useState<ContainerListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -183,6 +200,18 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks, refreshKey]);
+
+  /**
+   * 拉取全部容器列表，供 restart/healthcheck 任务的容器多选使用
+   */
+  useEffect(() => {
+    get<ContainerListItem[]>('/api/containers', { all: true })
+      .then((data) => setContainers(data || []))
+      .catch((e: any) => {
+        // 容器列表拉取失败不阻塞任务页主体功能，仅静默降级为空列表
+        showToast(e?.message || '获取容器列表失败', 'error');
+      });
+  }, [showToast]);
 
   /**
    * 打开「新建任务」弹窗：重置表单为默认值
@@ -613,6 +642,7 @@ export default function TasksPage() {
             config={formConfig}
             setConfig={setFormConfig}
             projects={projects}
+            containers={containers}
           />
 
           <Field label="启用">
@@ -729,18 +759,20 @@ export default function TasksPage() {
 
 /**
  * 按任务类型动态渲染其 config 参数编辑区
- * @param param0 type 任务类型、config 当前配置值、setConfig 更新配置、projects Compose 项目列表
+ * @param param0 type 任务类型、config 当前配置值、setConfig 更新配置、projects Compose 项目列表、containers 容器列表
  */
 function ConfigEditor({
   type,
   config,
   setConfig,
   projects,
+  containers,
 }: {
   type: TaskType;
   config: Record<string, any>;
   setConfig: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   projects: string[];
+  containers: ContainerListItem[];
 }) {
   /**
    * 更新配置的单个字段
@@ -750,6 +782,49 @@ function ConfigEditor({
   const setKey = (key: string, value: any) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
   };
+
+  /**
+   * 切换容器多选中单个容器的选中状态
+   * @param id 容器 Id
+   * @param checked 是否选中
+   */
+  const toggleContainer = (id: string, checked: boolean) => {
+    const list = Array.isArray(config.containers) ? config.containers.slice() : [];
+    const idx = list.indexOf(id);
+    if (checked && idx < 0) list.push(id);
+    if (!checked && idx >= 0) list.splice(idx, 1);
+    setKey('containers', list);
+  };
+
+  /** 当前已选中的容器 Id 集合（用于勾选态判定） */
+  const selectedContainers = Array.isArray(config.containers) ? config.containers : [];
+
+  /**
+   * 渲染容器多选勾选列表（restart / healthcheck 复用）
+   * @param extraHint 额外提示文案
+   */
+  const renderContainerPicker = (extraHint?: string) => (
+    <>
+      <Field label="目标容器" required hint={extraHint}>
+        {containers.length === 0 ? (
+          <div className="tasks__cron-hint">未获取到容器列表，请确认 Docker 服务已启动</div>
+        ) : (
+          <div className="tasks__checks tasks__checks--col">
+            {containers.map((c) => (
+              <label key={c.Id} className="tasks__check">
+                <input
+                  type="checkbox"
+                  checked={selectedContainers.includes(c.Id)}
+                  onChange={(e) => toggleContainer(c.Id, e.target.checked)}
+                />
+                {containerDisplayName(c)}
+              </label>
+            ))}
+          </div>
+        )}
+      </Field>
+    </>
+  );
 
   // prune：四个/五个清理勾选项，默认全选
   if (type === 'prune') {
@@ -842,6 +917,39 @@ function ConfigEditor({
         />
       </Field>
     );
+  }
+
+  // restart：定时重启选中的容器（容器多选）
+  if (type === 'restart') {
+    return renderContainerPicker('定时对选中容器执行重启（restart）操作');
+  }
+
+  // command：定时执行自定义宿主命令
+  if (type === 'command') {
+    return (
+      <>
+        <Field label="执行命令" required hint="在宿主机上执行的 shell 命令">
+          <TextArea
+            value={config.command || ''}
+            placeholder="docker system df"
+            rows={3}
+            onChange={(e) => setKey('command', e.target.value)}
+          />
+        </Field>
+        <Field label="工作目录（可选）" hint="命令执行的宿主工作目录，留空使用默认目录">
+          <Input
+            value={config.cwd || ''}
+            placeholder="/root"
+            onChange={(e) => setKey('cwd', e.target.value)}
+          />
+        </Field>
+      </>
+    );
+  }
+
+  // healthcheck：定时检查容器运行/健康状态，异常经告警中心通知
+  if (type === 'healthcheck') {
+    return renderContainerPicker('定时检查容器是否运行/健康，异常会经告警中心通知');
   }
 
   // composeUp / composeDown：选择 Compose 项目

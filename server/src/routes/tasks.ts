@@ -397,6 +397,116 @@ async function runComposeDownHandler(task: CronTaskRow, config: Record<string, a
   }
 }
 
+/**
+ * handler：重启容器（restart）
+ * config={containers:[...]}，逐个调用 docker restart（缺失容器记录为失败但继续后续）。
+ * @param task 任务行
+ * @param config 任务配置
+ * @returns 执行结果与每容器结果
+ */
+async function runRestartHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const containers = Array.isArray(config.containers)
+    ? config.containers.filter((v: any) => typeof v === 'string' && v.trim())
+    : [];
+  if (containers.length === 0) {
+    return { ok: false, detail: '缺少待重启的容器(containers)' };
+  }
+  const docker = await getDockerClient();
+  const lines: string[] = [];
+  let fail = 0;
+  for (const ref of containers) {
+    // 支持按名称或 id：先尝试名称解析
+    const name = ref.trim();
+    let cid: string | null = null;
+    try {
+      const list = await docker.listContainers({ all: true, filters: { name: [name] } });
+      const hit = (list as any[]).find((c) => c.Names?.includes('/' + name));
+      cid = hit?.Id || null;
+    } catch {
+      cid = null;
+    }
+    if (!cid) {
+      try {
+        await docker.getContainer(name).inspect();
+        cid = name;
+      } catch {
+        lines.push(`容器 ${name}: 未找到`);
+        fail++;
+        continue;
+      }
+    }
+    try {
+      await docker.getContainer(cid as string).restart();
+      lines.push(`容器 ${name}: 已重启`);
+    } catch (e: any) {
+      lines.push(`容器 ${name}: 重启失败 ${e?.message || e}`);
+      fail++;
+    }
+  }
+  return { ok: fail === 0, detail: lines.join('\n') || '无容器可重启' };
+}
+
+/**
+ * handler：执行自定义命令（command）
+ * config={command, cwd?}，用宿主 shell 执行并捕获输出（失败抛异常由外层记录）。
+ * @param task 任务行
+ * @param config 任务配置
+ * @returns 执行结果与命令输出
+ */
+async function runCommandHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const command = config.command;
+  if (!command || typeof command !== 'string' || !command.trim()) {
+    return { ok: false, detail: '缺少要执行的命令(command)' };
+  }
+  const cwd = typeof config.cwd === 'string' && config.cwd ? config.cwd : os.tmpdir();
+  try {
+    const output = await runCmd(command, cwd);
+    return { ok: true, detail: output || '命令执行完成（无输出）' };
+  } catch (e: any) {
+    return { ok: false, detail: String(e?.message || e) };
+  }
+}
+
+/**
+ * handler：容器健康检查（healthcheck）
+ * config={containers:[...]}，检查容器是否处于 running 状态；容器不存在或未运行记失败，
+ * 触发告警，适合与告警中心联动做故障恢复前的定时探活。
+ * @param task 任务行
+ * @param config 任务配置
+ * @returns 执行结果与每容器状态
+ */
+async function runHealthcheckHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const containers = Array.isArray(config.containers)
+    ? config.containers.filter((v: any) => typeof v === 'string' && v.trim())
+    : [];
+  if (containers.length === 0) {
+    return { ok: false, detail: '缺少待检查的容器(containers)' };
+  }
+  const docker = await getDockerClient();
+  const lines: string[] = [];
+  let unhealthy = 0;
+  for (const ref of containers) {
+    const name = ref.trim();
+    const list = await docker.listContainers({ all: true, filters: { name: [name] } });
+    const hit = (list as any[]).find((c) => c.Names?.includes('/' + name));
+    if (!hit) {
+      lines.push(`容器 ${name}: 不存在（异常）`);
+      unhealthy++;
+      continue;
+    }
+    const state = hit.State || '';
+    // Health 字段仅运行中的容器可能带（容器需配置 healthcheck）
+    const health = hit.Status || '';
+    if (state === 'running' && !/unhealthy/i.test(health)) {
+      lines.push(`容器 ${name}: 运行正常`);
+    } else {
+      lines.push(`容器 ${name}: ${state}${/unhealthy/i.test(health) ? '(unhealthy)' : ''}（异常）`);
+      unhealthy++;
+    }
+  }
+  return { ok: unhealthy === 0, detail: lines.join('\n') };
+}
+
 /** 任务类型 → handler 的本地注册表（供手动执行与注册到调度器共用） */
 const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, any>) => Promise<TaskRunResult>> = {
   prune: runPruneHandler,
@@ -404,6 +514,9 @@ const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, an
   pull: runPullHandler,
   composeUp: runComposeUpHandler,
   composeDown: runComposeDownHandler,
+  restart: runRestartHandler,
+  command: runCommandHandler,
+  healthcheck: runHealthcheckHandler,
 };
 
 /** 记录一次执行结果到历史表（由 setTaskRunCallback 注册，手动执行亦复用） */

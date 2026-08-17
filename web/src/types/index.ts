@@ -352,7 +352,15 @@ export interface AppStoreStatusInfo {
 /** ===================== 计划任务 ===================== */
 
 /** 计划任务类型 */
-export type TaskType = 'prune' | 'backup' | 'pull' | 'composeUp' | 'composeDown';
+export type TaskType =
+  | 'prune'
+  | 'backup'
+  | 'pull'
+  | 'composeUp'
+  | 'composeDown'
+  | 'restart'
+  | 'command'
+  | 'healthcheck';
 
 /** 计划任务（/api/tasks 返回） */
 export interface CronTask {

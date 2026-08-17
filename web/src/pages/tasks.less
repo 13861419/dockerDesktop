@@ -115,6 +115,18 @@
   background: rgba(245, 158, 11, 0.15);
   color: #f59e0b;
 }
+.tasks__type-badge--red {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.tasks__type-badge--teal {
+  background: rgba(20, 184, 166, 0.15);
+  color: #14b8a6;
+}
+.tasks__type-badge--slate {
+  background: rgba(100, 116, 139, 0.15);
+  color: #64748b;
+}
 
 /* 结果徽标 */
 .tasks__result {
@@ -241,6 +253,14 @@
 }
 .tasks__check input[type='checkbox'] {
   cursor: pointer;
+}
+/* 容器多选列表：纵向排列并带滚动，避免弹窗过长 */
+.tasks__checks--col {
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow: auto;
+  padding: 2px;
 }
 
 /* 配置表单：backup 单选项 */
