@@ -260,4 +260,209 @@ router.post(
   }),
 );
 
+/**
+ * 判断某引擎是否存在指定镜像引用
+ * @param docker 目标 dockerode
+ * @param ref 镜像引用（如 nginx:latest）
+ * @returns 是否存在
+ */
+async function imageExistsOn(docker: any, ref: string): Promise<boolean> {
+  const imgs = await docker.listImages();
+  return (imgs || []).some((i: any) => (i.RepoTags || []).includes(ref));
+}
+
+/**
+ * 判断字符串是否为 Window 或 POSIX 绝对路径
+ * @param s 字符串
+ * @returns 是否绝对路径
+ */
+function isAbsolutePath(s: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(s) || s.startsWith('/');
+}
+
+/**
+ * POST /api/transfer/container
+ * 跨引擎迁移容器：从源引擎读取容器配置并在目标引擎重建（镜像缺失时自动 save→load 传输）。
+ *
+ * 首版范围：还原镜像/命令/entrypoint/环境/端口/挂载/重启策略/标签/用户/工作目录/hostname/tty/privileged/autoRemove。
+ * 卷处理：
+ *  - 源为宿主机绝对路径的绑定挂载 → 原样保留（要求目标引擎可访问该宿主路径）。
+ *  - 源为命名卷 → 在目标引擎创建同名卷（空卷；卷数据不随迁移，后续可用卷备份恢复数据）。
+ * 网络：container: 引用的网络模式跨引擎不可直接映射，自动降级为 default 并提示。
+ *
+ * @body containerId   源引擎上要迁移的容器 id
+ * @body sourceEngineId 源引擎 id
+ * @body targetEngineId 目标引擎 id
+ * @body newName        目标容器名（可选，默认沿用原名）
+ * @body start          是否启动目标容器（默认 true）
+ */
+router.post(
+  '/container',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { containerId, sourceEngineId, targetEngineId, newName, start } = req.body || {};
+    if (!containerId || typeof containerId !== 'string') {
+      return res.status(400).json({ error: '缺少源容器 containerId' });
+    }
+    if (!sourceEngineId || !targetEngineId) {
+      return res.status(400).json({ error: '缺少源引擎或目标引擎' });
+    }
+    if (sourceEngineId === targetEngineId) {
+      return res.status(400).json({ error: '源引擎与目标引擎不能相同' });
+    }
+
+    const d = getDb();
+    const srcRow = d
+      .prepare('SELECT id, name, endpoint FROM docker_engines WHERE id = ?')
+      .get(sourceEngineId) as EngineEndpointRow | undefined;
+    if (!srcRow) return res.status(400).json({ error: '源引擎不存在' });
+    const dstRow = d
+      .prepare('SELECT id, name, endpoint FROM docker_engines WHERE id = ?')
+      .get(targetEngineId) as EngineEndpointRow | undefined;
+    if (!dstRow) return res.status(400).json({ error: '目标引擎不存在' });
+
+    const srcDocker = getDockerClientForEndpoint(srcRow.endpoint);
+    const dstDocker = getDockerClientForEndpoint(dstRow.endpoint);
+
+    // 读取源容器完整配置
+    let inspect: any;
+    try {
+      inspect = await srcDocker.getContainer(containerId).inspect();
+    } catch {
+      return res.status(404).json({ error: '源容器不存在' });
+    }
+    const srcCfg = inspect.Config || {};
+    const hostCfg = inspect.HostConfig || {};
+
+    // 端口映射：HostConfig.PortBindings → dockerode PortMap
+    const portMap: Record<string, Array<{ HostIp?: string; HostPort?: string }>> = {};
+    const exposedPorts: Record<string, Record<string, unknown>> = {};
+    for (const [key, bindings] of Object.entries(hostCfg.PortBindings || {})) {
+      exposedPorts[key] = {};
+      portMap[key] = (bindings as Array<{ HostIp?: string; HostPort?: string }>).map((b) => ({
+        HostIp: b?.HostIp || '0.0.0.0',
+        HostPort: b?.HostPort || '',
+      }));
+    }
+
+    // 挂载：还原绑定/卷
+    const binds: string[] = [];
+    const namedVolumes: Array<{ name: string; target: string; readonly: boolean }> = [];
+    for (const bind of hostCfg.Binds || []) {
+      const parts = bind.split(':');
+      const source = parts[0] || '';
+      const target = parts[1] || bind;
+      const readonly = parts.length >= 3 && parts[2] === 'ro';
+      if (isAbsolutePath(source)) {
+        binds.push(`${source}:${target}${readonly ? ':ro' : ''}`);
+      } else if (source) {
+        namedVolumes.push({ name: source, target, readonly });
+      } else {
+        binds.push(bind);
+      }
+    }
+
+    // 确保目标镜像存在（缺失则流式 save→load）
+    const imageRef = srcCfg?.Image || '';
+    let imageReady = imageRef ? await imageExistsOn(dstDocker, imageRef) : false;
+    if (imageRef && !imageReady) {
+      try {
+        const stream = await srcDocker.getImage(imageRef).get();
+        const out = await dstDocker.loadImage(stream);
+        await collectLoadedImages(out);
+        imageReady = true;
+      } catch (err: any) {
+        return res.status(500).json({ error: `镜像 ${imageRef} 传输失败: ${err?.message || err}` });
+      }
+    }
+
+    // 目标容器名
+    const desiredName = newName && String(newName).trim()
+      ? String(newName).trim()
+      : String(inspect.Name || '').replace(/^\//, '');
+
+    // 网络模式：container: 引用跨引擎不可直接用，降级为 default
+    let networkMode: string = hostCfg.NetworkMode || 'default';
+    let networkWarn = '';
+    if (/^container:/.test(networkMode)) {
+      networkMode = 'default';
+      networkWarn = `源容器网络模式为 ${hostCfg.NetworkMode}，跨引擎无法复用，已降级为 default`;
+    }
+
+    // 在目标引擎创建同名卷（空卷）
+    for (const nv of namedVolumes) {
+      try {
+        await dstDocker.createVolume({ Name: nv.name });
+      } catch {
+        // 已存在或创建失败均忽略（存在则复用）
+      }
+      binds.push(`${nv.name}:${nv.target}${nv.readonly ? ':ro' : ''}`);
+    }
+
+    const createOpts: any = {
+      name: desiredName,
+      Image: imageRef || undefined,
+      Cmd: Array.isArray(srcCfg.Cmd) && srcCfg.Cmd.length ? srcCfg.Cmd : undefined,
+      Entrypoint: Array.isArray(srcCfg.Entrypoint) && srcCfg.Entrypoint.length ? srcCfg.Entrypoint : srcCfg.Entrypoint || undefined,
+      User: srcCfg.User || undefined,
+      WorkingDir: srcCfg.WorkingDir || undefined,
+      Hostname: srcCfg.Hostname || undefined,
+      Labels: srcCfg.Labels || undefined,
+      Env: Array.isArray(srcCfg.Env) && srcCfg.Env.length ? srcCfg.Env : undefined,
+      ExposedPorts: Object.keys(exposedPorts).length ? exposedPorts : undefined,
+      HostConfig: {
+        Binds: binds.length ? binds : undefined,
+        PortBindings: Object.keys(portMap).length ? portMap : undefined,
+        RestartPolicy: hostCfg.RestartPolicy?.Name ? { Name: hostCfg.RestartPolicy.Name, MaximumRetryCount: hostCfg.RestartPolicy.MaximumRetryCount || 0 } : undefined,
+        NetworkMode: networkMode,
+        Privileged: hostCfg.Privileged === true,
+        AutoRemove: hostCfg.AutoRemove === true,
+        Memory: hostCfg.Memory || undefined,
+        NanoCpus: hostCfg.NanoCpus || undefined,
+      },
+      Tty: !!srcCfg.Tty,
+    };
+
+    let container: any;
+    try {
+      container = await dstDocker.createContainer(createOpts);
+    } catch (err: any) {
+      return res.status(500).json({ error: `目标引擎创建容器失败: ${err?.message || err}` });
+    }
+    const shouldStart = start !== false;
+    let started = false;
+    let startError: string | undefined;
+    if (shouldStart) {
+      try {
+        await container.start();
+        started = true;
+      } catch (err: any) {
+        startError = err?.message || '启动失败';
+      }
+    }
+
+    const id = container.id;
+    logOperation(
+      res.locals.username,
+      '跨引擎迁移容器',
+      'container',
+      desiredName,
+      `${srcRow.name} → ${dstRow.name}${started ? '（已启动）' : startError ? '（启动失败）' : '（未启动）'}`,
+      started,
+    );
+    res.json({
+      ok: true,
+      id,
+      name: desiredName,
+      imageTransferred: imageRef && !imageReady ? true : false,
+      started,
+      startError,
+      warnings: [],
+      ...(networkWarn ? { warning: networkWarn } : {}),
+      note:
+        '命名卷将创建为空卷，数据未随迁移迁移。如需恢复卷数据，请在目标引擎用卷备份恢复。',
+    });
+  }),
+);
+
 export default router;

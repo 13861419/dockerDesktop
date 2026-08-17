@@ -680,6 +680,49 @@ export interface EngineAggregateResponse {
 
 /** ===================== 批量镜像分发 ===================== */
 
+/** ===================== 跨引擎容器迁移 ===================== */
+
+/** 引擎列表项（GET /api/engines 返回） */
+export interface EngineListItem {
+  /** 引擎 id */
+  id: string;
+  /** 引擎名称 */
+  name: string;
+  /** 引擎端点 */
+  endpoint: string;
+  /** 是否为当前引擎 */
+  isCurrent: boolean;
+}
+
+/** 引擎列表响应（GET /api/engines） */
+export interface EngineListResponse {
+  engines: EngineListItem[];
+}
+
+/** 容器跨引擎迁移结果（POST /api/transfer/container 返回） */
+export interface ContainerTransferResult {
+  /** 是否整体成功 */
+  ok: boolean;
+  /** 失败时返回的错误信息 */
+  error?: string;
+  /** 目标容器 id */
+  id?: string;
+  /** 目标容器名 */
+  name?: string;
+  /** 镜像是否已传输到位（false 表示目标未创建成功时被跳过，或源镜像不存在） */
+  imageTransferred?: boolean;
+  /** 是否已启动目标容器 */
+  started?: boolean;
+  /** 目标容器启动失败的错误信息 */
+  startError?: string;
+  /** 迁移过程中的警告信息（如命名卷为空卷提示） */
+  warning?: string;
+  /** 迁移注意事项（如 networkWarning 等） */
+  note?: string;
+}
+
+/** ===================== 批量镜像分发 ===================== */
+
 /** 批量分发中单个目标引擎的结果 */
 export interface TransferBatchResult {
   /** 目标引擎 id */

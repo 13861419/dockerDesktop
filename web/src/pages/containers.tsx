@@ -8,7 +8,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { get, post, del } from '../api/client';
 import { canOperate } from '../api/auth';
-import { ContainerListItem, ContainerPortConflicts, ImageItem } from '../types';
+import {
+  ContainerListItem,
+  ContainerPortConflicts,
+  ContainerTransferResult,
+  EngineListItem,
+  EngineListResponse,
+  ImageItem,
+} from '../types';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -38,6 +45,13 @@ interface ContainerStat {
 interface DeleteTarget {
   id: string;
   name: string;
+}
+
+/** 跨引擎迁移弹窗中的目标容器源信息（源容器 = 容器所在引擎） */
+interface MigrateTarget {
+  id: string;
+  name: string;
+  image: string;
 }
 
 /** 创建表单中的端口映射条目 */
@@ -133,6 +147,22 @@ export default function ContainersPage() {
   const [cloneTarget, setCloneTarget] = useState<DeleteTarget | null>(null);
   const [cloneValue, setCloneValue] = useState('');
   const [cloning, setCloning] = useState(false);
+  // 跨引擎迁移弹窗状态
+  const [migrateTarget, setMigrateTarget] = useState<MigrateTarget | null>(null);
+  // 引擎列表（来自 GET /api/engines，含当前引擎与其它引擎）
+  const [engineList, setEngineList] = useState<EngineListItem[]>([]);
+  // 迁移弹窗中选中的目标引擎 id
+  const [migrateTargetId, setMigrateTargetId] = useState('');
+  // 目标容器名（留空自动沿用原名）
+  const [migrateName, setMigrateName] = useState('');
+  // 「迁移后启动」开关（默认开启）
+  const [migrateStart, setMigrateStart] = useState(true);
+  // 迁移提交是否进行中
+  const [migrating, setMigrating] = useState(false);
+  // 单独记录"正在迁移"的容器 id，用于该行迁移按钮独立 loading
+  const [migratingId, setMigratingId] = useState('');
+  // 迁移完成后的结果展示（成功时包含 name / imageTransferred / note 等）
+  const [migrateResult, setMigrateResult] = useState<ContainerTransferResult | null>(null);
   // 宿主机端口占用冲突映射（HostPort -> 容器列表）
   const [portConflicts, setPortConflicts] = useState<ContainerPortConflicts>({});
   // 容器实时资源统计（containerId -> {cpuPercent, memory}），轮询更新
@@ -213,6 +243,19 @@ export default function ContainersPage() {
   }, [showToast]);
 
   /**
+   * 拉取 Docker 引擎列表（GET /api/engines），用于判断是否存在可迁移的其它引擎候选。
+   * 拉取失败时静默置空，不阻塞容器列表展示。
+   */
+  const loadEngines = useCallback(async () => {
+    try {
+      const res = await get<EngineListResponse>('/api/engines');
+      setEngineList(res?.engines || []);
+    } catch {
+      setEngineList([]);
+    }
+  }, []);
+
+  /**
    * 拉取宿主机端口占用冲突映射，用于对冲突端口做红色警示
    */
   const loadPortConflicts = useCallback(async () => {
@@ -228,7 +271,8 @@ export default function ContainersPage() {
   useEffect(() => {
     load();
     loadPortConflicts();
-  }, [load, loadPortConflicts]);
+    loadEngines();
+  }, [load, loadPortConflicts, loadEngines]);
 
   /**
    * 拉取全部运行中容器的实时资源统计（批量 stats）
@@ -507,6 +551,92 @@ export default function ContainersPage() {
       showToast(`克隆失败：${e?.message || '未知错误'}`, 'error');
     } finally {
       setCloning(false);
+    }
+  }
+
+  /** 当前引擎（容器所在引擎，作为迁移源引擎） */
+  const currentEngine = engineList.find((e) => e.isCurrent);
+  /** 其它引擎（除当前引擎外的所有引擎，可作为迁移目标候选） */
+  const otherEngines = engineList.filter((e) => e.id !== currentEngine?.id);
+  /** 是否存在至少一个可迁移的目标引擎 */
+  const hasMigrateTarget = otherEngines.length >= 1;
+
+  /**
+   * 打开跨引擎迁移弹窗：记录源容器信息，预填充迁移选项并刷新引擎列表。
+   * @param c 要迁移的容器
+   */
+  async function openMigrate(c: ContainerListItem) {
+    if (!canDelete) {
+      showToast('仅管理员或运维人员可迁移容器', 'error');
+      return;
+    }
+    const name = displayName(c);
+    setMigrateTarget({ id: c.Id, name, image: c.Image || '' });
+    setMigrateName('');
+    setMigrateStart(true);
+    setMigrateResult(null);
+    setMigrating(false);
+    setMigratingId('');
+    // 打开弹窗时重新拉取引擎列表，保证目标引擎候选最新
+    try {
+      const res = await get<EngineListResponse>('/api/engines');
+      const list = res?.engines || [];
+      setEngineList(list);
+      // 默认选择第一个非当前引擎作为目标
+      const cur = list.find((e) => e.isCurrent);
+      const others = list.filter((e) => e.id !== cur?.id);
+      setMigrateTargetId(others[0]?.id || '');
+    } catch (e: any) {
+      showToast(e?.message || '加载引擎列表失败', 'error');
+    }
+  }
+
+  /**
+   * 提交跨引擎迁移请求（POST /api/transfer/container）。
+   * 校验目标引擎合法后发起，成功展示结果并提示可到目标引擎查看，失败 toast 展示 error。
+   */
+  async function confirmMigrate() {
+    if (!migrateTarget) return;
+    if (!canDelete) {
+      showToast('仅管理员或运维人员可迁移容器', 'error');
+      setMigrateTarget(null);
+      return;
+    }
+    if (!currentEngine?.id) {
+      showToast('无法识别当前引擎', 'error');
+      return;
+    }
+    if (!migrateTargetId) {
+      showToast('请选择目标引擎', 'error');
+      return;
+    }
+    if (migrateTargetId === currentEngine.id) {
+      showToast('源引擎与目标引擎不能相同', 'error');
+      return;
+    }
+    setMigrating(true);
+    setMigratingId(migrateTarget.id);
+    try {
+      const res = await post<ContainerTransferResult>('/api/transfer/container', {
+        containerId: migrateTarget.id,
+        sourceEngineId: currentEngine.id,
+        targetEngineId: migrateTargetId,
+        newName: migrateName.trim() || undefined,
+        start: migrateStart,
+      });
+      if (!res?.ok) {
+        throw new Error(res?.error || '容器迁移失败');
+      }
+      // 成功：toast 提示并展示结果
+      setMigrateResult(res);
+      const startedText = res.started ? '并已启动' : res.started === false ? '（未启动）' : '';
+      showToast(`容器已迁移至目标引擎${startedText}`);
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '容器迁移失败', 'error');
+    } finally {
+      setMigrating(false);
+      setMigratingId('');
     }
   }
 
@@ -1479,6 +1609,20 @@ export default function ContainersPage() {
                             <Button
                               variant="secondary"
                               size="sm"
+                              onClick={() => openMigrate(c)}
+                              disabled={!canDelete || !hasMigrateTarget}
+                              loading={migratingId === c.Id}
+                              title={
+                                !hasMigrateTarget
+                                  ? '无其它可用引擎，无法迁移（需至少配置一个非当前引擎）'
+                                  : ''
+                              }
+                            >
+                              迁移
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
                               onClick={() => navigate(`/containerDetail/${c.Id}`)}
                             >
                               详情
@@ -1634,6 +1778,127 @@ export default function ContainersPage() {
             disabled={cloning}
           />
         </Field>
+      </Modal>
+
+      {/* 跨引擎迁移容器弹窗 */}
+      <Modal
+        open={!!migrateTarget}
+        title="跨引擎迁移容器"
+        onClose={() => !migrating && setMigrateTarget(null)}
+        width={520}
+        footer={
+          <div className="create-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setMigrateTarget(null)} disabled={migrating}>
+              关闭
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              loading={migrating}
+              onClick={confirmMigrate}
+              disabled={!hasMigrateTarget}
+            >
+              迁移
+            </Button>
+          </div>
+        }
+      >
+        {migrateTarget && (
+          <>
+            {/* 源信息（只读展示） */}
+            <div className="migrate-modal__source">
+              <div className="migrate-modal__source-row">
+                <span className="migrate-modal__source-label">容器名</span>
+                <span className="migrate-modal__source-value" title={migrateTarget.name}>
+                  {migrateTarget.name}
+                </span>
+              </div>
+              <div className="migrate-modal__source-row">
+                <span className="migrate-modal__source-label">镜像</span>
+                <span className="migrate-modal__source-value" title={migrateTarget.image}>
+                  {migrateTarget.image || '-'}
+                </span>
+              </div>
+              <div className="migrate-modal__source-row">
+                <span className="migrate-modal__source-label">源引擎</span>
+                <span className="migrate-modal__source-value">
+                  {currentEngine?.name || '（无法识别当前引擎）'}
+                </span>
+              </div>
+            </div>
+
+            <Field label="目标引擎" required hint="将容器迁移到此引擎；需为当前引擎以外的其它引擎">
+              <Select
+                value={migrateTargetId}
+                onChange={(e) => setMigrateTargetId(e.target.value)}
+                disabled={migrating}
+              >
+                <option value="" disabled>
+                  {hasMigrateTarget ? '请选择目标引擎' : '无其它可用引擎'}
+                </option>
+                {otherEngines.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="目标容器名" hint="可选，留空时自动沿用原容器名">
+              <Input
+                placeholder="留空沿用原名"
+                value={migrateName}
+                onChange={(e) => setMigrateName(e.target.value)}
+                disabled={migrating}
+              />
+            </Field>
+
+            <Field label="迁移后启动">
+              <label className="create-modal__tty">
+                <input
+                  type="checkbox"
+                  checked={migrateStart}
+                  onChange={(e) => setMigrateStart(e.target.checked)}
+                  disabled={migrating}
+                />
+                迁移完成后自动启动目标容器
+              </label>
+            </Field>
+
+            {/* 迁移结果展示 */}
+            {migrateResult && (
+              <div className="migrate-modal__result">
+                <div className="migrate-modal__result-title">迁移成功</div>
+                <div className="migrate-modal__result-row">
+                  目标容器：{migrateResult.name || migrateTarget.name}
+                  {migrateResult.id ? `（${migrateResult.id.slice(0, 12)}）` : ''}
+                </div>
+                <div className="migrate-modal__result-row">
+                  镜像是否已传输：
+                  {migrateResult.imageTransferred ? '是' : '否'}
+                </div>
+                {migrateResult.started === true && (
+                  <div className="migrate-modal__result-row">启动状态：已启动</div>
+                )}
+                {migrateResult.started === false && (
+                  <div className="migrate-modal__result-row">启动状态：未启动</div>
+                )}
+                {migrateResult.startError && (
+                  <div className="migrate-modal__result-note">启动错误：{migrateResult.startError}</div>
+                )}
+                {migrateResult.warning && (
+                  <div className="migrate-modal__result-note">警告：{migrateResult.warning}</div>
+                )}
+                {migrateResult.note && (
+                  <div className="migrate-modal__result-note">备注：{migrateResult.note}</div>
+                )}
+                <div className="migrate-modal__result-tip">
+                  可在目标引擎的容器列表中查看该容器。
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </Modal>
 
       {/* 编辑镜像弹窗（替换容器使用的镜像） */}
