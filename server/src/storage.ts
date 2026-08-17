@@ -246,6 +246,16 @@ function createTables(): void {
       enable_https  INTEGER NOT NULL DEFAULT 0,
       cert_path     TEXT,
       enabled       INTEGER NOT NULL DEFAULT 1,
+      -- 反代高级配置（新增列，迁移时以 ALTER 补列）
+      enable_ws          INTEGER NOT NULL DEFAULT 0,  -- WebSocket 透传
+      enable_gzip        INTEGER NOT NULL DEFAULT 0,  -- 启用 gzip 压缩
+      enable_auth        INTEGER NOT NULL DEFAULT 0,  -- 站点 Basic Auth 访问控制
+      auth_username      TEXT,                        -- 访问控制用户名
+      auth_password      TEXT,                        -- 访问控制密码（htpasswd {SHA} 形式，或在页面展示时返回明文以重算）
+      rate_limit         TEXT,                        -- 请求限速（如 "5r/s"，留空不开启）
+      client_max_body    TEXT,                        -- 请求体大小上限（如 "50m"，留空默认 1m）
+      proxy_timeout      INTEGER NOT NULL DEFAULT 60, -- 上游读超时/代理超时（秒）
+      extra_config       TEXT,                        -- 自定义 nginx 高级配置片段（location 外，写在 server 内）
       created_at    INTEGER NOT NULL,
       updated_at    INTEGER NOT NULL
     );
@@ -455,6 +465,28 @@ function createTables(): void {
     d.exec('ALTER TABLE hub_sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
   } catch {
     // 列已存在则忽略
+  }
+
+  // 迁移：为 sites 表补充反代高级配置列（逐列宽松迁移，兼容旧库）
+  const siteMigrations: Array<{ col: string; ddl: string }> = [
+    { col: 'enable_ws', ddl: 'ALTER TABLE sites ADD COLUMN enable_ws INTEGER NOT NULL DEFAULT 0' },
+    { col: 'enable_gzip', ddl: 'ALTER TABLE sites ADD COLUMN enable_gzip INTEGER NOT NULL DEFAULT 0' },
+    { col: 'enable_auth', ddl: 'ALTER TABLE sites ADD COLUMN enable_auth INTEGER NOT NULL DEFAULT 0' },
+    { col: 'auth_username', ddl: 'ALTER TABLE sites ADD COLUMN auth_username TEXT' },
+    { col: 'auth_password', ddl: 'ALTER TABLE sites ADD COLUMN auth_password TEXT' },
+    { col: 'rate_limit', ddl: 'ALTER TABLE sites ADD COLUMN rate_limit TEXT' },
+    { col: 'client_max_body', ddl: 'ALTER TABLE sites ADD COLUMN client_max_body TEXT' },
+    { col: 'proxy_timeout', ddl: 'ALTER TABLE sites ADD COLUMN proxy_timeout INTEGER NOT NULL DEFAULT 60' },
+    { col: 'extra_config', ddl: 'ALTER TABLE sites ADD COLUMN extra_config TEXT' },
+  ];
+  for (const m of siteMigrations) {
+    try {
+      // 仅当列不存在时执行（避免重复迁移）
+      const cols = d.prepare('PRAGMA table_info(sites)').all() as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === m.col)) d.exec(m.ddl);
+    } catch {
+      // 列已存在则忽略
+    }
   }
 
   // 迁移：为 alert_rules 表补充告警静默/工作时间段字段（HH:mm 或 NULL 表示不启用）

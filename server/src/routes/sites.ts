@@ -31,6 +31,16 @@ interface SiteRow {
   enable_https: number;
   cert_path: string | null;
   enabled: number;
+  // 反代高级配置
+  enable_ws: number;
+  enable_gzip: number;
+  enable_auth: number;
+  auth_username: string | null;
+  auth_password: string | null;
+  rate_limit: string | null;
+  client_max_body: string | null;
+  proxy_timeout: number;
+  extra_config: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -39,6 +49,16 @@ interface SiteRow {
 const PROXY_CONTAINER = 'dm-reverse-proxy';
 /** nginx 配置目录（宿主机侧，挂载进容器 /etc/nginx/conf.d） */
 const NGINX_DIR_NAME = 'nginx';
+
+/**
+ * 将明文密码生成为 nginx htpasswd 的 {SHA} 条目值（nginx 原生支持，无需外部工具，零依赖）
+ * @param password 明文密码
+ * @returns htpasswd 密码字段值（如 {SHA}xxxx）
+ */
+function htpasswdSha(password: string): string {
+  const sha1 = crypto.createHash('sha1').update(String(password), 'utf8').digest();
+  return `{SHA}${sha1.toString('base64')}`;
+}
 
 /** 统一兜底错误处理 */
 function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
@@ -62,9 +82,12 @@ function nginxDir(): string {
 }
 
 /**
- * 校验输入
+ * 校验输入并规整为站点行（含反代高级配置）
+ * @param body 请求体
+ * @param existing 已存在的站点行（PUT 时用于保留未变更的密码等字段）
+ * @returns 规整后的站点行（不含 id/时间戳，由调用方补齐）
  */
-function validateInput(body: any): SiteRow {
+function validateInput(body: any, existing?: SiteRow | null): SiteRow {
   const domain = String(body?.domain || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const upstreamHost = String(body?.upstreamHost || '').trim();
   const upstreamPort = Number(body?.upstreamPort);
@@ -81,6 +104,40 @@ function validateInput(body: any): SiteRow {
   if (!(listenPort >= 1 && listenPort <= 65535)) {
     throw Object.assign(new Error('监听端口无效'), { statusCode: 400 });
   }
+
+  // 反代高级配置
+  const enableWs = body?.enableWs ? 1 : 0;
+  const enableGzip = body?.enableGzip ? 1 : 0;
+  const enableAuth = body?.enableAuth ? 1 : 0;
+  const authUsername = enableAuth ? String(body?.authUsername || '').trim() : '';
+  if (enableAuth && !authUsername) {
+    throw Object.assign(new Error('开启访问控制时必须填写用户名'), { statusCode: 400 });
+  }
+  // 密码：传入明文则计算 {SHA}；否则（未提供或留空）沿用已有密码（PUT 场景）
+  let authPasswordHash: string | null = existing?.auth_password || null;
+  const rawPass = body?.authPassword != null ? String(body.authPassword) : '';
+  if (rawPass !== '') {
+    if (rawPass.length < 4) {
+      throw Object.assign(new Error('访问控制密码长度至少 4 位'), { statusCode: 400 });
+    }
+    authPasswordHash = htpasswdSha(rawPass);
+  }
+  if (enableAuth && !authPasswordHash) {
+    throw Object.assign(new Error('开启访问控制时必须设置密码'), { statusCode: 400 });
+  }
+
+  const rateLimit = String(body?.rateLimit || '').trim();
+  if (rateLimit && !/^\d+(?:\.\d+)?r\/(s|m|h|d)$/.test(rateLimit)) {
+    throw Object.assign(new Error('限速格式应为如 5r/s、1r/m 等'), { statusCode: 400 });
+  }
+  let clientMaxBody = String(body?.clientMaxBody || '').trim();
+  if (clientMaxBody && !/^\d+[kKmMgG]$/.test(clientMaxBody)) {
+    throw Object.assign(new Error('请求体上限格式应为如 10m、512k 等'), { statusCode: 400 });
+  }
+  if (!clientMaxBody) clientMaxBody = '1m';
+  const proxyTimeout = Math.max(Number(body?.proxyTimeout) || 60, 5);
+  const extraConfig = String(body?.extraConfig || '').trim();
+
   return {
     id: '',
     domain,
@@ -90,53 +147,133 @@ function validateInput(body: any): SiteRow {
     enable_https: body?.enableHttps ? 1 : 0,
     cert_path: body?.certPath ? String(body.certPath).trim() : null,
     enabled: body?.enabled === false ? 0 : 1,
+    // 高级配置
+    enable_ws: enableWs,
+    enable_gzip: enableGzip,
+    enable_auth: enableAuth,
+    auth_username: enableAuth ? authUsername : null,
+    auth_password: enableAuth ? authPasswordHash : null,
+    rate_limit: rateLimit || null,
+    client_max_body: clientMaxBody,
+    proxy_timeout: proxyTimeout,
+    extra_config: extraConfig || null,
     created_at: 0,
     updated_at: 0,
   };
 }
 
 /**
- * 生成所有站点的 nginx conf.d 配置
+ * 生成单个站点的 nginx server 配置片段（含反代高级配置）
+ * @param s 站点行
+ * @param authFile 该站点 htpasswd 文件宿主机绝对路径（未启用 auth 时为空串）
+ * @returns nginx server 配置块
+ */
+function siteServerBlock(s: SiteRow, authFile: string): string {
+  const lines: string[] = [];
+  const schema = s.enable_https ? 'https' : 'http';
+  const listen = s.enable_https && s.cert_path
+    ? `  listen ${s.listen_port} ssl;`
+    : `  listen ${s.listen_port};`;
+  lines.push('server {');
+  lines.push(listen);
+  lines.push(`  server_name ${s.domain};`);
+  if (s.enable_https && s.cert_path) {
+    lines.push(`  ssl_certificate ${s.cert_path};`);
+    lines.push(`  ssl_certificate_key ${s.cert_path.replace(/\.(crt|pem)$/i, '.key')};`);
+  }
+
+  // 自定义高级配置片段（server 级，location 外）
+  if (s.extra_config) {
+    const cleaned = String(s.extra_config).trim().replace(/^\{|\}$/g, '').trim();
+    if (cleaned) lines.push(cleaned);
+  }
+
+  // 请求体大小上限
+  lines.push(`  client_max_body_size ${s.client_max_body || '1m'};`);
+
+  // Basic Auth 访问控制
+  if (s.enable_auth && s.auth_username && authFile && s.auth_password) {
+    lines.push(`  auth_basic "Restricted";`);
+    lines.push(`  auth_basic_user_file ${authFile};`);
+  }
+
+  const timeout = s.proxy_timeout || 60;
+  const upstream = `http://${s.upstream_host}:${s.upstream_port}`;
+  lines.push('  location / {');
+  if (s.enable_auth && s.auth_username && authFile && s.auth_password) {
+    lines.push('    auth_basic "Restricted";');
+    lines.push(`    auth_basic_user_file ${authFile};`);
+  }
+  if (s.rate_limit) {
+    lines.push(`    limit_req zone=site_${s.id} burst=20 nodelay;`);
+  }
+  lines.push(`    proxy_pass ${upstream};`);
+  lines.push('    proxy_http_version 1.1;');
+  lines.push('    proxy_set_header Host $host;');
+  lines.push('    proxy_set_header X-Real-IP $remote_addr;');
+  lines.push('    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;');
+  lines.push(`    proxy_set_header X-Forwarded-Proto ${schema};`);
+  lines.push(`    proxy_read_timeout ${timeout}s;`);
+  lines.push(`    proxy_send_timeout ${timeout}s;`);
+  if (s.enable_ws) {
+    // WebSocket：透传 Upgrade/Connection 升级头，并延长空闲超时
+    lines.push('    proxy_set_header Upgrade $http_upgrade;');
+    lines.push('    proxy_set_header Connection "upgrade";');
+    lines.push(`    proxy_read_timeout 3600s;`);
+  }
+  lines.push('  }');
+  lines.push('}');
+  return lines.join('\n');
+}
+
+/**
+ * 生成所有站点的 nginx conf.d 配置（含站点配置 + 限速 zone 定义 + http 公共块）
  * @param sites 站点列表
  * @returns 配置文件名 → 内容
  */
 function generateConfigs(sites: SiteRow[]): Record<string, string> {
   const files: Record<string, string> = {};
   const enabledSites = sites.filter((s) => s.enabled);
+
+  // 限速 zone 定义（http 上下文，conf.d 每个文件顶层即为 http 上下文）
+  const zones = enabledSites
+    .filter((s) => s.rate_limit)
+    .map((s) => `limit_req_zone $binary_remote_addr zone=site_${s.id}:10m rate=${s.rate_limit};`)
+    .join('\n');
+  if (zones) {
+    files['_limits.conf'] = zones + '\n';
+  }
+
+  // Basic Auth 凭据文件（宿主机路径，供 auth_basic_user_file 引用）
+  const authDir = path.join(nginxDir(), 'auth');
+  const authFiles: Record<string, string> = {};
+  for (const s of enabledSites) {
+    if (s.enable_auth && s.auth_username && s.auth_password) {
+      const authPath = path.join(authDir, `${s.id}.htpasswd`);
+      authFiles[s.id] = authPath;
+      fs.mkdirSync(authDir, { recursive: true });
+      fs.writeFileSync(authPath, `${s.auth_username}:${s.auth_password}\n`);
+    }
+  }
+  // 清理不再需要的 auth 文件（避免凭据残留）
+  if (fs.existsSync(authDir)) {
+    for (const f of fs.readdirSync(authDir)) {
+      if (f.endsWith('.htpasswd')) {
+        const id = f.replace(/\.htpasswd$/, '');
+        if (!authFiles[id]) {
+          try {
+            fs.unlinkSync(path.join(authDir, f));
+          } catch {
+            // 忽略
+          }
+        }
+      }
+    }
+  }
+
   for (const s of enabledSites) {
     const safeName = s.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const upstream = `http://${s.upstream_host}:${s.upstream_port}`;
-    if (s.enable_https && s.cert_path) {
-      files[`${safeName}.conf`] = [
-        `server {`,
-        `  listen ${s.listen_port} ssl;`,
-        `  server_name ${s.domain};`,
-        `  ssl_certificate ${s.cert_path};`,
-        `  ssl_certificate_key ${s.cert_path.replace(/\.(crt|pem)$/i, '.key')};`,
-        `  location / {`,
-        `    proxy_pass ${upstream};`,
-        `    proxy_set_header Host $host;`,
-        `    proxy_set_header X-Real-IP $remote_addr;`,
-        `    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`,
-        `    proxy_set_header X-Forwarded-Proto $scheme;`,
-        `  }`,
-        `}`,
-      ].join('\n');
-    } else {
-      files[`${safeName}.conf`] = [
-        `server {`,
-        `  listen ${s.listen_port};`,
-        `  server_name ${s.domain};`,
-        `  location / {`,
-        `    proxy_pass ${upstream};`,
-        `    proxy_set_header Host $host;`,
-        `    proxy_set_header X-Real-IP $remote_addr;`,
-        `    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`,
-        `    proxy_set_header X-Forwarded-Proto $scheme;`,
-        `  }`,
-        `}`,
-      ].join('\n');
-    }
+    files[`${safeName}.conf`] = siteServerBlock(s, authFiles[s.id] || '');
   }
   return files;
 }
@@ -250,6 +387,16 @@ router.get(
         enableHttps: !!r.enable_https,
         certPath: r.cert_path || '',
         enabled: !!r.enabled,
+        // 反代高级配置（密码不回传原文，仅标记是否已设置）
+        enableWs: !!r.enable_ws,
+        enableGzip: !!r.enable_gzip,
+        enableAuth: !!r.enable_auth,
+        authUsername: r.enable_auth && r.auth_username ? r.auth_username : '',
+        authPasswordSet: !!(r.enable_auth && r.auth_password),
+        rateLimit: r.rate_limit || '',
+        clientMaxBody: r.client_max_body || '1m',
+        proxyTimeout: r.proxy_timeout || 60,
+        extraConfig: r.extra_config || '',
       })),
     });
   }),
@@ -270,8 +417,12 @@ router.post(
     const id = crypto.randomUUID();
     const now = Date.now();
     d.prepare(
-      'INSERT INTO sites (id, domain, upstream_host, upstream_port, listen_port, enable_https, cert_path, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run(id, v.domain, v.upstream_host, v.upstream_port, v.listen_port, v.enable_https, v.cert_path, v.enabled, now, now);
+      'INSERT INTO sites (id, domain, upstream_host, upstream_port, listen_port, enable_https, cert_path, enabled, enable_ws, enable_gzip, enable_auth, auth_username, auth_password, rate_limit, client_max_body, proxy_timeout, extra_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      id, v.domain, v.upstream_host, v.upstream_port, v.listen_port, v.enable_https, v.cert_path, v.enabled,
+      v.enable_ws, v.enable_gzip, v.enable_auth, v.auth_username, v.auth_password, v.rate_limit, v.client_max_body, v.proxy_timeout, v.extra_config,
+      now, now,
+    );
     const result = await syncReverseProxy();
     logOperation(res.locals.username, '新增站点', '反代', v.domain);
     res.json({ ok: true, id, proxy: result });
@@ -290,10 +441,27 @@ router.put(
     const d = getDb();
     const row = d.prepare('SELECT * FROM sites WHERE id = ?').get(id) as SiteRow | undefined;
     if (!row) return res.status(404).json({ error: '站点不存在' });
-    const v = validateInput({ ...req.body, domain: req.body?.domain ?? row.domain });
+    // 合并现有高级配置作为默认，避免前端未传字段被误重置（密码等）
+    const merged = {
+      ...req.body,
+      domain: req.body?.domain ?? row.domain,
+      enableWs: req.body?.enableWs ?? !!row.enable_ws,
+      enableGzip: req.body?.enableGzip ?? !!row.enable_gzip,
+      enableAuth: req.body?.enableAuth ?? !!row.enable_auth,
+      authUsername: req.body?.authUsername ?? row.auth_username,
+      rateLimit: req.body?.rateLimit ?? row.rate_limit ?? '',
+      clientMaxBody: req.body?.clientMaxBody ?? row.client_max_body ?? '1m',
+      proxyTimeout: req.body?.proxyTimeout ?? row.proxy_timeout ?? 60,
+      extraConfig: req.body?.extraConfig ?? row.extra_config ?? '',
+    };
+    const v = validateInput(merged, row);
     d.prepare(
-      'UPDATE sites SET domain=?, upstream_host=?, upstream_port=?, listen_port=?, enable_https=?, cert_path=?, enabled=?, updated_at=? WHERE id=?',
-    ).run(v.domain, v.upstream_host, v.upstream_port, v.listen_port, v.enable_https, v.cert_path, v.enabled, Date.now(), id);
+      'UPDATE sites SET domain=?, upstream_host=?, upstream_port=?, listen_port=?, enable_https=?, cert_path=?, enabled=?, enable_ws=?, enable_gzip=?, enable_auth=?, auth_username=?, auth_password=?, rate_limit=?, client_max_body=?, proxy_timeout=?, extra_config=?, updated_at=? WHERE id=?',
+    ).run(
+      v.domain, v.upstream_host, v.upstream_port, v.listen_port, v.enable_https, v.cert_path, v.enabled,
+      v.enable_ws, v.enable_gzip, v.enable_auth, v.auth_username, v.auth_password, v.rate_limit, v.client_max_body, v.proxy_timeout, v.extra_config,
+      Date.now(), id,
+    );
     const result = await syncReverseProxy();
     logOperation(res.locals.username, '更新站点', '反代', v.domain);
     res.json({ ok: true, proxy: result });

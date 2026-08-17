@@ -14,7 +14,7 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
-import { Field, Input } from '../components/Form';
+import { Field, Input, TextArea } from '../components/Form';
 import './sites.less';
 
 /** 站点 */
@@ -27,6 +27,16 @@ interface Site {
   enableHttps: boolean;
   certPath: string;
   enabled: boolean;
+  enableWs: boolean;
+  enableGzip: boolean;
+  enableAuth: boolean;
+  authUsername: string;
+  /** 是否已设置访问控制密码（密码不回传，仅提供布尔标记） */
+  authPasswordSet: boolean;
+  rateLimit: string;
+  clientMaxBody: string;
+  proxyTimeout: number;
+  extraConfig: string;
 }
 
 /** 列表响应 */
@@ -46,6 +56,10 @@ interface FormError {
   domain?: string;
   upstreamHost?: string;
   upstreamPort?: string;
+  authUsername?: string;
+  rateLimit?: string;
+  clientMaxBody?: string;
+  proxyTimeout?: string;
 }
 
 /**
@@ -73,6 +87,15 @@ export default function SitesPage() {
     listenPort: '80',
     enableHttps: false,
     certPath: '',
+    enableWs: false,
+    enableGzip: false,
+    enableAuth: false,
+    authUsername: '',
+    authPassword: '',
+    rateLimit: '',
+    clientMaxBody: '1m',
+    proxyTimeout: '60',
+    extraConfig: '',
   });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FormError>({});
@@ -138,7 +161,7 @@ export default function SitesPage() {
       return;
     }
     setEditing(null);
-    setForm({ domain: '', upstreamHost: '', upstreamPort: '80', listenPort: '80', enableHttps: false, certPath: '' });
+    setForm({ domain: '', upstreamHost: '', upstreamPort: '80', listenPort: '80', enableHttps: false, certPath: '', enableWs: false, enableGzip: false, enableAuth: false, authUsername: '', authPassword: '', rateLimit: '', clientMaxBody: '1m', proxyTimeout: '60', extraConfig: '' });
     setErrors({});
     setModalOpen(true);
   }, [canManage, showToast]);
@@ -160,6 +183,16 @@ export default function SitesPage() {
       listenPort: String(s.listenPort),
       enableHttps: s.enableHttps,
       certPath: s.certPath,
+      enableWs: s.enableWs,
+      enableGzip: s.enableGzip,
+      enableAuth: s.enableAuth,
+      // 未开启访问控制时清空用户名与密码，避免残留
+      authUsername: s.enableAuth ? s.authUsername : '',
+      authPassword: '',
+      rateLimit: s.rateLimit || '',
+      clientMaxBody: s.clientMaxBody || '1m',
+      proxyTimeout: s.proxyTimeout != null ? String(s.proxyTimeout) : '60',
+      extraConfig: s.extraConfig || '',
     });
     setErrors({});
     setModalOpen(true);
@@ -179,6 +212,30 @@ export default function SitesPage() {
     if (!form.upstreamHost.trim()) err.upstreamHost = '请输入上游地址';
     const port = Number(form.upstreamPort);
     if (!(port >= 1 && port <= 65535)) err.upstreamPort = '端口无效';
+
+    // 启用访问控制时必须填写用户名
+    if (form.enableAuth && !form.authUsername.trim()) {
+      err.authUsername = '请输入访问控制用户名';
+    }
+
+    // 请求限速格式校验：形如 "5r/s" 或 "10r/m"，允许留空
+    const rateLimitTrim = form.rateLimit.trim();
+    if (rateLimitTrim && !/^\d+(r|k|m|g)?\/s$/i.test(rateLimitTrim) && !/^\d+(r|k|m|g)?\/m$/i.test(rateLimitTrim)) {
+      err.rateLimit = '限速格式如 "5r/s" 或 "10r/m"';
+    }
+
+    // 请求体上限格式校验：形如 "10m"、"500k"、"1g"，允许留空
+    const bodyTrim = form.clientMaxBody.trim();
+    if (bodyTrim && !/^\d+(k|m|g)?$/i.test(bodyTrim)) {
+      err.clientMaxBody = '格式如 "10m"（k/m/g）';
+    }
+
+    // 代理超时校验：必须为有效正整数
+    const timeout = Number(form.proxyTimeout);
+    if (!Number.isFinite(timeout) || timeout < 1) {
+      err.proxyTimeout = '须为大于 0 的秒数';
+    }
+
     setErrors(err);
     if (Object.keys(err).length) return;
 
@@ -191,6 +248,16 @@ export default function SitesPage() {
         listenPort: Number(form.listenPort),
         enableHttps: form.enableHttps,
         certPath: form.certPath.trim(),
+        enableWs: form.enableWs,
+        enableGzip: form.enableGzip,
+        enableAuth: form.enableAuth,
+        authUsername: form.enableAuth ? form.authUsername.trim() : '',
+        // 编辑时密码留空表示不修改，仅在填写时发送
+        authPassword: form.authPassword,
+        rateLimit: form.rateLimit.trim(),
+        clientMaxBody: form.clientMaxBody.trim() || '1m',
+        proxyTimeout: Number(form.proxyTimeout),
+        extraConfig: form.extraConfig,
       };
       const data = await (editing
         ? post<{ ok: boolean; proxy: { ok: boolean; message: string } }>(`/api/sites/${editing.id}`, body)
@@ -377,6 +444,9 @@ export default function SitesPage() {
                         {s.enabled ? '运行中' : '已停止'}
                       </span>
                       {s.enableHttps && <span className="site-badge site-badge--https">HTTPS</span>}
+                      {s.enableWs && <span className="site-badge site-badge--ws">WS</span>}
+                      {s.enableAuth && <span className="site-badge site-badge--auth">Auth</span>}
+                      {s.rateLimit && <span className="site-badge site-badge--rate">限速 {s.rateLimit}</span>}
                     </div>
                   </td>
                   <td>
@@ -437,6 +507,71 @@ export default function SitesPage() {
             <Input value={form.certPath} placeholder="如 C:\\certs\\app.pem" onChange={(e) => setForm((f) => ({ ...f, certPath: e.target.value }))} />
           </Field>
         )}
+
+        <div className="site-advanced">
+          <div className="site-advanced__title">高级配置</div>
+
+          {/* 布尔开关组：WebSocket / gzip / 访问控制 */}
+          <div className="site-advanced__toggles">
+            <label className="site-advanced__toggle">
+              <input type="checkbox" checked={form.enableWs} onChange={(e) => setForm((f) => ({ ...f, enableWs: e.target.checked }))} />
+              <span>WebSocket 透传</span>
+            </label>
+            <label className="site-advanced__toggle">
+              <input type="checkbox" checked={form.enableGzip} onChange={(e) => setForm((f) => ({ ...f, enableGzip: e.target.checked }))} />
+              <span>启用 gzip 压缩</span>
+            </label>
+            <label className="site-advanced__toggle">
+              <input type="checkbox" checked={form.enableAuth} onChange={(e) => setForm((f) => ({ ...f, enableAuth: e.target.checked }))} />
+              <span>启用访问控制（Basic Auth）</span>
+            </label>
+          </div>
+
+          {/* 访问控制配置：仅在开启时展示 */}
+          {form.enableAuth && (
+            <div className="site-advanced__row site-advanced__row--2">
+              <Field label="访问控制用户名" required>
+                <Input value={form.authUsername} placeholder="如 admin" onChange={(e) => setForm((f) => ({ ...f, authUsername: e.target.value }))} />
+                {errors.authUsername && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.authUsername}</div>}
+              </Field>
+              <Field
+                label="访问控制密码"
+                hint={editing?.authPasswordSet ? '已设置密码（留空则不更改）' : '新增时必填；编辑时留空表示不修改密码'}
+              >
+                <Input
+                  type="password"
+                  value={form.authPassword}
+                  placeholder={editing?.authPasswordSet ? '留空则不更改' : '请输入密码'}
+                  onChange={(e) => setForm((f) => ({ ...f, authPassword: e.target.value }))}
+                />
+              </Field>
+            </div>
+          )}
+
+          <div className="site-advanced__row site-advanced__row--3">
+            <Field label="请求限速" hint={'可选，格式如 "5r/s" 或 "10r/m"，留空表示不开启'}>
+              <Input value={form.rateLimit} placeholder="如 5r/s" onChange={(e) => setForm((f) => ({ ...f, rateLimit: e.target.value }))} />
+              {errors.rateLimit && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.rateLimit}</div>}
+            </Field>
+            <Field label="客户端请求体上限" hint={'格式如 "10m"，默认 "1m"'}>
+              <Input value={form.clientMaxBody} placeholder="如 10m" onChange={(e) => setForm((f) => ({ ...f, clientMaxBody: e.target.value }))} />
+              {errors.clientMaxBody && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.clientMaxBody}</div>}
+            </Field>
+            <Field label="代理超时（秒）" hint="上游响应超时秒数，默认 60">
+              <Input value={form.proxyTimeout} placeholder="如 60" onChange={(e) => setForm((f) => ({ ...f, proxyTimeout: e.target.value }))} />
+              {errors.proxyTimeout && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.proxyTimeout}</div>}
+            </Field>
+          </div>
+
+          <Field label="自定义配置片段" hint="可粘贴额外 nginx 指令，如 access_log / proxy_set_header 等（可选）">
+            <TextArea
+              rows={3}
+              value={form.extraConfig}
+              placeholder={'可粘贴额外 nginx 指令，如 access_log /var/log/nginx/site.log;'}
+              onChange={(e) => setForm((f) => ({ ...f, extraConfig: e.target.value }))}
+            />
+          </Field>
+        </div>
       </Modal>
 
       {/* 删除确认 */}
