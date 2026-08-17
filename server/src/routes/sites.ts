@@ -188,6 +188,15 @@ function siteServerBlock(s: SiteRow, authFile: string): string {
     if (cleaned) lines.push(cleaned);
   }
 
+  // 启用 gzip 压缩（server 上下文中合法）
+  if (s.enable_gzip) {
+    lines.push('  gzip on;');
+    lines.push('  gzip_comp_level 5;');
+    lines.push('  gzip_min_length 1k;');
+    lines.push('  gzip_http_version 1.1;');
+    lines.push('  gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml;');
+  }
+
   // 请求体大小上限
   lines.push(`  client_max_body_size ${s.client_max_body || '1m'};`);
 
