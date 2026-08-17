@@ -346,6 +346,23 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_alert_records_created ON alert_records(created_at DESC);
 
+    -- 容器级告警规则表：针对具体容器的退出/健康检查/端口探测告警（同一容器同监控类型唯一）
+    CREATE TABLE IF NOT EXISTS container_alert_rules (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      container_id  TEXT NOT NULL,                -- 目标容器（docker id 或名称）
+      watch_type    TEXT NOT NULL,                -- exited | health | port
+      enabled       INTEGER NOT NULL DEFAULT 1,
+      port          INTEGER,                      -- watch_type=port 时的探测端口（留空用容器映射主端口）
+      silent_start  TEXT,                         -- 静默时段开始 HH:mm
+      silent_end    TEXT,                         -- 静默时段结束
+      workdays_only INTEGER NOT NULL DEFAULT 0,   -- 仅工作日
+      work_start    TEXT,                         -- 工作时段开始
+      work_end      TEXT,                         -- 工作时段结束
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL,
+      UNIQUE(container_id, watch_type)
+    );
+
     -- 主机监控指标采样表：采集器降采样落库，供跨小时/跨天历史趋势查询（重启不丢失）
     CREATE TABLE IF NOT EXISTS host_metrics (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,

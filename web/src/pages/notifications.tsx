@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { get, post, put, del } from '../api/client';
 import { useToast } from '../components/Toast';
+import { useCanManage } from '../hooks/useCanManage';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -18,6 +19,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input, Select } from '../components/Form';
+import type { ContainerListItem, ContainerRule, ContainerRuleListResponse, ContainerRuleWatchType } from '../types';
 import './notifications.less';
 
 /** 告警规则 */
@@ -69,13 +71,30 @@ const CHANNEL_LABELS: Record<string, string> = {
   feishu: '飞书',
 };
 
-/** 告警记录类型中文名（含任务失败 type=task） */
+/** 告警记录类型中文名（含任务失败 type=task 与容器告警 exited/health/port） */
 const TYPE_LABELS: Record<string, string> = {
   cpu: 'CPU',
   mem: '内存',
   disk: '磁盘',
   task: '任务',
+  exited: '容器退出',
+  health: '健康检查',
+  port: '端口',
 };
+
+/** 容器级告警监控类型中文名 */
+const WATCH_LABELS: Record<ContainerRuleWatchType, string> = {
+  exited: '退出',
+  health: '健康检查',
+  port: '端口',
+};
+
+/** 容器级告警监控类型选项目文案（带说明） */
+const WATCH_OPTIONS: Array<{ value: ContainerRuleWatchType; label: string }> = [
+  { value: 'exited', label: '退出（容器退出/重启循环）' },
+  { value: 'health', label: '健康检查（health 未通过）' },
+  { value: 'port', label: '端口（端口不可达）' },
+];
 
 /** 告警记录级别中文名（含恢复 recovery） */
 const LEVEL_LABELS: Record<string, string> = {
@@ -136,6 +155,7 @@ function formatTime(ms: number): string {
  */
 export default function NotificationsPage() {
   const { showToast } = useToast();
+  const { canManage } = useCanManage();
 
   // 规则
   const [rules, setRules] = useState<AlertRule[]>([]);
@@ -188,6 +208,44 @@ export default function NotificationsPage() {
   });
   const [savingRule, setSavingRule] = useState(false);
 
+  // 容器告警规则
+  const [containerRules, setContainerRules] = useState<ContainerRule[]>([]);
+  const [containerRuleLoading, setContainerRuleLoading] = useState(true);
+  // 可选容器列表（/api/containers?all=true）
+  const [containers, setContainers] = useState<ContainerListItem[]>([]);
+  const [containersLoading, setContainersLoading] = useState(false);
+  // 容器规则新增/编辑弹窗
+  const [containerRuleModal, setContainerRuleModal] = useState<{ editing: ContainerRule | null; open: boolean }>({
+    editing: null,
+    open: false,
+  });
+  const [containerRuleForm, setContainerRuleForm] = useState<{
+    containerId: string;
+    watchType: ContainerRuleWatchType;
+    port: string;
+    enabled: boolean;
+    silentStart: string;
+    silentEnd: string;
+    workdaysOnly: boolean;
+    workStart: string;
+    workEnd: string;
+  }>({
+    containerId: '',
+    watchType: 'exited',
+    port: '',
+    enabled: true,
+    silentStart: '',
+    silentEnd: '',
+    workdaysOnly: false,
+    workStart: '',
+    workEnd: '',
+  });
+  const [savingContainerRule, setSavingContainerRule] = useState(false);
+  const [containerRuleError, setContainerRuleError] = useState('');
+  // 删除容器规则确认
+  const [deleteContainerRule, setDeleteContainerRule] = useState<ContainerRule | null>(null);
+  const [deletingContainerRule, setDeletingContainerRule] = useState(false);
+
   /**
    * 加载告警记录（分页 + 过滤）
    */
@@ -233,6 +291,40 @@ export default function NotificationsPage() {
       setChannelLoading(false);
     }
   }, [showToast]);
+
+  /**
+   * 加载容器告警规则
+   */
+  const loadContainerRules = useCallback(async () => {
+    setContainerRuleLoading(true);
+    try {
+      const res = await get<ContainerRuleListResponse>('/api/notifications/container-rules');
+      setContainerRules(res?.rules || []);
+    } catch (e: any) {
+      showToast(e?.message || '加载容器规则失败', 'error');
+    } finally {
+      setContainerRuleLoading(false);
+    }
+  }, [showToast]);
+
+  /**
+   * 加载可选容器列表（/api/containers?all=true）
+   */
+  const loadContainers = useCallback(async () => {
+    setContainersLoading(true);
+    try {
+      const list = await get<ContainerListItem[]>('/api/containers', { all: true });
+      setContainers(list || []);
+    } catch (e: any) {
+      showToast(e?.message || '加载容器列表失败', 'error');
+    } finally {
+      setContainersLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    loadContainerRules();
+  }, [loadContainerRules]);
 
   useEffect(() => {
     load();
@@ -459,6 +551,141 @@ export default function NotificationsPage() {
   }, [ruleModal, ruleForm, load, showToast]);
 
   /**
+   * 取得容器显示名：优先用容器名，其次用 id 短标识
+   * @param rule 容器规则
+   * @returns 展示名称
+   */
+  const containerDisplayName = useCallback((rule: ContainerRule): string => {
+    if (rule.containerName) return rule.containerName;
+    const found = containers.find((c) => c.Id === rule.containerId);
+    const name = found?.Names?.[0] || '';
+    if (name) return name.replace(/^\//, '');
+    return rule.containerId.length > 12 ? rule.containerId.slice(0, 12) : rule.containerId;
+  }, [containers]);
+
+  /**
+   * 打开新增容器规则弹窗（并加载可选容器）
+   */
+  const openCreateContainerRule = useCallback(() => {
+    setContainerRuleForm({
+      containerId: '',
+      watchType: 'exited',
+      port: '',
+      enabled: true,
+      silentStart: '',
+      silentEnd: '',
+      workdaysOnly: false,
+      workStart: '',
+      workEnd: '',
+    });
+    setContainerRuleError('');
+    setContainerRuleModal({ editing: null, open: true });
+    loadContainers();
+  }, [loadContainers]);
+
+  /**
+   * 打开编辑容器规则弹窗（预填表单）
+   * @param rule 容器规则
+   */
+  const openEditContainerRule = useCallback(
+    (rule: ContainerRule) => {
+      setContainerRuleForm({
+        containerId: rule.containerId,
+        watchType: rule.watchType,
+        port: rule.port != null ? String(rule.port) : '',
+        enabled: rule.enabled,
+        silentStart: rule.silentStart || '',
+        silentEnd: rule.silentEnd || '',
+        workdaysOnly: rule.workdaysOnly,
+        workStart: rule.workStart || '',
+        workEnd: rule.workEnd || '',
+      });
+      setContainerRuleError('');
+      setContainerRuleModal({ editing: rule, open: true });
+      loadContainers();
+    },
+    [loadContainers],
+  );
+
+  /**
+   * 提交容器规则新增 / 编辑
+   */
+  const handleSaveContainerRule = useCallback(async () => {
+    if (!containerRuleForm.containerId) {
+      setContainerRuleError('请选择目标容器');
+      return;
+    }
+    if (containerRuleForm.watchType === 'port') {
+      const port = Number(containerRuleForm.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        setContainerRuleError('探测端口需为 1-65535 的整数');
+        return;
+      }
+    }
+    setSavingContainerRule(true);
+    try {
+      const body: Record<string, any> = {
+        containerId: containerRuleForm.containerId,
+        watchType: containerRuleForm.watchType,
+        port: containerRuleForm.watchType === 'port' ? Number(containerRuleForm.port) : undefined,
+        enabled: containerRuleForm.enabled,
+        silentStart: containerRuleForm.silentStart || null,
+        silentEnd: containerRuleForm.silentEnd || null,
+        workdaysOnly: containerRuleForm.workdaysOnly,
+        workStart: containerRuleForm.workStart || null,
+        workEnd: containerRuleForm.workEnd || null,
+      };
+      if (containerRuleModal.editing) {
+        await put(`/api/notifications/container-rules/${containerRuleModal.editing.id}`, body);
+        showToast('容器规则已更新');
+      } else {
+        await post('/api/notifications/container-rules', body);
+        showToast('容器规则已创建');
+      }
+      setContainerRuleModal({ editing: null, open: false });
+      loadContainerRules();
+    } catch (e: any) {
+      setContainerRuleError(e?.message || '保存失败');
+    } finally {
+      setSavingContainerRule(false);
+    }
+  }, [containerRuleForm, containerRuleModal.editing, loadContainerRules, showToast]);
+
+  /**
+   * 切换容器规则启停状态
+   * @param rule 容器规则
+   */
+  const toggleContainerRule = useCallback(
+    async (rule: ContainerRule) => {
+      try {
+        await put(`/api/notifications/container-rules/${rule.id}`, { enabled: !rule.enabled });
+        loadContainerRules();
+      } catch (e: any) {
+        showToast(e?.message || '操作失败', 'error');
+      }
+    },
+    [loadContainerRules, showToast],
+  );
+
+  /**
+   * 确认删除容器规则
+   */
+  const handleDeleteContainerRule = useCallback(async () => {
+    if (!deleteContainerRule) return;
+    setDeletingContainerRule(true);
+    try {
+      await del(`/api/notifications/container-rules/${deleteContainerRule.id}`);
+      showToast('容器规则已删除');
+      setDeleteContainerRule(null);
+      loadContainerRules();
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    } finally {
+      setDeletingContainerRule(false);
+    }
+  }, [deleteContainerRule, loadContainerRules, showToast]);
+
+  /**
    * 立即触发一次告警检测
    */
   const runCheck = useCallback(async () => {
@@ -529,6 +756,69 @@ export default function NotificationsPage() {
                   <td className="notify-dim">—</td>
                   <td>
                     <Button variant="ghost" size="sm" onClick={() => openEditRule(r)}>编辑</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* 容器告警规则 */}
+      <Card
+        className="notify-card"
+        title="容器告警规则"
+        extra={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="ghost" size="sm" onClick={loadContainerRules}>刷新</Button>
+            <Button size="sm" disabled={!canManage} onClick={openCreateContainerRule}>+ 新增规则</Button>
+          </div>
+        }
+      >
+        <p className="notify-desc">对指定容器监听 退出/健康检查失败/端口不可达。</p>
+        {containerRuleLoading ? (
+          <SkeletonRows rows={3} />
+        ) : containerRules.length === 0 ? (
+          <Empty title="暂无容器告警规则" description="新增一条规则，对指定容器监听退出、健康检查或端口可达性。" />
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: '24%' }}>容器</th>
+                <th style={{ width: '16%' }}>监控类型</th>
+                <th style={{ width: '14%' }}>目标端口</th>
+                <th style={{ width: '16%' }}>状态</th>
+                <th style={{ width: '30%' }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {containerRules.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <strong title={r.containerId}>{containerDisplayName(r)}</strong>
+                    {(r.silentStart || r.workdaysOnly || r.workStart) && (
+                      <div className="notify-rule-tags">
+                        {r.silentStart && <span className="notify-tag" title={`静默时段 ${r.silentStart} - ${r.silentEnd || '?'}`}>静默</span>}
+                        {r.workdaysOnly && <span className="notify-tag" title="仅工作日告警">工作日</span>}
+                        {r.workStart && <span className="notify-tag" title={`工作时段 ${r.workStart} - ${r.workEnd || '?'}`}>工作时段</span>}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <span className={`notify-badge notify-badge--${r.watchType}`}>{WATCH_LABELS[r.watchType] || r.watchType}</span>
+                  </td>
+                  <td>{r.watchType === 'port' && r.port != null ? r.port : <span className="notify-dim">—</span>}</td>
+                  <td>
+                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Button variant="ghost" size="sm" onClick={() => openEditContainerRule(r)} disabled={!canManage}>编辑</Button>
+                      <Button variant="ghost" size="sm" onClick={() => toggleContainerRule(r)} disabled={!canManage}>
+                        {r.enabled ? '停用' : '启用'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteContainerRule(r)} disabled={!canManage}>删除</Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -612,6 +902,9 @@ export default function NotificationsPage() {
               <option value="mem">内存</option>
               <option value="disk">磁盘</option>
               <option value="task">任务</option>
+              <option value="exited">容器退出</option>
+              <option value="health">健康检查</option>
+              <option value="port">端口</option>
             </Select>
             <Select
               value={levelFilter}
@@ -946,6 +1239,138 @@ export default function NotificationsPage() {
           </div>
         </div>
       </Modal>
+
+      {/* 容器规则新增/编辑弹窗 */}
+      <Modal
+        open={containerRuleModal.open}
+        title={containerRuleModal.editing ? '编辑容器告警规则' : '新增容器告警规则'}
+        onClose={() => setContainerRuleModal({ editing: null, open: false })}
+        footer={
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setContainerRuleModal({ editing: null, open: false })}>取消</Button>
+            <Button loading={savingContainerRule} onClick={handleSaveContainerRule}>{containerRuleModal.editing ? '保存' : '创建'}</Button>
+          </div>
+        }
+      >
+        <Field label="目标容器" required>
+          <Select
+            value={containerRuleForm.containerId}
+            onChange={(e) => setContainerRuleForm((f) => ({ ...f, containerId: e.target.value }))}
+            disabled={containersLoading}
+          >
+            <option value="">{containersLoading ? '加载中…' : '请选择容器'}</option>
+            {containers.map((c) => {
+              const name = c.Names?.[0]?.replace(/^\//, '') || c.Id.slice(0, 12);
+              return (
+                <option key={c.Id} value={c.Id}>
+                  {name} ({c.State})
+                </option>
+              );
+            })}
+          </Select>
+        </Field>
+        <Field label="监控类型" required>
+          <Select
+            value={containerRuleForm.watchType}
+            onChange={(e) => setContainerRuleForm((f) => ({ ...f, watchType: e.target.value as ContainerRuleWatchType }))}
+          >
+            {WATCH_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </Select>
+        </Field>
+        {containerRuleForm.watchType === 'port' && (
+          <Field label="探测端口" required hint="留空可自动取容器映射主端口（后端要求必填，请填写 1-65535）">
+            <Input
+              type="number"
+              min={1}
+              max={65535}
+              placeholder="如 8080"
+              value={containerRuleForm.port}
+              onChange={(e) => setContainerRuleForm((f) => ({ ...f, port: e.target.value }))}
+            />
+          </Field>
+        )}
+        <Field label="启用规则">
+          <label className="notify-checkbox">
+            <input
+              type="checkbox"
+              checked={containerRuleForm.enabled}
+              onChange={(e) => setContainerRuleForm((f) => ({ ...f, enabled: e.target.checked }))}
+            />
+            启用该容器告警
+          </label>
+        </Field>
+
+        <div className="notify-rule-section">静默时段</div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="开始（HH:mm）" hint="留空表示无静默时段">
+              <Input
+                type="time"
+                value={containerRuleForm.silentStart}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, silentStart: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="结束（HH:mm）">
+              <Input
+                type="time"
+                value={containerRuleForm.silentEnd}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, silentEnd: e.target.value }))}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <Field label="仅工作日告警">
+          <label className="notify-checkbox">
+            <input
+              type="checkbox"
+              checked={containerRuleForm.workdaysOnly}
+              onChange={(e) => setContainerRuleForm((f) => ({ ...f, workdaysOnly: e.target.checked }))}
+            />
+            仅在周一至周五告警，周末静默
+          </label>
+        </Field>
+
+        <div className="notify-rule-section">工作时段</div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="开始（HH:mm）" hint="留空表示不限制工作时段">
+              <Input
+                type="time"
+                value={containerRuleForm.workStart}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, workStart: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="结束（HH:mm）">
+              <Input
+                type="time"
+                value={containerRuleForm.workEnd}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, workEnd: e.target.value }))}
+              />
+            </Field>
+          </div>
+        </div>
+
+        {containerRuleError && <div className="notify-form-error">{containerRuleError}</div>}
+      </Modal>
+
+      {/* 删除容器规则确认 */}
+      <ConfirmDialog
+        open={!!deleteContainerRule}
+        title="删除容器告警规则"
+        message={`确定删除对容器「${deleteContainerRule ? containerDisplayName(deleteContainerRule) : ''}」的告警规则吗？删除后将不再监听该事件。`}
+        confirmText="删除"
+        danger
+        loading={deletingContainerRule}
+        onConfirm={handleDeleteContainerRule}
+        onCancel={() => setDeleteContainerRule(null)}
+      />
 
       {/* 删除渠道确认 */}
       <ConfirmDialog

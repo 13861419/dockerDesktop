@@ -9,12 +9,14 @@
  * 为避免同一持续告警反复刷屏，采用"最近触发去重"：同一类型+级别在达到
  * 静默间隔前不重复推送与落库。
  */
+import net from 'net';
 import { getDb } from './storage';
 import { getCurrentMonitor } from './docker/monitor';
+import { getDockerClient } from './docker/client';
 import { listChannels, sendAlert } from './notify';
 
-/** 资源类型 */
-export type AlertType = 'cpu' | 'mem' | 'disk' | 'task';
+/** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
+export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port';
 /** 告警级别 */
 export type AlertLevel = 'warn' | 'danger' | 'recovery';
 
@@ -346,6 +348,8 @@ async function check(): Promise<void> {
       await fireRecovery(s.type, s.percent);
     }
   }
+  // 容器级告警检测（退出/健康检查/端口探测），与宿主级规则并行
+  await checkContainerRules();
 }
 
 /**
@@ -603,3 +607,419 @@ export function buildSnapshotText(): string | null {
   ];
   return lines.join('\n');
 }
+
+// ==================== 容器级告警 ====================
+
+/** 容器告警支持的监控类型 */
+export type ContainerWatchType = 'exited' | 'health' | 'port';
+
+/** 容器告警规则行 */
+interface ContainerAlertRuleRow {
+  id: number;
+  container_id: string;
+  watch_type: string;
+  enabled: number;
+  port: number | null;
+  silent_start: string | null;
+  silent_end: string | null;
+  workdays_only: number;
+  work_start: string | null;
+  work_end: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 归一化后的容器告警规则（含 displayName 由外部回填） */
+export interface ContainerAlertRule {
+  id: number;
+  containerId: string;
+  containerName?: string;
+  watchType: ContainerWatchType;
+  enabled: boolean;
+  port: number | null;
+  silentStart: string | null;
+  silentEnd: string | null;
+  workdaysOnly: boolean;
+  workStart: string | null;
+  workEnd: string | null;
+}
+
+/** 容器告警规则归一化为 AlertRule（复用现有静默/时段判定结构） */
+function normalizeContainerRule(r: ContainerAlertRuleRow): ContainerAlertRule {
+  return {
+    id: r.id,
+    containerId: r.container_id,
+    watchType: r.watch_type as ContainerWatchType,
+    enabled: r.enabled === 1,
+    port: r.port,
+    silentStart: r.silent_start || null,
+    silentEnd: r.silent_end || null,
+    workdaysOnly: r.workdays_only === 1,
+    workStart: r.work_start || null,
+    workEnd: r.work_end || null,
+  };
+}
+
+/** 容器告警去重/状态机（以规则 id 为键，避免与宿主级规则的 type:level 冲突） */
+const containerLastAlert = new Map<number, number>();
+const containerActive = new Map<number, 'warn' | 'danger' | null>();
+
+/**
+ * 将归一化容器规则转为可复用现有静默判定的 AlertRule 形状
+ * @param r 容器规则
+ */
+function containerRuleToQuiet(r: ContainerAlertRule): AlertRule {
+  return {
+    enabled: r.enabled,
+    warn: 0,
+    danger: 0,
+    silentStart: r.silentStart,
+    silentEnd: r.silentEnd,
+    workdaysOnly: r.workdaysOnly,
+    workStart: r.workStart,
+    workEnd: r.workEnd,
+  };
+}
+
+/**
+ * TCP 端口连通性探测（零依赖，net.connect）
+ * @param host 目标主机
+ * @param port 目标端口
+ * @param timeoutMs 超时（毫秒）
+ * @returns 是否连通
+ */
+function probeTcp(host: string, port: number, timeoutMs = 3000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const done = (ok: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+    socket.connect(port, host);
+  });
+}
+
+/**
+ * 写入容器告警条（落库 + 推送到启用渠道），带容器名与最终消息
+ * @param rule 容器规则
+ * @param containerName 容器名
+ * @param level 级别
+ * @param message 完整文案
+ * @param value 供记录展示的数值（如端口/退出码），可为 null
+ */
+async function emitContainerAlert(
+  rule: ContainerAlertRule,
+  containerName: string,
+  level: AlertLevel,
+  message: string,
+  value: number | null,
+): Promise<void> {
+  const channelId = pickEnabledChannel();
+  const d = getDb();
+  let pushStatus = 'none';
+  let pushDetail: string | null = null;
+  if (channelId) {
+    try {
+      const res = await sendAlert(channelId, message);
+      if (res.ok) pushStatus = 'ok';
+      else {
+        pushStatus = 'failed';
+        pushDetail = res.detail;
+      }
+    } catch (err: any) {
+      pushStatus = 'failed';
+      pushDetail = String(err?.message || err);
+    }
+  }
+  d.prepare(
+    'INSERT INTO alert_records (type, level, message, value, channel_id, push_status, push_detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(rule.watchType, level, message, value, channelId, pushStatus, pushDetail, Date.now());
+  try {
+    d.prepare('DELETE FROM alert_records WHERE id NOT IN (SELECT id FROM alert_records ORDER BY id DESC LIMIT 800)').run();
+  } catch {
+    // 忽略清理失败
+  }
+}
+
+/**
+ * 依据容器监控类型对单条规则执行判定并触发（含去重与恢复状态机）
+ * @param rule 容器规则
+ * @param name 容器名
+ * @param info 该容器的 inspect 结果（可能为 undefined 表示容器不存在）
+ */
+async function checkOneContainerRule(
+  rule: ContainerAlertRule,
+  name: string,
+  info: any,
+): Promise<void> {
+  const n = Date.now();
+  const recent = containerLastAlert.get(rule.id) || 0;
+  const canFire = (escalated: boolean) => (!escalated && n - recent < REPEAT_INTERVAL ? false : true);
+  const markFired = () => containerLastAlert.set(rule.id, n);
+
+  const prev = containerActive.get(rule.id) ?? null;
+  const setActive = (lvl: 'warn' | 'danger' | null) => {
+    if (lvl === null) containerActive.delete(rule.id);
+    else containerActive.set(rule.id, lvl);
+  };
+
+  // 判定逻辑；返回 null 表示正常（应发恢复）
+  let hit: { level: 'warn' | 'danger'; message: string; value: number | null } | null = null;
+
+  if (!info) {
+    // 容器不存在：exited 视作「不存在」也告警；health/port 无从检测→正常
+    if (rule.watchType === 'exited') {
+      hit = { level: 'danger', message: `Docker 面板【容器】${name} 不存在或被删除`, value: null };
+    }
+  } else if (rule.watchType === 'exited') {
+    const state = info?.State?.Status || '';
+    const exitCode = info?.State?.ExitCode ?? 0;
+    if (state === 'exited' || state === 'dead') {
+      hit = { level: 'danger', message: `Docker 面板【容器】${name} 已退出（ExitCode ${exitCode}）`, value: exitCode };
+    } else if (state === 'restarting') {
+      hit = { level: 'warn', message: `Docker 面板【容器】${name} 处于重启循环`, value: null };
+    }
+  } else if (rule.watchType === 'health') {
+    const health = info?.State?.Health?.Status || 'none';
+    if (health === 'unhealthy') {
+      hit = { level: 'danger', message: `Docker 面板【容器】${name} 健康检查失败（unhealthy）`, value: null };
+    } else if (health === 'starting') {
+      hit = { level: 'warn', message: `Docker 面板【容器】${name} 健康检查未通过（starting）`, value: null };
+    }
+  } else if (rule.watchType === 'port') {
+    // 端口探测：优先规则指定端口，否则取容器第一个映射主机端口
+    const hostPorts = info?.NetworkSettings?.Ports || {};
+    const firstHostPort = (() => {
+      for (const bindings of Object.values(hostPorts) as any) {
+        if (Array.isArray(bindings) && bindings[0]?.HostPort) return Number(bindings[0].HostPort);
+      }
+      return null;
+    })();
+    const probePort = rule.port ?? firstHostPort;
+    if (probePort) {
+      // 容器是否运行影响判定前提：仅运行中才探测
+      if ((info?.State?.Status || '') === 'running') {
+        const ok = await probeTcp('127.0.0.1', probePort);
+        if (!ok) {
+          hit = { level: 'danger', message: `Docker 面板【容器】${name} 端口 ${probePort} 不可达`, value: probePort };
+        }
+      }
+    }
+  }
+
+  if (hit) {
+    const escalated = prev === null || (hit.level === 'danger' && prev !== 'danger');
+    setActive(hit.level);
+    if (canFire(escalated)) {
+      markFired();
+      await emitContainerAlert(rule, name, hit.level, hit.message, hit.value);
+    }
+  } else if (prev) {
+    // 已恢复：发送恢复通知并清除活跃态
+    setActive(null);
+    await emitContainerAlert(rule, name, 'recovery', `Docker 面板【容器】${name} 已恢复正常`, null);
+  }
+}
+
+/**
+ * 检测全部容器告警规则：批量读 listContainers + inspect，逐条判定
+ */
+async function checkContainerRules(): Promise<void> {
+  const rules = loadContainerRules();
+  if (rules.length === 0) return;
+  const docker = await getDockerClient();
+  let list: any[] = [];
+  try {
+    list = (await docker.listContainers({ all: true })) as any[];
+  } catch {
+    return; // 引擎不可用则跳过本轮
+  }
+  // 容器 id → 显示名 映射；名称优先，回退 id 短
+  const names = new Map<string, string>();
+  for (const c of list) {
+    const nm = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '') || c.Id.slice(0, 12);
+    names.set(c.Id, nm);
+  }
+
+  // 逐条规则：先按 id/名称解析容器 id，再 inspect
+  for (const rule of rules) {
+    if (!rule.enabled) {
+      if (containerActive.has(rule.id)) containerActive.delete(rule.id);
+      continue;
+    }
+    if (isInSilentWindow(containerRuleToQuiet(rule), new Date())) continue;
+
+    const targetId = names.has(rule.containerId)
+      ? rule.containerId
+      : (() => {
+          for (const [id, nm] of names) {
+            if (nm === rule.containerId || nm.replace(/^\/+/, '') === rule.containerId) return id;
+          }
+          return '';
+        })();
+    let info: any = undefined;
+    if (targetId) {
+      try {
+        info = await docker.getContainer(targetId).inspect();
+      } catch {
+        info = undefined; // 容器不存在
+      }
+    }
+    const displayName = (targetId && names.get(targetId)) || rule.containerId;
+    await checkOneContainerRule(rule, displayName, info);
+  }
+}
+
+/**
+ * 读取全部容器告警规则
+ * @param nameMap 可选的容器 id→名称 映射（列表接口回填展示名，检测中自行构建）
+ */
+export function loadContainerRules(nameMap?: Map<string, string>): ContainerAlertRule[] {
+  const rows = getDb()
+    .prepare(
+      'SELECT id, container_id, watch_type, enabled, port, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at FROM container_alert_rules',
+    )
+    .all() as unknown as ContainerAlertRuleRow[];
+  return rows.map((r) => {
+    const rule = normalizeContainerRule(r);
+    if (nameMap && nameMap.has(rule.containerId)) {
+      rule.containerName = nameMap.get(rule.containerId);
+    }
+    return rule;
+  });
+}
+
+/**
+ * 获取容器告警规则列表（供前端，含容器显示名）
+ */
+export async function getContainerAlertRules(): Promise<ContainerAlertRule[]> {
+  const docker = await getDockerClient();
+  const names = new Map<string, string>();
+  try {
+    const list = (await docker.listContainers({ all: true })) as any[];
+    for (const c of list) {
+      const nm = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '') || c.Id.slice(0, 12);
+      names.set(c.Id, nm);
+    }
+  } catch {
+    // 忽略，名称回退
+  }
+  return loadContainerRules(names);
+}
+
+/**
+ * 校验 watch_type / port 等并构建写入字段
+ */
+function validateContainerRuleInput(body: any): { containerId: string; watchType: string; port: number | null; enabled: number; silentStart: string | null; silentEnd: string | null; workdaysOnly: number; workStart: string | null; workEnd: string | null } {
+  const containerId = String(body?.containerId || '').trim();
+  if (!containerId) throw Object.assign(new Error('请选择一个目标容器'), { statusCode: 400 });
+  const watchType = String(body?.watchType || '').trim() as ContainerWatchType;
+  if (!['exited', 'health', 'port'].includes(watchType)) {
+    throw Object.assign(new Error('不支持的容器监控类型'), { statusCode: 400 });
+  }
+  let port: number | null = null;
+  if (watchType === 'port') {
+    const raw = Number(body?.port);
+    if (!raw || raw < 1 || raw > 65535) {
+      throw Object.assign(new Error('端口需为 1-65535 的整数（或留空自动探测映射主端口）'), { statusCode: 400 });
+    }
+    port = raw;
+  }
+  const silentStart = body?.silentStart !== undefined ? normalizeTime(body.silentStart) : null;
+  const silentEnd = body?.silentEnd !== undefined ? normalizeTime(body.silentEnd) : null;
+  const workStart = body?.workStart !== undefined ? normalizeTime(body.workStart) : null;
+  const workEnd = body?.workEnd !== undefined ? normalizeTime(body.workEnd) : null;
+  validateRange(silentStart, silentEnd, '静默时段');
+  validateRange(workStart, workEnd, '工作时段');
+  return {
+    containerId,
+    watchType,
+    port,
+    enabled: body?.enabled === false ? 0 : 1,
+    silentStart,
+    silentEnd,
+    workdaysOnly: body?.workdaysOnly ? 1 : 0,
+    workStart,
+    workEnd,
+  };
+}
+
+/**
+ * 新增容器告警规则
+ * @param body 规则字段
+ */
+export function createContainerAlertRule(body: any): ContainerAlertRule {
+  const v = validateContainerRuleInput(body);
+  const now = Date.now();
+  const d = getDb();
+  const dup = d
+    .prepare('SELECT id FROM container_alert_rules WHERE container_id = ? AND watch_type = ?')
+    .get(v.containerId, v.watchType);
+  if (dup) throw Object.assign(new Error('该容器已存在同类型的告警规则'), { statusCode: 409 });
+  const info = d
+    .prepare(
+      'INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      v.containerId, v.watchType, v.enabled, v.port, v.silentStart, v.silentEnd, v.workdaysOnly, v.workStart, v.workEnd, now, now,
+    );
+  return loadContainerRules().find((r) => r.id === Number(info.lastInsertRowid))!;
+}
+
+/**
+ * 更新容器告警规则
+ * @param id 规则 id
+ * @param body 待更新字段
+ */
+export function updateContainerAlertRule(id: number, body: any): ContainerAlertRule {
+  const d = getDb();
+  const row = d.prepare('SELECT * FROM container_alert_rules WHERE id = ?').get(id) as ContainerAlertRuleRow | undefined;
+  if (!row) throw Object.assign(new Error('容器告警规则不存在'), { statusCode: 404 });
+  const next = { ...row };
+  if (body?.containerId !== undefined) next.container_id = String(body.containerId).trim() || row.container_id;
+  if (body?.watchType !== undefined) {
+    const wt = String(body.watchType) as ContainerWatchType;
+    if (!['exited', 'health', 'port'].includes(wt)) {
+      throw Object.assign(new Error('不支持的容器监控类型'), { statusCode: 400 });
+    }
+    next.watch_type = wt;
+  }
+  if (body?.enabled !== undefined) next.enabled = body.enabled ? 1 : 0;
+  next.silent_start = body?.silentStart !== undefined ? normalizeTime(body.silentStart) : row.silent_start || null;
+  next.silent_end = body?.silentEnd !== undefined ? normalizeTime(body.silentEnd) : row.silent_end || null;
+  next.work_start = body?.workStart !== undefined ? normalizeTime(body.workStart) : row.work_start || null;
+  next.work_end = body?.workEnd !== undefined ? normalizeTime(body.workEnd) : row.work_end || null;
+  next.workdays_only = body?.workdaysOnly !== undefined ? (body.workdaysOnly ? 1 : 0) : row.workdays_only;
+  validateRange(next.silent_start, next.silent_end, '静默时段');
+  validateRange(next.work_start, next.work_end, '工作时段');
+  if (next.watch_type === 'port') {
+    const raw = Number(body?.port ?? row.port);
+    if (!raw || raw < 1 || raw > 65535) {
+      throw Object.assign(new Error('端口需为 1-65535 的整数'), { statusCode: 400 });
+    }
+    next.port = raw;
+  }
+
+  d.prepare(
+    'UPDATE container_alert_rules SET container_id = ?, watch_type = ?, enabled = ?, port = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, updated_at = ? WHERE id = ?',
+  ).run(
+    next.container_id, next.watch_type, next.enabled, next.port, next.silent_start, next.silent_end, next.workdays_only, next.work_start, next.work_end, Date.now(), id,
+  );
+  return loadContainerRules().find((r) => r.id === id)!;
+}
+
+/**
+ * 删除容器告警规则（同时清理其状态机）
+ * @param id 规则 id
+ */
+export function deleteContainerAlertRule(id: number): void {
+  getDb().prepare('DELETE FROM container_alert_rules WHERE id = ?').run(id);
+  containerLastAlert.delete(id);
+  containerActive.delete(id);
+}
+

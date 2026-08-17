@@ -26,6 +26,10 @@ import {
   clearAlertRecords,
   runAlertCheckNow,
   buildSnapshotText,
+  getContainerAlertRules,
+  createContainerAlertRule,
+  updateContainerAlertRule,
+  deleteContainerAlertRule,
 } from '../alerting';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
@@ -222,6 +226,63 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const result = await runAlertCheckNow();
     res.json({ ok: true, ...result });
+  }),
+);
+
+/**
+ * GET /api/notifications/container-rules
+ * 获取容器级告警规则（含容器显示名）
+ */
+router.get(
+  '/container-rules',
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ rules: await getContainerAlertRules() });
+  }),
+);
+
+/**
+ * POST /api/notifications/container-rules
+ * 新增容器级告警规则
+ */
+router.post(
+  '/container-rules',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const rule = createContainerAlertRule(req.body || {});
+    logOperation(res.locals.username, '新增容器告警规则', '通知', String(rule.containerName || rule.containerId), rule.watchType);
+    res.status(201).json({ ok: true, rule });
+  }),
+);
+
+/**
+ * PUT /api/notifications/container-rules/:id
+ * 更新容器级告警规则
+ */
+router.put(
+  '/container-rules/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的规则 id' });
+    const rule = updateContainerAlertRule(id, req.body || {});
+    logOperation(res.locals.username, '更新容器告警规则', '通知', String(rule.containerName || rule.containerId), rule.watchType);
+    res.json({ ok: true, rule });
+  }),
+);
+
+/**
+ * DELETE /api/notifications/container-rules/:id
+ * 删除容器级告警规则
+ */
+router.delete(
+  '/container-rules/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的规则 id' });
+    deleteContainerAlertRule(id);
+    logOperation(res.locals.username, '删除容器告警规则', '通知', String(id), '');
+    res.json({ ok: true });
   }),
 );
 

@@ -802,3 +802,45 @@ export interface ComposeStructure {
   /** 网络名列表 */
   networks: string[];
 }
+
+/** ===================== 告警中心 ===================== */
+
+/** 容器级告警监控类型 */
+export type ContainerRuleWatchType = 'exited' | 'health' | 'port';
+
+/** 容器级告警规则（/api/notifications/container-rules 返回的单条规则） */
+export interface ContainerRule {
+  /** 规则 id */
+  id: number;
+  /** 目标容器 id */
+  containerId: string;
+  /** 目标容器名（后端补充，可能缺失） */
+  containerName?: string;
+  /** 监控类型：exited=容器退出 / health=健康检查失败 / port=端口不可达 */
+  watchType: ContainerRuleWatchType;
+  /** 是否启用 */
+  enabled: boolean;
+  /** 探测端口（watchType=port 时使用，其余为 null） */
+  port: number | null;
+  /** 静默时段开始（HH:mm） */
+  silentStart: string | null;
+  /** 静默时段结束（HH:mm） */
+  silentEnd: string | null;
+  /** 是否仅工作日告警 */
+  workdaysOnly: boolean;
+  /** 工作时段开始（HH:mm） */
+  workStart: string | null;
+  /** 工作时段结束（HH:mm） */
+  workEnd: string | null;
+}
+
+/** 容器级告警规则列表响应（GET /api/notifications/container-rules） */
+export interface ContainerRuleListResponse {
+  rules: ContainerRule[];
+}
+
+/** 容器级告警规则新增/编辑响应（POST/PUT /api/notifications/container-rules） */
+export interface ContainerRuleSaveResponse {
+  ok: boolean;
+  rule: ContainerRule;
+}
