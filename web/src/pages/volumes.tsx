@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
 import { VolumeItem } from '../types';
+import VolumeFileExplorer from '../components/VolumeFileExplorer';
 import './volumes.less';
 
 /**
@@ -115,6 +116,14 @@ export default function VolumesPage() {
   const [usingContainers, setUsingContainers] = useState<VolumeContainerItem[]>([]);
   // 使用该卷的容器列表加载中
   const [containersLoading, setContainersLoading] = useState(false);
+  // 待浏览文件的数据卷（用于打开浏览弹窗）
+  const [browseTarget, setBrowseTarget] = useState<VolumeItem | null>(null);
+  // 待备份的数据卷（用于打开备份弹窗）
+  const [backupTarget, setBackupTarget] = useState<VolumeItem | null>(null);
+  // 备份名称（默认 "卷-<name>-<时间>"）
+  const [backupName, setBackupName] = useState('');
+  // 备份提交进行中
+  const [backingUp, setBackingUp] = useState(false);
 
   const fetchVolumes = useCallback(async () => {
     setLoading(true);
@@ -198,6 +207,41 @@ export default function VolumesPage() {
       setPruning(false);
     }
   }, [canDelete, checking, showToast]);
+
+  /**
+   * 打开数据卷的备份弹窗，并生成默认备份名 "卷-<卷名>-<时间戳>"
+   * @param vol 目标卷
+   */
+  const openBackup = useCallback((vol: VolumeItem) => {
+    setBackupTarget(vol);
+    setBackupName(`卷-${vol.Name}-${new Date().toISOString()}`);
+  }, []);
+
+  /**
+   * 提交数据卷备份：调用 /api/backups 创建备份
+   */
+  const handleBackup = useCallback(async () => {
+    if (!backupTarget || backingUp) return;
+    const finalName = backupName.trim();
+    if (!finalName) {
+      showToast('请输入备份名称', 'error');
+      return;
+    }
+    setBackingUp(true);
+    try {
+      await post('/api/backups', {
+        kind: 'volume',
+        name: finalName,
+        source: backupTarget.Name,
+      });
+      showToast('数据卷备份已创建，可到「备份」页下载');
+      setBackupTarget(null);
+    } catch (e: any) {
+      showToast(e?.message || '创建备份失败', 'error');
+    } finally {
+      setBackingUp(false);
+    }
+  }, [backupTarget, backingUp, backupName, showToast]);
 
   /**
    * 打开卷详情弹窗并触发详情与使用容器列表的加载
@@ -374,6 +418,12 @@ export default function VolumesPage() {
                   <td>{formatTime(vol.CreatedAt)}</td>
                   <td className="col-actions">
                     <div className="row-actions">
+                      <Button variant="ghost" size="sm" onClick={() => setBrowseTarget(vol)}>
+                        浏览
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openBackup(vol)}>
+                        备份
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
                         详情
                       </Button>
@@ -570,6 +620,44 @@ export default function VolumesPage() {
             </table>
           )}
         </div>
+      </Modal>
+
+      {/* 数据卷文件浏览弹窗 */}
+      <Modal
+        open={!!browseTarget}
+        title={browseTarget ? `文件浏览 · ${browseTarget.Name}` : '文件浏览'}
+        onClose={() => setBrowseTarget(null)}
+        width={880}
+      >
+        {browseTarget && <VolumeFileExplorer volume={browseTarget.Name} />}
+      </Modal>
+
+      {/* 数据卷备份弹窗 */}
+      <Modal
+        open={!!backupTarget}
+        title="备份数据卷"
+        onClose={() => !backingUp && setBackupTarget(null)}
+        width={460}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setBackupTarget(null)} disabled={backingUp}>
+              取消
+            </Button>
+            <Button onClick={handleBackup} loading={backingUp}>
+              开始备份
+            </Button>
+          </>
+        }
+      >
+        <Field label="备份名称" required hint="创建完成后可到「备份」页下载">
+          <Input
+            value={backupName}
+            onChange={(e) => setBackupName(e.target.value)}
+            placeholder="备份名称"
+            autoFocus
+            disabled={backingUp}
+          />
+        </Field>
       </Modal>
 
       {/* 新建数据卷弹窗 */}

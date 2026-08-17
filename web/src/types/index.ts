@@ -575,3 +575,55 @@ export interface TransferImageResult {
   loaded?: string;
   error?: string;
 }
+
+/** ===================== Compose 结构视图 ===================== */
+
+/** Compose 端口映射（/api/compose/:name/structure 返回） */
+export interface ComposePort {
+  /** 宿主机端口（未映射时省略） */
+  published?: string;
+  /** 容器内端口 */
+  target: string;
+  /** 协议（默认 tcp） */
+  protocol: string;
+}
+
+/** Compose 卷挂载（/api/compose/:name/structure 返回） */
+export interface ComposeVolumeMount {
+  /** 挂载类型：bind / volume */
+  type: string;
+  /** 源（named volume 或宿主路径） */
+  source?: string;
+  /** 容器内挂载目标 */
+  target: string;
+  /** 是否只读 */
+  readOnly: boolean;
+}
+
+/** Compose 服务节点（/api/compose/:name/structure 返回的 services 项） */
+export interface ComposeServiceNode {
+  /** 服务名 */
+  name: string;
+  /** 镜像名（build 服务可能缺失） */
+  image?: string;
+  /** 端口映射列表 */
+  ports: ComposePort[];
+  /** 卷挂载列表 */
+  volumes: ComposeVolumeMount[];
+  /** 依赖的服务名列表 */
+  depends_on: string[];
+  /** 环境变量（["K=V"] 形式） */
+  environment: string[];
+}
+
+/** Compose 结构视图（GET /api/compose/:name/structure 返回） */
+export interface ComposeStructure {
+  /** 项目名 */
+  name: string;
+  /** 服务列表 */
+  services: ComposeServiceNode[];
+  /** 命名卷名列表 */
+  volumes: string[];
+  /** 网络名列表 */
+  networks: string[];
+}

@@ -14,7 +14,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import { isAdmin } from '../api/auth';
-import { ComposeProject, ComposeService, ComposeTemplate } from '../types';
+import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
 import './compose.less';
 
 /**
@@ -206,6 +206,13 @@ export default function ComposePage() {
   const [configOpen, setConfigOpen] = useState(false);
   const [configTitle, setConfigTitle] = useState('');
   const [configContent, setConfigContent] = useState('');
+
+  // 结构视图弹窗状态
+  const [structureOpen, setStructureOpen] = useState(false);
+  const [structureData, setStructureData] = useState<ComposeStructure | null>(null);
+  const [structureLoading, setStructureLoading] = useState(false);
+  // 服务级操作加载状态（记录正在操作的 服务名/动作）
+  const [serviceOpKey, setServiceOpKey] = useState<string | null>(null);
 
   // 操作中的项目与删除确认状态（删除时额外记录是否删除数据卷）
   const [opName, setOpName] = useState<string | null>(null);
@@ -435,6 +442,73 @@ export default function ComposePage() {
       }
     },
     [showToast]
+  );
+
+  /**
+   * 打开结构视图弹窗并拉取 Compose 配置
+   * @param project 目标项目
+   */
+  const openStructure = useCallback(
+    async (project: ComposeProject) => {
+      setStructureData(null);
+      setStructureOpen(true);
+      setStructureLoading(true);
+      try {
+        const data = await get<ComposeStructure>(projectUrl(project.name) + '/structure');
+        setStructureData({
+          name: project.name,
+          services: data?.services || [],
+          volumes: data?.volumes || [],
+          networks: data?.networks || [],
+        });
+      } catch (e: any) {
+        showToast(e?.message || '获取 Compose 结构失败', 'error');
+        setStructureOpen(false);
+      } finally {
+        setStructureLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  /** 关闭结构视图弹窗 */
+  const closeStructure = useCallback(() => {
+    setStructureOpen(false);
+    setStructureData(null);
+    setServiceOpKey(null);
+  }, []);
+
+  /**
+   * 对单个 compose 服务执行 start / stop / restart 操作
+   * @param service 服务名
+   * @param action 动作标识
+   * @param successMsg 成功提示
+   */
+  const runServiceAction = useCallback(
+    async (service: string, action: string, successMsg: string) => {
+      if (!structureData) return;
+      if (!canManage) {
+        showToast('仅管理员可操作 Compose 服务', 'error');
+        return;
+      }
+      const key = `${service}/${action}`;
+      setServiceOpKey(key);
+      try {
+        await post(projectUrl(structureData.name) + '/services/' + encodeURIComponent(service) + '/' + action);
+        showToast(successMsg);
+        // 操作后刷新结构数据与项目状态
+        const data = await get<ComposeStructure>(projectUrl(structureData.name) + '/structure').catch(() => structureData);
+        if (data) {
+          setStructureData(data);
+        }
+        setRefreshKey((k) => k + 1);
+      } catch (e: any) {
+        showToast(e?.message || successMsg.replace('成功', '失败'), 'error');
+      } finally {
+        setServiceOpKey(null);
+      }
+    },
+    [canManage, structureData, showToast]
   );
 
   /** 删除项目（根据 deleteVolumes 决定是否同时删除数据卷） */
@@ -748,6 +822,13 @@ export default function ComposePage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => openStructure(proj)}
+                      >
+                        结构
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => openLog(proj.name)}
                       >
                         日志
@@ -942,6 +1023,138 @@ export default function ComposePage() {
         }
       >
         <pre className="config-viewer">{configContent}</pre>
+      </Modal>
+
+      {/* 结构视图弹窗 */}
+      <Modal
+        open={structureOpen}
+        title={structureData ? `${structureData.name} - 结构` : 'Compose 结构'}
+        onClose={closeStructure}
+        width={760}
+        footer={
+          <Button variant="secondary" onClick={closeStructure} disabled={structureLoading}>
+            关闭
+          </Button>
+        }
+      >
+        {structureLoading ? (
+          <div className="log-empty">正在解析 Compose 结构…</div>
+        ) : structureData ? (
+          <div className="structure">
+            <div className="structure__meta">
+              <span>
+                项目：<b>{structureData.name}</b>
+              </span>
+              <span>
+                服务：<b>{structureData.services.length}</b>
+              </span>
+              {structureData.volumes.length > 0 && (
+                <span>
+                  卷：<b>{structureData.volumes.join(', ') || '-'}</b>
+                </span>
+              )}
+              {structureData.networks.length > 0 && (
+                <span>
+                  网络：<b>{structureData.networks.join(', ') || '-'}</b>
+                </span>
+              )}
+            </div>
+            {structureData.services.length === 0 ? (
+              <Empty title="暂无服务" description="该 Compose 项目未定义任何服务" />
+            ) : (
+              <div className="structure__list">
+                {structureData.services.map((svc) => {
+                  const isOp = serviceOpKey && serviceOpKey.startsWith(svc.name + '/');
+                  return (
+                    <div className="structure-card" key={svc.name}>
+                      <div className="structure-card__head">
+                        <span className="structure-card__name">{svc.name}</span>
+                        <span className="structure-card__image" title={svc.image || ''}>
+                          {svc.image || '（build 构建）'}
+                        </span>
+                        <div className="structure-card__actions">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            loading={serviceOpKey === `${svc.name}/start`}
+                            disabled={!canManage || !!isOp}
+                            onClick={() => runServiceAction(svc.name, 'start', `${svc.name} 启动成功`)}
+                          >
+                            启动
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            loading={serviceOpKey === `${svc.name}/stop`}
+                            disabled={!canManage || !!isOp}
+                            onClick={() => runServiceAction(svc.name, 'stop', `${svc.name} 停止成功`)}
+                          >
+                            停止
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            loading={serviceOpKey === `${svc.name}/restart`}
+                            disabled={!canManage || !!isOp}
+                            onClick={() => runServiceAction(svc.name, 'restart', `${svc.name} 重启成功`)}
+                          >
+                            重启
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="structure-card__body">
+                        {svc.ports.length > 0 && (
+                          <div className="structure-line">
+                            <span className="structure-label">端口</span>
+                            <span className="structure-value">
+                              {svc.ports
+                                .map((p) =>
+                                  p.published
+                                    ? `${p.published}:${p.target}/${p.protocol}`
+                                    : `${p.target}/${p.protocol}`
+                                )
+                                .join('，')}
+                            </span>
+                          </div>
+                        )}
+                        {svc.depends_on.length > 0 && (
+                          <div className="structure-line">
+                            <span className="structure-label">依赖</span>
+                            <span className="structure-value">{svc.depends_on.join('，')}</span>
+                          </div>
+                        )}
+                        {svc.volumes.length > 0 && (
+                          <div className="structure-line">
+                            <span className="structure-label">卷</span>
+                            <span className="structure-value">
+                              {svc.volumes
+                                .map((v) => `${v.source || ''} -> ${v.target}${v.readOnly ? ' (只读)' : ''}`.replace(/^\s+->/, ''))
+                                .join('，')}
+                            </span>
+                          </div>
+                        )}
+                        {svc.environment.length > 0 && (
+                          <div className="structure-line">
+                            <span className="structure-label">环境</span>
+                            <span className="structure-value">{svc.environment.join('，')}</span>
+                          </div>
+                        )}
+                        {svc.ports.length === 0 &&
+                          svc.depends_on.length === 0 &&
+                          svc.volumes.length === 0 &&
+                          svc.environment.length === 0 && (
+                            <div className="structure-line">
+                              <span className="structure-value">（无额外配置）</span>
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
       </Modal>
 
       {/* 日志弹窗 */}
