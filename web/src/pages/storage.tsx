@@ -27,6 +27,11 @@ interface DfSummary {
   volumesCount?: number;
   volumesSize?: number;
   totalReclaimable?: number;
+  // 各类型精确可回收空间（后端新增）
+  imagesReclaimable?: number;
+  containersReclaimable?: number;
+  volumesReclaimable?: number;
+  buildCacheReclaimable?: number;
 }
 
 /** df 接口返回结构 */
@@ -59,27 +64,26 @@ interface CleanCategory {
 
 /** 清理类别列表 */
 const CLEAN_CATEGORIES: CleanCategory[] = [
-  { key: 'images', name: '未使用的镜像', desc: '清理所有悬空镜像（无标签且未被引用）' },
-  { key: 'containers', name: '已停止的容器', desc: '清理所有已停止、未被使用的容器' },
-  { key: 'volumes', name: '未使用的数据卷', desc: '清理所有未被任何容器引用的数据卷' },
+  { key: 'images', name: '未使用的镜像', desc: '清理所有未被引用的镜像（悬挂/未使用），右侧为精确可回收量' },
+  { key: 'containers', name: '已停止的容器', desc: '清理所有已停止、未被使用的容器，右侧为可回收量' },
+  { key: 'volumes', name: '未使用的数据卷', desc: '清理所有未被任何容器引用的数据卷，右侧为可回收量' },
   { key: 'networks', name: '未使用的网络', desc: '清理所有未被任何容器引用的网络' },
-  { key: 'buildCache', name: 'Build Cache', desc: '清理全部构建缓存（含非悬空缓存）' },
+  { key: 'buildCache', name: 'Build Cache', desc: '清理全部构建缓存（含非悬空缓存），右侧为可回收量' },
 ];
 
-/** 清理类别对应的待回收空间（用于展示） */
+/** 清理类别对应的待回收空间（优先展示后端精确可回收量，缺失时回退整类占用） */
 function categorySpace(category: CleanCategory, summary?: DfSummary): number {
   switch (category.key) {
     case 'images':
-      // 未使用镜像占用：无法精确从 summary 取，仅展示整体镜像占用
-      return summary?.imagesSize || 0;
+      return (summary?.imagesReclaimable ?? summary?.imagesSize) || 0;
     case 'containers':
-      return summary?.containersSizeRw || 0;
+      return (summary?.containersReclaimable ?? summary?.containersSizeRw) || 0;
     case 'volumes':
-      return summary?.volumesSize || 0;
+      return (summary?.volumesReclaimable ?? summary?.volumesSize) || 0;
     case 'networks':
       return 0;
     case 'buildCache':
-      return summary?.buildCacheSize || 0;
+      return (summary?.buildCacheReclaimable ?? summary?.buildCacheSize) || 0;
     default:
       return 0;
   }

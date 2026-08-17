@@ -188,7 +188,20 @@ router.get(
     const stoppedContainersSize = containers
       .filter((c: any) => c?.State !== 'running' && c?.State !== 'paused')
       .reduce((sum: number, c: any) => sum + toNum(c?.SizeRw), 0);
-    const totalReclaimable = danglingImagesSize + stoppedContainersSize + volumesSize + buildCacheSize;
+    // totalReclaimable 采用各类型可回收字段更精确求和；字段缺失时回退到估算值
+    const sumOf = (arr: any[], key: string, fallback: number): number => {
+      const vals = arr.map((x: any) => toNum(x?.[key])).filter((v) => v > 0);
+      return vals.length === arr.length ? vals.reduce((a, b) => a + b, 0) : fallback;
+    };
+    const imagesReclaimable = sumOf(images, 'Reclaimable', danglingImagesSize);
+    const containersReclaimable = sumOf(containers, 'Reclaimable', stoppedContainersSize);
+    // 卷的可回收 = 未被任何容器引用的卷占用（RefCount===0）
+    const volumesReclaimable = volumes
+      .filter((v: any) => toNum(v?.UsageData?.RefCount) === 0)
+      .reduce((sum: number, v: any) => sum + toNum(v?.UsageData?.Size), 0);
+    const buildCacheReclaimable = sumOf(buildCache, 'Reclaimable', buildCacheSize);
+    const totalReclaimable =
+      imagesReclaimable + containersReclaimable + volumesReclaimable + buildCacheReclaimable;
 
     res.json({
       df,
@@ -203,6 +216,11 @@ router.get(
         volumesCount: volumes.length,
         volumesSize,
         totalReclaimable,
+        // 各类型精确可回收空间（供清理页展示真实可回收量）
+        imagesReclaimable,
+        containersReclaimable,
+        volumesReclaimable,
+        buildCacheReclaimable,
       },
     });
   }),
