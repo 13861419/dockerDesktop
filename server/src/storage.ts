@@ -411,6 +411,14 @@ function createTables(): void {
       updated_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_compose_templates_name ON compose_templates(name);
+
+    -- 容器启动依赖编排表：记录每个容器所依赖(需先启动)的容器 id 集合，用于一键按拓扑序编排启停
+    CREATE TABLE IF NOT EXISTS container_dependencies (
+      container_id  TEXT PRIMARY KEY,          -- 被编排容器 id
+      deps          TEXT NOT NULL DEFAULT '[]', -- 依赖的容器 id 数组(JSON)，这些容器需先于本容器启动
+      enabled       INTEGER NOT NULL DEFAULT 1, -- 是否参与编排(0=跳过)
+      updated_at    INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

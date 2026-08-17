@@ -76,6 +76,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/orchestrate',
+    label: '编排',
+    adminOnly: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 6h16M4 18h16" />
+        <path d="M4 12h3l2-2 2 4 2-6 2 4h5" />
+      </svg>
+    ),
+  },
+  {
     to: '/images',
     label: '镜像',
     icon: (

@@ -45,6 +45,7 @@ const TemplatesPage = lazy(() => import('./pages/templates'));
 const NotificationsPage = lazy(() => import('./pages/notifications'));
 const SwarmPage = lazy(() => import('./pages/swarm'));
 const HealthPage = lazy(() => import('./pages/health'));
+const OrchestratePage = lazy(() => import('./pages/orchestrate'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -319,6 +320,16 @@ export default function App() {
                   <PageSuspense>
                     <RequireAdmin>
                       <SwarmPage />
+                    </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/orchestrate"
+                element={
+                  <PageSuspense>
+                    <RequireAdmin>
+                      <OrchestratePage />
                     </RequireAdmin>
                   </PageSuspense>
                 }
