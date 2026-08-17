@@ -12,6 +12,7 @@
  */
 import { Router, Request, Response } from 'express';
 import fs from 'fs';
+import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import Dockerode from 'dockerode';
@@ -1015,6 +1016,230 @@ router.delete(
     },
     (req: Request) => ({ action: '删除数据库备份', targetType: 'database', targetName: req.params.id }),
   ),
+);
+
+// ==================== 表结构查看 ====================
+
+/**
+ * GET /api/databases/:id/databases/:db/tables/:table/schema
+ * 查看表结构（字段名/类型/可空/默认值等）。
+ * mysql/mariadb 用 DESCRIBE；postgres 用 information_schema 查询。
+ * 返回 { columns: string[]; rows: string[][] }
+ */
+router.get(
+  '/:id/databases/:db/tables/:table/schema',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = await requireInstance(req.params.id);
+    const db = String(req.params.db || '').trim();
+    const table = String(req.params.table || '').trim();
+    if (!db || !table) {
+      res.status(400).json({ error: '库名与表名不能为空' });
+      return;
+    }
+    if (row.type === 'mysql' || row.type === 'mariadb') {
+      // DESCRIBE 输出列：Field, Type, Null, Key, Default, Extra
+      const output = await mysqlRun(row, ['-B', '-e', `DESCRIBE ${mysqlIdent(db)}.${mysqlIdent(table)}`]);
+      res.json(parseTableOutput(output, '\t'));
+    } else if (row.type === 'postgres') {
+      const sql =
+        "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns " +
+        `WHERE table_schema='public' AND table_name='${table.replace(/'/g, "''")}' ORDER BY ordinal_position`;
+      const output = await psqlRun(row, ['-A', '-F', '|', '-c', sql], db);
+      res.json(parseTableOutput(output, '|'));
+    } else {
+      res.status(400).json({ error: 'Redis 不支持表结构查看' });
+    }
+  }),
+);
+
+// ==================== 表数据分页浏览 ====================
+
+/**
+ * GET /api/databases/:id/databases/:db/tables/:table/rows?limit=&offset=
+ * 分页浏览表数据，返回 { columns, rows, total, limit, offset }。
+ * 仅执行只读 SELECT，表名/库名经标识符转义防注入；total 用 COUNT(*) 估算（默认上限 100000）。
+ */
+router.get(
+  '/:id/databases/:db/tables/:table/rows',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = await requireInstance(req.params.id);
+    const db = String(req.params.db || '').trim();
+    const table = String(req.params.table || '').trim();
+    if (!db || !table) {
+      res.status(400).json({ error: '库名与表名不能为空' });
+      return;
+    }
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 500);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    if (row.type === 'mysql' || row.type === 'mariadb') {
+      const out = await mysqlRun(row, [
+        '-B', '-e',
+        `SELECT * FROM ${mysqlIdent(db)}.${mysqlIdent(table)} LIMIT ${limit} OFFSET ${offset}`,
+      ]);
+      const countOut = await mysqlRun(row, ['-N', '-B', '-e', `SELECT COUNT(*) FROM ${mysqlIdent(db)}.${mysqlIdent(table)}`]);
+      const total = Number((countOut || '').trim() || '0');
+      res.json({ ...parseTableOutput(out, '\t'), total, limit, offset });
+    } else if (row.type === 'postgres') {
+      const quoted = psqlIdent(table);
+      const out = await psqlRun(row, ['-A', '-F', '|', '-c', `SELECT * FROM ${quoted} LIMIT ${limit} OFFSET ${offset}`], db);
+      const countOut = await psqlRun(row, ['-t', '-A', '-c', `SELECT COUNT(*) FROM ${quoted}`], db);
+      const total = Number((countOut || '').trim() || '0');
+      res.json({ ...parseTableOutput(out, '|'), total, limit, offset });
+    } else {
+      res.status(400).json({ error: 'Redis 不支持表数据浏览' });
+    }
+  }),
+);
+
+// ==================== 备份恢复 ====================
+
+/**
+ * POST /api/databases/:id/backups/:file/restore
+ * 从指定备份文件（.sql.gz）恢复到该数据库实例。
+ * body={ db? } 可选指定目标库：mysql/mariadb 需指定库名；postgres 缺省用备份文件名中的库或 postgres。
+ * 流程：解压 .sql.gz 后经官方 CLI 灌入（容器型复用容器网络+挂载，宿主型 exec 管道）。
+ */
+router.post(
+  '/:id/backups/:file/restore',
+  requireAdmin,
+  asyncHandler(
+    async (req: Request, res: Response) => {
+      const row = await requireInstance(req.params.id);
+      if (row.type === 'redis') {
+        res.status(400).json({ error: 'Redis 暂不支持备份恢复' });
+        return;
+      }
+      const filePath = resolveBackupFile(row.id, String(req.params.file));
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        res.status(404).json({ error: '备份文件不存在' });
+        return;
+      }
+      const safeFile = String(req.params.file).replace(/[^a-zA-Z0-9._-]/g, '_');
+      const db = req.body?.db ? String(req.body.db).trim() : undefined;
+      const pwd = plainPwd(row);
+
+      // 容器型：一次性容器复用网络 + 挂载备份目录，gunzip 后管道灌入
+      if (useContainer(row)) {
+        const docker = await getDockerClient();
+        const dbContainer = docker.getContainer(row.container_ref as string);
+        const inspect = await dbContainer.inspect();
+        if (inspect.State?.Running !== true) {
+          res.status(400).json({ error: '数据库容器未运行，无法恢复，请先启动该容器' });
+          return;
+        }
+        const image =
+          row.type === 'postgres' ? 'postgres:16-alpine' : row.type === 'mariadb' ? 'mariadb:11.4' : 'mysql:8.0';
+        const port = row.port;
+        const user = row.user || (row.type === 'postgres' ? 'postgres' : 'root');
+        let cmd = '';
+        if (row.type === 'mysql' || row.type === 'mariadb') {
+          const target = db || 'app';
+          const auth = `-h127.0.0.1 -P${port} -u ${sq(user)}${pwd ? ` -p${sq(pwd)}` : ''}`;
+          // 先确保库存在，再灌入
+          cmd = `sh -c "gunzip -c /backup/${safeFile} | mysql ${auth} ${sq(target)}"`;
+        } else {
+          const target = db || 'postgres';
+          const pwdPrefix = pwd ? `PGPASSWORD=${sq(pwd)} ` : '';
+          cmd = `${pwdPrefix}sh -c "gunzip -c /backup/${safeFile} | psql -h127.0.0.1 -p${port} -U ${sq(user)} -d ${sq(target)}"`;
+        }
+        const helper = await docker.createContainer({
+          Image: image,
+          Cmd: ['sh', '-c', cmd],
+          HostConfig: {
+            NetworkMode: `container:${row.container_ref}`,
+            Binds: [`${path.dirname(filePath)}:/backup`],
+          },
+        });
+        try {
+          await helper.start();
+          const r = await helper.wait();
+          if (r.StatusCode !== 0) {
+            throw new Error(`备份恢复失败（退出码 ${r.StatusCode}）`);
+          }
+        } finally {
+          await helper.remove({ force: true }).catch(() => undefined);
+        }
+      } else {
+        // 宿主机型：exec 管道（Windows cmd 用双引号包裹路径；库名仅允许安全字符防注入）
+        const dbSafe = String(db || '').replace(/[^a-zA-Z0-9_]/g, '');
+        const cmd = `cmd /c "gunzip -c "${filePath}" | ${row.type === 'postgres' ? 'psql' : 'mysql'} ${dbSafe}"`;
+        try {
+          await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 64 * 1024 * 1024 });
+        } catch (err: any) {
+          if (/ENOENT|not recognized|不是内部或外部命令/i.test(String(err?.message || ''))) {
+            throw new Error('宿主机未安装对应数据库客户端 CLI（mysql/psql），无法恢复');
+          }
+          throw new Error(err?.stderr || err?.message || '备份恢复失败');
+        }
+      }
+
+      logOperation(res.locals.username, '恢复数据库备份', 'database', row.name, `文件: ${safeFile}${db ? ` 目标库: ${db}` : ''}`);
+      res.json({ ok: true, file: safeFile, restoredDb: db });
+    },
+    (req: Request) => ({ action: '恢复数据库备份', targetType: 'database', targetName: req.params.id }),
+  ),
+);
+
+// ==================== Redis 键值查看 ====================
+
+/**
+ * POST /api/databases/:id/redis/key
+ * 查看 Redis 指定键的类型 / TTL / 值。body={ key }
+ * 按类型用合适命令读取：string→GET、list→LRANGE、hash→HGETALL、set→SMEMBERS、zset→ZRANGE。
+ * 返回 { key, type, ttl, value }。value 对不同类型分别返回字符串或键值数组。
+ */
+router.post(
+  '/:id/redis/key',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = await requireInstance(req.params.id);
+    if (row.type !== 'redis') {
+      res.status(400).json({ error: '仅 Redis 实例支持该操作' });
+      return;
+    }
+    const key = String(req.body?.key || '').trim();
+    if (!key) {
+      res.status(400).json({ error: '键名不能为空' });
+      return;
+    }
+    // 通过 TYPE 命令获得类型（redis 会回空行表示键不存在）
+    const typeRaw = (await redisRun(row, ['TYPE', key])).trim();
+    if (!typeRaw || typeRaw === 'none') {
+      res.json({ key, type: 'none', ttl: -2, value: null });
+      return;
+    }
+    const ttlRaw = (await redisRun(row, ['TTL', key])).trim();
+    const ttl = Number(ttlRaw || '-2');
+
+    let value: unknown = null;
+    if (typeRaw === 'string') {
+      value = (await redisRun(row, ['GET', key])).trim();
+    } else if (typeRaw === 'list') {
+      const out = (await redisRun(row, ['LRANGE', key, '0', '-1'])).trim();
+      value = out ? out.split('\n').map((l) => l.replace(/\r$/, '')) : [];
+    } else if (typeRaw === 'set') {
+      const out = (await redisRun(row, ['SMEMBERS', key])).trim();
+      value = out ? out.split('\n').map((l) => l.replace(/\r$/, '')) : [];
+    } else if (typeRaw === 'zset') {
+      const out = (await redisRun(row, ['ZRANGE', key, '0', '-1', 'WITHSCORES'])).trim();
+      const parts = out ? out.split('\n').map((l) => l.replace(/\r$/, '')) : [];
+      value = parts;
+    } else if (typeRaw === 'hash') {
+      const out = (await redisRun(row, ['HGETALL', key])).trim();
+      const lines = out ? out.split('\n').map((l) => l.replace(/\r$/, '')) : [];
+      const pairs: Array<{ field: string; value: string }> = [];
+      for (let i = 0; i + 1 < lines.length; i += 2) {
+        pairs.push({ field: lines[i], value: lines[i + 1] });
+      }
+      value = pairs;
+    } else {
+      value = null;
+    }
+
+    res.json({ key, type: typeRaw, ttl, value });
+  }),
 );
 
 export default router;

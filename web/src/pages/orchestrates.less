@@ -519,3 +519,190 @@
     }
   }
 }
+
+/* 编排历史弹窗 */
+.orchestrates__history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  /* 分页工具条 */
+  &__pager {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    &__info {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    &__btns {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+  }
+
+  /* 历史列表 */
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+}
+
+/* 单条历史记录 */
+.orchestrates__history-row {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--bg-surface);
+
+  /* 可点击的摘要头：点击展开 / 折叠详情 */
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+      background: var(--primary-soft, rgba(63, 81, 181, 0.05));
+    }
+  }
+
+  /* 展开箭头 */
+  &__arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+
+    &--open {
+      transform: rotate(90deg);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__time {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  &__sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  &__err {
+    font-size: 12px;
+    color: var(--color-error, #ef4444);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 展开后的详情区 */
+  &__body {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--bg-body, rgba(31, 35, 51, 0.02));
+  }
+
+  /* 详情区内的重试失败项操作条 */
+  &__retry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--danger-soft, #fee2e2);
+
+    &__text {
+      font-size: 13px;
+      color: var(--danger, #dc2626);
+    }
+  }
+}
+
+/* 动作徽标（start / stop / restart 配色区分） */
+.orchestrates__action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+
+  &--start {
+    color: var(--color-running, #22c55e);
+    background: var(--primary-soft, rgba(34, 197, 94, 0.1));
+    border: 1px solid var(--border-color);
+  }
+
+  &--stop {
+    color: var(--color-error, #ef4444);
+    background: var(--danger-soft, rgba(239, 68, 68, 0.1));
+    border: 1px solid var(--border-color);
+  }
+
+  &--restart {
+    color: var(--color-warning, #f59e0b);
+    background: var(--primary-soft, rgba(245, 158, 11, 0.1));
+    border: 1px solid var(--border-color);
+  }
+}
+
+/* 历史计数徽标（成功 / 跳过 / 失败） */
+.orchestrates__count-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--bg-body, rgba(31, 35, 51, 0.08));
+
+  &--success {
+    color: var(--color-running, #22c55e);
+  }
+
+  &--fail {
+    color: var(--color-error, #ef4444);
+  }
+
+  &--skip {
+    color: var(--text-muted);
+  }
+}
+
+/* 空历史提示 */
+.orchestrates__history-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}

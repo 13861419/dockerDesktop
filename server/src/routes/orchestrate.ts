@@ -46,6 +46,8 @@ export interface OrchestrateResult {
   skipped: number;
   cycle?: string[];
   error?: string;
+  /** 附加分阶段明细（restart 场景：stop/start 两阶段逐轮记录），供历史留档与前端展示 */
+  phases?: Array<OrchestrateResult & { label: 'stop' | 'start' }>;
 }
 
 /**
@@ -378,6 +380,26 @@ async function runOrchestrate(
 }
 
 /**
+ * 将一次编排结果写入 orchestrate_runs 历史表
+ * @param action 编排动作（start/stop/restart）
+ * @param startedAt 开始时间戳(ms)
+ * @param durationMs 总耗时(ms)
+ * @param result 编排结果
+ */
+function persistRun(action: string, startedAt: number, durationMs: number, result: OrchestrateResult): void {
+  // stop 失败后继续 start（restart 场景）时，start 的 ok 会被覆盖，这里以动作语义为准
+  const base = result as any;
+  const success = typeof base.success === 'number' ? base.success : 0;
+  const fail = typeof base.fail === 'number' ? base.fail : 0;
+  const skipped = typeof base.skipped === 'number' ? base.skipped : 0;
+  getDb()
+    .prepare(
+      'INSERT INTO orchestrate_runs (action, started_at, duration_ms, success, fail, skipped, detail, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(action, startedAt, durationMs, success, fail, skipped, JSON.stringify(result), result.error || null, Date.now());
+}
+
+/**
  * POST /api/orchestrate/start
  * 一键按依赖拓扑序启动。body: { containerIds?: string[] }
  */
@@ -386,7 +408,9 @@ router.post(
   requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const ids = Array.isArray(req.body?.containerIds) ? req.body.containerIds : undefined;
+    const startedAt = Date.now();
     const result = await runOrchestrate('start', ids);
+    persistRun('start', startedAt, Date.now() - startedAt, result);
     logOperation(res.locals.username, '一键编排启动', 'container', null, result.ok ? `成功 ${result.success}/跳过 ${result.skipped}` : `失败: ${result.error || ''}`);
     res.json(result);
   }),
@@ -401,7 +425,9 @@ router.post(
   requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const ids = Array.isArray(req.body?.containerIds) ? req.body.containerIds : undefined;
+    const startedAt = Date.now();
     const result = await runOrchestrate('stop', ids);
+    persistRun('stop', startedAt, Date.now() - startedAt, result);
     logOperation(res.locals.username, '一键编排停止', 'container', null, result.ok ? `成功 ${result.success}/跳过 ${result.skipped}` : `失败: ${result.error || ''}`);
     res.json(result);
   }),
@@ -416,19 +442,151 @@ router.post(
   requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const ids = Array.isArray(req.body?.containerIds) ? req.body.containerIds : undefined;
+    const startedAt = Date.now();
     const stopResult = await runOrchestrate('stop', ids);
     const startResult = await runOrchestrate('start', ids);
     const ok = stopResult.ok && startResult.ok;
-    res.json({
+    const merged: OrchestrateResult = {
       ok,
       action: 'restart',
-      stop: stopResult,
-      start: startResult,
+      order: startResult.order.length ? startResult.order : stopResult.order,
+      rounds: [],
       success: stopResult.success + startResult.success,
       fail: stopResult.fail + startResult.fail,
       skipped: stopResult.skipped + startResult.skipped,
       error: stopResult.error || startResult.error || undefined,
+      // 附加两阶段明细供历史留档与前端展示
+      phases: [
+        { label: 'stop', ...stopResult },
+        { label: 'start', ...startResult },
+      ],
+    };
+    persistRun('restart', startedAt, Date.now() - startedAt, merged);
+    res.json({
+      ...merged,
+      stop: stopResult,
+      start: startResult,
     });
+  }),
+);
+
+/**
+ * POST /api/orchestrate/retry
+ * 对历史一次编排中失败（或指定）的容器单独重试 启动/停止。
+ * body: { action: 'start'|'stop', containerIds: string[] }
+ * 与一键编排不同，重试不对容器做拓扑排序，而是逐个直连执行，主要用于修复上次失败项。
+ */
+router.post(
+  '/retry',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const action = String(req.body?.action || '');
+    if (action !== 'start' && action !== 'stop') {
+      res.status(400).json({ error: 'action 必须为 start 或 stop' });
+      return;
+    }
+    const rawIds: unknown[] = Array.isArray(req.body?.containerIds) ? req.body.containerIds : [];
+    const ids = rawIds.filter((x): x is string => typeof x === 'string' && x.length > 0);
+    if (ids.length === 0) {
+      res.status(400).json({ error: '请至少提供一个容器 id' });
+      return;
+    }
+    const docker = await getDockerClient();
+    const list = await docker.listContainers({ all: true });
+    const nameMap: Record<string, string> = {};
+    const stateMap: Record<string, string> = {};
+    for (const c of list) {
+      const name = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '') || c.Id.slice(0, 12);
+      nameMap[c.Id] = name;
+      stateMap[c.Id] = c.State || '';
+    }
+    const items: Array<{ id: string; name: string; action: string; ok: boolean; error?: string }> = [];
+    let success = 0;
+    let fail = 0;
+    for (const id of ids) {
+      const name = nameMap[id] || id.slice(0, 12);
+      if (!stateMap[id]) {
+        fail++;
+        items.push({ id, name, action, ok: false, error: '容器不存在' });
+        continue;
+      }
+      try {
+        const container = docker.getContainer(id);
+        if (action === 'start') {
+          if (stateMap[id] === 'running') {
+            items.push({ id, name, action, ok: true });
+          } else {
+            await container.start();
+            success++;
+            items.push({ id, name, action, ok: true });
+          }
+        } else {
+          if (!(stateMap[id] === 'running' || stateMap[id] === 'paused' || stateMap[id] === 'restarting')) {
+            items.push({ id, name, action, ok: true });
+          } else {
+            if (stateMap[id] === 'paused') {
+              try { await container.unpause(); } catch { /* ignore */ }
+            }
+            await container.stop({ t: 10 });
+            success++;
+            items.push({ id, name, action, ok: true });
+          }
+        }
+      } catch (e: any) {
+        fail++;
+        items.push({ id, name, action, ok: false, error: e?.message || '操作失败' });
+      }
+    }
+    logOperation(res.locals.username, `编排失败重试(${action})`, 'container', null, `成功 ${success}/失败 ${fail}`);
+    res.json({ ok: fail === 0, action, total: items.length, success, fail, items });
+  }),
+);
+
+/**
+ * GET /api/orchestrate/history?limit=&offset=
+ * 分页查询编排执行历史（倒序）。
+ * 返回 { items, total, limit, offset }
+ */
+router.get(
+  '/history',
+  asyncHandler(async (req: Request, res: Response) => {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const d = getDb();
+    const totalRow = d.prepare('SELECT COUNT(*) AS n FROM orchestrate_runs').get() as { n: number };
+    const rows = d
+      .prepare('SELECT * FROM orchestrate_runs ORDER BY started_at DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Array<{
+      id: number;
+      action: string;
+      started_at: number;
+      duration_ms: number;
+      success: number;
+      fail: number;
+      skipped: number;
+      detail: string;
+      error: string | null;
+    }>;
+    const items = rows.map((r) => {
+      let detail: unknown = null;
+      try {
+        detail = JSON.parse(r.detail);
+      } catch {
+        detail = null;
+      }
+      return {
+        id: r.id,
+        action: r.action,
+        startedAt: r.started_at,
+        durationMs: r.duration_ms,
+        success: r.success,
+        fail: r.fail,
+        skipped: r.skipped,
+        error: r.error,
+        detail,
+      };
+    });
+    res.json({ items, total: totalRow.n, limit, offset });
   }),
 );
 

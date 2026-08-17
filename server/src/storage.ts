@@ -419,6 +419,21 @@ function createTables(): void {
       enabled       INTEGER NOT NULL DEFAULT 1, -- 是否参与编排(0=跳过)
       updated_at    INTEGER NOT NULL
     );
+
+    -- 编排执行历史表：记录每次一键启动/停止/重启的结果留档，供追踪复盘
+    CREATE TABLE IF NOT EXISTS orchestrate_runs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      action      TEXT NOT NULL,               -- start | stop | restart
+      started_at  INTEGER NOT NULL,            -- 开始时间戳(ms)
+      duration_ms INTEGER NOT NULL DEFAULT 0,  -- 总耗时(ms)
+      success     INTEGER NOT NULL DEFAULT 0,  -- 成功容器数
+      fail        INTEGER NOT NULL DEFAULT 0,  -- 失败容器数
+      skipped     INTEGER NOT NULL DEFAULT 0,  -- 跳过容器数
+      detail      TEXT NOT NULL DEFAULT '{}',  -- 分轮明细 JSON（含 phases 与 order）
+      error       TEXT,                        -- 整体错误（如依赖环）
+      created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_orchestrate_runs_started ON orchestrate_runs(started_at DESC);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

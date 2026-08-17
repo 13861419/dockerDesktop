@@ -101,6 +101,58 @@ interface OrchestrateResult {
   summary: { success: number; fail: number; skipped: number };
 }
 
+/** 历史记录中单次执行对应的阶段定义（start/stop 单阶段或 restart 的 stop/start 段） */
+interface HistoryPhase {
+  label: string;
+  ok: boolean;
+  action: string;
+  order: { id: string; name: string }[];
+  rounds: OrchestrateRound[];
+  success: number;
+  fail: number;
+  skipped: number;
+  error?: string;
+  cycle?: string;
+}
+
+/** 单条编排历史记录（对齐 /api/orchestrate/history 返回结构） */
+interface HistoryItem {
+  id: number;
+  action: 'start' | 'stop' | 'restart';
+  startedAt: number;
+  durationMs: number;
+  success: number;
+  fail: number;
+  skipped: number;
+  error?: string | null;
+  detail: any | null;
+}
+
+/** 历史记录分页响应结构 */
+interface HistoryResponse {
+  items: HistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** 重试接口（POST /api/orchestrate/retry）返回结构 */
+interface RetryResponse {
+  ok: boolean;
+  action: string;
+  total: number;
+  success: number;
+  fail: number;
+  items: OrchestrateItem[];
+}
+
+/** 重试项：单个失败容器的动作与 id */
+interface RetryEntry {
+  id: string;
+  name: string;
+  action: 'start' | 'stop';
+}
+
 /**
  * 从容器 Names 中提取显示名（去前导斜杠）
  * @param c 容器项
@@ -137,6 +189,22 @@ export default function OrchestratePage() {
   // 一键编排执行状态与结果
   const [runningAction, setRunningAction] = useState<'start' | 'stop' | 'restart' | null>(null);
   const [result, setResult] = useState<OrchestrateResult | null>(null);
+
+  // 编排历史弹窗状态
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<HistoryItem[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // 展开的历史记录 id 集合
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // 当前正在重试的历史记录 id 与对应重试确认弹窗数据
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [retryConfirm, setRetryConfirm] = useState<{ item: HistoryItem; entries: RetryEntry[] } | null>(null);
+  const [retrySaving, setRetrySaving] = useState(false);
+
+  /** 历史分页每页条数 */
+  const HISTORY_PAGE_SIZE = 20;
 
   /**
    * 拉取依赖配置并合并到状态
@@ -345,6 +413,145 @@ export default function OrchestratePage() {
   /** 判断任一编排动作是否在执行中（用于整体禁用写操作） */
   const busy = runningAction !== null;
 
+  /**
+   * 拉取指定偏移的编排历史（分页）
+   * @param offset 起始偏移量
+   */
+  const loadHistory = useCallback(async (offset: number) => {
+    setHistoryLoading(true);
+    try {
+      const res = await get<HistoryResponse>('/api/orchestrate/history', {
+        limit: HISTORY_PAGE_SIZE,
+        offset,
+      });
+      setHistoryList(res?.items || []);
+      setHistoryTotal(res?.total ?? 0);
+      setHistoryOffset(offset);
+    } catch (e: any) {
+      showToast(e?.message || '加载编排历史失败', 'error');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [showToast]);
+
+  /** 打开历史弹窗并加载第一页 */
+  const openHistory = () => {
+    setHistoryOpen(true);
+    setExpandedIds(new Set());
+    loadHistory(0);
+  };
+
+  /**
+   * 切换单条历史记录的展开 / 折叠
+   * @param id 历史记录 id
+   */
+  const toggleExpand = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  /**
+   * 收集一次历史执行中全部失败容器（ok=false 且带 error）
+   * restart 时遍历 stop/start 两阶段，动作取所在阶段 label 映射
+   * @param item 历史记录
+   * @returns 失败容器重试项列表
+   */
+  const collectFailed = (item: HistoryItem): RetryEntry[] => {
+    const entries: RetryEntry[] = [];
+    if (item.action === 'restart') {
+      const d = item.detail;
+      (d?.phases || []).forEach((p: any) => {
+        // 阶段 label 通常是 'stop' / 'start'，取其动作
+        const action = (p?.label || p?.action || '') as 'start' | 'stop';
+        p?.rounds?.forEach((r: any) => {
+          (r.items || []).forEach((it: any) => {
+            if (!it.ok && !!it.error) {
+              entries.push({ id: it.id, name: it.name, action });
+            }
+          });
+        });
+      });
+    } else {
+      const d = item.detail;
+      // 非 restart 分支已在上方排除，此处 action 仅可能为 start / stop
+      const action = item.action as 'start' | 'stop';
+      d?.rounds?.forEach((r: any) => {
+        (r.items || []).forEach((it: any) => {
+          if (!it.ok && !!it.error) {
+            entries.push({ id: it.id, name: it.name, action });
+          }
+        });
+      });
+    }
+    return entries;
+  };
+
+  /**
+   * 点击"重试失败项"：收集失败容器并弹出确认
+   * @param item 历史记录
+   */
+  const handleRetryClick = (item: HistoryItem) => {
+    if (!canManage) {
+      showToast('仅管理员可重试失败项', 'error');
+      return;
+    }
+    const entries = collectFailed(item);
+    if (entries.length === 0) {
+      showToast('该次执行没有可重试的失败项', 'error');
+      return;
+    }
+    setRetryConfirm({ item, entries });
+  };
+
+  /**
+   * 执行重试：按动作分组合并容器 id，逐组调用 retry 接口
+   */
+  const confirmRetry = async () => {
+    if (!retryConfirm) return;
+    if (!canManage) {
+      showToast('仅管理员可重试失败项', 'error');
+      return;
+    }
+    const { item, entries } = retryConfirm;
+    setRetrySaving(true);
+    setRetryingId(item.id);
+    try {
+      // 按动作分组（同动作合并为一次调用）
+      const groups = new Map<'start' | 'stop', string[]>();
+      entries.forEach((e) => {
+        const arr = groups.get(e.action) || [];
+        arr.push(e.id);
+        groups.set(e.action, arr);
+      });
+      let total = 0;
+      let success = 0;
+      let fail = 0;
+      for (const [action, ids] of groups) {
+        const res = await post<RetryResponse>('/api/orchestrate/retry', { action, containerIds: ids });
+        total += res?.total ?? 0;
+        success += res?.success ?? 0;
+        fail += res?.fail ?? 0;
+      }
+      showToast(`重试完成：成功 ${success}，失败 ${fail}`, fail > 0 ? 'error' : 'success');
+      // 刷新容器列表与历史，保持最新状态
+      await load();
+      await loadHistory(historyOffset);
+      setRetryConfirm(null);
+    } catch (e: any) {
+      showToast(e?.message || '重试失败项失败', 'error');
+    } finally {
+      setRetrySaving(false);
+      setRetryingId(null);
+    }
+  };
+
   return (
     <div className="orchestrates-page">
       <Card
@@ -354,6 +561,9 @@ export default function OrchestratePage() {
             <span className="orchestrates-page__total">共 {list.length} 个容器</span>
             <Button variant="secondary" size="sm" onClick={handleRefresh}>
               刷新
+            </Button>
+            <Button variant="secondary" size="sm" onClick={openHistory}>
+              历史
             </Button>
             <Button
               variant="primary"
@@ -555,6 +765,82 @@ export default function OrchestratePage() {
         result={result}
         onClose={() => setResult(null)}
       />
+
+      {/* 编排历史弹窗 */}
+      <HistoryModal
+        open={historyOpen}
+        loading={historyLoading}
+        list={historyList}
+        total={historyTotal}
+        offset={historyOffset}
+        pageSize={HISTORY_PAGE_SIZE}
+        expandedIds={expandedIds}
+        retryingId={retryingId}
+        canManage={canManage}
+        onClose={() => setHistoryOpen(false)}
+        onPrev={() => loadHistory(Math.max(0, historyOffset - HISTORY_PAGE_SIZE))}
+        onNext={() => loadHistory(historyOffset + HISTORY_PAGE_SIZE)}
+        onToggle={toggleExpand}
+        onRetryClick={handleRetryClick}
+      />
+
+      {/* 重试失败项确认弹窗 */}
+      <Modal
+        open={!!retryConfirm}
+        title="重试失败项"
+        onClose={() => !retrySaving && setRetryConfirm(null)}
+        width={520}
+        footer={
+          <div className="orchestrates__modal-footer">
+            <span style={{ flex: 1 }} />
+            <Button variant="ghost" size="md" onClick={() => setRetryConfirm(null)} disabled={retrySaving}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={retrySaving} onClick={confirmRetry}>
+              确认重试
+            </Button>
+          </div>
+        }
+      >
+        {retryConfirm && (
+          <div className="orchestrates__result">
+            <div>将以下 {retryConfirm.entries.length} 个失败容器按动作分组重试：</div>
+            <div className="orchestrates__result__rounds">
+              {(() => {
+                // 按（动作）分组展示将重试的容器
+                const groups = new Map<'start' | 'stop', RetryEntry[]>();
+                retryConfirm.entries.forEach((e) => {
+                  const arr = groups.get(e.action) || [];
+                  arr.push(e);
+                  groups.set(e.action, arr);
+                });
+                return Array.from(groups.entries()).map(([action, arr]) => (
+                  <div key={action} className="orchestrates__result__round">
+                    <div className="orchestrates__result__round__head">
+                      <span>{action === 'start' ? '启动' : '停止'}</span>
+                      <span className="round-stats">
+                        <span className="rs--fail">共 {arr.length} 个</span>
+                      </span>
+                    </div>
+                    <div className="orchestrates__result__round__items">
+                      {arr.map((entry) => (
+                        <div key={entry.id} className="orchestrates__result__round__item">
+                          <span className="orchestrates__result__round__item__name">{entry.name}</span>
+                          <span
+                            className="orchestrates__result__round__item__badge orchestrates__result__round__item__badge--fail"
+                          >
+                            失败
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -700,4 +986,299 @@ function RoundBlock({ round }: { round: OrchestrateRound }) {
       )}
     </div>
   );
+}
+
+/**
+ * 格式化时间戳为本地 YYYY-MM-DD HH:mm:ss
+ * @param ms 毫秒时间戳
+ * @returns 格式化后的时间字符串
+ */
+function formatTime(ms: number): string {
+  if (!ms) return '-';
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * 将毫秒耗时格式化为秒（保留 1 位小数），如 1234 => "1.2s"
+ * @param ms 毫秒值
+ * @returns 格式化后的耗时字符串
+ */
+function formatDuration(ms: number): string {
+  if (ms === undefined || ms === null) return '-';
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * 动作徽标文案映射
+ * @param action 动作类型
+ * @returns 中文文案
+ */
+function actionLabel(action: string): string {
+  if (action === 'start') return '启动';
+  if (action === 'stop') return '停止';
+  if (action === 'restart') return '重启';
+  return action;
+}
+
+/**
+ * 单条历史记录行：摘要（可点击展开）+ 展开后的详情
+ * @param param0 属性
+ */
+function HistoryRow({
+  item,
+  expanded,
+  retrying,
+  canManage,
+  phases,
+  onToggle,
+  onRetryClick,
+}: {
+  item: HistoryItem;
+  expanded: boolean;
+  retrying: boolean;
+  canManage: boolean;
+  phases: HistoryPhase[];
+  onToggle: () => void;
+  onRetryClick: () => void;
+}) {
+  const totalFail = phases.reduce((sum, p) => sum + (p.fail || 0), 0);
+  return (
+    <div className="orchestrates__history-row">
+      {/* 摘要头：点击展开 / 折叠 */}
+      <div className="orchestrates__history-row__head" onClick={onToggle}>
+        <span className={`orchestrates__history-row__arrow ${expanded ? 'orchestrates__history-row__arrow--open' : ''}`}>
+          ▶
+        </span>
+        <span className={`orchestrates__action-badge orchestrates__action-badge--${item.action}`}>
+          {actionLabel(item.action)}
+        </span>
+        <div className="orchestrates__history-row__meta">
+          <span className="orchestrates__history-row__time">{formatTime(item.startedAt)}</span>
+          <span className="orchestrates__history-row__sub">
+            <span>耗时 {formatDuration(item.durationMs)}</span>
+            <span className="orchestrates__count-badge orchestrates__count-badge--success">成功 {item.success}</span>
+            <span className="orchestrates__count-badge orchestrates__count-badge--skip">跳过 {item.skipped}</span>
+            <span className="orchestrates__count-badge orchestrates__count-badge--fail">失败 {item.fail}</span>
+            {item.error && <span className="orchestrates__history-row__err" title={item.error}>{item.error}</span>}
+          </span>
+        </div>
+      </div>
+
+      {/* 展开后的详情 */}
+      {expanded && (
+        <div className="orchestrates__history-row__body">
+          {phases.map((phase) => (
+            <HistoryPhaseBlock key={phase.label} phase={phase} />
+          ))}
+
+          {/* 存在失败项时提供重试入口 */}
+          {totalFail > 0 && (
+            <div className="orchestrates__history-row__retry">
+              <span className="orchestrates__history-row__retry__text">
+                {totalFail} 个容器执行失败，可重试其中的失败项。
+              </span>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={retrying}
+                disabled={!canManage}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetryClick();
+                }}
+              >
+                重试失败项
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 阶段详情块：展示拓扑顺序与分轮结果（复用 RoundBlock 的逐容器 成功/失败/跳过 风格）
+ * @param param0 属性
+ */
+function HistoryPhaseBlock({ phase }: { phase: HistoryPhase }) {
+  return (
+    <div className="orchestrates__result__phase">
+      <div className="orchestrates__result__phase__head">
+        <span>{phase.label}</span>
+        {phase.error && <span style={{ color: 'var(--color-error, #ef4444)' }}>{phase.error}</span>}
+        <span className="orchestrates__result__phase__tail">
+          <span className="tail-item tail-item--success">成功 {phase.success}</span>
+          <span className="tail-item tail-item--skip">跳过 {phase.skipped}</span>
+          <span className="tail-item tail-item--fail">失败 {phase.fail}</span>
+        </span>
+      </div>
+      <div className="orchestrates__result__phase__body">
+        {phase.cycle && (
+          <div className="orchestrates__result__warn orchestrates__result__warn--cycle">
+            <span>
+              检测到依赖环：{phase.label} 的依赖关系中存在循环依赖（{phase.cycle}），无法进行拓扑排序，已中止执行。
+            </span>
+          </div>
+        )}
+        {phase.order.length > 0 && (
+          <div className="orchestrates__result__order">
+            <div className="orchestrates__result__order__label">
+              {phase.action === 'stop' ? '停止顺序：' : '启动顺序（拓扑序）：'}
+            </div>
+            <div>
+              {phase.order.map((o, i) => (
+                <span key={o.id} className="order-item">
+                  <span className="order-item__idx">{i + 1}</span>
+                  {o.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {phase.rounds.length > 0 && (
+          <div className="orchestrates__result__rounds">
+            {phase.rounds.map((r) => (
+              <RoundBlock key={r.round} round={r} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 编排历史弹窗：分页加载历史记录，行可展开查看详情并支持失败项重试
+ * @param param0 属性
+ */
+function HistoryModal({
+  open,
+  loading,
+  list,
+  total,
+  offset,
+  pageSize,
+  expandedIds,
+  retryingId,
+  canManage,
+  onClose,
+  onPrev,
+  onNext,
+  onToggle,
+  onRetryClick,
+}: {
+  open: boolean;
+  loading: boolean;
+  list: HistoryItem[];
+  total: number;
+  offset: number;
+  pageSize: number;
+  expandedIds: Set<number>;
+  retryingId: number | null;
+  canManage: boolean;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToggle: (id: number) => void;
+  onRetryClick: (item: HistoryItem) => void;
+}) {
+  const pageNum = total === 0 ? 0 : Math.floor(offset / pageSize) + 1;
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const hasPrev = pageNum > 1;
+  const hasNext = offset + list.length < total;
+  return (
+    <Modal open={open} title="编排历史" onClose={onClose} width={760}>
+      <div className="orchestrates__history">
+        <div className="orchestrates__history__pager">
+          <span className="orchestrates__history__pager__info">
+            共 {total} 条 · 第 {pageNum}/{totalPages || 1} 页
+          </span>
+          <span className="orchestrates__history__pager__btns">
+            <Button variant="secondary" size="sm" disabled={!hasPrev || loading} onClick={onPrev}>
+              上一页
+            </Button>
+            <Button variant="secondary" size="sm" disabled={!hasNext || loading} onClick={onNext}>
+              下一页
+            </Button>
+          </span>
+        </div>
+
+        {loading ? (
+          <SkeletonRows rows={5} />
+        ) : list.length === 0 ? (
+          <div className="orchestrates__history-empty">暂无编排历史记录</div>
+        ) : (
+          <div className="orchestrates__history__list">
+            {list.map((item) => (
+              <HistoryRow
+                key={item.id}
+                item={item}
+                expanded={expandedIds.has(item.id)}
+                retrying={retryingId === item.id}
+                canManage={canManage}
+                phases={historyPhasesOf(item)}
+                onToggle={() => onToggle(item.id)}
+                onRetryClick={() => onRetryClick(item)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * 从历史记录的 detail 规整出阶段列表（start/stop 单阶段，restart 含 stop/start 两阶段）
+ * @param item 历史记录
+ * @returns 展示用阶段列表
+ */
+function historyPhasesOf(item: HistoryItem): HistoryPhase[] {
+  const d = item.detail;
+  if (!d) return [];
+  if (item.action === 'restart') {
+    const phases = d.phases || [];
+    return phases
+      .map((p: any) => toHistoryPhaseFromDetail(p, p?.label || p?.action || ''))
+      .filter((p: HistoryPhase | null): p is HistoryPhase => !!p);
+  }
+  const phase = toHistoryPhaseFromDetail(d, item.action === 'start' ? '启动' : '停止');
+  return phase ? [phase] : [];
+}
+
+/**
+ * 将历史阶段载荷规整为展示对象（order 为空时按各轮 items 兜底补全顺序）
+ * @param p 阶段载荷
+ * @param label 阶段标签
+ * @returns 展示用阶段对象
+ */
+function toHistoryPhaseFromDetail(p: any, label: string): HistoryPhase | null {
+  if (!p) return null;
+  let order = p.order || [];
+  if (order.length === 0 && Array.isArray(p.rounds)) {
+    const seen = new Set<string>();
+    p.rounds.forEach((r: any) => {
+      (r.items || []).forEach((it: any) => {
+        if (!seen.has(it.id)) {
+          seen.add(it.id);
+          order = [...order, { id: it.id, name: it.name }];
+        }
+      });
+    });
+  }
+  return {
+    label,
+    ok: !!p.ok,
+    action: p.action || '',
+    order,
+    rounds: p.rounds || [],
+    success: p.success ?? 0,
+    fail: p.fail ?? 0,
+    skipped: p.skipped ?? 0,
+    error: p.error,
+    cycle: p.cycle,
+  };
 }

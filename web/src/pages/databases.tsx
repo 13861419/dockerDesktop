@@ -642,6 +642,8 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   const [activeDb, setActiveDb] = useState('');
   // 当前选中库的表列表
   const [tables, setTables] = useState<string[]>([]);
+  // 待查看详情的表（打开表详情弹窗）
+  const [detailTable, setDetailTable] = useState<string | null>(null);
 
   /**
    * 加载库列表，并保持当前选中库
@@ -794,9 +796,14 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
         <div className="db-list" style={{ maxHeight: 120 }}>
           {tables.map((t) => (
             <div className="db-list__row" key={t}>
-              <span className="db-list__name" style={{ cursor: 'default' }}>
+              <button
+                type="button"
+                className="db-list__name"
+                title={`点击查看 ${t} 的结构与数据`}
+                onClick={() => setDetailTable(t)}
+              >
                 {t}
-              </span>
+              </button>
             </div>
           ))}
         </div>
@@ -865,7 +872,266 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
         onConfirm={handleDelete}
         onCancel={() => setDeleteDb(null)}
       />
+
+      {/* 表详情弹窗 */}
+      <TableDetailModal
+        open={!!detailTable}
+        instance={instance}
+        db={activeDb}
+        table={detailTable}
+        onClose={() => setDetailTable(null)}
+      />
     </div>
+  );
+}
+
+/**
+ * 表详情弹窗：以 Tab 展示表结构（schema）与分页数据（rows）
+ * @param param0 弹窗属性
+ */
+function TableDetailModal({
+  open,
+  instance,
+  db,
+  table,
+  onClose,
+}: {
+  open: boolean;
+  instance: DatabaseInstance;
+  db: string;
+  table: string | null;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  // 当前 Tab：structure（结构） / data（数据）
+  const [tab, setTab] = useState<'structure' | 'data'>('structure');
+  // 表结构：字段名与字段元信息行
+  const [schemaColumns, setSchemaColumns] = useState<string[]>([]);
+  const [schemaRows, setSchemaRows] = useState<string[][]>([]);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  // 每页行数
+  const [pageSize, setPageSize] = useState(10);
+  // 当前页码（从 1 起）
+  const [page, setPage] = useState(1);
+  // 数据页：字段名与行数据
+  const [dataColumns, setDataColumns] = useState<string[]>([]);
+  const [dataRows, setDataRows] = useState<string[][]>([]);
+  const [total, setTotal] = useState(0);
+  const [dataLoading, setDataLoading] = useState(false);
+
+  /** 依据页码与每页行数计算首行偏移量 */
+  const offset = (page - 1) * pageSize;
+
+  // 弹窗关闭或切换表时重置状态
+  useEffect(() => {
+    if (open) {
+      setTab('structure');
+      setPage(1);
+    } else {
+      setSchemaColumns([]);
+      setSchemaRows([]);
+      setDataColumns([]);
+      setDataRows([]);
+      setTotal(0);
+    }
+  }, [open]);
+
+  /**
+   * 拉取表结构
+   */
+  const loadSchema = useCallback(async () => {
+    if (!table) return;
+    setSchemaLoading(true);
+    try {
+      const data = await get<{ columns: string[]; rows: string[][] }>(
+        `/api/databases/${instance.id}/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/schema`
+      );
+      setSchemaColumns(data?.columns || []);
+      setSchemaRows(data?.rows || []);
+    } catch (e: any) {
+      setSchemaColumns([]);
+      setSchemaRows([]);
+      showToast(e?.message || '加载表结构失败', 'error');
+    } finally {
+      setSchemaLoading(false);
+    }
+  }, [instance.id, db, table, showToast]);
+
+  // 打开时若在结构 Tab 则加载结构
+  useEffect(() => {
+    if (open && tab === 'structure') loadSchema();
+  }, [open, tab, loadSchema]);
+
+  // 打开时若在数据 Tab 则加载当前页
+  useEffect(() => {
+    if (open && tab === 'data' && table) setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tab]);
+
+  /**
+   * 按当前页码与每页行数拉取数据
+   */
+  const loadData = useCallback(async () => {
+    if (!table) return;
+    setDataLoading(true);
+    try {
+      const data = await get<{ columns: string[]; rows: string[][]; total: number }>(
+        `/api/databases/${instance.id}/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/rows`,
+        { limit: pageSize, offset }
+      );
+      setDataColumns(data?.columns || []);
+      setDataRows(data?.rows || []);
+      setTotal(data?.total ?? 0);
+    } catch (e: any) {
+      setDataColumns([]);
+      setDataRows([]);
+      setTotal(0);
+      showToast(e?.message || '加载表数据失败', 'error');
+    } finally {
+      setDataLoading(false);
+    }
+  }, [instance.id, db, table, pageSize, offset, showToast]);
+
+  // 在数据 Tab、打开时按页码 / 每页行数变化重新拉取
+  useEffect(() => {
+    if (open && tab === 'data') loadData();
+  }, [open, tab, loadData]);
+
+  /** 最大页码 */
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  /** 切换上一页 */
+  const prevPage = () => setPage((p) => Math.max(1, p - 1));
+
+  /** 切换下一页 */
+  const nextPage = () => setPage((p) => Math.min(totalPages, p + 1));
+
+  return (
+    <Modal
+      open={open}
+      title={table ? `表详情 · ${table}` : '表详情'}
+      onClose={onClose}
+      width={820}
+    >
+      {table && (
+        <>
+          <div className="db-detail__info">
+            库：<span className="db-card__row-value">{db}</span> · 表：
+            <span className="db-card__row-value">{table}</span>
+          </div>
+
+          {/* Tab 切换栏 */}
+          <div className="detail-tabs">
+            <button
+              type="button"
+              className={`detail-tabs__item ${tab === 'structure' ? 'detail-tabs__item--active' : ''}`}
+              onClick={() => setTab('structure')}
+            >
+              结构
+            </button>
+            <button
+              type="button"
+              className={`detail-tabs__item ${tab === 'data' ? 'detail-tabs__item--active' : ''}`}
+              onClick={() => setTab('data')}
+            >
+              数据
+            </button>
+          </div>
+
+          {/* 结构 Tab */}
+          {tab === 'structure' && (
+            <div className="db-table__panel">
+              {schemaLoading ? (
+                <SkeletonRows rows={3} />
+              ) : schemaColumns.length === 0 ? (
+                <div className="db-list__empty">暂无结构信息。</div>
+              ) : (
+                <table className="db-sql__table">
+                  <thead>
+                    <tr>
+                      {schemaColumns.map((c) => (
+                        <th key={c}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schemaRows.map((row, i) => (
+                      <tr key={i}>
+                        {row.map((cell, j) => (
+                          <td key={j} title={cell === null || cell === undefined ? '' : String(cell)}>
+                            {cell === null || cell === undefined ? 'NULL' : String(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* 数据 Tab */}
+          {tab === 'data' && (
+            <div className="db-table__panel">
+              <div className="db-table__toolbar">
+                <span className="db-sql__hint">每页行数</span>
+                <Select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} style={{ width: 90 }}>
+                  <option value={10}>10</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </Select>
+                <span className="db-table__page-info">
+                  第 {page} / {totalPages} 页 · 共 {total} 行
+                </span>
+                <div className="db-table__page-actions">
+                  <Button variant="ghost" size="sm" onClick={prevPage} disabled={page <= 1}>
+                    上一页
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={nextPage} disabled={page >= totalPages}>
+                    下一页
+                  </Button>
+                </div>
+              </div>
+
+              {dataLoading ? (
+                <SkeletonRows rows={3} />
+              ) : dataColumns.length === 0 ? (
+                <div className="db-list__empty">暂无数据。</div>
+              ) : (
+                <table className="db-sql__table">
+                  <thead>
+                    <tr>
+                      {dataColumns.map((c) => (
+                        <th key={c}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dataRows.map((row, i) => (
+                      <tr key={i}>
+                        {row.map((cell, j) => (
+                          <td key={j} title={cell === null || cell === undefined ? '' : String(cell)}>
+                            {cell === null || cell === undefined ? 'NULL' : String(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {dataColumns.length === 0 && !dataLoading && (
+                <div className="db-table__page-info" style={{ marginTop: 8 }}>
+                  <Button variant="ghost" size="sm" onClick={loadData}>
+                    刷新
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -1005,6 +1271,8 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
   // 待删除的键名
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // 待查看详情的键（打开键详情弹窗）
+  const [detailKey, setDetailKey] = useState<string | null>(null);
 
   /**
    * 加载 Redis 键列表
@@ -1146,9 +1414,14 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
         <div className="db-list">
           {keys.map((item) => (
             <div className="db-list__row" key={item.key}>
-              <span className="db-list__name" style={{ cursor: 'default' }} title={item.key}>
+              <button
+                type="button"
+                className="db-list__name"
+                title={`点击查看 ${item.key} 的值`}
+                onClick={() => setDetailKey(item.key)}
+              >
                 {item.key}
-              </span>
+              </button>
               <span className="db-list__meta">
                 {item.type ? `${item.type}` : ''}
                 {item.size !== undefined ? ` · ${item.size}` : ''}
@@ -1172,7 +1445,174 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
         onConfirm={handleDeleteKey}
         onCancel={() => setDeleteKey(null)}
       />
+
+      {/* 键详情弹窗 */}
+      <RedisKeyModal
+        open={!!detailKey}
+        instance={instance}
+        keyName={detailKey}
+        onClose={() => setDetailKey(null)}
+      />
     </div>
+  );
+}
+
+/** Redis 键值查看接口的返回类型 */
+interface RedisKeyValueResult {
+  key: string;
+  type: 'string' | 'list' | 'set' | 'zset' | 'hash' | 'none';
+  ttl: number;
+  value: unknown;
+}
+
+/**
+ * Redis 键详情弹窗：展示类型、TTL 并按类型渲染键值
+ * @param param0 弹窗属性
+ */
+function RedisKeyModal({
+  open,
+  instance,
+  keyName,
+  onClose,
+}: {
+  open: boolean;
+  instance: DatabaseInstance;
+  keyName: string | null;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  // 键值查询结果
+  const [data, setData] = useState<RedisKeyValueResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // 打开时拉取键值
+  useEffect(() => {
+    if (!open || !keyName) return;
+    setLoading(true);
+    setData(null);
+    (async () => {
+      try {
+        const res = await post<RedisKeyValueResult>(`/api/databases/${instance.id}/redis/key`, {
+          key: keyName,
+        });
+        setData(res);
+      } catch (e: any) {
+        setData(null);
+        showToast(e?.message || '加载键值失败', 'error');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [open, keyName, instance.id, showToast]);
+
+  /** 类型中文名映射 */
+  const typeLabel = (t: string): string => {
+    const map: Record<string, string> = {
+      string: '字符串',
+      list: '列表',
+      set: '集合',
+      zset: '有序集合',
+      hash: '哈希',
+      none: '不存在',
+    };
+    return map[t] || t;
+  };
+
+  /** 展示 TTL：-1 永久，-2 不存在，其余为秒 */
+  const renderTtl = (ttl: number): string => {
+    if (ttl === -1) return '永久';
+    if (ttl === -2) return '不存在';
+    return `${ttl} 秒`;
+  };
+
+  return (
+    <Modal
+      open={open}
+      title={keyName ? `键详情 · ${keyName}` : '键详情'}
+      onClose={onClose}
+      width={640}
+    >
+      {loading ? (
+        <SkeletonRows rows={3} />
+      ) : !data ? (
+        <div className="db-list__empty">暂无键信息。</div>
+      ) : data.type === 'none' ? (
+        <div className="db-list__empty">键不存在（可能已被删除）。</div>
+      ) : (
+        <div className="db-redis-key">
+          {/* 键信息头 */}
+          <div className="db-redis-key__head">
+            <span className={`badge badge--primary`}>
+              {typeLabel(data.type)}
+            </span>
+            <span className="db-redis-key__ttl">
+              TTL：{renderTtl(data.ttl)}
+            </span>
+          </div>
+
+          {/* 按类型渲染值 */}
+          {data.type === 'string' && (
+            <div className="db-redis-key__string">{String(data.value ?? '')}</div>
+          )}
+
+          {(data.type === 'list' || data.type === 'set') && (
+            <div className="db-redis-key__scroll">
+              {(Array.isArray(data.value) ? data.value : []).map((item, i) => (
+                <div className="db-redis-key__row" key={i}>
+                  <span className="db-card__row-value">{String(item)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {data.type === 'zset' && Array.isArray(data.value) && (
+            <table className="db-sql__table">
+              <thead>
+                <tr>
+                  <th>member</th>
+                  <th>{'score'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  // zset 的 value 为 member/score 交替的扁平数组
+                  const arr = data.value as string[];
+                  const rows: Array<[string, string]> = [];
+                  for (let i = 0; i + 1 < arr.length; i += 2) {
+                    rows.push([String(arr[i]), String(arr[i + 1])]);
+                  }
+                  return rows.map(([member, score], idx) => (
+                    <tr key={idx}>
+                      <td>{member}</td>
+                      <td>{score}</td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          )}
+
+          {data.type === 'hash' && Array.isArray(data.value) && (
+            <table className="db-sql__table">
+              <thead>
+                <tr>
+                  <th>field</th>
+                  <th>value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.value as Array<{ field: unknown; value: unknown }>).map((item, idx) => (
+                  <tr key={idx}>
+                    <td>{String(item.field ?? '')}</td>
+                    <td>{String(item.value ?? '')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -1199,6 +1639,11 @@ function DbBackupPanel({
   // 待删除的备份文件
   const [deleteFile, setDeleteFile] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // 待恢复的备份文件（打开恢复确认弹窗）
+  const [restoreFile, setRestoreFile] = useState<string | null>(null);
+  // 恢复目标库（可为空，默认恢复至原库）
+  const [restoreDb, setRestoreDb] = useState('');
+  const [restoring, setRestoring] = useState(false);
 
   /**
    * 加载该实例的备份列表
@@ -1272,6 +1717,40 @@ function DbBackupPanel({
       setDeleting(false);
     }
   }, [canManage, instance.id, deleteFile, load, showToast]);
+
+  /**
+   * 确认恢复备份：POST restore，成功后展示结果并刷新备份列表
+   */
+  const handleRestore = useCallback(async () => {
+    if (!restoreFile) return;
+    if (!canManage) {
+      showToast('仅管理员可恢复备份', 'error');
+      setRestoreFile(null);
+      return;
+    }
+    const file = restoreFile;
+    setRestoring(true);
+    try {
+      const data = await post<{ ok: boolean; restoredDb?: string }>(
+        `/api/databases/${instance.id}/backups/${encodeURIComponent(file)}/restore`,
+        { db: restoreDb.trim() || undefined }
+      );
+      setRestoreFile(null);
+      if (data?.ok) {
+        const msg = data.restoredDb
+          ? `已恢复到数据库 ${data.restoredDb}`
+          : '备份恢复成功';
+        showToast(msg, 'success');
+      } else {
+        showToast('备份恢复失败', 'error');
+      }
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '备份恢复失败', 'error');
+    } finally {
+      setRestoring(false);
+    }
+  }, [canManage, instance.id, restoreFile, restoreDb, load, showToast]);
 
   /**
    * 格式化文件大小
@@ -1357,6 +1836,17 @@ function DbBackupPanel({
               >
                 下载
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setRestoreDb('');
+                  setRestoreFile(b.file);
+                }}
+                disabled={!canManage}
+              >
+                恢复
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setDeleteFile(b.file)} disabled={!canManage}>
                 删除
               </Button>
@@ -1364,6 +1854,40 @@ function DbBackupPanel({
           ))}
         </div>
       )}
+
+      {/* 备份恢复确认弹窗 */}
+      <Modal
+        open={!!restoreFile}
+        title="恢复备份"
+        onClose={() => !restoring && setRestoreFile(null)}
+        width={460}
+        footer={
+          <div className="db-modal__footer">
+            <Button variant="ghost" size="md" onClick={() => setRestoreFile(null)} disabled={restoring}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" loading={restoring} onClick={handleRestore} disabled={!canManage}>
+              确认恢复
+            </Button>
+          </div>
+        }
+      >
+        <div className="db-restore">
+          <div className="db-detail__info">
+            实例：<span className="db-card__row-value">{instance.name}</span> · 备份文件：
+            <span className="db-card__row-value">{restoreFile || ''}</span>
+          </div>
+          <Field label="目标库" hint="留空则恢复到备份来源库（可选）">
+            <Input
+              value={restoreDb}
+              placeholder="例如：restore_db（可空）"
+              onChange={(e) => setRestoreDb(e.target.value)}
+              disabled={!canManage}
+            />
+          </Field>
+          <div className="db-sql__hint">恢复将使用备份文件覆盖指定库的数据，操作前请确认。</div>
+        </div>
+      </Modal>
 
       {/* 删除备份确认框 */}
       <ConfirmDialog
