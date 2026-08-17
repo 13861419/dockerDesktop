@@ -371,3 +371,74 @@
   background: var(--overlay-tag-bg);
   color: var(--text-secondary);
 }
+
+/* 首启引导 · 快速开始 */
+.ov-quickstart {
+  border-color: rgba(99, 102, 241, 0.4);
+
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  &__title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &__sub {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  &__dismiss {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 6px);
+
+    &:hover {
+      color: var(--primary, #6366f1);
+      background: var(--primary-soft, #eef2ff);
+    }
+  }
+
+  &__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  &__step {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px;
+    border-radius: var(--radius-md, 10px);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+
+    &-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    &-desc {
+      flex: 1;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-muted);
+    }
+  }
+}

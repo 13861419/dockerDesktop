@@ -10,6 +10,7 @@
  *   以折线图实时展示 CPU / 内存 / 磁盘曲线。
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { get } from '../api/client';
 import { Overview } from '../types';
 import Card from '../components/Card';
@@ -130,9 +131,14 @@ function formatTimeLabel(ts: number, range: MetricsRange): string {
  */
 export default function OverviewPage() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 首启引导"快速开始"是否已被用户关闭（本地记忆，跨会话不重复打扰）
+  const [qsDismissed, setQsDismissed] = useState<boolean>(
+    () => localStorage.getItem('quickstart_dismissed') === '1',
+  );
 
   // ---- 资源监控状态 ----
   const [now, setNow] = useState<MonitorPoint | null>(null);
@@ -345,9 +351,46 @@ export default function OverviewPage() {
     return 'ov-monitor__fill--ok';
   }
 
+  // 首启引导：仅当环境为空（无容器且无镜像）且未被用户关闭时展示"快速开始"向导
+  const showQuickStart = !qsDismissed && data && data.containers.total === 0 && data.images === 0;
+  /**
+   * 快速开始引导步骤：描述 + 跳转目标
+   */
+  const quickStartSteps = [
+    { title: '① 拉取镜像', desc: '从镜像中心拉取 nginx、redis 等常用镜像', to: '/images' },
+    { title: '② 从应用商店安装', desc: '一键部署常见应用，无需手动配置', to: '/appstore' },
+    { title: '③ 创建容器', desc: '基于镜像创建你的第一个容器', to: '/containers' },
+    { title: '④ 搭建 Compose 项目', desc: '用 Compose 编排多容器应用', to: '/compose' },
+  ];
+
   return (
     <div className="overview-page">
       <h1 className="overview-page__title">总览</h1>
+
+      {showQuickStart && (
+        <Card className="ov-quickstart">
+          <div className="ov-quickstart__head">
+            <div>
+              <div className="ov-quickstart__title">快速开始</div>
+              <div className="ov-quickstart__sub">环境初步就绪，带你用四步跑通首个应用</div>
+            </div>
+            <button className="ov-quickstart__dismiss" onClick={() => { setQsDismissed(true); localStorage.setItem('quickstart_dismissed', '1'); }}>
+              不再显示
+            </button>
+          </div>
+          <div className="ov-quickstart__steps">
+            {quickStartSteps.map((step) => (
+              <div key={step.title} className="ov-quickstart__step">
+                <div className="ov-quickstart__step-title">{step.title}</div>
+                <div className="ov-quickstart__step-desc">{step.desc}</div>
+                <button className="btn btn--primary btn--sm" onClick={() => navigate(step.to)}>
+                  前往
+                </button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="overview__stats">
         {stats.map((s) => (
