@@ -101,11 +101,18 @@ export default function HostFilesPage() {
 
   // 文本编辑器弹窗
   const [editor, setEditor] = useState<EditorState>({ open: false, path: '', name: '', content: '', existing: false });
+  // 编辑器保存中状态（控制保存按钮 loading）
+  const [editorSaving, setEditorSaving] = useState(false);
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<FsItem | null>(null);
   const [forceDelete, setForceDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // 多选打包下载：记录当前目录下被勾选的条目完整路径
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 打包下载请求中状态
+  const [archiving, setArchiving] = useState(false);
 
   /**
    * 加载指定路径的目录内容
@@ -113,6 +120,8 @@ export default function HostFilesPage() {
    */
   const load = useCallback(async (path: string) => {
     setLoading(true);
+    // 切换/刷新目录后清空勾选，避免残留对旧目录的选择
+    setSelected(new Set());
     try {
       const data = await get<ListResponse>('/api/hostfiles/list', { path });
       setCurPath(data?.path || path || '');
@@ -224,6 +233,73 @@ export default function HostFilesPage() {
   );
 
   /**
+   * 切换某个条目的多选勾选状态
+   * @param item 文件系统条目
+   */
+  const toggleSelect = useCallback((item: FsItem) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.path)) {
+        next.delete(item.path);
+      } else {
+        next.add(item.path);
+      }
+      return next;
+    });
+  }, []);
+
+  /**
+   * 将选中的条目打包（tar.gz）并下载到本地
+   * 需携带登录鉴权头，响应为二进制流，使用 Blob + 临时 <a> 触发下载
+   */
+  const handleArchiveDownload = useCallback(async () => {
+    if (selected.size === 0) return;
+    if (!canManage) {
+      showToast('仅管理员可打包下载', 'error');
+      return;
+    }
+    setArchiving(true);
+    try {
+      const token = getToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const resp = await fetch('/api/hostfiles/archive', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ paths: Array.from(selected) }),
+      });
+      if (!resp.ok) {
+        let msg = `打包失败 (${resp.status})`;
+        try {
+          const data = await resp.json();
+          msg = resp.status === 403 ? '权限不足，仅管理员可执行此操作' : data?.error || data?.message || msg;
+        } catch {
+          // 非 JSON 响应，保留默认错误信息
+        }
+        throw new Error(msg);
+      }
+      const blob = await resp.blob();
+      // 创建临时 <a> 触发浏览器下载（与 client.download 写法保持一致）
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = 'archive.tar.gz';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      showToast(`已打包下载 ${selected.size} 项`);
+      setSelected(new Set());
+    } catch (e: any) {
+      showToast(e?.message || '打包下载失败', 'error');
+    } finally {
+      setArchiving(false);
+    }
+  }, [canManage, selected, showToast]);
+
+  /**
    * 确认新建文件夹
    */
   const handleMkdir = useCallback(async () => {
@@ -305,11 +381,14 @@ export default function HostFilesPage() {
       setEditor((s) => ({ ...s, open: false }));
       return;
     }
+    setEditorSaving(true);
     try {
       if (editor.existing) {
         await post('/api/hostfiles/write', { path: editor.path, content: editor.content });
         showToast('已保存');
         setEditor((s) => ({ ...s, open: false }));
+        // 保存成功后刷新当前目录列表以更新 mtime / 大小
+        load(curPath);
       } else {
         const name = editor.name.trim();
         if (!name) {
@@ -324,6 +403,8 @@ export default function HostFilesPage() {
       }
     } catch (e: any) {
       showToast(e?.message || '保存失败', 'error');
+    } finally {
+      setEditorSaving(false);
     }
   }, [canManage, editor, curPath, load, showToast]);
 
@@ -427,6 +508,20 @@ export default function HostFilesPage() {
             </Button>
           </div>
         </div>
+        <div className="hf-toolbar__archive">
+          {selected.size > 0 && (
+            <span className="hf-toolbar__count">已选 {selected.size} 项</span>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={archiving}
+            disabled={selected.size === 0 || !canManage}
+            onClick={handleArchiveDownload}
+          >
+            打包下载
+          </Button>
+        </div>
       </Card>
 
       <Card>
@@ -450,7 +545,19 @@ export default function HostFilesPage() {
             <table className="hf-table">
               <thead>
                 <tr>
-                  <th style={{ width: '48%' }}>名称</th>
+                  <th style={{ width: '40px' }}>
+                    <input
+                      type="checkbox"
+                      className="hf-checkbox"
+                      checked={items.length > 0 && items.every((it) => selected.has(it.path))}
+                      onChange={(e) => {
+                        // 全选 / 全不选当前列表所有条目（仅文件与目录）
+                        const all = items.filter((it) => it.type === 'file' || it.type === 'dir');
+                        setSelected(e.target.checked ? new Set(all.map((it) => it.path)) : new Set());
+                      }}
+                    />
+                  </th>
+                  <th style={{ width: '44%' }}>名称</th>
                   <th style={{ width: '10%' }}>类型</th>
                   <th style={{ width: '12%' }}>大小</th>
                   <th style={{ width: '16%' }}>修改时间</th>
@@ -460,6 +567,17 @@ export default function HostFilesPage() {
               <tbody>
                 {items.map((item, idx) => (
                   <tr key={`${item.path}-${idx}`} data-type={item.type} onClick={() => handleRowClick(item)}>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {/* drive / 其他类型不可打包勾选，仅文件与目录可选 */}
+                      {item.type === 'file' || item.type === 'dir' ? (
+                        <input
+                          type="checkbox"
+                          className="hf-checkbox"
+                          checked={selected.has(item.path)}
+                          onChange={() => toggleSelect(item)}
+                        />
+                      ) : null}
+                    </td>
                     <td>
                       <div className="hf-name">
                         <span className={`hf-name__icon ${item.type === 'dir' || item.type === 'drive' ? 'hf-name__icon--dir' : 'hf-name__icon--file'}`}>
@@ -599,7 +717,7 @@ export default function HostFilesPage() {
               />
             )}
             <Button variant="ghost" onClick={() => setEditor((s) => ({ ...s, open: false }))}>取消</Button>
-            <Button onClick={handleSaveEditor} disabled={!canManage}>保存</Button>
+            <Button onClick={handleSaveEditor} loading={editorSaving} disabled={!canManage}>保存</Button>
           </div>
         }
       >

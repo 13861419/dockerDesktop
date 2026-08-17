@@ -13,6 +13,7 @@ import { Router, Request, Response } from 'express';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { logOperation } from '../operationLog';
@@ -20,8 +21,8 @@ import { requireAdmin } from '../auth';
 
 const router = Router();
 
-/** 读取接口允许的文件大小上限（字节，2MB） */
-const MAX_READ_BYTES = 2 * 1024 * 1024;
+/** 读取接口允许的文件大小上限（字节，8MB，支持在线编辑中等大小的文本/配置文件） */
+const MAX_READ_BYTES = 8 * 1024 * 1024;
 
 /**
  * 统一兜底错误处理
@@ -276,6 +277,138 @@ router.get(
     );
     const stream = fs.createReadStream(target);
     await pipeline(stream, res);
+  }),
+);
+
+/** tar 头块大小 */
+const TAR_BLOCK = 512;
+/** 单文件/目录名在 tar 头内可容纳的字节上限 */
+const TAR_NAME_MAX = 99;
+
+/**
+ * 将数值写入 8 字节 tar 字段（base-256 表示，支持任意大数值）
+ * @param buf 目标缓冲
+ * @param offset 起始偏移
+ * @param len 字段长度
+ * @param value 数值
+ */
+function writeTarOctal(buf: Buffer, offset: number, len: number, value: number): void {
+  // base-256：最高字节置 0x80 标志位，其后从低位向高位逐字节写入数值
+  let v = Math.floor(value);
+  for (let i = len - 1; i >= 1; i--) {
+    buf[offset + i] = v & 0xff;
+    v = Math.floor(v / 256);
+  }
+  buf[offset] = 0x80;
+}
+
+/**
+ * 追加一个 tar 项到字节缓冲
+ * @param out 输出缓冲数组
+ * @param name 归档内路径
+ * @param isDir 是否为目录
+ * @param size 文件大小（目录为 0）
+ * @param mtime 修改时间（秒）
+ * @param data 文件内容（目录为空）
+ */
+function pushTarEntry(
+  out: Buffer[],
+  name: string,
+  isDir: boolean,
+  size: number,
+  mtime: number,
+  data: Buffer,
+): void {
+  const header = Buffer.alloc(TAR_BLOCK);
+  const bs = Buffer.from(name, 'utf8');
+  bs.copy(header, 0, 0, Math.min(bs.length, TAR_NAME_MAX));
+  header.write('0000644', 100, 7, 'ascii'); // mode
+  header.write('0000000', 108, 7, 'ascii'); // uid
+  header.write('0000000', 116, 7, 'ascii'); // gid
+  writeTarOctal(header, 124, 12, size); // size（base-256）
+  writeTarOctal(header, 136, 12, Math.floor(mtime)); // mtime（base-256）
+  header.write('        ', 148, 8, 'ascii'); // checksum 占位，随后计算
+  header[156] = isDir ? 0x35 : 0x30; // typeflag: '5' 目录 '0' 文件
+  header.write('ustar\x0000', 257, 8, 'ascii'); // magic
+  header.write('00', 263, 2, 'ascii'); // version
+
+  // 计算校验和
+  let sum = 0;
+  for (let i = 0; i < TAR_BLOCK; i++) sum += header[i];
+  header.write(sum.toString(8).padStart(6, '0').slice(0, 6), 148, 6, 'ascii');
+  header[154] = 0;
+  header[155] = 0x20;
+
+  out.push(header);
+  if (data && data.length) {
+    out.push(data);
+    const pad = data.length % TAR_BLOCK;
+    if (pad) out.push(Buffer.alloc(TAR_BLOCK - pad));
+  }
+}
+
+/**
+ * 递归收集路径（文件或目录）到 tar 字节缓冲，返回累积的 Buffer 数组
+ * @param absPath 磁盘绝对路径
+ * @param outName 归档内相对名（以 base 开头）
+ * @param out 累积缓冲
+ */
+async function tarAdd(absPath: string, outName: string, out: Buffer[]): Promise<void> {
+  const stat = await fs.promises.stat(absPath);
+  const mtime = Math.floor(stat.mtimeMs / 1000);
+  if (stat.isDirectory()) {
+    pushTarEntry(out, outName.replace(/\\/g, '/') + '/', true, 0, mtime, Buffer.alloc(0));
+    const entries = await fs.promises.readdir(absPath);
+    entries.sort();
+    for (const ent of entries) {
+      if (ent.startsWith('$')) continue;
+      const child = path.join(absPath, ent);
+      await tarAdd(child, `${outName.replace(/\\/g, '/')}/${ent}`, out);
+    }
+  } else if (stat.isFile()) {
+    const data = await fs.promises.readFile(absPath);
+    pushTarEntry(out, outName.replace(/\\/g, '/'), false, data.length, mtime, data);
+  }
+}
+
+/**
+ * POST /api/hostfiles/archive
+ * 将一组路径（文件或目录，目录递归）打包为 tar.gz 流返回下载。
+ * @body paths: string[]（须经 assertSafePath 校验）
+ */
+router.post(
+  '/archive',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const rawPaths: unknown[] = Array.isArray(req.body?.paths) ? req.body.paths : [];
+    const paths = rawPaths
+      .map((x) => (typeof x === 'string' ? x.trim() : ''))
+      .filter(Boolean);
+    if (paths.length === 0) {
+      return res.status(400).json({ error: '请至少选择一个文件或目录' });
+    }
+    const out: Buffer[] = [];
+    for (const raw of paths) {
+      const abs = resolvePath(raw);
+      assertSafePath(abs);
+      const stat = await fs.promises.stat(abs).catch(() => null);
+      if (!stat) {
+        return res.status(404).json({ error: `路径不存在: ${abs}` });
+      }
+      await tarAdd(abs, path.basename(abs), out);
+    }
+    // tar 结束标记：两个 512 空块
+    out.push(Buffer.alloc(TAR_BLOCK * 2));
+    const tar = Buffer.concat(out);
+
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(`archive-${Date.now()}.tar.gz`)}`,
+    );
+    const source = Readable.from([tar]);
+    const gzip = zlib.createGzip();
+    await pipeline(source, gzip, res);
   }),
 );
 

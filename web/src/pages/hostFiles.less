@@ -136,6 +136,34 @@
 /* 文本文件编辑弹窗内容 */
 .hf-editor textarea {
   min-height: 320px;
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  overflow: auto;
+  word-break: break-all;
   font-family: var(--font-mono, Consolas, monospace);
   font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* 工具栏打包下载区（位于路径工具栏下方） */
+.hf-toolbar__archive {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.hf-toolbar__count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 多选框列 */
+.hf-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--primary);
+  cursor: pointer;
 }
