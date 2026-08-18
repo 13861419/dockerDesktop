@@ -18,7 +18,7 @@ import { promisify } from 'util';
 import Dockerode from 'dockerode';
 import { getDockerClient } from '../docker/client';
 import { getDb, encryptSecret, decryptSecret } from '../storage';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireOperator } from '../auth';
 import { logOperation } from '../operationLog';
 import { APP_LABEL_KEY, APP_CATALOG } from '../appstore/catalog';
 import {
@@ -517,7 +517,7 @@ router.get(
  */
 router.post(
   '/',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const b = req.body || {};
@@ -565,7 +565,7 @@ router.post(
  */
 router.put(
   '/:id',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -706,7 +706,7 @@ router.get(
  */
 router.post(
   '/:id/databases',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -744,7 +744,7 @@ router.post(
  */
 router.delete(
   '/:id/databases/:db',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -804,13 +804,13 @@ router.get(
 /**
  * POST /api/databases/:id/query
  * 执行 SQL 查询，body={sql, db?}。
- * 仅管理员可用（SQL 执行直接触达数据库实例，含只读查询也是敏感能力）。
+ * 仅管理端可用（SQL 执行直接触达数据库实例，含只读查询也是敏感能力）。
  * 只允许只读语句（SELECT/SHOW/DESCRIBE/EXPLAIN 开头，且拒绝多语句），否则返回 403。
  * 对 redis 不开放查询。
  */
 router.post(
   '/:id/query',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type === 'redis') {
@@ -847,12 +847,12 @@ router.post(
 /**
  * POST /api/databases/:id/redis/keys
  * Redis 键浏览，body={pattern?, limit?}。
- * 仅管理员可用（对运行中 Redis 发起 CLI 扫描命令，属敏感能力）。
+ * 仅管理端可用（对运行中 Redis 发起 CLI 扫描命令，属敏感能力）。
  * 用 redis-cli --scan（避免大规模 KEYS 阻塞），按 limit 截断返回。
  */
 router.post(
   '/:id/redis/keys',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type !== 'redis') {
@@ -874,11 +874,11 @@ router.post(
 /**
  * POST /api/databases/:id/redis/info
  * Redis 基础指标（内存/命中率/连接数），解析 redis-cli INFO 的 memory/keyspace stats 字段。
- * 仅管理员可用（对运行中 Redis 发起 CLI 命令，indicator 亦含运行时信息）。
+ * 管理端可用（对运行中 Redis 发起 CLI 命令，亦含运行时信息）。
  */
 router.post(
   '/:id/redis/info',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type !== 'redis') {
@@ -919,7 +919,7 @@ router.post(
  */
 router.delete(
   '/:id/redis/keys',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -950,7 +950,7 @@ router.delete(
  */
 router.get(
   '/:id/backups',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     res.json({ backups: listDbBackups(row.id) });
@@ -965,7 +965,7 @@ router.get(
  */
 router.post(
   '/:id/backups',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -1006,7 +1006,7 @@ router.get(
  */
 router.delete(
   '/:id/backups/:file',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -1028,7 +1028,7 @@ router.delete(
  */
 router.get(
   '/:id/databases/:db/tables/:table/schema',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     const db = String(req.params.db || '').trim();
@@ -1062,7 +1062,7 @@ router.get(
  */
 router.get(
   '/:id/databases/:db/tables/:table/rows',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     const db = String(req.params.db || '').trim();
@@ -1103,7 +1103,7 @@ router.get(
  */
 router.post(
   '/:id/backups/:file/restore',
-  requireAdmin,
+  requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
       const row = await requireInstance(req.params.id);
@@ -1192,7 +1192,7 @@ router.post(
  */
 router.post(
   '/:id/redis/key',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await requireInstance(req.params.id);
     if (row.type !== 'redis') {

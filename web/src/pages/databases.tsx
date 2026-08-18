@@ -14,7 +14,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del, download, ApiError } from '../api/client';
-import { getToken, isAdmin } from '../api/auth';
+import { getToken, isAdmin, canOperate } from '../api/auth';
 import {
   DatabaseInstance,
   DatabaseListResponse,
@@ -95,7 +95,9 @@ async function put<T = any>(url: string, body?: any): Promise<T> {
  */
 export default function DatabasesPage() {
   const { showToast } = useToast();
-  const canManage = isAdmin();
+  // 登记 / 编辑等管理操作为 operator 及以上（与后端 requireOperator 对齐）
+  const canManage = canOperate();
+  // 删除登记实例仅 admin 可用（后端 requireAdmin）
   const canDelete = isAdmin();
   const [instances, setInstances] = useState<DatabaseInstance[]>([]);
   const [recognized, setRecognized] = useState<RecognizedContainer[]>([]);
@@ -302,7 +304,7 @@ export default function DatabasesPage() {
         </div>
       );
     },
-    [testingId, handleTest, canManage]
+    [testingId, handleTest, canManage, canDelete]
   );
 
   return (
@@ -596,6 +598,8 @@ function DetailModal({
   onClose: () => void;
 }) {
   const isRedis = instance?.type === 'redis';
+  // Redis 键浏览 / 指标等均为管理能力，仅 operator 及以上可用
+  const operable = canOperate();
   return (
     <Modal
       open={open}
@@ -610,7 +614,14 @@ function DetailModal({
             {instance.user || '—'} · 密码：{instance.hasPassword ? '已设置' : '未设置'}
           </div>
           {isRedis ? (
-            <RedisPanel instance={instance} />
+            operable ? (
+              <RedisPanel instance={instance} />
+            ) : (
+              <Empty
+                title="需要操作员/管理员权限"
+                description="浏览 Redis 键与指标需具备 operator 或管理员权限，请联系管理员授予相应角色。"
+              />
+            )
           ) : (
             <SqlViewPanel instance={instance} />
           )}
@@ -626,7 +637,8 @@ function DetailModal({
  */
 function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   const { showToast } = useToast();
-  const canManage = isAdmin();
+  // 建库 / 删库等管理操作为 operator 及以上；普通 user 仍可浏览库表列表
+  const canManage = canOperate();
   const [databases, setDatabases] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   // 新建库弹窗是否打开
@@ -693,7 +705,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
    */
   const handleCreate = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可创建数据库', 'error');
+      showToast('需要操作员/管理员权限方可创建数据库', 'error');
       setCreateOpen(false);
       return;
     }
@@ -723,7 +735,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   const handleDelete = useCallback(async () => {
     if (!deleteDb) return;
     if (!canManage) {
-      showToast('仅管理员可删除数据库', 'error');
+      showToast('需要操作员/管理员权限方可删除数据库', 'error');
       setDeleteDb(null);
       return;
     }
@@ -796,25 +808,37 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
         <div className="db-list" style={{ maxHeight: 120 }}>
           {tables.map((t) => (
             <div className="db-list__row" key={t}>
-              <button
-                type="button"
-                className="db-list__name"
-                title={`点击查看 ${t} 的结构与数据`}
-                onClick={() => setDetailTable(t)}
-              >
-                {t}
-              </button>
+              {/* 表结构 / 表数据入口仅对 operator 及以上开放（后端 requireOperator） */}
+              {canManage ? (
+                <button
+                  type="button"
+                  className="db-list__name"
+                  title={`点击查看 ${t} 的结构与数据`}
+                  onClick={() => setDetailTable(t)}
+                >
+                  {t}
+                </button>
+              ) : (
+                <span className="db-list__name" title={t}>
+                  {t}
+                </span>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      <div className="db-detail__section">
-        <span className="db-detail__section-title">SQL 查询</span>
-      </div>
-      <SqlQueryPanel instance={instance} activeDb={activeDb} databases={databases} />
+      {/* SQL 查询面板与备份面板仅对 operator 及以上开放 */}
+      {canManage && (
+        <>
+          <div className="db-detail__section">
+            <span className="db-detail__section-title">SQL 查询</span>
+          </div>
+          <SqlQueryPanel instance={instance} activeDb={activeDb} databases={databases} />
+        </>
+      )}
 
-      <DbBackupPanel instance={instance} databases={databases} payloadDb={activeDb} />
+      {canManage && <DbBackupPanel instance={instance} databases={databases} payloadDb={activeDb} />}
 
       {/* 新建库弹窗 */}
       <Modal
@@ -1205,7 +1229,7 @@ function SqlQueryPanel({
       </div>
       <textarea
         className="input input--area db-sql__area"
-        placeholder={canManage ? 'SELECT * FROM users LIMIT 50;' : '仅管理员可执行 SQL 查询'}
+        placeholder={canManage ? 'SELECT * FROM users LIMIT 50;' : '需要操作员/管理员权限方可执行 SQL 查询'}
         value={sql}
         onChange={(e) => setSql(e.target.value)}
         disabled={!canManage}
@@ -1326,7 +1350,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
   const handleDeleteKey = useCallback(async () => {
     if (!deleteKey) return;
     if (!canDelete) {
-      showToast('仅管理员可删除 Redis 键', 'error');
+      showToast('需要操作员/管理员权限方可删除 Redis 键', 'error');
       setDeleteKey(null);
       return;
     }
@@ -1630,7 +1654,10 @@ function DbBackupPanel({
   payloadDb: string;
 }) {
   const { showToast } = useToast();
-  const canManage = isAdmin();
+  // 备份 / 刷新 / 恢复 / 删除备份为 operator 及以上（后端 requireOperator）
+  const canManage = canOperate();
+  // 下载备份文件（含全量数据）仅 admin 可用（后端 requireAdmin）
+  const canDownload = isAdmin();
   const [backups, setBackups] = useState<Array<{ file: string; size: number; createdAt: number }>>([]);
   const [loading, setLoading] = useState(true);
   // 备份的目标库
@@ -1701,7 +1728,7 @@ function DbBackupPanel({
   const handleDelete = useCallback(async () => {
     if (!deleteFile) return;
     if (!canManage) {
-      showToast('仅管理员可删除备份', 'error');
+      showToast('需要操作员/管理员权限方可删除备份', 'error');
       setDeleteFile(null);
       return;
     }
@@ -1832,7 +1859,7 @@ function DbBackupPanel({
                 onClick={() =>
                   download(`/api/databases/${instance.id}/backups/${encodeURIComponent(b.file)}/download`)
                 }
-                disabled={!canManage}
+                disabled={!canDownload}
               >
                 下载
               </Button>
