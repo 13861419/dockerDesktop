@@ -10,7 +10,9 @@
  * 静默间隔前不重复推送与落库。
  */
 import net from 'net';
-import { getDb } from './storage';
+import fs from 'fs';
+import path from 'path';
+import { getDb, getDataDir } from './storage';
 import { getCurrentMonitor } from './docker/monitor';
 import { getDockerClient } from './docker/client';
 import { listChannels, sendAlert } from './notify';
@@ -600,6 +602,95 @@ export function getAlertRecords(opts?: {
  */
 export function clearAlertRecords(): void {
   getDb().prepare('DELETE FROM alert_records').run();
+}
+
+/**
+ * 查询全部符合条件的告警记录（不受分页条数上限限制），供导出 / 归档使用
+ * @param opts 过滤条件（type / level / pushStatus）
+ * @returns 记录数组（按 id 升序，与展示页一致）
+ */
+export function listAllAlertRecords(opts?: {
+  type?: string;
+  level?: string;
+  pushStatus?: string;
+}): AlertRecordRow[] {
+  const where: string[] = [];
+  const params: any[] = [];
+  if (opts?.type) {
+    where.push('type = ?');
+    params.push(opts.type);
+  }
+  if (opts?.level) {
+    where.push('level = ?');
+    params.push(opts.level);
+  }
+  if (opts?.pushStatus) {
+    where.push('push_status = ?');
+    params.push(opts.pushStatus);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const d = getDb();
+  return d
+    .prepare(`SELECT id, type, level, message, value, channel_id, push_status, push_detail, created_at FROM alert_records ${whereSql} ORDER BY id ASC`)
+    .all(...params) as unknown as AlertRecordRow[];
+}
+
+/**
+ * 将告警记录渲染为 CSV 文本（UTF-8 with BOM，便于 Excel 直接识别中文）
+ * @param rows 告警记录行
+ * @returns CSV 字符串
+ */
+export function renderAlertRecordsCsv(rows: AlertRecordRow[]): string {
+  const esc = (v: unknown): string => {
+    const s = v == null ? '' : String(v);
+    // 含逗号 / 引号 / 换行的字段用双引号包裹，内部引号转义
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = ['ID', '时间', '类型', '级别', '消息', '使用率(%)', '渠道ID', '推送状态', '推送详情'];
+  const lines = [header.map(esc).join(',')];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.id,
+        new Date(r.created_at).toLocaleString('zh-CN', { hour12: false }),
+        r.type,
+        r.level,
+        r.message,
+        r.value != null ? r.value : '',
+        r.channel_id != null ? r.channel_id : '',
+        r.push_status,
+        r.push_detail != null ? r.push_detail : '',
+      ]
+        .map(esc)
+        .join(','),
+    );
+  }
+  // 前置 BOM，让 Excel 正确识别 UTF-8 中文
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+/**
+ * 将当前告警记录归档为 CSV 文件并清空记录表
+ *
+ * 由于告警记录设定了保留上限（默认 800 条），达到上限后最早的记录会被物理删除。
+ * 归档用于把现有记录转存为服务端 CSV 文件，避免历史告警因覆盖而永久丢失。
+ *
+ * @param opts 过滤条件（可选，默认归档全部）
+ * @returns 归档文件信息 { file, count }
+ */
+export function archiveAlertRecords(opts?: { type?: string; level?: string; pushStatus?: string }): {
+  file: string;
+  count: number;
+} {
+  const rows = listAllAlertRecords(opts);
+  const archiveDir = path.join(getDataDir(), 'alert-archive');
+  fs.mkdirSync(archiveDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const file = path.join(archiveDir, `alert-records-${stamp}.csv`);
+  fs.writeFileSync(file, renderAlertRecordsCsv(rows), 'utf8');
+  // 归档成功后清空表（释放 800 条上限压力）
+  clearAlertRecords();
+  return { file, count: rows.length };
 }
 
 /**

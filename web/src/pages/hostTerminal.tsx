@@ -1,244 +1,237 @@
 /**
- * 宿主机终端页面
+ * 宿主机终端页面（会话式交互终端）
  *
- * 非交互式命令执行器：在宿主机执行单条 PowerShell / cmd 命令并显示输出。
- * 后端维护会话工作目录，前端展示当前目录与命令历史。
+ * 通过 WebSocket 连接后端 /ws/hostterminal，在宿主机维持一个长驻的
+ * PowerShell / cmd 会话，前端用 xterm.js 提供实时交互界面：
+ *  - 输入（含按键）实时转发至子进程
+ *  - 子进程输出实时回显
+ *  - 支持 shell 切换、连接状态展示与手动重连
+ *
+ * 保留了后端 REST exec 接口作为兼容（本页面改用 WS 会话式交互）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { get, post } from '../api/client';
-import { useToast } from '../components/Toast';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
+import { getToken } from '../api/auth';
 import { useCanManage } from '../hooks/useCanManage';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Select } from '../components/Form';
 import './hostTerminal.less';
 
-/** 输出行 */
-interface Line {
-  kind: 'prompt' | 'cmd' | 'out' | 'err' | 'muted';
-  text: string;
-}
+/** 连接状态 */
+type ConnState = 'connecting' | 'connected' | 'closed' | 'error';
 
-/** 执行响应 */
-interface ExecResponse {
-  output: string;
-  exitCode: number | null;
-  cwd: string;
-}
-
-/** 终端信息 */
-interface InfoResponse {
-  cwd: string;
-  shell: string;
-  shells: string[];
+/**
+ * 计算宿主终端 WebSocket URL（附带鉴权 token）
+ * @param shell 期望的 shell 类型
+ */
+function buildWsUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = getToken();
+  const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${protocol}//${window.location.host}/ws/hostterminal${qs}`;
 }
 
 /**
  * 宿主机终端页面组件
  */
 export default function HostTerminalPage() {
-  const { showToast } = useToast();
-  const outputRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // 是否能执行命令：宿主机命令执行为高危操作，仅管理员可用
-  // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
+  // 是否为管理员（可执行宿主机命令）：采用服务端权威角色判定，防止基于被篡改的 localStorage 误放行
   const { canManage, checking } = useCanManage();
 
-  // 当前 shell
+  const hostRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // 当前与目标 shell
   const [shell, setShell] = useState('powershell');
-  // 可用 shell
-  const [shells, setShells] = useState<string[]>(['powershell', 'cmd']);
-  // 当前工作目录
-  const [cwd, setCwd] = useState('');
-  // 输出行
-  const [lines, setLines] = useState<Line[]>([]);
-  // 命令输入
-  const [command, setCommand] = useState('');
-  // 正在执行
-  const [running, setRunning] = useState(false);
-  // 命令历史
-  const historyRef = useRef<string[]>([]);
-  const historyIdxRef = useRef(-1);
+  const [connState, setConnState] = useState<ConnState>('connecting');
 
   /**
-   * 追加输出行
-   * @param line 行
+   * 断开当前 WebSocket 并清理
    */
-  const pushLine = useCallback((line: Line) => {
-    setLines((prev) => [...prev, line]);
+  const teardown = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws) {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      try { ws.close(); } catch { /* ignore */ }
+    }
+    wsRef.current = null;
   }, []);
 
   /**
-   * 初始化：拉取终端信息（当前目录、可用 shell）
+   * 建立（或重建）WebSocket 会话终端连接
+   * @param targetShell 目标 shell
    */
-  const init = useCallback(async () => {
-    try {
-      const data = await get<InfoResponse>('/api/hostterminal/info');
-      if (data) {
-        setCwd(data.cwd || '');
-        setShell(data.shell || 'powershell');
-        if (Array.isArray(data.shells) && data.shells.length) {
-          setShells(data.shells);
+  const connect = useCallback(
+    (targetShell: string) => {
+      teardown();
+      setConnState('connecting');
+      const term = termRef.current;
+      if (!term) return;
+
+      const ws = new WebSocket(buildWsUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(`CONFIG,${targetShell}`);
+        setConnState('connected');
+        term.focus();
+        fitRef.current?.fit();
+      };
+
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          term.write(ev.data);
         }
+      };
+
+      ws.onerror = () => {
+        setConnState('error');
+      };
+
+      ws.onclose = () => {
+        setConnState((prev) => (prev === 'connecting' ? 'error' : 'closed'));
+      };
+    },
+    [teardown],
+  );
+
+  // 初始化终端并建立连接
+  useEffect(() => {
+    if (!hostRef.current) return;
+
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Consolas', monospace",
+      theme: {
+        background: '#0f1117',
+        foreground: '#d5d8de',
+        cursor: '#7ee787',
+        selectionBackground: '#7ee78733',
+      },
+      scrollback: 4000,
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(hostRef.current);
+    fit.fit();
+    termRef.current = term;
+    fitRef.current = fit;
+
+    let disposed = false;
+
+    // 输入转发：前端按键写入 WebSocket（由后端写入子进程 stdin）
+    const disposeData = term.onData((data) => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
-    } catch (e: any) {
-      pushLine({ kind: 'err', text: `初始化失败：${e?.message || '无法连接后端'}` });
-    }
-    // 让输入框获得焦点
-    inputRef.current?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pushLine]);
+    });
 
-  useEffect(() => {
-    init();
-  }, [init]);
-
-  // 新行产生后自动滚动到底部
-  useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [lines]);
-
-  // 命令执行结束（running 从 true 变为 false）后，输入框从 disabled 恢复可用时会丢失焦点，
-  // 这里主动把焦点重新还给输入框，避免用户必须手动点击才能继续输入
-  useEffect(() => {
-    if (!running) {
-      inputRef.current?.focus();
-    }
-  }, [running]);
-
-  /**
-   * 执行命令
-   * @param cmd 命令文本
-   */
-  const exec = useCallback(
-    async (cmd: string) => {
-      const trimmed = cmd.trim();
-      if (!trimmed) return;
-
-      // 非管理员禁止执行宿主机命令（后端强制校验，这里是前端入口守卫；
-      // 服务端角色未确认前（checking）也暂不放行，避免误信本地被篡改的 role）
-      if (!canManage || checking) {
-        showToast(checking ? '正在确认权限，请稍候' : '仅管理员可执行宿主机命令', 'error');
-        return;
-      }
-
-      // 记录历史
-      historyRef.current.push(trimmed);
-      historyIdxRef.current = historyRef.current.length;
-
-      const prompt = shell === 'powershell' ? `PS ${cwd}>` : `${cwd}>`;
-      pushLine({ kind: 'prompt', text: prompt });
-      pushLine({ kind: 'cmd', text: trimmed });
-
-      setRunning(true);
+    const onResize = () => {
       try {
-        const resp = await post<ExecResponse>('/api/hostterminal/exec', {
-          command: trimmed,
-          shell,
-        });
-        const out = resp?.output || '';
-        if (out) {
-          pushLine({ kind: 'out', text: out.replace(/\s+$/, '') });
-        }
-        if (resp?.exitCode != null && resp.exitCode !== 0) {
-          pushLine({ kind: 'err', text: `进程退出码：${resp.exitCode}` });
-        }
-        if (resp?.cwd) setCwd(resp.cwd);
-      } catch (e: any) {
-        pushLine({ kind: 'err', text: `执行失败：${e?.message || '未知错误'}` });
-      } finally {
-        setRunning(false);
-      }
-    },
-    [shell, cwd, pushLine, canManage, checking, showToast],
-  );
+        fit.fit();
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('resize', onResize);
+    const ro = new ResizeObserver(onResize);
+    if (hostRef.current) ro.observe(hostRef.current);
 
-  /**
-   * 处理回车执行
-   */
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        exec(command);
-        setCommand('');
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        const hist = historyRef.current;
-        let idx = historyIdxRef.current - 1;
-        if (idx < 0) idx = 0;
-        historyIdxRef.current = idx;
-        if (hist[idx] !== undefined) setCommand(hist[idx]);
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        const hist = historyRef.current;
-        let idx = historyIdxRef.current + 1;
-        historyIdxRef.current = idx;
-        setCommand(idx < hist.length ? hist[idx] : '');
-      }
-    },
-    [exec, command],
-  );
+    // 有权限时才建立连接（后端也会强制校验）
+    if (canManage && !checking) {
+      connect(shellRef.current);
+    }
+
+    return () => {
+      disposed = true;
+      disposeData.dispose();
+      window.removeEventListener('resize', onResize);
+      ro.disconnect();
+      teardown();
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 保存当前 shell 到 ref，供 effect 内读取最新值
+  const shellRef = useRef(shell);
+  shellRef.current = shell;
+
+  // 权限就绪后自动建连（初次加载时 useCanManage 正在校验）
+  useEffect(() => {
+    if (canManage && !checking && termRef.current && wsRef.current === null) {
+      connect(shell);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage, checking]);
+
+  // 切换 shell 后重建连接
+  useEffect(() => {
+    if (canManage && !checking && termRef.current) {
+      connect(shell);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell]);
+
+  // 断开连接（供用户手动断开）
+  const disconnect = useCallback(() => {
+    teardown();
+    setConnState('closed');
+  }, [teardown]);
 
   return (
     <div className="page">
       <div className="page__header">
         <h1 className="page__title">宿主机终端</h1>
-        <p className="page__desc">在宿主机执行 PowerShell / cmd 命令</p>
+        <p className="page__desc">在宿主机执行 PowerShell / cmd 命令（会话式交互终端）</p>
       </div>
 
       <Card>
         <div className="ht-toolbar">
-          <span className="ht-toolbar__cwd" title={cwd}>当前目录：{cwd || '加载中...'}</span>
+          <span className={`ht-toolbar__state ht-toolbar__state--${connState}`}>
+            状态：{connState === 'connecting' && '连接中...'}
+            {connState === 'connected' && '已连接'}
+            {connState === 'closed' && '已断开'}
+            {connState === 'error' && '连接失败'}
+          </span>
           <Select
             className="ht-shell"
             value={shell}
             onChange={(e) => setShell(e.target.value)}
-            disabled={!canManage}
+            disabled={!canManage || connState === 'connecting'}
           >
-            {shells.map((s) => (
-              <option key={s} value={s}>{s === 'powershell' ? 'PowerShell' : 'CMD'}</option>
-            ))}
+            <option value="powershell">PowerShell</option>
+            <option value="cmd">CMD</option>
           </Select>
-          <Button variant="ghost" size="sm" onClick={init}>刷新</Button>
+          {connState === 'connected' ? (
+            <Button variant="ghost" size="sm" onClick={disconnect}>断开</Button>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => connect(shell)}>连接</Button>
+          )}
         </div>
 
         <div className="ht-terminal">
-          <div className="ht-terminal__output" ref={outputRef}>
-            {lines.length === 0 && (
-              <div className="ht-output-line ht-output-line--muted">
-                {canManage
-                  ? '就绪。输入命令并按回车执行（如 dir、Get-Process、ipconfig）。'
-                  : '当前账号无管理员权限，无法执行宿主机命令。'}
-              </div>
-            )}
-            {lines.map((l, i) => (
-              <div
-                key={i}
-                className={`ht-output-line ${l.kind === 'prompt' ? 'ht-output-line--prompt' : l.kind === 'cmd' ? 'ht-output-line--cmd' : l.kind === 'err' ? 'ht-output-line--err' : l.kind === 'muted' ? 'ht-output-line--muted' : ''}`}
-              >
-                {l.text}
-              </div>
-            ))}
-          </div>
-          <div className="ht-inputbar">
-            <span className="ht-inputbar__prompt">
-              {`${shell === 'powershell' ? 'PS' : ''} ${cwd || ''}>`}
-            </span>
-            <input
-              ref={inputRef}
-              className="ht-inputbar__input"
-              value={command}
-              placeholder={canManage ? '输入命令...' : '仅管理员可执行命令'}
-              onChange={(e) => setCommand(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={running || !canManage || checking}
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </div>
+          <div className="ht-terminal__host" ref={hostRef} />
+          {(!canManage || checking) && (
+            <div className="ht-terminal__guard">
+              {checking ? '正在确认权限，请稍候...' : '当前账号无管理员权限，无法使用宿主机终端。'}
+            </div>
+          )}
+        </div>
+
+        <div className="ht-tip">
+          提示：在终端中输入 exit 或按 Ctrl+D 结束会话；可用方向键查看输入历史。该会话基于长驻子进程实现，
+          全屏交互类程序（如 vim / top）因非 PTY 环境可能表现受限。
         </div>
       </Card>
     </div>

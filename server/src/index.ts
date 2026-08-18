@@ -8,6 +8,7 @@ import { startMonitor } from './docker/monitor';
 import { startContainerMetrics } from './docker/containerMetrics';
 import { setupTerminalServer } from './docker/terminal';
 import { setupEventWsServer } from './docker/eventWs';
+import { setupHostTerminalServer } from './docker/hostTerminalWs';
 import { startEventMonitor } from './docker/events';
 import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
@@ -88,6 +89,13 @@ try {
   setupEventWsServer(server);
 } catch (err) {
   console.error('事件流 WebSocket 挂载失败:', err);
+}
+
+// 挂载宿主机会话式终端 WebSocket
+try {
+  setupHostTerminalServer(server);
+} catch (err) {
+  console.error('宿主机终端 WebSocket 挂载失败:', err);
 }
 
 // 进程退出时安全关闭数据库连接（兜底落盘 WAL）并停止调度器

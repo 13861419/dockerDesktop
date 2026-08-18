@@ -213,3 +213,62 @@
 .detail-page .card + .card {
   margin-top: 16px;
 }
+
+/* 层空间分析：标签 + 值的横向行 */
+.desc-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.desc-row .desc-label {
+  width: 90px;
+}
+
+/* 层空间分析分组小标题 */
+.section-sub {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 层占比条 */
+.layer-ratio {
+  position: relative;
+  min-width: 90px;
+  height: 18px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.layer-ratio__bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--primary, #6366f1);
+  opacity: 0.7;
+  border-radius: 4px 0 0 4px;
+}
+
+.layer-ratio__label {
+  position: absolute;
+  left: 6px;
+  top: 1px;
+  font-size: 11px;
+  color: #fff;
+  line-height: 16px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* 瘦身建议列表 */
+.suggest-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.7;
+  font-size: 13px;
+  color: var(--text-primary);
+}

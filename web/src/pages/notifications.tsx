@@ -9,7 +9,7 @@
  * 写操作（增删改渠道、改规则、清空、测试、立即检测）需管理员权限。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { get, post, put, del } from '../api/client';
+import { get, post, put, del, download } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useCanManage } from '../hooks/useCanManage';
 import Card from '../components/Card';
@@ -714,6 +714,45 @@ export default function NotificationsPage() {
     }
   }, [showToast]);
 
+  /**
+   * 按当前过滤条件导出告警记录为 CSV 文件
+   */
+  const exportRecords = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (typeFilter) params.set('type', typeFilter);
+      if (levelFilter) params.set('level', levelFilter);
+      if (pushFilter) params.set('pushStatus', pushFilter);
+      const qs = params.toString();
+      await download(`/api/notifications/records/export${qs ? `?${qs}` : ''}`, 'alert-records.csv');
+      showToast('告警记录已导出');
+    } catch (e: any) {
+      showToast(e?.message || '导出失败', 'error');
+    }
+  }, [typeFilter, levelFilter, pushFilter, showToast]);
+
+  /**
+   * 归档当前告警记录为服务端 CSV（data/alert-archive/）后清空告警记录
+   */
+  const archiveRecords = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (typeFilter) params.set('type', typeFilter);
+      if (levelFilter) params.set('level', levelFilter);
+      if (pushFilter) params.set('pushStatus', pushFilter);
+      const qs = params.toString();
+      const resp = await post<{ count: number; file: string }>(
+        `/api/notifications/records/archive${qs ? `?${qs}` : ''}`,
+      );
+      showToast(`已归档 ${resp?.count ?? 0} 条告警记录至服务端`);
+      setRecordPage(1);
+      setRecords([]);
+      setRecordTotal(0);
+    } catch (e: any) {
+      showToast(e?.message || '归档失败', 'error');
+    }
+  }, [typeFilter, levelFilter, pushFilter, showToast]);
+
   return (
     <div className="page">
       <div className="page__header">
@@ -934,8 +973,12 @@ export default function NotificationsPage() {
             </Select>
             <Button variant="ghost" size="sm" onClick={runCheck}>立即检测</Button>
             <Button variant="ghost" size="sm" onClick={() => loadRecords(recordPage)}>刷新</Button>
-            {records.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearRecords}>清空</Button>
+            <Button variant="ghost" size="sm" onClick={exportRecords} disabled={recordTotal === 0}>导出CSV</Button>
+            {canManage && records.length > 0 && (
+              <>
+                <Button variant="ghost" size="sm" onClick={archiveRecords}>归档</Button>
+                <Button variant="ghost" size="sm" onClick={clearRecords}>清空</Button>
+              </>
             )}
           </div>
         }

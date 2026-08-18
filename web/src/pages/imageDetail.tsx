@@ -41,6 +41,32 @@ interface HistoryItem {
   Tags: string[] | null;
 }
 
+/** 层空间分析响应（/api/images/:name/layers 返回） */
+interface LayerAnalysis {
+  totalSize: number;
+  layerCount: number;
+  layers: Array<{
+    id: string;
+    index: number;
+    createdBy: string;
+    size: number;
+    missing: boolean;
+    ratio: number;
+    cumulativeRatio: number;
+  }>;
+  topLayers: Array<{
+    id: string;
+    index: number;
+    createdBy: string;
+    size: number;
+    missing: boolean;
+    ratio: number;
+    cumulativeRatio: number;
+  }>;
+  dominant: { createdBy: string; ratio: number; size: number } | null;
+  suggestions: string[];
+}
+
 /** 使用该镜像的容器列表条目（/api/containers 返回结构） */
 interface ContainerBrief {
   Id: string;
@@ -151,6 +177,9 @@ export default function ImageDetailPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [containers, setContainers] = useState<ContainerBrief[]>([]);
   const [historyExpanded, setHistoryExpanded] = useState<Set<number>>(new Set());
+  // 层空间分析数据
+  const [layerAnalysis, setLayerAnalysis] = useState<LayerAnalysis | null>(null);
+  const [layerLoading, setLayerLoading] = useState(false);
   // 导出是否进行中
   const [exporting, setExporting] = useState(false);
   // 待删除的单个标签（用于二次确认弹窗）
@@ -188,6 +217,21 @@ export default function ImageDetailPage() {
     }
   }, [name, showToast]);
 
+  /** 拉取指定镜像的层空间分析 */
+  const fetchLayers = useCallback(async () => {
+    if (!name) return;
+    setLayerLoading(true);
+    try {
+      const data = await get<LayerAnalysis>('/api/images/' + encodeURIComponent(name) + '/layers');
+      setLayerAnalysis(data || null);
+    } catch (e: any) {
+      showToast(e?.message || '拉取镜像层分析失败', 'error');
+      setLayerAnalysis(null);
+    } finally {
+      setLayerLoading(false);
+    }
+  }, [name, showToast]);
+
   /** 拉取使用该镜像的容器列表（基于现有 /api/containers 在前端过滤） */
   const fetchContainers = useCallback(async () => {
     try {
@@ -202,8 +246,9 @@ export default function ImageDetailPage() {
   useEffect(() => {
     fetchImage();
     fetchHistory();
+    fetchLayers();
     fetchContainers();
-  }, [fetchImage, fetchHistory, fetchContainers]);
+  }, [fetchImage, fetchHistory, fetchLayers, fetchContainers]);
 
   /** 镜像展示名称：优先取 RepoTags，否则取名称 */
   const displayName = image?.RepoTags?.[0] || name || '<none>';
@@ -456,6 +501,67 @@ export default function ImageDetailPage() {
                 })}
               </tbody>
             </table>
+          )}
+        </Card>
+
+        {/* 层空间分析 */}
+        <Card title="层空间分析（Layer）">
+          {layerLoading ? (
+            <div className="desc-value">加载中…</div>
+          ) : !layerAnalysis || layerAnalysis.layerCount === 0 ? (
+            <div className="desc-value">暂无可用层的空间数据。</div>
+          ) : (
+            <>
+              <div className="desc-row">
+                <div className="desc-label">有效层数</div>
+                <div className="desc-value">{layerAnalysis.layerCount} 层</div>
+              </div>
+              <div className="desc-row">
+                <div className="desc-label">层占用合计</div>
+                <div className="desc-value">{formatSize(layerAnalysis.totalSize)}</div>
+              </div>
+
+              <h4 className="section-sub">占用最大的层</h4>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '10%' }}>占比</th>
+                    <th style={{ width: '18%' }}>大小</th>
+                    <th>命令</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {layerAnalysis.topLayers.map((l, i) => (
+                    <tr key={i}>
+                      <td>
+                        <div className="layer-ratio">
+                          <div
+                            className="layer-ratio__bar"
+                            style={{ width: `${Math.min(100, l.ratio * 100)}%` }}
+                          />
+                          <span className="layer-ratio__label">{(l.ratio * 100).toFixed(1)}%</span>
+                        </div>
+                      </td>
+                      <td>{formatSize(l.size)}</td>
+                      <td className="history-cmd" title={l.createdBy}>
+                        {truncate(l.createdBy || '-', 160)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {layerAnalysis.suggestions.length > 0 && (
+                <>
+                  <h4 className="section-sub">瘦身建议</h4>
+                  <ul className="suggest-list">
+                    {layerAnalysis.suggestions.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </>
           )}
         </Card>
 

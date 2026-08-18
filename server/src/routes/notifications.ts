@@ -24,6 +24,9 @@ import {
   updateAlertRule,
   getAlertRecords,
   clearAlertRecords,
+  listAllAlertRecords,
+  renderAlertRecordsCsv,
+  archiveAlertRecords,
   runAlertCheckNow,
   buildSnapshotText,
   getContainerAlertRules,
@@ -52,6 +55,22 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
 
 /** 渠道类型白名单 */
 const CHANNEL_TYPES: ChannelType[] = ['webhook', 'email', 'dingtalk', 'feishu'];
+
+/**
+ * 从请求 query 中提取告警记录过滤条件
+ * @param req 请求
+ * @returns 过滤条件（type / level / pushStatus）
+ */
+function parseRecordFilter(req: Request): { type?: string; level?: string; pushStatus?: string } {
+  const filter: { type?: string; level?: string; pushStatus?: string } = {};
+  const type = String(req.query.type || '').trim();
+  const level = String(req.query.level || '').trim();
+  const pushStatus = String(req.query.pushStatus || '').trim();
+  if (type) filter.type = type;
+  if (level) filter.level = level;
+  if (pushStatus) filter.pushStatus = pushStatus;
+  return filter;
+}
 
 /**
  * 校验并归一化渠道输入
@@ -213,6 +232,41 @@ router.delete(
     clearAlertRecords();
     logOperation(res.locals.username, '清空告警记录', '通知', '', '');
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * GET /api/notifications/records/export?type=&level=&pushStatus=
+ * 按当前过滤条件导出全部告警记录为 CSV 文件（下载）
+ * 读操作，登录即可。
+ */
+router.get(
+  '/records/export',
+  asyncHandler(async (req: Request, res: Response) => {
+    const filter = parseRecordFilter(req);
+    const rows = listAllAlertRecords(filter);
+    const csv = renderAlertRecordsCsv(rows);
+    const filename = `alert-records-${Date.now()}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    logOperation(res.locals.username, '导出告警记录', '通知', '', `共 ${rows.length} 条`);
+    res.send(csv);
+  }),
+);
+
+/**
+ * POST /api/notifications/records/archive?type=&level=&pushStatus=
+ * 将当前告警记录归档为服务端 CSV 文件（data/alert-archive/），随后清空记录表
+ * 用于在 800 条保留上限覆盖前持久化历史告警，避免数据永久丢失。
+ */
+router.post(
+  '/records/archive',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const filter = parseRecordFilter(req);
+    const result = archiveAlertRecords(filter);
+    logOperation(res.locals.username, '归档告警记录', '通知', '', `归档 ${result.count} 条 → ${result.file}`);
+    res.json({ ok: true, file: result.file, count: result.count });
   }),
 );
 

@@ -415,6 +415,93 @@ router.get(
 );
 
 /**
+ * GET /api/images/:name/layers
+ * 获取单个镜像的层空间分析（基于 docker history 的每层 Size）
+ * 返回结构化数据：总占用、有实际大小的层列表（含占比/累计占比/是否主导）、
+ * Top 大层与可执行的瘦身建议，便于前端可视化定位镜像过大根因。
+ * 注意：需在 /:name 之前定义，避免 layers 被 :name 捕获。
+ */
+router.get(
+  '/:name/layers',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const image = docker.getImage(req.params.name);
+    const history: any[] = await image.history();
+
+    // 提取有实际占用的层（Size > 0 表示该层新增了磁盘字节）
+    // docker history 返回顺序为最新层在前，这里反转使自底向上（先构建的层在前）
+    const reversed = [...history].reverse();
+    const sizedLayers = reversed
+      .map((h, i) => ({
+        id: h.Id || '',
+        index: i,
+        createdBy: String(h.CreatedBy || '').trim(),
+        size: Number(h.Size) || 0,
+        missing: h.Id === '<missing>' || !h.Id,
+      }))
+      .filter((l) => l.size > 0);
+
+    const totalSize = sizedLayers.reduce((s, l) => s + l.size, 0);
+
+    // 计算每层占比与累计占比（用于可视化）
+    const withRatio = sizedLayers.map((l) => {
+      const ratio = totalSize > 0 ? l.size / totalSize : 0;
+      return { ...l, ratio };
+    });
+
+    // 累计占比（自底向上累计，反映"到某一层为止已占用多少"）
+    let running = 0;
+    for (const l of withRatio) {
+      running += l.ratio;
+      (l as any).cumulativeRatio = running;
+    }
+
+    // 按大小降序的 Top 大层（占主导的层在最前）
+    const topLayers = [...withRatio].sort((a, b) => b.size - a.size).slice(0, 10);
+    const dominant = withRatio.length ? [...withRatio].sort((a, b) => b.size - a.size)[0] : null;
+
+    // 生成瘦身建议（启发式，基于层构成）
+    const suggestions: string[] = [];
+    const reducer = (cmd: string): string =>
+      cmd
+        .replace(/^(\/bin\/sh -c )?(#\(nop\) ?)?/i, '')
+        .replace(/\s+&&\s+/g, ' && ')
+        .trim();
+    if (dominant && totalSize > 0 && dominant.ratio > 0.5) {
+      suggestions.push(
+        `单层「${reducer(dominant.createdBy).slice(0, 80)}」占镜像总空间的 ${(dominant.ratio * 100).toFixed(1)}%，是体积主导层，建议优先优化该层。`,
+      );
+    }
+    if (sizedLayers.length > 30) {
+      suggestions.push('该镜像层数较多，容易累积体积；可考虑多阶段构建（multi-stage build）精简最终产物。');
+    }
+    const hasLargeBase = topLayers[0] && topLayers[0].ratio > 0.4;
+    if (hasLargeBase) {
+      suggestions.push('基镜像（最底层）占比较高，可评估更换更精简的基础镜像（如 alpine/slim/distroless）。');
+    }
+    const joined = sizedLayers.map((l) => reducer(l.createdBy)).join(' ');
+    if (/apt(-get)? (install|update)|yum install|apk add/i.test(reversed.map((h) => String(h.CreatedBy || '')).join(' '))) {
+      suggestions.push('检测到包管理器安装操作，建议安装后清理缓存（如 apt clean / yum clean all）并合并 RUN 指令以减少层。');
+    }
+    if (/COPY|ADD/i.test(joined)) {
+      suggestions.push('检测到 COPY/ADD 复制文件层，注意排除不需要的构建缓存与临时文件（善用 .dockerignore）。');
+    }
+    if (suggestions.length === 0) {
+      suggestions.push('当前未发现明显可精简项；如体积仍偏大，可优先检查基镜像选择与依赖冗余。');
+    }
+
+    res.json({
+      totalSize,
+      layerCount: sizedLayers.length,
+      layers: withRatio,
+      topLayers,
+      dominant,
+      suggestions,
+    });
+  }),
+);
+
+/**
  * GET /api/images/:name/save
  * 导出镜像为 tar 文件（docker save），以流式方式传递给前端下载
  * 注意：需在 /:name 之前定义，避免 save 被 :name 捕获
