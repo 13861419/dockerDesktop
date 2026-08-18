@@ -90,6 +90,74 @@ function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+/**
+ * docker CLI 是否可用（模块级缓存探测结果，避免每次校验都 spawn 一次）
+ */
+let dockerCliChecked = false;
+let dockerCliAvailable = false;
+
+/**
+ * 探测 docker CLI 是否可用（`docker --version`）。
+ * 结果缓存在模块级，避免每次校验都重复探测。
+ */
+async function isDockerCliAvailable(): Promise<boolean> {
+  if (dockerCliChecked) return dockerCliAvailable;
+  dockerCliChecked = true;
+  try {
+    await execAsync('docker --version', { maxBuffer: 1024 * 1024 });
+    dockerCliAvailable = true;
+  } catch {
+    dockerCliAvailable = false;
+  }
+  return dockerCliAvailable;
+}
+
+/**
+ * 校验 compose YAML 语法：将内容写入临时文件后调用 `docker compose config` 校验。
+ * 零第三方依赖（复用 docker CLI 自带解析器），可检测 YAML 语法错误（含行号）。
+ * 当 docker CLI 不可用（未安装 / 不在 PATH）时优雅降级：跳过校验并返回 null（允许保存），
+ * 避免因环境缺少 docker 命令导致所有 Compose 保存被误判为失败。
+ * @param content compose YAML 内容
+ * @returns 校验通过（或跳过）返回 null；否则返回错误信息（尽量提取行号，便于编辑器定位）
+ */
+async function validateComposeYaml(content: string): Promise<string | null> {
+  const dockerAvailable = await isDockerCliAvailable();
+  if (!dockerAvailable) {
+    return null; // docker CLI 不可用：跳过校验，不阻断保存
+  }
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'compose-validate-'));
+  const tmpFile = path.join(tmpDir, 'docker-compose.yml');
+  try {
+    fs.writeFileSync(tmpFile, content, 'utf8');
+    // docker compose config 解析失败时 stderr 会给出含行号的语法错误
+    await execAsync(`docker compose -f "${tmpFile}" config`, {
+      cwd: tmpDir,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return null;
+  } catch (err: any) {
+    // 提取 "line N, column M" 之类的定位信息，返回给前端做行级提示
+    const raw = err?.stderr || err?.message || 'YAML 语法错误';
+    let msg = String(raw).trim().split('\n').filter(Boolean).slice(0, 4).join('\n');
+    const lineMatch = String(raw).match(/line\s+(\d+)/i);
+    if (!lineMatch) {
+      // composer 可能以 "  on line 3" 形式返回，尝试提取首个数字行号
+      const num = String(raw).match(/:\s*(\d+)/);
+      if (num && Number(num[1]) <= 100000) {
+        msg += `\n（约第 ${num[1]} 行）`;
+      }
+    }
+    return msg || 'YAML 语法错误';
+  } finally {
+    // 无论成败都清理临时目录
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* 忽略清理失败 */
+    }
+  }
+}
+
 // ============ 项目列表 ============
 
 /**
@@ -162,6 +230,7 @@ router.get(
  * POST /api/compose
  * 创建或更新一个 compose 项目
  * body: { name, content, fileName? }
+ * 保存前会先用 docker compose config 校验 YAML 语法，语法错误将拒绝保存并返回 400。
  */
 router.post(
   '/',
@@ -171,6 +240,13 @@ router.post(
     if (!name || !content) {
       return res.status(400).json({ error: '需要 name 和 content 参数' });
     }
+    // 保存前校验 YAML 语法，避免写入无法解析的 compose 文件
+    const validateError = await validateComposeYaml(content);
+    if (validateError) {
+      return res
+        .status(400)
+        .json({ error: `Compose YAML 语法错误，未保存：\n${validateError}`, invalid: true });
+    }
     // 防目录穿越
     const safeName = path.basename(name);
     const dir = path.join(COMPOSE_ROOT, safeName);
@@ -179,6 +255,28 @@ router.post(
     fs.writeFileSync(path.join(dir, targetFile), content, 'utf8');
     logOperation(res.locals.username, '保存 Compose', 'compose', safeName, `文件: ${targetFile}`);
     res.status(201).json({ name: safeName, path: dir, composeFile: targetFile });
+  }),
+);
+
+/**
+ * POST /api/compose/validate
+ * 校验 compose YAML 语法（不保存）。前端在编辑/新建时实时调用，用于及时反馈语法错误。
+ * body: { content }
+ * 校验通过返回 { ok: true }，失败返回 400 { error }（含行号）。
+ */
+router.post(
+  '/validate',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const content = req.body?.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ error: '缺少 compose 内容' });
+    }
+    const validateError = await validateComposeYaml(content);
+    if (validateError) {
+      return res.status(400).json({ invalid: true, error: validateError });
+    }
+    res.json({ ok: true });
   }),
 );
 

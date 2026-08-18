@@ -1,0 +1,131 @@
+/* 轻量 YAML 编辑器样式 */
+.yaml-editor {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-code, #14161f);
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+
+  &--disabled {
+    opacity: 0.6;
+  }
+
+  &__body {
+    display: flex;
+    align-items: stretch;
+  }
+
+  /* 行号栏 */
+  &__gutter {
+    flex: none;
+    width: 44px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: right;
+    user-select: none;
+    padding-top: 8px;
+  }
+
+  &__ln {
+    padding: 0 8px 0 0;
+    color: rgba(255, 255, 255, 0.35);
+
+    &--err {
+      color: #ef4444;
+      font-weight: 700;
+      background: rgba(239, 68, 68, 0.18);
+    }
+  }
+
+  /* 滚动容器：pre 与 textarea 在此内，滚动天然同步 */
+  &__scroll {
+    position: relative;
+    flex: 1;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* 高亮层（只读，pointer-events 关闭） */
+  &__pre {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 8px 12px;
+    white-space: pre;
+    word-break: normal;
+    color: #d4d4d4;
+    pointer-events: none;
+    font-size: 12px;
+    line-height: 1.6;
+    font-family: inherit;
+    tab-size: 2;
+  }
+
+  /* 编辑层（透明文字 + 可见光标） */
+  &__ta {
+    position: relative;
+    width: 100%;
+    display: block;
+    margin: 0;
+    padding: 8px 12px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    caret-color: #d4d4d4;
+    resize: none;
+    white-space: pre;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.6;
+    font-family: inherit;
+    tab-size: 2;
+
+    &::selection {
+      background: rgba(90, 140, 255, 0.35);
+      color: transparent;
+    }
+  }
+
+  /* 语法着色 token */
+  &__error {
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.08);
+    border-top: 1px solid rgba(239, 68, 68, 0.2);
+    white-space: pre-wrap;
+    font-family: var(--font-mono, monospace);
+  }
+}
+
+/* YAML token 着色 */
+.yl {
+  &.cm {
+    color: #6a737d;
+  }
+  &.st {
+    color: #ce9178;
+  }
+  &.nu {
+    color: #b5cea8;
+  }
+  &.bo {
+    color: #569cd6;
+  }
+  &.ke {
+    color: #4ec9b0;
+  }
+  &.ph {
+    color: #6a737d;
+    font-style: italic;
+  }
+}

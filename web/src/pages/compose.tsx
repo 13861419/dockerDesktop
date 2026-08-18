@@ -9,7 +9,8 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import Empty from '../components/Empty';
-import { Field, Input, Select, TextArea } from '../components/Form';
+import { Field, Input, Select } from '../components/Form';
+import YamlEditor from '../components/YamlEditor';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
@@ -176,6 +177,8 @@ export default function ComposePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createContent, setCreateContent] = useState('');
+  // YAML 校验错误（保存被拒绝时回显到编辑器）
+  const [createYamlErr, setCreateYamlErr] = useState<{ message: string; line: number | null }>({ message: '', line: null });
   // 上传的 compose 文件名（用于界面展示）
   const [createFileName, setCreateFileName] = useState('');
   // 新建弹窗当前选择的模板 id（'' 表示空白）
@@ -186,6 +189,8 @@ export default function ComposePage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editContent, setEditContent] = useState('');
+  // 编辑 YAML 校验错误（保存被拒绝时回显到编辑器）
+  const [editYamlErr, setEditYamlErr] = useState<{ message: string; line: number | null }>({ message: '', line: null });
   const [editLoading, setEditLoading] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -391,6 +396,16 @@ export default function ComposePage() {
   }, [canManage, saveModalName, saveModalDesc, editContent, showToast, fetchUserTemplates]);
 
   /** 新建 Compose 项目 */
+  /** 从后端校验错误信息中解析出错行号（返回 null 表示无法定位） */
+  function parseYamlLine(msg: string): number | null {
+    const m = msg.match(/(?:line|第)\s*(\d+)/i) || msg.match(/:\s*(\d+)\n?/);
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+  }
+
   const handleCreate = useCallback(async () => {
     if (!canManage) {
       showToast('仅管理员可新建 Compose 项目', 'error');
@@ -415,9 +430,13 @@ export default function ComposePage() {
       setCreateContent('');
       setCreateFileName('');
       setCreateTemplate('');
+      setCreateYamlErr({ message: '', line: null });
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '项目创建失败', 'error');
+      const msg = e?.message || '项目创建失败';
+      const line = parseYamlLine(msg);
+      setCreateYamlErr({ message: msg, line });
+      showToast(line !== null ? 'Compose YAML 语法有误，请修正后保存' : msg, 'error');
     } finally {
       setCreating(false);
     }
@@ -580,9 +599,13 @@ export default function ComposePage() {
       await post('/api/compose', { name, content: editContent });
       showToast('项目修改已保存');
       setEditOpen(false);
+      setEditYamlErr({ message: '', line: null });
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      const msg = e?.message || '保存失败';
+      const line = parseYamlLine(msg);
+      setEditYamlErr({ message: msg, line });
+      showToast(line !== null ? 'Compose YAML 语法有误，请修正后保存' : msg, 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -593,6 +616,7 @@ export default function ComposePage() {
     setEditOpen(false);
     setEditName('');
     setEditContent('');
+    setEditYamlErr({ message: '', line: null });
   }, []);
 
   /** 执行停止（down）操作，带删卷选择 */
@@ -922,12 +946,16 @@ export default function ComposePage() {
               已选择文件：{createFileName}
             </div>
           )}
-          <TextArea
+          <YamlEditor
             value={createContent}
-            onChange={(e) => setCreateContent(e.target.value)}
+            onChange={(v) => {
+              setCreateContent(v);
+              if (createYamlErr.message) setCreateYamlErr({ message: '', line: null });
+            }}
             placeholder={'version: "3"\nservices:\n  web:\n    image: nginx:latest'}
             rows={10}
-            className="compose-editor"
+            errorLine={createYamlErr.line}
+            errorMessage={createYamlErr.message || undefined}
           />
         </Field>
       </Modal>
@@ -962,11 +990,15 @@ export default function ComposePage() {
           <div className="log-empty">正在加载 compose 文件…</div>
         ) : (
           <Field label="docker-compose.yml" required>
-            <TextArea
+            <YamlEditor
               value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
+              onChange={(v) => {
+                setEditContent(v);
+                if (editYamlErr.message) setEditYamlErr({ message: '', line: null });
+              }}
               rows={18}
-              className="compose-editor"
+              errorLine={editYamlErr.line}
+              errorMessage={editYamlErr.message || undefined}
             />
           </Field>
         )}
