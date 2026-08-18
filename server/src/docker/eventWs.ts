@@ -7,7 +7,7 @@
 import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { onNewEvent, getRecentEvents, DockerEvent } from './events';
-import { registerWsHandler } from './wsRouter';
+import { registerWsHandler, authenticateWs, rejectWsUpgrade } from './wsRouter';
 
 /**
  * 将 Docker 事件 WebSocket 附加到指定 HTTP 服务器
@@ -19,6 +19,11 @@ export function setupEventWsServer(httpServer: HttpServer): void {
 
   registerWsHandler(httpServer, (req, socket, head, url) => {
     if (url.pathname !== '/ws/events') return false;
+    // 事件流为只读，要求已登录即可（任意角色）
+    if (!authenticateWs(url)) {
+      rejectWsUpgrade(socket, 401, '未登录，无法订阅事件流');
+      return true;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws);
     });

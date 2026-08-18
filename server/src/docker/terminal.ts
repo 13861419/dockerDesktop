@@ -11,7 +11,7 @@
 import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDockerClient } from './client';
-import { registerWsHandler } from './wsRouter';
+import { registerWsHandler, authenticateWs, rejectWsUpgrade } from './wsRouter';
 import type Dockerode from 'dockerode';
 
 /** 从 URL 中解析容器 ID：/ws/terminal/<id> */
@@ -30,6 +30,11 @@ export function setupTerminalServer(httpServer: HttpServer): void {
   registerWsHandler(httpServer, (req, socket, head, url) => {
     const containerId = parsePath(url.pathname);
     if (!containerId) return false;
+    // 终端会在容器内执行 shell（高危），要求已登录且具备运维（operator/admin）权限
+    if (!authenticateWs(url, { requireOperator: true })) {
+      rejectWsUpgrade(socket, 401, '未登录或权限不足，无法连接容器终端');
+      return true;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req, containerId);
     });

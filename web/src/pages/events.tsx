@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, del, download } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { isAdmin, getToken } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
@@ -236,7 +236,9 @@ export default function EventsPage() {
    */
   useEffect(() => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${proto}://${location.host}/ws/events`;
+    const token = getToken();
+    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    const wsUrl = `${proto}://${location.host}/ws/events${qs}`;
 
     let ws: any;
     let closed = false;
