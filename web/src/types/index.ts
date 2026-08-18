@@ -844,3 +844,49 @@ export interface ContainerRuleSaveResponse {
   ok: boolean;
   rule: ContainerRule;
 }
+
+/** ===================== 面板配置导入/导出 ===================== */
+
+/** 冲突处理策略：skip=跳过已存在 / overwrite=覆盖 / error=出错即回滚 */
+export type ConfigImportConflict = 'skip' | 'overwrite' | 'error';
+
+/** 配置导出中 data 子对象的单个元素（通用宽松结构，字段均为 camelCase） */
+export interface ConfigDataItem {
+  [key: string]: any;
+}
+
+/** 面板配置导出（GET /api/system/config/export 返回的 JSON 对象） */
+export interface SystemConfigExport {
+  /** 导出格式版本 */
+  version: number;
+  /** 导出时间（ISO 字符串） */
+  exportedAt: string;
+  /** 是否包含敏感字段（通知渠道 / 云端 / 数据库口令明文） */
+  includeSecrets: boolean;
+  /** 各实体数据 */
+  data: {
+    users: ConfigDataItem[];
+    hubSources: ConfigDataItem[];
+    settings: ConfigDataItem[];
+    engines: ConfigDataItem[];
+    composeTemplates: ConfigDataItem[];
+    containerTemplates: ConfigDataItem[];
+    cronTasks: ConfigDataItem[];
+    sites: ConfigDataItem[];
+    alertRules: ConfigDataItem[];
+    containerAlertRules: ConfigDataItem[];
+    notifyChannels: ConfigDataItem[];
+    cloudTargets: ConfigDataItem[];
+    databaseInstances: ConfigDataItem[];
+  };
+}
+
+/** 配置导入响应（POST /api/system/config/import 返回） */
+export interface SystemConfigImportResponse {
+  ok: boolean;
+  /** 实际采用的冲突策略 */
+  conflict: ConfigImportConflict;
+  /** 各实体导入数量 */
+  imported: Record<string, number>;
+  note?: string;
+}

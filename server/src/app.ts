@@ -41,6 +41,7 @@ import volumeFilesRouter from './routes/volumeFiles';
 import aggregateRouter from './routes/aggregate';
 import orchestrateRouter from './routes/orchestrate';
 import searchRouter from './routes/search';
+import configTransferRouter from './routes/configTransfer';
 import notificationsRouter from './routes/notifications';
 import transferRouter from './routes/transfer';
 import authRouter from './routes/auth';
@@ -70,6 +71,7 @@ app.use('/api/auth', authRouter);
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);
 app.use('/api/system', requireAuth, systemRouter);
+app.use('/api/system', requireAuth, configTransferRouter);
 app.use('/api/monitor', requireAuth, monitorRouter);
 app.use('/api/health-check', requireAuth, healthCheckRouter);
 app.use('/api/containers', requireAuth, containersRouter);

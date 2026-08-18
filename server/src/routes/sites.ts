@@ -47,7 +47,7 @@ interface SiteRow {
 
 /** 反代容器名（单实例） */
 const PROXY_CONTAINER = 'dm-reverse-proxy';
-/** nginx 配置目录（宿主机侧，挂载进容器 /etc/nginx/conf.d） */
+/** 反代配置目录（宿主机侧，挂载进容器 /etc/nginx/conf.d） */
 const NGINX_DIR_NAME = 'nginx';
 
 /**
@@ -354,7 +354,7 @@ async function ensureProxyContainer(): Promise<boolean> {
 /**
  * 应用站点配置（拉取最新站点 → 生成配置 → 写盘 → 重启 nginx 容器）
  */
-async function syncReverseProxy(): Promise<{ ok: boolean; message: string }> {
+export async function syncReverseProxy(): Promise<{ ok: boolean; message: string }> {
   const d = getDb();
   const sites = d.prepare('SELECT * FROM sites').all() as unknown as SiteRow[];
   const files = generateConfigs(sites);

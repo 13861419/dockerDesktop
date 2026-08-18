@@ -150,3 +150,88 @@
   align-items: center;
   gap: 8px;
 }
+
+/* 配置导入/导出 */
+.settings-config {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-config__row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.settings-config__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.settings-config__checkbox input {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.settings-config__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.settings-config__warn {
+  margin: 0;
+  font-size: 12px;
+  color: #b45309;
+  line-height: 1.6;
+  background: rgba(245, 158, 11, 0.12);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+}
+
+.settings-config__result {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-config__result-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.settings-config__result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.settings-config__result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  font-size: 12px;
+}
+
+.settings-config__result-label {
+  color: var(--text-muted);
+}
+
+.settings-config__result-count {
+  font-weight: 600;
+  color: var(--primary);
+  font-family: var(--font-mono, Consolas, monospace);
+}
