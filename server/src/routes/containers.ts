@@ -4,6 +4,7 @@
  * 提供容器的列表、启停、删除、日志、详情、创建等接口。
  */
 import { Router, Request, Response } from 'express';
+import net from 'net';
 import { getDockerClient } from '../docker/client';
 import { parseStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
@@ -277,6 +278,90 @@ router.get(
       }
     }
     res.json(conflicts);
+  }),
+);
+
+/**
+ * 探测宿主机某端口是否被本机进程或已发布容器监听（TCP connect 探测）
+ * connect 成功即认为端口已被占用。@param port 端口号 1-65535
+ * @returns 是否被监听
+ */
+function probeHostListening(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const done = (ok: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(3000);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+/**
+ * POST /api/containers/port-check
+ * 前置端口占用检测：对用户输入的宿主机端口做冲突检查（创建/编辑容器前提示）。
+ * body: { ports: (number|string)[] } —— 待检测的宿主机端口列表
+ * 逐个判定：
+ *  - containerOccupied/containerNames：是否已被其它容器映射（含单容器占用，放宽于 /ports 的 ≥2 冲突口径）
+ *  - hostListening：本机 127.0.0.1 是否有进程监听该端口
+ *  - busy = 二者任一为 true
+ * 注意：该静态路由必须放在 /:id 之前，否则会被 /:id 遮蔽。
+ */
+router.post(
+  '/port-check',
+  asyncHandler(async (req: Request, res: Response) => {
+    const rawPorts: unknown[] = Array.isArray(req.body?.ports) ? req.body.ports : [];
+    if (!rawPorts.length) {
+      return res.status(400).json({ error: '缺少待检测的端口列表' });
+    }
+    // 归一化为去重的数字端口
+    const ports: number[] = Array.from(
+      new Set(
+        rawPorts
+          .map((p) => Number(p))
+          .filter((n) => Number.isFinite(n) && n >= 1 && n <= 65535),
+      ),
+    );
+
+    // 收集所有容器已发布的 HostPort 至占用列表（单个容器占用也视为冲突）
+    const docker = await getDockerClient();
+    const containers = await docker.listContainers({ all: true });
+    const portOwners: Record<string, string[]> = {};
+    for (const c of containers) {
+      const name = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '');
+      for (const p of c.Ports || []) {
+        if (p.PublicPort !== undefined && p.PublicPort !== null) {
+          const key = String(p.PublicPort);
+          if (!portOwners[key]) portOwners[key] = [];
+          if (!portOwners[key].includes(name)) portOwners[key].push(name);
+        }
+      }
+    }
+
+    // 对每个端口做本机监听探测（并发）
+    const listening = await Promise.all(
+      ports.map((port) => probeHostListening(port)),
+    );
+
+    const results = ports.map((port, idx) => {
+      const key = String(port);
+      const containerNames = portOwners[key] || [];
+      const hostListening = listening[idx];
+      return {
+        port,
+        containerOccupied: containerNames.length > 0,
+        containerNames,
+        hostListening,
+        busy: containerNames.length > 0 || hostListening,
+      };
+    });
+
+    res.json({ results });
   }),
 );
 

@@ -310,3 +310,97 @@ export function exportOperationLogsJson(query: LogQuery = {}): string {
   }));
   return JSON.stringify(data, null, 2);
 }
+
+/**
+ * 按操作者对操作日志分组统计（用于审计报表的"操作者排行"）
+ * @param query 过滤条件（忽略 page/pageSize）
+ * @returns 按操作者分组的统计数组（含总数/成功/失败，按总数降序）
+ */
+export function summarizeOperationLogsByUser(query: LogQuery = {}): Array<{
+  username: string;
+  count: number;
+  success: number;
+  fail: number;
+}> {
+  const d = getDb();
+  const { where: whereSql, params } = buildWhere(query);
+  const rows = d
+    .prepare(
+      `SELECT username,
+              count(*) AS count,
+              sum(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS success,
+              sum(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS fail
+       FROM operation_logs ${whereSql}
+       GROUP BY username
+       ORDER BY count DESC`
+    )
+    .all(...params) as unknown as Array<{ username: string; count: number; success: number | null; fail: number | null }>;
+  return rows.map((r) => ({
+    username: r.username,
+    count: r.count,
+    success: r.success || 0,
+    fail: r.fail || 0,
+  }));
+}
+
+/**
+ * 按天对操作日志进行趋势聚合（用于审计报表的"按天趋势"）
+ * @param query 过滤条件（忽略 page/pageSize）
+ * @returns 按天（YYYY-MM-DD）分组的统计数组，按日期升序
+ */
+export function summarizeOperationLogsTrend(query: LogQuery = {}): Array<{
+  day: string;
+  count: number;
+  success: number;
+  fail: number;
+}> {
+  const d = getDb();
+  const { where: whereSql, params } = buildWhere(query);
+  const rows = d
+    .prepare(
+      `SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') AS day,
+              count(*) AS count,
+              sum(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS success,
+              sum(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS fail
+       FROM operation_logs ${whereSql}
+       GROUP BY day
+       ORDER BY day ASC`
+    )
+    .all(...params) as unknown as Array<{ day: string; count: number; success: number | null; fail: number | null }>;
+  return rows.map((r) => ({
+    day: r.day,
+    count: r.count,
+    success: r.success || 0,
+    fail: r.fail || 0,
+  }));
+}
+
+/**
+ * 将审计统计聚合结果导出为 CSV 字符串（用于"导出报表"功能）
+ * @param groupBy 维度：user（按操作者）或 day（按天）
+ * @param query 过滤条件（忽略 page/pageSize）
+ * @returns CSV 文本，含表头（UTF-8 BOM，便于 Excel 正确识别中文）
+ */
+export function exportStatsCsv(groupBy: 'user' | 'day', query: LogQuery = {}): string {
+  // 转义 CSV 字段（与 exportOperationLogsCsv 同规则）
+  const esc = (v: string | number | null | undefined): string => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+
+  const header = groupBy === 'user' ? ['操作人', '操作次数', '成功', '失败'] : ['日期', '操作次数', '成功', '失败'];
+  const lines = [header.join(',')];
+  if (groupBy === 'user') {
+    const rows = summarizeOperationLogsByUser(query);
+    for (const r of rows) {
+      lines.push([esc(r.username), esc(r.count), esc(r.success), esc(r.fail)].join(','));
+    }
+  } else {
+    const rows = summarizeOperationLogsTrend(query);
+    for (const r of rows) {
+      lines.push([esc(r.day), esc(r.count), esc(r.success), esc(r.fail)].join(','));
+    }
+  }
+  return '\ufeff' + lines.join('\r\n');
+}

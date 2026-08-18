@@ -75,6 +75,22 @@ interface StatsData {
   total: number;
 }
 
+/** 按操作者统计条目（/api/operation-logs/stats/by-user） */
+interface ByUserStatsItem {
+  username: string;
+  count: number;
+  success: number;
+  fail: number;
+}
+
+/** 按天趋势条目（/api/operation-logs/stats/trend） */
+interface TrendStatsItem {
+  day: string;
+  count: number;
+  success: number;
+  fail: number;
+}
+
 /** 将毫秒时间戳格式化为可读时间 */
 function formatTime(ms: number): string {
   if (!ms) return '-';
@@ -134,6 +150,14 @@ export default function OperationLogsPage() {
   const [exporting, setExporting] = useState(false);
   // 统计卡片数据（随筛选条件变化）
   const [stats, setStats] = useState<StatsData | null>(null);
+  // 审计报表：按操作者排行
+  const [byUserStats, setByUserStats] = useState<ByUserStatsItem[]>([]);
+  // 审计报表：按天趋势
+  const [trendStats, setTrendStats] = useState<TrendStatsItem[]>([]);
+  // 报表导出维度（user 按操作者 / day 按天）
+  const [statsGroupBy, setStatsGroupBy] = useState<'user' | 'day'>('user');
+  // 报表导出进行中
+  const [exportStatsLoading, setExportStatsLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -166,6 +190,13 @@ export default function OperationLogsPage() {
     get<StatsData>('/api/operation-logs/stats', params)
       .then((data) => setStats(data || null))
       .catch(() => setStats(null));
+    // 审计报表：操作者排行 + 按天趋势（与主统计并行）
+    get<ByUserStatsItem[]>('/api/operation-logs/stats/by-user', params)
+      .then((data) => setByUserStats(data || []))
+      .catch(() => setByUserStats([]));
+    get<TrendStatsItem[]>('/api/operation-logs/stats/trend', params)
+      .then((data) => setTrendStats(data || []))
+      .catch(() => setTrendStats([]));
   }, [typeFilter, usernameFilter, resultFilter, startTime, endTime]);
 
   const changePageSize = (n: number) => {
@@ -244,6 +275,31 @@ export default function OperationLogsPage() {
     }
   };
 
+  /**
+   * 导出审计统计报表（按操作者 / 按天）为 CSV
+   * @param groupBy 统计维度：user（操作者） / day（按天）
+   */
+  const handleExportStats = async (groupBy: 'user' | 'day') => {
+    if (statsTotal === 0) {
+      showToast('当前无数据可导出报表', 'info');
+      return;
+    }
+    setExportStatsLoading(true);
+    try {
+      const params = buildFilterParams(typeFilter, usernameFilter, resultFilter, startTime, endTime);
+      const qs = Object.entries(params)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+        .join('&');
+      const suffix = qs ? '&' + qs : '';
+      await download(`/api/operation-logs/export/stats?groupBy=${groupBy}${suffix}`);
+      showToast('统计报表已导出', 'success');
+    } catch (e: any) {
+      showToast(e?.message || '导出报表失败', 'error');
+    } finally {
+      setExportStatsLoading(false);
+    }
+  };
+
   const safePage = Math.min(page, totalPages);
   const pageStart = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
   const pageEnd = Math.min(safePage * pageSize, total);
@@ -256,6 +312,9 @@ export default function OperationLogsPage() {
   const successPct = statsTotal ? Math.round((successCount / statsTotal) * 100) : 0;
   const failPct = statsTotal ? Math.round((failCount / statsTotal) * 100) : 0;
   const maxTypeCount = Math.max(1, ...(stats?.byType.map((t) => t.count) || []));
+  // 审计报表条形图宽度基准（操作者排行 / 按天趋势）
+  const maxUserCount = Math.max(1, ...byUserStats.map((u) => u.count));
+  const maxTrendCount = Math.max(1, ...trendStats.map((t) => t.count));
 
   return (
     <div className="logs-page">
@@ -329,6 +388,24 @@ export default function OperationLogsPage() {
             </Button>
             <Button variant="secondary" size="sm" onClick={() => handleExport('json')} disabled={total === 0 || exporting}>
               {exporting ? '导出中...' : '导出 JSON'}
+            </Button>
+            <select
+              className="logs__type-select"
+              value={statsGroupBy}
+              onChange={(e) => setStatsGroupBy(e.target.value as 'user' | 'day')}
+              disabled={exportStatsLoading}
+              style={{ width: 120 }}
+            >
+              <option value="user">操作者报表</option>
+              <option value="day">按天报表</option>
+            </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleExportStats(statsGroupBy)}
+              disabled={total === 0 || !canClear || exportStatsLoading}
+            >
+              {exportStatsLoading ? '导出中...' : '导出报表'}
             </Button>
             <Button variant="danger" size="sm" onClick={() => setConfirmClear(true)} disabled={total === 0 || !canClear}>
               清空
@@ -404,6 +481,51 @@ export default function OperationLogsPage() {
                         {a.action}
                       </span>
                       <span className="oplog-stats__action-count">{a.count}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
+            <div className="oplog-stats__block">
+              <h4 className="oplog-stats__title">操作者 TOP 10</h4>
+              {byUserStats.length === 0 ? (
+                <div className="oplog-stats__empty">无数据</div>
+              ) : (
+                byUserStats.slice(0, 10).map((u) => (
+                  <div className="oplog-stats__row" key={u.username || '-'}>
+                    <span
+                      className="oplog-stats__row-label"
+                      title={`${u.username || 'system'}：成功 ${u.success}，失败 ${u.fail}`}
+                    >
+                      {u.username || 'system'}
+                    </span>
+                    <div className="oplog-stats__bar-track">
+                      <div
+                        className="oplog-stats__bar"
+                        style={{ width: `${Math.round((u.count / maxUserCount) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="oplog-stats__row-count" title={`成功 ${u.success}，失败 ${u.fail}`}>
+                      {u.count}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="oplog-stats__block">
+              <h4 className="oplog-stats__title">按天趋势</h4>
+              {trendStats.length === 0 ? (
+                <div className="oplog-stats__empty">无数据</div>
+              ) : (
+                <ol className="oplog-stats__action-list">
+                  {trendStats.map((t) => (
+                    <li className="oplog-stats__action-item" key={t.day}>
+                      <span className="oplog-stats__action-name" title={t.day}>
+                        {t.day}
+                      </span>
+                      <span className="oplog-stats__action-count">{t.count}</span>
                     </li>
                   ))}
                 </ol>

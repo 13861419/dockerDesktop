@@ -98,6 +98,30 @@ interface ImageSuggestions {
   totalCount: number;
 }
 
+/** 分类镜像条目（/api/images/categorized 返回，用于按悬空/未使用/使用中细分管理） */
+interface CategorizedImage {
+  id: string;
+  tags: string[];
+  size: number;
+  created: number;
+  /** 被多少个容器引用 */
+  relatedCount: number;
+  /** 是否被容器使用 */
+  used: boolean;
+  /** 本地拉取时间（秒），无记录省略 */
+  pullTime?: number;
+}
+
+/** 分类镜像聚合结果 */
+interface CategorizedImages {
+  dangling: CategorizedImage[];
+  unused: CategorizedImage[];
+  active: CategorizedImage[];
+}
+
+/** 分类展示 Tab 键 */
+type ImageCategory = 'dangling' | 'unused' | 'active';
+
 /** 优化建议统计卡片样式（通过 CSS 变量适配浅色/深色主题） */
 const suggestStatStyle: React.CSSProperties = {
   background: 'var(--bg-surface)',
@@ -136,6 +160,18 @@ export default function ImagesPage() {
   const [pruningAll, setPruningAll] = useState(false);
   // 未使用镜像详情弹窗
   const [unusedOpen, setUnusedOpen] = useState(false);
+  // 按分类管理镜像的弹窗是否打开
+  const [catOpen, setCatOpen] = useState(false);
+  // 分类镜像数据（/api/images/categorized）
+  const [categorized, setCategorized] = useState<CategorizedImages | null>(null);
+  // 当前分类 Tab
+  const [catTab, setCatTab] = useState<ImageCategory>('dangling');
+  // 已勾选要批量删除的镜像引用（标签或 Id）集合
+  const [batchSelection, setBatchSelection] = useState<Set<string>>(new Set());
+  // 批量删除确认弹窗是否打开
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  // 批量删除是否进行中
+  const [batchDeleting, setBatchDeleting] = useState(false);
   // 搜索关键字（按镜像名/ID 本地过滤）
   const [keyword, setKeyword] = useState('');
   /** 分页每页条数可选值 */
@@ -220,10 +256,21 @@ export default function ImagesPage() {
     }
   }, []);
 
+  /** 加载分类镜像数据（失败时静默置空，不影响主列表） */
+  const loadCategorized = useCallback(async () => {
+    try {
+      const data = await get<CategorizedImages>('/api/images/categorized');
+      setCategorized(data || null);
+    } catch {
+      setCategorized(null);
+    }
+  }, []);
+
   useEffect(() => {
     fetchImages();
     loadSuggestions();
-  }, [fetchImages, loadSuggestions, refreshKey]);
+    loadCategorized();
+  }, [fetchImages, loadSuggestions, loadCategorized, refreshKey]);
 
   // 加载可选的镜像源列表
   const loadSources = useCallback(async () => {
@@ -287,6 +334,95 @@ export default function ImagesPage() {
       setDeleting(false);
     }
   }, [canManage, deleteTarget, showToast]);
+
+  /** 获取当前分类 Tab 对应的镜像数组（为空时返回 []） */
+  const currentCategoryList = (categorized && categorized[catTab]) || [];
+  /** 当前分类下已勾选的镜像数 */
+  const selectedInCategory = currentCategoryList.filter((c) => batchSelection.has(imageRef(c))).length;
+  /** 当前分类是否全部被勾选 */
+  const allSelectedInCategory =
+    currentCategoryList.length > 0 && selectedInCategory === currentCategoryList.length;
+
+  /** 生成镜像的唯一引用（优先标签，其次短 Id），用于勾选与删除 */
+  function imageRef(c: CategorizedImage): string {
+    if (c.tags && c.tags.length > 0) return c.tags[0];
+    return c.id;
+  }
+
+  /** 打开分类管理弹窗并加载最新数据 */
+  async function openCatManage() {
+    setCatOpen(true);
+    setBatchSelection(new Set());
+    await loadCategorized();
+  }
+
+  /** 关闭分类管理弹窗并清空勾选 */
+  function closeCatManage() {
+    setCatOpen(false);
+    setBatchSelection(new Set());
+  }
+
+  /** 切换单个镜像的勾选状态 */
+  function toggleSelect(ref: string) {
+    setBatchSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
+      return next;
+    });
+  }
+
+  /** 全选 / 取消全选当前分类的所有镜像 */
+  function toggleSelectAll() {
+    if (allSelectedInCategory) {
+      // 取消全选
+      setBatchSelection((prev) => {
+        const next = new Set(prev);
+        for (const c of currentCategoryList) next.delete(imageRef(c));
+        return next;
+      });
+    } else {
+      // 全选当前页
+      setBatchSelection((prev) => {
+        const next = new Set(prev);
+        for (const c of currentCategoryList) next.add(imageRef(c));
+        return next;
+      });
+    }
+  }
+
+  /**
+   * 执行批量删除已勾选镜像（调用后端 delete-batch 接口）
+   */
+  const handleBatchDelete = useCallback(async () => {
+    if (batchSelection.size === 0) return;
+    if (!canManage) {
+      showToast('仅管理员可批量删除镜像', 'error');
+      setBatchConfirmOpen(false);
+      return;
+    }
+    setBatchDeleting(true);
+    try {
+      const res = await post<{ ok: boolean; deleted: string[]; failed: { name: string; error: string }[] }>(
+        '/api/images/delete-batch',
+        { names: [...batchSelection] }
+      );
+      const failedCount = res?.failed?.length || 0;
+      const deletedCount = res?.deleted?.length || 0;
+      if (failedCount > 0) {
+        showToast(`批量删除完成：成功 ${deletedCount} 个，失败 ${failedCount} 个`, 'error');
+      } else {
+        showToast(`成功删除 ${deletedCount} 个镜像`);
+      }
+      setBatchConfirmOpen(false);
+      setBatchSelection(new Set());
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '批量删除镜像失败', 'error');
+    } finally {
+      setBatchDeleting(false);
+    }
+  }, [batchSelection, canManage, showToast]);
 
   /**
    * 执行镜像搜索（调用后端 docker search 接口，引擎侧检索）
@@ -775,7 +911,10 @@ export default function ImagesPage() {
                 ))}
               </tbody>
             </table>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <Button variant="secondary" onClick={openCatManage} disabled={!canManage}>
+                按分类管理
+              </Button>
               <Button variant="danger" onClick={() => setPruneAllOpen(true)} disabled={!canManage}>
                 一键清理未使用镜像
               </Button>
@@ -1355,6 +1494,136 @@ export default function ImagesPage() {
           </table>
         )}
       </Modal>
+
+      {/* 按分类管理镜像弹窗（悬空 / 未使用 / 使用中，支持勾选批量删除） */}
+      <Modal
+        open={catOpen}
+        title="按分类管理镜像"
+        width={820}
+        onClose={() => !batchDeleting && closeCatManage()}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeCatManage} disabled={batchDeleting}>
+              关闭
+            </Button>
+            {!canManage ? null : (
+              <Button
+                variant="danger"
+                disabled={selectedInCategory === 0}
+                onClick={() => setBatchConfirmOpen(true)}
+              >
+                批量删除已选 ({selectedInCategory})
+              </Button>
+            )}
+          </>
+        }
+      >
+        {!categorized ? (
+          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+            正在加载镜像分类数据…
+          </div>
+        ) : (
+          <>
+            {/* 分类 Tab */}
+            <div className="cat-tabs" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {(
+                [
+                  { key: 'dangling', label: '悬空镜像', list: 'dangling', danger: true },
+                  { key: 'unused', label: '未使用', list: 'unused', danger: true },
+                  { key: 'active', label: '使用中', list: 'active', danger: false },
+                ] as { key: ImageCategory; label: string; list: 'dangling' | 'unused' | 'active'; danger: boolean }[]
+              ).map((t) => {
+                const list = categorized[t.list] || [];
+                return (
+                  <button
+                    key={t.key}
+                    className={`cat-tab ${catTab === t.key ? 'cat-tab--active' : ''}`}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 6,
+                      border:
+                        catTab === t.key ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                      background: catTab === t.key ? 'var(--primary-weak, rgba(0,122,255,.12))' : 'transparent',
+                      color: t.danger ? 'var(--danger, #e5484d)' : 'var(--text-primary)',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      setCatTab(t.key);
+                      setBatchSelection(new Set());
+                    }}
+                  >
+                    {t.label} ({list.length})
+                  </button>
+                );
+              })}
+            </div>
+
+            {currentCategoryList.length === 0 ? (
+              <Empty kind="empty" title="该分类暂无镜像" description="此分类下没有可管理的镜像" />
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelectedInCategory}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
+                    <th>镜像</th>
+                    <th>大小</th>
+                    <th>标签数</th>
+                    {catTab === 'active' ? <th>引用容器</th> : <th>构建时间</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentCategoryList.map((c) => {
+                    const ref = imageRef(c);
+                    const checked = batchSelection.has(ref);
+                    return (
+                      <tr key={ref} style={{ opacity: checked ? 0.65 : 1 }}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSelect(ref)}
+                          />
+                        </td>
+                        <td className="col-name">
+                          <div className="name-main" title={c.tags.join(', ') || '<none>'}>
+                            {c.tags[0] || `<none> (${c.id.slice(0, 12)})`}
+                          </div>
+                          {c.tags.length > 1 && <div className="name-sub">+{c.tags.length - 1} 个标签</div>}
+                        </td>
+                        <td>{formatSize(c.size)}</td>
+                        <td>{c.tags.length}</td>
+                        {catTab === 'active' ? (
+                          <td>{c.relatedCount} 个容器</td>
+                        ) : (
+                          <td>{formatTime(c.created)}</td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </Modal>
+
+      {/* 批量删除镜像确认框 */}
+      <ConfirmDialog
+        open={batchConfirmOpen}
+        title="批量删除镜像"
+        message={`确定要删除已勾选的 ${selectedInCategory} 个镜像吗？此操作不可恢复。`}
+        confirmText="删除"
+        danger
+        loading={batchDeleting}
+        onConfirm={handleBatchDelete}
+        onCancel={() => setBatchConfirmOpen(false)}
+      />
     </div>
   );
 }

@@ -61,6 +61,15 @@ interface CreatePort {
   protocol: string;
 }
 
+/** 单端口占用检测结果（POST /api/containers/port-check 返回的单项） */
+interface PortCheckResult {
+  port: number;
+  containerOccupied: boolean;
+  containerNames: string[];
+  hostListening: boolean;
+  busy: boolean;
+}
+
 /** 创建表单中的挂载卷条目 */
 interface CreateVolume {
   source: string;
@@ -208,6 +217,22 @@ export default function ContainersPage() {
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateApplying, setTemplateApplying] = useState('');
 
+  // 日志查看弹窗状态
+  const [logTarget, setLogTarget] = useState<{ id: string; name: string } | null>(null);
+  // 日志弹窗中的实时日志内容（每行一个对象，区分 stdout/stderr）
+  const [logLines, setLogLines] = useState<{ text: string; isErr: boolean }[]>([]);
+  // 日志是否加载中
+  const [logLoading, setLogLoading] = useState(false);
+  // 日志行数上限（tail 参数）
+  const [logTail, setLogTail] = useState(300);
+
+  // 创建表单端口占用检测结果（key 为端口行 index）
+  const [portChecks, setPortChecks] = useState<Record<number, PortCheckResult>>({});
+  // 某行端口是否正在检测
+  const [portCheckLoading, setPortCheckLoading] = useState<Record<number, boolean>>({});
+  // 端口检测防抖定时器（按行 index 保存）
+  const portCheckTimer = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
   // 编辑镜像弹窗状态
   const [editImageOpen, setEditImageOpen] = useState(false);
   const [editImageTarget, setEditImageTarget] = useState<DeleteTarget | null>(null);
@@ -241,6 +266,90 @@ export default function ContainersPage() {
       setLoading(false);
     }
   }, [showToast]);
+
+  /**
+   * 打开容器日志查看弹窗并加载尾部日志
+   * @param id 容器 ID
+   * @param name 容器名称
+   */
+  async function openLogs(id: string, name: string) {
+    setLogTarget({ id, name });
+    setLogLines([]);
+    await loadLogs(id, 300);
+  }
+
+  /** 关闭日志弹窗并清空内容 */
+  function closeLogs() {
+    setLogTarget(null);
+    setLogLines([]);
+  }
+
+  /**
+   * 拉取容器尾部日志（GET /api/containers/:id/logs），按行拆分为日志行列表
+   * @param id 容器 ID
+   * @param tail 尾部行数
+   */
+  async function loadLogs(id: string, tail: number) {
+    setLogLoading(true);
+    try {
+      const res = await get<{ logs: string }>('/api/containers/' + id + '/logs', { tail });
+      const text = res?.logs || '';
+      const lines = text
+        .split(/\r?\n/)
+        .filter((l) => l.length > 0)
+        .map((l) => ({ text: l, isErr: false }));
+      setLogLines(lines);
+      setLogTail(tail);
+    } catch (e: any) {
+      setLogLines([{ text: '（拉取日志失败：' + (e?.message || '未知错误') + '）', isErr: true }]);
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
+  /**
+   * 重新按当前行数设置拉取日志（供"刷新"按钮使用）
+   */
+  async function reloadLogs() {
+    if (!logTarget) return;
+    await loadLogs(logTarget.id, logTail);
+  }
+
+  /**
+   * 打开日志弹窗后按当前 tail 重新拉取
+   */
+  async function handleLogTailChange(tail: number) {
+    if (!logTarget) return;
+    await loadLogs(logTarget.id, tail);
+  }
+
+  /**
+   * 下载容器日志为文本文件（GET /api/containers/:id/logs/download）
+   */
+  function downloadLogs() {
+    if (!logTarget) return;
+    const token = localStorage.getItem('token');
+    const url = '/api/containers/' + encodeURIComponent(logTarget.id) + '/logs/download';
+    // 自带鉴权：必须用 fetch 携带 Authorization 头
+    fetch(url, {
+      headers: token ? { Authorization: 'Bearer ' + token } : undefined,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('下载失败 (' + res.status + ')');
+        return res.blob();
+      })
+      .then((blob) => {
+        const a = document.createElement('a');
+        const objectUrl = URL.createObjectURL(blob);
+        a.href = objectUrl;
+        a.download = (logTarget?.name || 'container') + '.log';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objectUrl);
+      })
+      .catch((e) => showToast(e?.message || '下载日志失败', 'error'));
+  }
 
   /**
    * 拉取 Docker 引擎列表（GET /api/engines），用于判断是否存在可迁移的其它引擎候选。
@@ -1101,9 +1210,83 @@ export default function ContainersPage() {
     setCreatePorts((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
   }
 
-  /** 删除创建端口草稿中某个条目 */
+  /**
+   * 对创建表单某一行的宿主端口做占用检测（POST /api/containers/port-check），
+   * 结果写入 portChecks，供行内提示与提交前拦截使用。
+   * @param index 端口行 index
+   * @param host 宿主机端口字符串
+   */
+  async function checkHostPort(index: number, host: string) {
+    const port = Number(host.trim());
+    // 非合法端口清空检测态
+    if (!host.trim() || !Number.isFinite(port) || port < 1 || port > 65535) {
+      setPortChecks((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+      return;
+    }
+    setPortCheckLoading((prev) => ({ ...prev, [index]: true }));
+    try {
+      const res = await post<{ results: PortCheckResult[] }>('/api/containers/port-check', {
+        ports: [port],
+      });
+      const result = res?.results?.[0];
+      if (result) {
+        // 仅当该行宿主端口仍是检测时输入的值时才写入（避免过期结果覆盖）
+        const currentHost = createPorts[index]?.host;
+        if (currentHost !== undefined && currentHost === host) {
+          setPortChecks((prev) => ({ ...prev, [index]: result }));
+        }
+      }
+    } catch {
+      // 检测失败静默忽略，不阻塞表单录入
+    } finally {
+      setPortCheckLoading((prev) => ({ ...prev, [index]: false }));
+    }
+  }
+
+  /**
+   * 宿主端口输入变化时触发防抖检测（约 400ms）
+   */
+  function onHostPortChange(index: number, value: string) {
+    updateCreatePort(index, 'host', value);
+    // 先清除该行旧检测结果
+    setPortChecks((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    // 清除该行旧定时器
+    if (portCheckTimer.current[index]) {
+      clearTimeout(portCheckTimer.current[index]);
+      delete portCheckTimer.current[index];
+    }
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    portCheckTimer.current[index] = setTimeout(() => {
+      checkHostPort(index, value);
+    }, 400);
+  }
+
+  /** 删除端口行时同步清理其检测状态与定时器 */
   function removeCreatePort(index: number) {
     setCreatePorts((prev) => prev.filter((_, i) => i !== index));
+    setPortChecks((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    setPortCheckLoading((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    if (portCheckTimer.current[index]) {
+      clearTimeout(portCheckTimer.current[index]);
+      delete portCheckTimer.current[index];
+    }
   }
 
   /** 新增一个创建端口条目 */
@@ -1160,6 +1343,15 @@ export default function ContainersPage() {
     if (!createImage.trim()) {
       showToast('请填写镜像', 'error');
       return;
+    }
+    // 前置端口占用告警：存在已检测为占用的宿主端口时提示，但不阻塞（Docker 启动时会做最终校验）
+    const busyPorts = createPorts
+      .filter((item) => item.host.trim() !== '')
+      .map((item, index) => ({ item, index }))
+      .filter(({ index, item }) => portChecks[index]?.busy)
+      .map(({ item }) => item.host.trim());
+    if (busyPorts.length > 0) {
+      showToast(`警告：端口 ${busyPorts.join(', ')} 疑似已被占用，若启动失败请更换端口`, 'error');
     }
     setCreating(true);
     try {
@@ -1619,6 +1811,13 @@ export default function ContainersPage() {
                               }
                             >
                               迁移
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openLogs(c.Id, name)}
+                            >
+                              日志
                             </Button>
                             <Button
                               variant="secondary"
@@ -2102,6 +2301,73 @@ export default function ContainersPage() {
         )}
       </Modal>
 
+      {/* 容器日志查看弹窗 */}
+      <Modal
+        open={!!logTarget}
+        title={`容器日志 - ${logTarget?.name || ''}`}
+        width={860}
+        onClose={closeLogs}
+        footer={
+          <>
+            <Select
+              className="containers__log-tail"
+              value={String(logTail)}
+              onChange={(e) => handleLogTailChange(Number(e.target.value))}
+              style={{ marginRight: 8 }}
+            >
+              <option value="100">最近 100 行</option>
+              <option value="300">最近 300 行</option>
+              <option value="1000">最近 1000 行</option>
+              <option value="0">全部</option>
+            </Select>
+            <Button variant="secondary" onClick={reloadLogs} loading={logLoading}>
+              刷新
+            </Button>
+            <Button variant="secondary" onClick={downloadLogs}>
+              下载
+            </Button>
+            <Button variant="secondary" onClick={closeLogs}>
+              关闭
+            </Button>
+          </>
+        }
+      >
+        <div
+          style={{
+            background: 'var(--bg-code, #1e1e1e)',
+            color: 'var(--text-code, #d4d4d4)',
+            borderRadius: 8,
+            padding: 12,
+            maxHeight: 480,
+            overflow: 'auto',
+            fontFamily: 'var(--font-mono, monospace)',
+            fontSize: 12,
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}
+        >
+          {logLoading && logLines.length === 0 ? (
+            <span style={{ color: 'var(--text-muted)' }}>加载日志中…</span>
+          ) : logLines.length === 0 ? (
+            <span style={{ color: 'var(--text-muted)' }}>暂无日志输出</span>
+          ) : (
+            logLines.map((l, i) => (
+              <div
+                key={i}
+                style={{
+                  color: l.isErr ? 'var(--danger, #ff6b6b)' : undefined,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {l.text}
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
       {/* 创建容器弹窗 */}
       <Modal
         open={createOpen}
@@ -2271,13 +2537,30 @@ export default function ContainersPage() {
                     onChange={(e) => updateCreatePort(index, 'container', e.target.value)}
                     disabled={creating}
                   />
-                  <Input
-                    className="create-modal__col-host"
-                    placeholder="8080（可选）"
-                    value={item.host}
-                    onChange={(e) => updateCreatePort(index, 'host', e.target.value)}
-                    disabled={creating}
-                  />
+                  <div className="create-modal__col-host">
+                    <Input
+                      className="create-modal__input-host"
+                      placeholder="8080（可选）"
+                      value={item.host}
+                      onChange={(e) => onHostPortChange(index, e.target.value)}
+                      disabled={creating}
+                    />
+                    {/* 端口占用检测提示 */}
+                    {item.host.trim() &&
+                      (portCheckLoading[index] ? (
+                        <div className="port-check__tip port-check__tip--checking">检测中…</div>
+                      ) : portChecks[index]?.busy ? (
+                        <div className="port-check__tip port-check__tip--busy">
+                          {portChecks[index]?.containerOccupied
+                            ? `该端口已被容器占用：${(portChecks[index]?.containerNames || []).join(', ')}`
+                            : portChecks[index]?.hostListening
+                              ? '该端口已被本机进程监听'
+                              : '端口已被占用'}
+                        </div>
+                      ) : portChecks[index] ? (
+                        <div className="port-check__tip port-check__tip--ok">端口可用</div>
+                      ) : null)}
+                  </div>
                   <Select
                     className="create-modal__col-protocol"
                     value={item.protocol}

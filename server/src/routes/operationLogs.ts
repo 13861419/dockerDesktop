@@ -13,6 +13,9 @@ import {
   exportOperationLogsCsv,
   exportOperationLogsJson,
   summarizeOperationLogs,
+  summarizeOperationLogsByUser,
+  summarizeOperationLogsTrend,
+  exportStatsCsv,
   logOperation,
 } from '../operationLog';
 import { requireAdmin } from '../auth';
@@ -88,6 +91,67 @@ router.get('/stats', requireAdmin, (req: any, res: any) => {
     res.json(stats);
   } catch (e: any) {
     res.status(500).json({ error: e?.message || '统计操作日志失败' });
+  }
+});
+
+/**
+ * GET /api/operation-logs/stats/by-user?from=&to=
+ * 按操作者分组统计（审计报表"操作者排行"）
+ * 与现有 /stats 兼容，返回按操作者（总数/成功/失败）降序数组
+ */
+router.get('/stats/by-user', requireAdmin, (req: any, res: any) => {
+  try {
+    const username = req.query.username ? String(req.query.username) : undefined;
+    const targetType = req.query.targetType ? String(req.query.targetType) : undefined;
+    const startTime = numOrUndefined(req.query.startTime);
+    const endTime = numOrUndefined(req.query.endTime);
+    const success = boolOrUndefined(req.query.success);
+    const rows = summarizeOperationLogsByUser({ username, targetType, startTime, endTime, success });
+    res.json(rows);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || '统计操作者失败' });
+  }
+});
+
+/**
+ * GET /api/operation-logs/stats/trend?from=&to=
+ * 按天聚合操作日志（审计报表"按天趋势"），返回按日期升序的 (day,count,success,fail) 数组
+ */
+router.get('/stats/trend', requireAdmin, (req: any, res: any) => {
+  try {
+    const username = req.query.username ? String(req.query.username) : undefined;
+    const targetType = req.query.targetType ? String(req.query.targetType) : undefined;
+    const startTime = numOrUndefined(req.query.startTime);
+    const endTime = numOrUndefined(req.query.endTime);
+    const success = boolOrUndefined(req.query.success);
+    const rows = summarizeOperationLogsTrend({ username, targetType, startTime, endTime, success });
+    res.json(rows);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || '统计操作趋势失败' });
+  }
+});
+
+/**
+ * GET /api/operation-logs/export/stats?groupBy=user|day&from=&to=
+ * 导出审计统计报表为 CSV（维度：user 按操作者 / day 按天）
+ */
+router.get('/export/stats', requireAdmin, (req: any, res: any) => {
+  try {
+    const username = req.query.username ? String(req.query.username) : undefined;
+    const targetType = req.query.targetType ? String(req.query.targetType) : undefined;
+    const startTime = numOrUndefined(req.query.startTime);
+    const endTime = numOrUndefined(req.query.endTime);
+    const success = boolOrUndefined(req.query.success);
+    const groupBy = req.query.groupBy === 'day' ? 'day' : 'user';
+    const csv = exportStatsCsv(groupBy, { username, targetType, startTime, endTime, success });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="operation-stats-${groupBy}-${Date.now()}.csv"`,
+    );
+    res.send(csv);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || '导出统计报表失败' });
   }
 });
 

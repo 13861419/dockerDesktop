@@ -260,6 +260,116 @@ router.get(
 );
 
 /**
+ * GET /api/images/categorized
+ * 按使用状态细分镜像列表，供前端分类浏览与批量勾选删除
+ * 分类：dangling（悬空，无标签）、unused（有标签但未被任何容器引用）、active（被容器引用）
+ * 每条附 relatedCount（被多少容器引用）与 pullTime（本地拉取时间）
+ * 注意：需在 /:name 之前定义，避免 categorized 被 :name 捕获
+ */
+router.get(
+  '/categorized',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const images = (await docker.listImages({ all: false })) as any[];
+    const containers = (await docker.listContainers({ all: true })) as any[];
+
+    // 收集所有容器引用的镜像 Id 与镜像名（与 computeImageSuggestions 判定口径一致）
+    const usedImageIds = new Set<string>();
+    const usedImageNames = new Set<string>();
+    // 记录每个镜像 Id 被多少容器引用
+    const refCountById = new Map<string, number>();
+    for (const c of containers) {
+      if (c.ImageID) {
+        usedImageIds.add(c.ImageID);
+        refCountById.set(c.ImageID, (refCountById.get(c.ImageID) || 0) + 1);
+      }
+      if (c.Image) usedImageNames.add(c.Image);
+    }
+
+    const dangling: any[] = [];
+    const unused: any[] = [];
+    const active: any[] = [];
+
+    const normalize = (img: any, used: boolean): any => {
+      const id = (img.Id || '').replace(/^sha256:/, '');
+      // 容器 Image 字段通常以短 Id 结尾（如 sha256 前 12 位），此处统计引用数
+      let relatedCount = refCountById.get(img.Id) || 0;
+      if (relatedCount === 0) {
+        const short = id.slice(0, 12);
+        relatedCount = [...usedImageIds].filter((i) => i.endsWith(short)).length;
+      }
+      const pullTime = img.Id ? getPullTime(img.Id) : undefined;
+      return {
+        id,
+        tags: img.RepoTags || [],
+        size: img.Size || 0,
+        created: img.Created || 0,
+        relatedCount,
+        used,
+        pullTime,
+      };
+    };
+
+    for (const img of images) {
+      const tags = img.RepoTags || [];
+      if (!tags.length) {
+        // 无标签即为悬空镜像（通常也未被引用）
+        dangling.push(normalize(img, false));
+        continue;
+      }
+      const used = usedImageIds.has(img.Id) || tags.some((t: string) => usedImageNames.has(t));
+      if (used) active.push(normalize(img, true));
+      else unused.push(normalize(img, false));
+    }
+
+    res.json({ dangling, unused, active });
+  }),
+);
+
+/**
+ * POST /api/images/delete-batch
+ * 批量删除选中镜像（requireAdmin）
+ * body: { names: string[] } —— names 为镜像引用（标签或 Id）
+ * 逐个调用 docker remove(force)，汇总成功与失败，最终写一条汇总审计日志
+ */
+router.post(
+  '/delete-batch',
+  requireAdmin,
+  asyncHandler(
+    async (req: Request, res: Response) => {
+      const docker = await getDockerClient();
+      const names: string[] = Array.isArray(req.body?.names) ? req.body.names : [];
+      if (!names.length) {
+        return res.status(400).json({ error: '缺少待删除的镜像列表' });
+      }
+      const deleted: string[] = [];
+      const failed: { name: string; error: string }[] = [];
+      for (const name of names) {
+        try {
+          await docker.getImage(name).remove({ force: true });
+          deleted.push(name);
+        } catch (err: any) {
+          failed.push({ name, error: err?.message || '未知错误' });
+        }
+      }
+      const detail =
+        `成功 ${deleted.length} 个${deleted.length ? `：${deleted.join(', ')}` : ''}` +
+        (failed.length ? `；失败 ${failed.length} 个：${failed.map((f) => `${f.name}(${f.error})`).join(', ')}` : '');
+      logOperation(
+        res.locals.username,
+        '批量删除镜像',
+        'image',
+        null,
+        detail,
+        failed.length === 0,
+      );
+      res.json({ ok: true, deleted, failed });
+    },
+    () => ({ action: '批量删除镜像', targetType: 'image', detail: 'image batch delete' }),
+  ),
+);
+
+/**
  * GET /api/images/:name/impact
  * 返回指定镜像被哪些容器使用（relatedContainers），复用镜像详情页的关联容器判定逻辑
  * 注意：需在 /:name 之前定义，避免 impact 被 :name 捕获

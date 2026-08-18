@@ -378,6 +378,35 @@
 .create-modal__col-host {
   flex: 1 1 0;
   min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.create-modal__input-host {
+  width: 100%;
+}
+
+/* 端口占用检测提示 */
+.port-check__tip {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.port-check__tip--checking {
+  color: var(--text-muted);
+}
+
+.port-check__tip--busy {
+  color: var(--danger, #e5484d);
+}
+
+.port-check__tip--ok {
+  color: var(--success, #46a758);
 }
 
 .create-modal__col-protocol {
