@@ -6,7 +6,7 @@
 import { Router, Request, Response } from 'express';
 import net from 'net';
 import { getDockerClient } from '../docker/client';
-import { parseStats } from '../docker/stats';
+import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
 import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
@@ -402,7 +402,56 @@ router.get(
   }),
 );
 
-// ============ 容器批量操作 ============
+/**
+ * GET /api/containers/stats/top?sort=cpu|mem&limit=10
+ * 容器资源占用看板：编排含容器名/状态/镜像的资源统计，按 CPU%（默认）或内存%降序取 Top N。
+ * 仅统计 running 容器（stats 对停止容器无意义），停止容器不在此榜中。
+ */
+router.get(
+  '/stats/top',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const sortBy = req.query.sort === 'mem' ? 'mem' : 'cpu';
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 10;
+
+    const list = (await docker.listContainers({ all: false })) as any[];
+
+    // 并发拉取各运行容器 stats，并附名称/状态/镜像信息；逐项降级容错
+    const entries = await Promise.all(
+      list.map(async (c: any) => {
+        let stats: ParsedStats | null = null;
+        try {
+          const raw = await docker.getContainer(c.Id).stats({ stream: false });
+          stats = raw ? parseStats(raw) : null;
+        } catch {
+          // 单个失败不影响整体
+        }
+        if (!stats) return null;
+        const name = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '') || (c.Id || '').slice(0, 12);
+        return {
+          id: c.Id,
+          name,
+          image: c.Image || '',
+          state: c.State || 'running',
+          cpuPercent: stats.cpuPercent,
+          memPercent: stats.memory.percent,
+          memUsageMB: Math.round(stats.memory.usage / 1024 / 1024),
+          memLimitMB: Math.round(stats.memory.limit / 1024 / 1024),
+          netRxMB: Number((stats.network.rx / 1024 / 1024).toFixed(2)),
+          netTxMB: Number((stats.network.tx / 1024 / 1024).toFixed(2)),
+          pids: stats.pids,
+        };
+      }),
+    );
+
+    const items = (entries.filter(Boolean) as any[]).sort((a, b) =>
+      sortBy === 'mem' ? b.memPercent - a.memPercent : b.cpuPercent - a.cpuPercent,
+    ).slice(0, limit);
+
+    res.json({ items, sortBy });
+  }),
+);
 
 /**
  * 批量容器操作投递函数：对一组容器 id 并发执行同一 dockerode 操作，逐项容错。

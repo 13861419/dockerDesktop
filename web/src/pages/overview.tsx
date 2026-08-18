@@ -66,6 +66,27 @@ interface MetricRangeResponse {
   points: MetricPoint[];
 }
 
+/** 容器资源占用看板单项（GET /api/containers/stats/top 返回） */
+interface TopContainerStat {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  cpuPercent: number;
+  memPercent: number;
+  memUsageMB: number;
+  memLimitMB: number;
+  netRxMB: number;
+  netTxMB: number;
+  pids: number;
+}
+
+/** /api/containers/stats/top 返回结构 */
+interface TopStatsResponse {
+  items: TopContainerStat[];
+  sortBy: string;
+}
+
 /** 曲线渲染所需的最小数据结构（MonitorPoint 与 MetricPoint 均结构兼容） */
 interface ChartPoint {
   timestamp: number;
@@ -150,6 +171,12 @@ export default function OverviewPage() {
   const [range, setRange] = useState<MetricsRange>('10m');
   /** 长跨度（1h/24h/7d）历史趋势数据；10m 模式下不使用 */
   const [rangeHist, setRangeHist] = useState<MetricPoint[]>([]);
+
+  // ---- 容器资源占用看板状态 ----
+  const [topStats, setTopStats] = useState<TopContainerStat[]>([]);
+  const [topSort, setTopSort] = useState<'cpu' | 'mem'>('cpu');
+  /** 容器看板是否加载中（首次） */
+  const [topLoading, setTopLoading] = useState(true);
 
   /**
    * 拉取总览数据
@@ -249,6 +276,30 @@ export default function OverviewPage() {
     loadRange(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
+
+  // 容器资源占用看板：每 3 秒轮询 Top 统计（随排序 Tab 变化）
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTop() {
+      try {
+        const res = await get<TopStatsResponse>('/api/containers/stats/top', { sort: topSort, limit: 10 });
+        if (cancelled) return;
+        setTopStats(res?.items || []);
+        setTopLoading(false);
+      } catch {
+        if (!cancelled) {
+          setTopStats([]);
+          setTopLoading(false);
+        }
+      }
+    }
+    loadTop();
+    const timer = setInterval(loadTop, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [topSort]);
 
   if (loading) return <PageLoading />;
 
@@ -549,6 +600,89 @@ export default function OverviewPage() {
           )}
         </Card>
       </div>
+
+      {/* 容器资源占用看板 */}
+      <Card
+        title="容器资源占用"
+        extra={
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className={`ov-top__tab${topSort === 'cpu' ? ' ov-top__tab--active' : ''}`}
+              onClick={() => setTopSort('cpu')}
+            >
+              按 CPU
+            </button>
+            <button
+              type="button"
+              className={`ov-top__tab${topSort === 'mem' ? ' ov-top__tab--active' : ''}`}
+              onClick={() => setTopSort('mem')}
+            >
+              按内存
+            </button>
+          </div>
+        }
+      >
+        {topLoading && topStats.length === 0 ? (
+          <div className="ov-top__tip">加载容器资源统计中…</div>
+        ) : topStats.length === 0 ? (
+          <div className="ov-top__tip">当前无运行中容器</div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>容器</th>
+                <th style={{ width: 90 }}>状态</th>
+                <th style={{ width: 180 }}>CPU</th>
+                <th style={{ width: 180 }}>内存</th>
+                <th style={{ width: 120 }}>内存使用</th>
+                <th style={{ width: 150 }}>网络 IO</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topStats.map((c) => (
+                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/containerDetail/${c.id}`)}>
+                  <td>
+                    <div className="ov-top__name" title={c.name}>
+                      {c.name}
+                    </div>
+                    <div className="ov-top__image" title={c.image}>
+                      {c.image}
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`ov-top__state ov-top__state--${c.state === 'running' ? 'running' : 'stopped'}`}>
+                      {c.state === 'running' ? '运行中' : '已停止'}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="ov-top__bar">
+                      <div
+                        className={`ov-top__bar-fill ${gaugeTone(c.cpuPercent)}`}
+                        style={{ width: `${Math.min(100, c.cpuPercent)}%` }}
+                      />
+                    </div>
+                    <span className="ov-top__num">{c.cpuPercent.toFixed(1)}%</span>
+                  </td>
+                  <td>
+                    <div className="ov-top__bar">
+                      <div
+                        className={`ov-top__bar-fill ${gaugeTone(c.memPercent)}`}
+                        style={{ width: `${Math.min(100, c.memPercent)}%` }}
+                      />
+                    </div>
+                    <span className="ov-top__num">{c.memPercent.toFixed(1)}%</span>
+                  </td>
+                  <td className="ov-top__mem">{c.memUsageMB} / {c.memLimitMB} MB</td>
+                  <td className="ov-top__net">
+                    收 {c.netRxMB} MB / 发 {c.netTxMB} MB
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
 
       <Card title="引擎信息">
         <div className="overview__engine-status">

@@ -442,3 +442,94 @@
     }
   }
 }
+
+/* ============ 容器资源占用看板 ============ */
+.ov-top__tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &--active {
+    border-color: var(--primary);
+    background: var(--primary-weak, rgba(0, 122, 255, 0.12));
+    color: var(--primary);
+  }
+}
+
+.ov-top__tip {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ov-top__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.ov-top__image {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.ov-top__state {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+
+  &--running {
+    color: var(--success, #22c55e);
+    background: rgba(34, 197, 94, 0.12);
+  }
+
+  &--stopped {
+    color: var(--text-muted);
+    background: var(--bg-body, rgba(31, 35, 51, 0.08));
+  }
+}
+
+.ov-top__bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-body, rgba(31, 35, 51, 0.1));
+  overflow: hidden;
+}
+
+.ov-top__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+
+.ov-top__num {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.ov-top__mem,
+.ov-top__net {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
