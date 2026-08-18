@@ -152,6 +152,16 @@ async function collectContainerMetrics(): Promise<void> {
 }
 
 /**
+ * 重置容器指标采集器的内存状态（引擎切换后由 engines.ts 调用）。
+ * 采集器每次 tick 现读当前引擎（resetDockerCache 后自动对准新引擎），无需重启定时器；
+ * 此处仅清空按容器 id 缓存的网络增量基准，避免沿用旧引擎容器的字节计数。
+ */
+export function resetContainerMetricsState(): void {
+  lastNetStats.clear();
+  lastPersistTs = 0;
+}
+
+/**
  * 启动容器指标采集器（幂等）
  *
  * 立即执行一次采集，随后按 INTERVAL_MS 周期性采集。重复调用不会创建多个定时器。

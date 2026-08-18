@@ -427,6 +427,18 @@ async function collect() {
 }
 
 /**
+ * 重置监控采集器的内存状态（引擎切换后由 engines.ts 调用）。
+ * 采集器每次 tick 都现读当前引擎（getDockerClient + resetDockerCache 后自动对准新引擎），
+ * 因此无需重启定时器；此处仅清空历史缓冲与采样点，避免跨引擎数据串扰，
+ * 让下一个 tick 以新引擎重新采集。
+ */
+export function resetMonitorState(): void {
+  history.length = 0;
+  lastCpu = null;
+  latest = null;
+}
+
+/**
  * 启动监控采集器（幂等）
  */
 export function startMonitor(): void {

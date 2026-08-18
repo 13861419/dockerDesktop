@@ -353,6 +353,17 @@ async function check(): Promise<void> {
 }
 
 /**
+ * 重置告警内部状态（引擎切换后调用）
+ * 清空宿主级与容器级的活跃/去重状态，避免跨引擎误报或误判恢复
+ */
+export function resetAlertingState(): void {
+  lastAlertAt.clear();
+  activeAlerts.clear();
+  containerLastAlert.clear();
+  containerActive.clear();
+}
+
+/**
  * 启动告警服务（幂等）
  */
 export function startAlerting(): void {

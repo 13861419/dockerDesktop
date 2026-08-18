@@ -10,6 +10,9 @@ import crypto from 'crypto';
 import { getDb } from '../storage';
 import { resetDockerCache, testEngineEndpoint } from '../docker/client';
 import { restartEventMonitor } from '../docker/events';
+import { resetMonitorState } from '../docker/monitor';
+import { resetContainerMetricsState } from '../docker/containerMetrics';
+import { resetAlertingState } from '../alerting';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
 
@@ -157,6 +160,10 @@ router.put(
     if (row.is_current) {
       resetDockerCache();
       restartEventMonitor();
+      // 重置监控/指标/告警内部状态，避免旧引擎残留数据污染新引擎展示
+      resetMonitorState();
+      resetContainerMetricsState();
+      resetAlertingState();
     }
     logOperation(res.locals.username, '更新Docker引擎', '引擎', name);
     res.json({ ok: true });
@@ -209,6 +216,10 @@ router.post(
     // 引擎变化：清客户端缓存 + 重启事件流
     resetDockerCache();
     restartEventMonitor();
+    // 重置监控/指标/告警内部状态，避免跨引擎残留数据造成误报或展示错乱
+    resetMonitorState();
+    resetContainerMetricsState();
+    resetAlertingState();
 
     logOperation(res.locals.username, '切换Docker引擎', '引擎', row.name);
     res.json({ ok: true });
