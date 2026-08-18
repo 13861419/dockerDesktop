@@ -405,6 +405,14 @@ export interface CronTaskLogPage {
   totalPages: number;
 }
 
+/** cron 表达式下次执行时间预览（GET /api/tasks/cron-preview 返回） */
+export interface CronPreviewResponse {
+  /** 输入的 cron 表达式 */
+  cron: string;
+  /** 下次执行毫秒时间戳；null 表示非法/无法计算 */
+  nextRun: number | null;
+}
+
 /** ===================== 容器内文件管理 ===================== */
 
 /** 容器内文件条目（/api/files/:id/ls 返回） */

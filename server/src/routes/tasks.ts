@@ -865,4 +865,19 @@ router.get(
   }),
 );
 
+/**
+ * GET /api/tasks/cron-preview?cron=...
+ * 计算给定 cron 表达式的下次执行时间（用于前端可视化编辑器的实时预览）
+ * 语义由 scheduler.nextRunTime 提供（5 段，支持星号步进与逗号枚举）
+ */
+router.get(
+  '/cron-preview',
+  asyncHandler(async (req: Request, res: Response) => {
+    const cron = String(req.query.cron || '').trim();
+    if (!cron) return res.json({ nextRun: null });
+    const nextRun = nextRunTime(cron, Date.now());
+    res.json({ cron, nextRun });
+  }),
+);
+
 export default router;

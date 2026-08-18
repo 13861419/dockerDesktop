@@ -24,6 +24,7 @@ import {
   CronTaskListResponse,
   CronTaskLogPage,
   CronTaskLogItem,
+  CronPreviewResponse,
   TaskType,
   ContainerListItem,
 } from '../types';
@@ -52,6 +53,90 @@ const CRON_PRESETS: Array<{ label: string; cron: string }> = [
 
 /** 新增任务弹窗默认的 cron 表达式 */
 const DEFAULT_CRON = '0 3 * * *';
+
+/**
+ * cron 可视化的 5 个维度定义（顺序与段位一一对应）
+ * 每个维度包含取值范围、中文名、说明。
+ */
+const CRON_DIMENSIONS = [
+  { key: 'minute', label: '分钟', min: 0, max: 59, hint: '0-59' },
+  { key: 'hour', label: '小时', min: 0, max: 23, hint: '0-23' },
+  { key: 'day', label: '日期', min: 1, max: 31, hint: '1-31' },
+  { key: 'month', label: '月份', min: 1, max: 12, hint: '1-12' },
+  { key: 'week', label: '星期', min: 0, max: 7, hint: '0-7（0/7 为周日）' },
+] as const;
+
+/** 单个维度可用的三态编辑模式 */
+type CronMode = 'any' | 'every' | 'specified';
+
+/**
+ * 各维度当前编辑状态：模式 + 周期步长 + 勾选的值集合
+ */
+interface CronDimensionState {
+  mode: CronMode;
+  /** 周期模式的步长 N */
+  step: number;
+  /** 指定模式勾选的值集合 */
+  values: number[];
+}
+
+/** 完整 cron 的维度状态集合，下标与 CRON_DIMENSIONS 一一对应 */
+type CronStates = [CronDimensionState, CronDimensionState, CronDimensionState, CronDimensionState, CronDimensionState];
+
+/**
+ * 把 5 个维度的状态拼装成完整 cron 字符串（空格分隔）
+ * @param states 各维度状态
+ * @returns 拼装后的 cron 表达式
+ */
+function buildCronFromStates(states: CronStates): string {
+  return states
+    .map((s) => {
+      if (s.mode === 'any') return '*';
+      if (s.mode === 'every') return `*/${Math.max(1, Math.floor(s.step) || 1)}`;
+      // 指定模式：按值升序拼接，无勾选则回退为 *
+      const vals = [...s.values].sort((a, b) => a - b);
+      return vals.length > 0 ? vals.join(',') : '*';
+    })
+    .join(' ');
+}
+
+/**
+ * 从当前 cron 表达式解析各维度编辑状态（纯前端解析）
+ * 解析规则：段为 * → 任意；*斜杠N → 周期 N；数字或逗号数字 → 指定勾选；
+ * 其它无法解析的值 → 该维度回退为「任意」。
+ * @param cron 完整 cron 表达式
+ * @returns 解析出的各维度状态
+ */
+function parseCronToStates(cron: string): CronStates {
+  const parts = (cron || '').trim().split(/\s+/);
+  return CRON_DIMENSIONS.map((dim, i): CronDimensionState => {
+    const seg = parts[i];
+    // 默认无该段或为空 → 任意
+    if (!seg || seg === '*') {
+      return { mode: 'any', step: 1, values: [] };
+    }
+    // 周期模式：*/N
+    const everyMatch = /^\*\/(\d+)$/.exec(seg);
+    if (everyMatch) {
+      return { mode: 'every', step: Number(everyMatch[1]) || 1, values: [] };
+    }
+    // 指定模式：单值或逗号分隔数字列表（去重、裁剪到取值范围内）
+    if (/^[\d,]+$/.test(seg)) {
+      const vals = [
+        ...new Set(
+          seg
+            .split(',')
+            .map((n) => Number(n.trim()))
+            .filter((n) => Number.isFinite(n))
+            .filter((n) => n >= dim.min && n <= dim.max)
+        ),
+      ].sort((a, b) => a - b);
+      return { mode: 'specified', step: 1, values: vals };
+    }
+    // 其它无法解析（如范围、步进、别名）→ 回退任意，保留文本框原文
+    return { mode: 'any', step: 1, values: [] };
+  }) as CronStates;
+}
 
 /** prune（清理）类型的可勾选项，key 与后端 config 字段一致 */
 const PRUNE_ITEMS: Array<{ key: string; label: string }> = [
@@ -168,6 +253,14 @@ export default function TasksPage() {
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState<TaskType>('prune');
   const [formCron, setFormCron] = useState(DEFAULT_CRON);
+  // cron 可视化编辑器：默认收起（展开/收起由 state 控制）
+  const [cronEditorOpen, setCronEditorOpen] = useState(false);
+  // 各维度编辑状态（供可视化面板控件回填与双向同步）
+  const [cronStates, setCronStates] = useState<CronStates>(() => parseCronToStates(DEFAULT_CRON));
+  // 下次执行时间预览结果文本（'' 表示尚未请求）
+  const [cronPreviewText, setCronPreviewText] = useState('');
+  // 预览请求进行中标记
+  const [cronPreviewing, setCronPreviewing] = useState(false);
   const [formEnabled, setFormEnabled] = useState(true);
   const [formConfig, setFormConfig] = useState<Record<string, any>>({});
 
@@ -255,6 +348,115 @@ export default function TasksPage() {
     setFormConfig(JSON.parse(JSON.stringify(task.config || {})));
     setFormOpen(true);
   }, [canManage, showToast]);
+
+  /**
+   * 切换可视化编辑器的展开/收起
+   * 展开时把当前 formCron 解析回填到各维度控件（parseCronToStates）
+   */
+  const toggleCronEditor = useCallback(() => {
+    setCronEditorOpen((open) => {
+      const next = !open;
+      if (next) {
+        // 展开前解析当前输入框表达式，回填控件
+        setCronStates(parseCronToStates(formCron));
+      }
+      return next;
+    });
+  }, [formCron]);
+
+  /**
+   * 应用可视化面板的改动：更新维度状态并实时拼装同步到 formCron
+   * @param states 新的维度状态集合
+   */
+  const applyCronStates = useCallback(
+    (states: CronStates) => {
+      setCronStates(states);
+      // 把所有维度的状态拼成完整 cron 并同步到输入框
+      const cron = buildCronFromStates(states);
+      setFormCron(cron);
+      setCronPreviewText('');
+    },
+    []
+  );
+
+  /**
+   * 更新某个维度的编辑状态（切换模式 / 修改周期步长等）
+   * @param index 维度下标（0-4）
+   * @param patch 要合并到该维度的新字段
+   */
+  const updateDimension = useCallback(
+    (index: number, patch: Partial<CronDimensionState>) => {
+      setCronStates((prev) => {
+        const next = prev.slice() as CronStates;
+        next[index] = { ...next[index], ...patch };
+        // 实时拼装并同步到输入框
+        setFormCron(buildCronFromStates(next));
+        setCronPreviewText('');
+        return next;
+      });
+    },
+    []
+  );
+
+  /**
+   * 勾选/取消勾选指定模式下的某个值
+   * @param index 维度下标（0-4）
+   * @param value 要切换的值
+   * @param checked 是否选中
+   */
+  const toggleCronValue = useCallback(
+    (index: number, value: number, checked: boolean) => {
+      setCronStates((prev) => {
+        const next = prev.slice() as CronStates;
+        const cur = next[index].values.slice();
+        const idx = cur.indexOf(value);
+        if (checked && idx < 0) cur.push(value);
+        if (!checked && idx >= 0) cur.splice(idx, 1);
+        next[index] = { ...next[index], values: cur, mode: 'specified' };
+        // 实时拼装并同步到输入框
+        setFormCron(buildCronFromStates(next));
+        setCronPreviewText('');
+        return next;
+      });
+    },
+    []
+  );
+
+  /**
+   * 请求后端计算下次执行时间并展示
+   * 失败或返回 null 时展示提示文本；请求失败静默忽略
+   */
+  const handleCronPreview = useCallback(async () => {
+    if (!isValidCron(formCron)) {
+      setCronPreviewText('无法计算/非法表达式');
+      return;
+    }
+    setCronPreviewing(true);
+    try {
+      const data = await get<CronPreviewResponse>('/api/tasks/cron-preview', {
+        cron: formCron.trim(),
+      });
+      if (data?.nextRun) {
+        setCronPreviewText(`下次执行：${formatTime(data.nextRun)}`);
+      } else {
+        setCronPreviewText('无法计算/非法表达式');
+      }
+    } catch {
+      // 预览失败静默忽略，清空提示避免误导
+      setCronPreviewText('');
+    } finally {
+      setCronPreviewing(false);
+    }
+  }, [formCron]);
+
+  /**
+   * 重置为默认表达式并重新解析到可视化控件
+   */
+  const handleCronResetDefault = useCallback(() => {
+    setFormCron(DEFAULT_CRON);
+    setCronStates(parseCronToStates(DEFAULT_CRON));
+    setCronPreviewText('');
+  }, []);
 
   /**
    * 提交新建/编辑：新建用 post，编辑用本地 put
@@ -635,6 +837,102 @@ export default function TasksPage() {
                 </button>
               ))}
             </div>
+            <div className="tasks__cron-visual-toolbar">
+              <button
+                type="button"
+                className="tasks__cron-visual-toggle"
+                onClick={toggleCronEditor}
+              >
+                {cronEditorOpen ? '收起可视化编辑' : '可视化编辑'}
+              </button>
+              {cronEditorOpen && (
+                <button type="button" className="tasks__cron-visual-toggle" onClick={handleCronResetDefault}>
+                  重置为默认
+                </button>
+              )}
+            </div>
+            {cronEditorOpen && (
+              <div className="tasks__cron-visual">
+                {CRON_DIMENSIONS.map((dim, i) => {
+                  const dimState = cronStates[i];
+                  return (
+                    <div className="tasks__cron-dim" key={dim.key}>
+                      <div className="tasks__cron-dim-head">
+                        <span className="tasks__cron-dim-label">
+                          {dim.label}
+                          <span className="tasks__cron-dim-hint">({dim.hint})</span>
+                        </span>
+                        <div className="tasks__cron-segmented">
+                          {(
+                            [
+                              { key: 'any', label: '任意' },
+                              { key: 'every', label: '周期' },
+                              { key: 'specified', label: '指定' },
+                            ] as Array<{ key: CronMode; label: string }>
+                          ).map((m) => (
+                            <button
+                              key={m.key}
+                              type="button"
+                              className={`tasks__cron-seg ${dimState.mode === m.key ? 'tasks__cron-seg--active' : ''}`}
+                              onClick={() => updateDimension(i, { mode: m.key })}
+                            >
+                              {m.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="tasks__cron-dim-body">
+                        {dimState.mode === 'any' && (
+                          <div className="tasks__cron-dim-note">不限制，任意取值（段为 *）</div>
+                        )}
+                        {dimState.mode === 'every' && (
+                          <label className="tasks__cron-every">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={dimState.step}
+                              className="tasks__cron-every-input"
+                              onChange={(e) =>
+                                updateDimension(i, { step: Math.max(1, Number(e.target.value) || 1) })
+                              }
+                            />
+                            <span>每隔该数值执行一次（段为 */N）</span>
+                          </label>
+                        )}
+                        {dimState.mode === 'specified' && (
+                          <div className="tasks__cron-values">
+                            {Array.from(
+                              { length: dim.max - dim.min + 1 },
+                              (_, k) => dim.min + k
+                            ).map((v) => (
+                              <label key={v} className="tasks__cron-value">
+                                <input
+                                  type="checkbox"
+                                  checked={dimState.values.includes(v)}
+                                  onChange={(e) => toggleCronValue(i, v, e.target.checked)}
+                                />
+                                {v}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="tasks__cron-visual-footer">
+                  <Button variant="secondary" size="sm" loading={cronPreviewing} onClick={handleCronPreview}>
+                    预览下次执行时间
+                  </Button>
+                  {cronPreviewText && (
+                    <span className="tasks__cron-preview">{cronPreviewText}</span>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => setCronEditorOpen(false)}>
+                    收起
+                  </Button>
+                </div>
+              </div>
+            )}
           </Field>
 
           <ConfigEditor
