@@ -106,7 +106,20 @@ export async function scanImage(name: string, timeoutMs = 180000): Promise<Image
     throw mkErr(400, `Trivy 扫描失败: ${stderr.split('\n')[0] || err?.message || err}（可先执行 trivy image <name> 排查）`);
   }
 
-  // 解析 JSON
+  try {
+    return parseTrivyOutput(stdout);
+  } catch (err: any) {
+    throw mkErr(400, String(err?.message || '无法解析 Trivy 扫描结果 JSON'));
+  }
+}
+
+/**
+ * 解析 Trivy JSON 输出为标准化 ImageScan（纯函数，便于单测）
+ * @param stdout trivy image --format json 的输出
+ * @returns 标准化扫描结果
+ * @throws JSON 无法解析时抛错
+ */
+export function parseTrivyOutput(stdout: string): ImageScan {
   let parsed: any;
   try {
     parsed = JSON.parse(stdout);
@@ -115,7 +128,7 @@ export async function scanImage(name: string, timeoutMs = 180000): Promise<Image
     if (start >= 0) {
       try { parsed = JSON.parse(stdout.slice(start)); } catch { /* fallthrough */ }
     }
-    if (!parsed) throw mkErr(400, '无法解析 Trivy 扫描结果 JSON');
+    if (!parsed) throw new Error('无法解析 Trivy 扫描结果 JSON');
   }
 
   const vulns: TrivyVulnerability[] = [];

@@ -11,7 +11,7 @@
     "dev": "node --max-old-space-size=4096 ../node_modules/ts-node-dev/lib/bin.js --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "set TS_NODE_PROJECT=tsconfig.test.json&& node --test-force-exit --require ts-node/register --test test/auth-security.test.ts test/webhook-git.test.ts"
+    "test": "set TS_NODE_PROJECT=tsconfig.test.json&& node --test-force-exit --require ts-node/register --test test/auth-security.test.ts test/webhook-git.test.ts test/trivy.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
