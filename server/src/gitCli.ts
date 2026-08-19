@@ -48,13 +48,30 @@ export function sanitizeTag(branch?: string): string {
 }
 
 /**
- * 对字符串做 Windows-compatible shell 转义，防止命令注入
- * @param s 待转义字符串
- * @returns 用双引号包裹并转义内部引号/% 后的命令片段
+ * 严格校验仓库 URL（协议白名单 + 控制字符拒绝），校验通过后原样返回
+ * —— 不依赖 shell 转义：URL/dir 一律用双引号包裹（cmd 不认 \"）
+ * @param raw 原始 clone/pull URL
+ * @returns 校验通过的 URL
  */
-function shellQuote(s: string): string {
-  // cmd.exe / PowerShell 下用双引号包裹，内部 " 转义为 \"，% 转义为 %% 避免 cmd 解释
-  return `"${s.replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
+function assertSafeCloneUrl(raw: string): string {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error('仓库 URL 不能为空');
+  }
+  // 拒绝嵌入的换行/回车/控制字符（含 %0a %0d 等编码换行）
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F]/.test(raw)) {
+    throw new Error('仓库 URL 包含非法控制字符，已拒绝');
+  }
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error(`非法仓库 URL: "${raw}"`);
+  }
+  if (!['https:', 'http:', 'git:', 'ssh:'].includes(u.protocol)) {
+    throw new Error(`不支持的仓库协议: "${u.protocol}"（仅允许 https/http/git/ssh）`);
+  }
+  return raw;
 }
 
 /**
@@ -134,7 +151,7 @@ export async function gitCloneOrPull(opts: {
   cred?: GitCred | null;
 }): Promise<string> {
   const { repoUrl, dir, branch, cred } = opts;
-  const cloneUrl = buildCloneUrl(repoUrl, cred);
+  const cloneUrl = assertSafeCloneUrl(buildCloneUrl(repoUrl, cred));
   const { env, sshKeyFile } = buildGitContext(cred);
   // 对 branch 做宽松校验（合法则返回原值），阻止任何潜在的注入输入
   const safeBranch = branch ? assertSafeBranch(branch) : undefined;
@@ -145,12 +162,12 @@ export async function gitCloneOrPull(opts: {
   if (needClone) {
     fs.mkdirSync(dir, { recursive: true });
     cmd = safeBranch
-      ? `git clone --depth 1 --branch ${shellQuote(safeBranch)} ${shellQuote(cloneUrl)} ${shellQuote(dir)}`
-      : `git clone --depth 1 ${shellQuote(cloneUrl)} ${shellQuote(dir)}`;
+      ? `git clone --depth 1 --branch "${safeBranch}" "${cloneUrl}" "${dir}"`
+      : `git clone --depth 1 "${cloneUrl}" "${dir}"`;
   } else {
-    cmd = `git -C ${shellQuote(dir)} fetch origin`;
-    if (safeBranch) cmd += ` && git -C ${shellQuote(dir)} checkout ${shellQuote(safeBranch)}`;
-    cmd += ` && git -C ${shellQuote(dir)} pull --ff-only`;
+    cmd = `git -C "${dir}" fetch origin`;
+    if (safeBranch) cmd += ` && git -C "${dir}" checkout "${safeBranch}"`;
+    cmd += ` && git -C "${dir}" pull --ff-only`;
   }
 
   try {
