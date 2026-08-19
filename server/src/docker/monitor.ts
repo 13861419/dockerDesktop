@@ -504,6 +504,7 @@ async function collect() {
 export function resetMonitorState(): void {
   history.length = 0;
   lastCpu = null;
+  lastNet = null;
   latest = null;
 }
 
