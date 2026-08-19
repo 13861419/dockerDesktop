@@ -457,30 +457,27 @@ export default function TasksPage() {
     }
     setSaving(true);
     try {
+      // 从表单 config 拆出 gitCred 凭证与剔除敏感字段后的干净 config
+      const { gitCred: saveGitCred, cleanConfig } = buildGitCred(formConfig);
+      // 仅当用户填写了凭证时才附带 gitCred：编辑时凭证留空不传（保留原凭证），
+      // 新建时无凭证不传（本来就没有），有凭证才传，避免把 null 传给后端导致意外清空。
+      const hasCred = !!(saveGitCred.token || saveGitCred.privateKey);
+      const payload: any = {
+        name: formName.trim(),
+        cron: formCron.trim(),
+        enabled: formEnabled,
+        config: cleanConfig,
+      };
+      if (hasCred) {
+        payload.gitCred = saveGitCred;
+      }
       if (editing) {
         // 更新任务（后端 PUT），仅更新允许修改的字段
-        const { gitCred: saveGitCred, cleanConfig } = buildGitCred(formConfig);
-        const hasCred = saveGitCred.token || saveGitCred.privateKey ? saveGitCred : null;
-        await put(`/api/tasks/${editing.id}`, {
-          name: formName.trim(),
-          cron: formCron.trim(),
-          enabled: formEnabled,
-          config: cleanConfig,
-          gitCred: hasCred,
-        });
+        await put(`/api/tasks/${editing.id}`, payload);
         showToast('任务已更新', 'success');
       } else {
         // 新建任务
-        const { gitCred: saveGitCred, cleanConfig } = buildGitCred(formConfig);
-        const hasCred = saveGitCred.token || saveGitCred.privateKey ? saveGitCred : null;
-        await post('/api/tasks', {
-          name: formName.trim(),
-          type: formType,
-          cron: formCron.trim(),
-          enabled: formEnabled,
-          config: cleanConfig,
-          gitCred: hasCred,
-        });
+        await post('/api/tasks', { ...payload, type: formType });
         showToast('任务已创建', 'success');
       }
       setFormOpen(false);
