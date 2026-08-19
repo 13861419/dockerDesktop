@@ -146,6 +146,13 @@ function truncate(str: string, len: number): string {
 }
 
 /**
+ * 从 refs 中取首个安全的 http/https 链接（防 javascript: 等协议注入）
+ * @param refs 漏洞参考链接数组
+ * @returns 首个安全的 http/https 链接；无安全链接时返回 undefined
+ */
+const safeRef = (refs?: string[]) => (refs || []).find((r) => /^https?:\/\//i.test(r));
+
+/**
  * 触发镜像导出下载（docker save）
  * 鉴权依赖 Authorization 请求头，故通过 fetch 获取二进制 blob 后创建临时 <a> 触发下载。
  * @param name 待导出的镜像名
@@ -659,11 +666,14 @@ export default function ImageDetailPage() {
                     {scanResult.vulnerabilities.map((v, i) => (
                       <tr key={i}>
                         <td>
-                          {v.refs && v.refs.length > 0 ? (
-                            <a href={v.refs[0]} target="_blank" rel="noreferrer" className="scan-cve">{v.id}</a>
-                          ) : (
-                            <span className="scan-cve">{v.id}</span>
-                          )}
+                          {(() => {
+                            const safeUrl = safeRef(v.refs);
+                            return safeUrl ? (
+                              <a href={safeUrl} target="_blank" rel="noreferrer" className="scan-cve">{v.id}</a>
+                            ) : (
+                              <span className="scan-cve">{v.id}</span>
+                            );
+                          })()}
                         </td>
                         <td><span className={`scan-sev-badge scan-sev-${v.severity.toLowerCase()}`}>{v.severity}</span></td>
                         <td>{v.pkgName || '-'}</td>
