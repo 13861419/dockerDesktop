@@ -83,7 +83,11 @@ const NOT_AVAILABLE_REASON =
  * @returns 扫描结果；未装 Trivy 时 available=false
  */
 export async function scanImage(name: string, timeoutMs = 180000): Promise<ImageScan> {
-  assertSafeImageName(name);
+  try {
+    assertSafeImageName(name);
+  } catch (e: any) {
+    throw mkErr(400, String(e?.message || '无效的镜像名'));
+  }
   if (!(await trivyAvailable())) {
     return { available: false, notAvailableReason: NOT_AVAILABLE_REASON };
   }
