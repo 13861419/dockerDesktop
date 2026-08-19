@@ -47,6 +47,9 @@ export function assertSafeImageName(name: string): void {
   if (!name || name.length > 300) {
     throw new Error('无效的镜像名');
   }
+  if (name[0] === '-') {
+    throw new Error('镜像名不能以连字符开头');
+  }
   for (const ch of name) {
     if (!isSafeImageChar(ch)) {
       throw new Error('镜像名包含非法字符');
