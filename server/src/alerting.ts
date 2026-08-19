@@ -520,8 +520,10 @@ export function updateAlertRule(
 
   let warn = patch.warnThreshold !== undefined ? Number(patch.warnThreshold) : row.warn_threshold;
   let danger = patch.dangerThreshold !== undefined ? Number(patch.dangerThreshold) : row.danger_threshold;
-  if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || danger < 0 || warn > 100 || danger > 100) {
-    throw Object.assign(new Error('阈值需为 0-100 的数字'), { statusCode: 400 });
+  // net 类型阈值为 Mbps 带宽（合法值可远超 100），其余类型为 0-100 的百分比
+  const maxAllowed = type === 'net' ? 1e6 : 100;
+  if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || danger < 0 || warn > maxAllowed || danger > maxAllowed) {
+    throw Object.assign(new Error(type === 'net' ? '阈值需为非负数（Mbps）' : '阈值需为 0-100 的数字'), { statusCode: 400 });
   }
   if (warn > danger) {
     throw Object.assign(new Error('警告阈值不能高于危险阈值'), { statusCode: 400 });
