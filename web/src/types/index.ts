@@ -360,7 +360,8 @@ export type TaskType =
   | 'composeDown'
   | 'restart'
   | 'command'
-  | 'healthcheck';
+  | 'healthcheck'
+  | 'git-pull-build';
 
 /** 计划任务（/api/tasks 返回） */
 export interface CronTask {
@@ -377,6 +378,10 @@ export interface CronTask {
   nextRunAt: number;
   createdAt: number;
   updatedAt: number;
+  /** Webhook 触发 token（仅 admin 可见明文） */
+  webhookToken?: string | null;
+  /** Git 凭证描述（不含明文） */
+  gitCred?: { type?: 'token' | 'ssh'; hasCred: boolean };
 }
 
 /** 任务列表响应（/api/tasks） */

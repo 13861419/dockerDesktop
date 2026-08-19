@@ -40,6 +40,7 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'restart', label: '重启容器', badge: 'red' },
   { value: 'command', label: '自定义命令', badge: 'teal' },
   { value: 'healthcheck', label: '容器健康检查', badge: 'slate' },
+  { value: 'git-pull-build', label: 'Git 自动部署', badge: 'indigo' },
 ];
 
 /** cron 表达式快捷预设：说明 + 表达式 */
@@ -420,6 +421,24 @@ export default function TasksPage() {
   }, []);
 
   /**
+   * 从表单 config 中拆出 gitCred 凭证并剔除 config 明文敏感字段
+   * @param cfg 表单配置（含 credType/credToken/credKey/credPassphrase 临时字段）
+   * @returns gitCred 顶层凭证对象 + 剔除敏感字段后的干净 config
+   */
+  const buildGitCred = (cfg: Record<string, any>) => {
+    const type = cfg.credType === 'ssh' ? 'ssh' : 'token';
+    const out: any = { type };
+    if (type === 'ssh') {
+      if (cfg.credKey) out.privateKey = cfg.credKey;
+      if (cfg.credPassphrase) out.passphrase = cfg.credPassphrase;
+    } else if (cfg.credToken) {
+      out.token = cfg.credToken;
+    }
+    const { credType, credToken, credKey, credPassphrase, ...cleanConfig } = cfg;
+    return { gitCred: out, cleanConfig };
+  };
+
+  /**
    * 提交新建/编辑：新建用 post，编辑用本地 put
    */
   const handleSave = useCallback(async () => {
@@ -440,21 +459,27 @@ export default function TasksPage() {
     try {
       if (editing) {
         // 更新任务（后端 PUT），仅更新允许修改的字段
+        const { gitCred: saveGitCred, cleanConfig } = buildGitCred(formConfig);
+        const hasCred = saveGitCred.token || saveGitCred.privateKey ? saveGitCred : null;
         await put(`/api/tasks/${editing.id}`, {
           name: formName.trim(),
           cron: formCron.trim(),
           enabled: formEnabled,
-          config: formConfig,
+          config: cleanConfig,
+          gitCred: hasCred,
         });
         showToast('任务已更新', 'success');
       } else {
         // 新建任务
+        const { gitCred: saveGitCred, cleanConfig } = buildGitCred(formConfig);
+        const hasCred = saveGitCred.token || saveGitCred.privateKey ? saveGitCred : null;
         await post('/api/tasks', {
           name: formName.trim(),
           type: formType,
           cron: formCron.trim(),
           enabled: formEnabled,
-          config: formConfig,
+          config: cleanConfig,
+          gitCred: hasCred,
         });
         showToast('任务已创建', 'success');
       }
@@ -465,7 +490,7 @@ export default function TasksPage() {
     } finally {
       setSaving(false);
     }
-  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, showToast]);
+  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, buildGitCred, showToast]);
 
   /**
    * 切换任务的启用/停用状态
@@ -539,6 +564,37 @@ export default function TasksPage() {
       setDeleting(false);
     }
   }, [canManage, deleteTarget, showToast]);
+
+  /**
+   * 开启某任务的 Webhook：生成 URL 并复制到剪贴板
+   * @param taskId 任务 id
+   */
+  const handleWebhook = useCallback(async (taskId: string) => {
+    try {
+      const r = await post<{ ok: boolean; url: string; token: string }>(`/api/tasks/${taskId}/webhook`);
+      if (r?.ok) {
+        try { await navigator.clipboard.writeText(String(r.url)); } catch { /* 忽略剪贴板失败 */ }
+        showToast('Webhook 已生成并复制到剪贴板', 'success');
+        setRefreshKey((k) => k + 1);
+      }
+    } catch (e: any) {
+      showToast(e?.message || '生成 Webhook 失败', 'error');
+    }
+  }, [showToast]);
+
+  /**
+   * 关闭某任务的 Webhook
+   * @param taskId 任务 id
+   */
+  const handleWebhookOff = useCallback(async (taskId: string) => {
+    try {
+      await del(`/api/tasks/${taskId}/webhook`);
+      showToast('Webhook 已关闭', 'success');
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '关闭 Webhook 失败', 'error');
+    }
+  }, [showToast]);
 
   /**
    * 拉取某任务的分页执行历史
@@ -715,6 +771,31 @@ export default function TasksPage() {
                     >
                       立即执行
                     </Button>
+                    {task.webhookToken ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage}
+                          title={`Webhook URL:\n/api/webhook/${task.webhookToken}`}
+                          onClick={() =>
+                            navigator.clipboard
+                              ?.writeText(`https://${window.location.host}/api/webhook/${task.webhookToken}`)
+                              .then(() => showToast('Webhook URL 已复制'))
+                              .catch(() => {})
+                          }
+                        >
+                          Webhook已开(复制)
+                        </Button>
+                        <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleWebhookOff(task.id)}>
+                          关闭Webhook
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleWebhook(task.id)}>
+                        开启Webhook
+                      </Button>
+                    )}
                     <Button variant="secondary" size="sm" onClick={() => openEdit(task)} disabled={!canManage}>
                       编辑
                     </Button>
@@ -902,6 +983,7 @@ export default function TasksPage() {
             setConfig={setFormConfig}
             projects={projects}
             containers={containers}
+            gitCred={editing?.gitCred}
           />
 
           <Field label="启用">
@@ -1026,12 +1108,14 @@ function ConfigEditor({
   setConfig,
   projects,
   containers,
+  gitCred,
 }: {
   type: TaskType;
   config: Record<string, any>;
   setConfig: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   projects: string[];
   containers: ContainerListItem[];
+  gitCred?: CronTask['gitCred'];
 }) {
   /**
    * 更新配置的单个字段
@@ -1206,11 +1290,77 @@ function ConfigEditor({
     );
   }
 
+  // git-pull-build：Git 自动构建/部署 + 私有仓库凭证
+  if (type === 'git-pull-build') {
+    return (
+      <>
+        <Field label="部署模式">
+          <Select value={config.mode || 'image'} onChange={(e) => setKey('mode', e.target.value)}>
+            <option value="image">构建镜像</option>
+            <option value="compose">Compose 部署</option>
+          </Select>
+        </Field>
+        <Field label="Git 仓库地址" required hint="支持 https 与 ssh 协议">
+          <Input value={config.repoUrl || ''} onChange={(e) => setKey('repoUrl', e.target.value)} placeholder="https://github.com/user/repo.git" />
+        </Field>
+        <Field label="分支（可选）">
+          <Input value={config.branch || ''} onChange={(e) => setKey('branch', e.target.value)} placeholder="main" />
+        </Field>
+        {config.mode === 'image' ? (
+          <>
+            <Field label="镜像名" required hint="构建后打标签，如 myapp:latest">
+              <Input value={config.imageName || ''} onChange={(e) => setKey('imageName', e.target.value)} />
+            </Field>
+            <Field label="Dockerfile（可选）">
+              <Input value={config.dockerfile || 'Dockerfile'} onChange={(e) => setKey('dockerfile', e.target.value)} />
+            </Field>
+            <Field label="工作目录（可选，默认自动）">
+              <Input value={config.destDir || ''} onChange={(e) => setKey('destDir', e.target.value)} />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="Compose 项目" required hint="对应 Compose 项目目录">
+              <Select value={config.composeProject || ''} onChange={(e) => setKey('composeProject', e.target.value)}>
+                <option value="">选择项目…</option>
+                {projects.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="构建后部署">
+              <label className="tasks__check">
+                <input type="checkbox" checked={!!config.alsoBuild} onChange={(e) => setKey('alsoBuild', e.target.checked)} /> 部署前先构建镜像
+              </label>
+            </Field>
+          </>
+        )}
+        <Field label="私有仓库凭证" hint={gitCred?.hasCred ? '已配置（留空不修改）' : '可选，公开仓库可跳过'}>
+          <Select value={config.credType || 'token'} onChange={(e) => setKey('credType', e.target.value)}>
+            <option value="token">HTTPS Token</option>
+            <option value="ssh">SSH 私钥</option>
+          </Select>
+          {config.credType === 'ssh' ? (
+            <Input value={config.credKey || ''} onChange={(e) => setKey('credKey', e.target.value)} placeholder={gitCred?.hasCred ? '已配置，输入以替换…' : '粘贴私钥内容'} />
+          ) : (
+            <Input value={config.credToken || ''} onChange={(e) => setKey('credToken', e.target.value)} placeholder={gitCred?.hasCred ? '已配置，输入以替换…' : '粘贴 Token'} />
+          )}
+          {config.credType === 'ssh' && (
+            <Field label="私钥口令（可选）">
+              <Input value={config.credPassphrase || ''} onChange={(e) => setKey('credPassphrase', e.target.value)} placeholder="SSH 私钥口令" />
+            </Field>
+          )}
+        </Field>
+      </>
+    );
+  }
+
   // healthcheck：定时检查容器运行/健康状态，异常经告警中心通知
   if (type === 'healthcheck') {
     return renderContainerPicker('定时检查容器是否运行/健康，异常会经告警中心通知');
   }
-
   // composeUp / composeDown：选择 Compose 项目
   return (
     <Field label="Compose 项目" required hint="从已登记的 Compose 项目中选择">
