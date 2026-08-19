@@ -533,6 +533,18 @@ function createTables(): void {
     // 列已存在则忽略
   }
 
+  // 迁移：为 container_alert_rules 补充 CPU/内存阈值列（watch_type=cpu/mem 时使用，其余类型为 NULL/默认）
+  try {
+    d.exec('ALTER TABLE container_alert_rules ADD COLUMN warn_threshold REAL DEFAULT 75');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE container_alert_rules ADD COLUMN danger_threshold REAL DEFAULT 90');
+  } catch {
+    // 列已存在则忽略
+  }
+
   // 迁移：为 cron_tasks 补充 Webhook 触发 token 列（NULL/空=未开启 Webhook）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN webhook_token TEXT');
