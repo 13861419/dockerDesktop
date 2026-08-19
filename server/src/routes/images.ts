@@ -10,7 +10,8 @@ import { getDockerClient } from '../docker/client';
 import { buildPullRef, listSources, searchHubRepos } from '../hubConfig';
 import { getPullTime, recordPullTime } from '../imagePullHistory';
 import { logOperation } from '../operationLog';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireOperator } from '../auth';
+import { scanImage } from '../trivyCli';
 
 const router = Router();
 
@@ -498,6 +499,21 @@ router.get(
       dominant,
       suggestions,
     });
+  }),
+);
+
+/**
+ * POST /api/images/:name/scan
+ * 对指定镜像执行 Trivy 漏洞扫描
+ * 本机未装 Trivy 时返回 { available:false, notAvailableReason }（HTTP 200 引导，非错误）
+ */
+router.post(
+  '/:name/scan',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = String(req.params.name || '');
+    const result = await scanImage(name);
+    res.json(result);
   }),
 );
 
