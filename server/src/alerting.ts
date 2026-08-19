@@ -732,8 +732,8 @@ export function buildSnapshotText(): string | null {
 
 // ==================== 容器级告警 ====================
 
-/** 容器告警支持的监控类型 */
-export type ContainerWatchType = 'exited' | 'health' | 'port';
+/** 容器级监控类型 */
+export type ContainerWatchType = 'exited' | 'health' | 'port' | 'cpu' | 'mem';
 
 /** 容器告警规则行 */
 interface ContainerAlertRuleRow {
@@ -742,6 +742,8 @@ interface ContainerAlertRuleRow {
   watch_type: string;
   enabled: number;
   port: number | null;
+  warn_threshold: number;
+  danger_threshold: number;
   silent_start: string | null;
   silent_end: string | null;
   workdays_only: number;
@@ -759,6 +761,8 @@ export interface ContainerAlertRule {
   watchType: ContainerWatchType;
   enabled: boolean;
   port: number | null;
+  warnThreshold: number;
+  dangerThreshold: number;
   silentStart: string | null;
   silentEnd: string | null;
   workdaysOnly: boolean;
@@ -774,6 +778,8 @@ function normalizeContainerRule(r: ContainerAlertRuleRow): ContainerAlertRule {
     watchType: r.watch_type as ContainerWatchType,
     enabled: r.enabled === 1,
     port: r.port,
+    warnThreshold: r.warn_threshold,
+    dangerThreshold: r.danger_threshold,
     silentStart: r.silent_start || null,
     silentEnd: r.silent_end || null,
     workdaysOnly: r.workdays_only === 1,
@@ -793,8 +799,8 @@ const containerActive = new Map<number, 'warn' | 'danger' | null>();
 function containerRuleToQuiet(r: ContainerAlertRule): AlertRule {
   return {
     enabled: r.enabled,
-    warn: 0,
-    danger: 0,
+    warn: r.warnThreshold,
+    danger: r.dangerThreshold,
     silentStart: r.silentStart,
     silentEnd: r.silentEnd,
     workdaysOnly: r.workdaysOnly,
@@ -949,6 +955,57 @@ async function checkOneContainerRule(
 }
 
 /**
+ * 容器 CPU / 内存阈值判定（复用 emitContainerAlert 的去重、状态机与通知）
+ * @param rule 容器规则（watchType 为 cpu/mem）
+ * @param name 容器显示名
+ * @param stat 该容器实时统计；容器不存在或非运行中时为 undefined
+ */
+async function checkContainerResourceRule(
+  rule: ContainerAlertRule,
+  name: string,
+  stat: { cpuPercent: number; memPercent: number } | undefined,
+): Promise<void> {
+  const n = Date.now();
+  const recent = containerLastAlert.get(rule.id) || 0;
+  const canFire = (escalated: boolean) => (!escalated && n - recent < REPEAT_INTERVAL ? false : true);
+  const markFired = () => containerLastAlert.set(rule.id, n);
+  const prev = containerActive.get(rule.id) ?? null;
+  const setActive = (lvl: 'warn' | 'danger' | null) => {
+    if (lvl === null) containerActive.delete(rule.id);
+    else containerActive.set(rule.id, lvl);
+  };
+
+  let hit: { level: 'warn' | 'danger'; message: string; value: number | null } | null = null;
+  if (!stat) {
+    // 容器不存在或未运行：cpu/mem 无从统计，不告警也不发恢复（保持活跃态清理）
+    if (prev) setActive(null);
+    return;
+  }
+  const value = rule.watchType === 'cpu' ? stat.cpuPercent : stat.memPercent;
+  const label = rule.watchType === 'cpu' ? 'CPU' : '内存';
+  const level = value >= rule.dangerThreshold ? 'danger' : value >= rule.warnThreshold ? 'warn' : null;
+  if (level) {
+    hit = {
+      level,
+      message: `Docker 面板【容器】${name} ${label}使用率 ${value.toFixed(1)}% 超过${level === 'danger' ? '危险' : '警告'}阈值 ${level === 'danger' ? rule.dangerThreshold : rule.warnThreshold}%`,
+      value: Number(value.toFixed(1)),
+    };
+  }
+
+  if (hit) {
+    const escalated = prev === null || (hit.level === 'danger' && prev !== 'danger');
+    setActive(hit.level);
+    if (canFire(escalated)) {
+      markFired();
+      await emitContainerAlert(rule, name, hit.level, hit.message, hit.value);
+    }
+  } else if (prev) {
+    setActive(null);
+    await emitContainerAlert(rule, name, 'recovery', `Docker 面板【容器】${name} ${label}使用率已恢复正常`, null);
+  }
+}
+
+/**
  * 检测全部容器告警规则：批量读 listContainers + inspect，逐条判定
  */
 async function checkContainerRules(): Promise<void> {
@@ -967,6 +1024,12 @@ async function checkContainerRules(): Promise<void> {
     const nm = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '') || c.Id.slice(0, 12);
     names.set(c.Id, nm);
   }
+  // 从实时监控点读取逐容器 CPU/内存统计（容器级阈值告警数据源）
+  const point = getCurrentMonitor();
+  const statMap = new Map<string, { cpuPercent: number; memPercent: number }>();
+  if (point && point.containerStats) {
+    for (const cs of point.containerStats) statMap.set(cs.id, { cpuPercent: cs.cpuPercent, memPercent: cs.memPercent });
+  }
 
   // 逐条规则：先按 id/名称解析容器 id，再 inspect
   for (const rule of rules) {
@@ -984,6 +1047,13 @@ async function checkContainerRules(): Promise<void> {
           }
           return '';
         })();
+    const displayName = (targetId && names.get(targetId)) || rule.containerId;
+    // cpu/mem 规则用监控统计判定（无需 inspect），其余事件类规则仍走 inspect
+    if (rule.watchType === 'cpu' || rule.watchType === 'mem') {
+      const stat = targetId ? statMap.get(targetId) : undefined;
+      await checkContainerResourceRule(rule, displayName, stat);
+      continue;
+    }
     let info: any = undefined;
     if (targetId) {
       try {
@@ -992,7 +1062,6 @@ async function checkContainerRules(): Promise<void> {
         info = undefined; // 容器不存在
       }
     }
-    const displayName = (targetId && names.get(targetId)) || rule.containerId;
     await checkOneContainerRule(rule, displayName, info);
   }
 }
@@ -1004,7 +1073,7 @@ async function checkContainerRules(): Promise<void> {
 export function loadContainerRules(nameMap?: Map<string, string>): ContainerAlertRule[] {
   const rows = getDb()
     .prepare(
-      'SELECT id, container_id, watch_type, enabled, port, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at FROM container_alert_rules',
+      'SELECT id, container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at FROM container_alert_rules',
     )
     .all() as unknown as ContainerAlertRuleRow[];
   return rows.map((r) => {
@@ -1037,11 +1106,11 @@ export async function getContainerAlertRules(): Promise<ContainerAlertRule[]> {
 /**
  * 校验 watch_type / port 等并构建写入字段
  */
-function validateContainerRuleInput(body: any): { containerId: string; watchType: string; port: number | null; enabled: number; silentStart: string | null; silentEnd: string | null; workdaysOnly: number; workStart: string | null; workEnd: string | null } {
+function validateContainerRuleInput(body: any): { containerId: string; watchType: string; port: number | null; warnThreshold: number; dangerThreshold: number; enabled: number; silentStart: string | null; silentEnd: string | null; workdaysOnly: number; workStart: string | null; workEnd: string | null } {
   const containerId = String(body?.containerId || '').trim();
   if (!containerId) throw Object.assign(new Error('请选择一个目标容器'), { statusCode: 400 });
   const watchType = String(body?.watchType || '').trim() as ContainerWatchType;
-  if (!['exited', 'health', 'port'].includes(watchType)) {
+  if (!['exited', 'health', 'port', 'cpu', 'mem'].includes(watchType)) {
     throw Object.assign(new Error('不支持的容器监控类型'), { statusCode: 400 });
   }
   let port: number | null = null;
@@ -1051,6 +1120,16 @@ function validateContainerRuleInput(body: any): { containerId: string; watchType
       throw Object.assign(new Error('端口需为 1-65535 的整数（或留空自动探测映射主端口）'), { statusCode: 400 });
     }
     port = raw;
+  }
+  let warnThreshold = 75;
+  let dangerThreshold = 90;
+  if (watchType === 'cpu' || watchType === 'mem') {
+    const w = Number(body?.warnThreshold);
+    const dd = Number(body?.dangerThreshold);
+    if (!Number.isFinite(w) || w < 0 || w > 100) throw Object.assign(new Error('警告阈值需为 0-100'), { statusCode: 400 });
+    if (!Number.isFinite(dd) || dd < 0 || dd > 100) throw Object.assign(new Error('危险阈值需为 0-100'), { statusCode: 400 });
+    warnThreshold = w;
+    dangerThreshold = dd;
   }
   const silentStart = body?.silentStart !== undefined ? normalizeTime(body.silentStart) : null;
   const silentEnd = body?.silentEnd !== undefined ? normalizeTime(body.silentEnd) : null;
@@ -1062,6 +1141,8 @@ function validateContainerRuleInput(body: any): { containerId: string; watchType
     containerId,
     watchType,
     port,
+    warnThreshold,
+    dangerThreshold,
     enabled: body?.enabled === false ? 0 : 1,
     silentStart,
     silentEnd,
@@ -1085,10 +1166,10 @@ export function createContainerAlertRule(body: any): ContainerAlertRule {
   if (dup) throw Object.assign(new Error('该容器已存在同类型的告警规则'), { statusCode: 409 });
   const info = d
     .prepare(
-      'INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(
-      v.containerId, v.watchType, v.enabled, v.port, v.silentStart, v.silentEnd, v.workdaysOnly, v.workStart, v.workEnd, now, now,
+      v.containerId, v.watchType, v.enabled, v.port, v.warnThreshold, v.dangerThreshold, v.silentStart, v.silentEnd, v.workdaysOnly, v.workStart, v.workEnd, now, now,
     );
   return loadContainerRules().find((r) => r.id === Number(info.lastInsertRowid))!;
 }
@@ -1106,10 +1187,19 @@ export function updateContainerAlertRule(id: number, body: any): ContainerAlertR
   if (body?.containerId !== undefined) next.container_id = String(body.containerId).trim() || row.container_id;
   if (body?.watchType !== undefined) {
     const wt = String(body.watchType) as ContainerWatchType;
-    if (!['exited', 'health', 'port'].includes(wt)) {
+    if (!['exited', 'health', 'port', 'cpu', 'mem'].includes(wt)) {
       throw Object.assign(new Error('不支持的容器监控类型'), { statusCode: 400 });
     }
     next.watch_type = wt;
+  }
+  // cpu/mem 阈值
+  if (next.watch_type === 'cpu' || next.watch_type === 'mem') {
+    const w = body?.warnThreshold !== undefined ? Number(body.warnThreshold) : row.warn_threshold;
+    const dd = body?.dangerThreshold !== undefined ? Number(body.dangerThreshold) : row.danger_threshold;
+    if (!Number.isFinite(w) || w < 0 || w > 100) throw Object.assign(new Error('警告阈值需为 0-100'), { statusCode: 400 });
+    if (!Number.isFinite(dd) || dd < 0 || dd > 100) throw Object.assign(new Error('危险阈值需为 0-100'), { statusCode: 400 });
+    next.warn_threshold = w;
+    next.danger_threshold = dd;
   }
   if (body?.enabled !== undefined) next.enabled = body.enabled ? 1 : 0;
   next.silent_start = body?.silentStart !== undefined ? normalizeTime(body.silentStart) : row.silent_start || null;
@@ -1128,9 +1218,9 @@ export function updateContainerAlertRule(id: number, body: any): ContainerAlertR
   }
 
   d.prepare(
-    'UPDATE container_alert_rules SET container_id = ?, watch_type = ?, enabled = ?, port = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, updated_at = ? WHERE id = ?',
+    'UPDATE container_alert_rules SET container_id = ?, watch_type = ?, enabled = ?, port = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, updated_at = ? WHERE id = ?',
   ).run(
-    next.container_id, next.watch_type, next.enabled, next.port, next.silent_start, next.silent_end, next.workdays_only, next.work_start, next.work_end, Date.now(), id,
+    next.container_id, next.watch_type, next.enabled, next.port, next.warn_threshold, next.danger_threshold, next.silent_start, next.silent_end, next.workdays_only, next.work_start, next.work_end, Date.now(), id,
   );
   return loadContainerRules().find((r) => r.id === id)!;
 }
