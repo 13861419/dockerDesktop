@@ -34,6 +34,7 @@ interface AlertRule {
   workdaysOnly: boolean;
   workStart: string | null;
   workEnd: string | null;
+  currentPercent: number | null;
 }
 
 /** 渠道可见配置（敏感字段脱敏） */
@@ -792,7 +793,23 @@ export default function NotificationsPage() {
                   </td>
                   <td>≥ {r.warnThreshold}%</td>
                   <td>≥ {r.dangerThreshold}%</td>
-                  <td className="notify-dim">—</td>
+                  <td>
+                    {r.currentPercent != null ? (
+                      <span
+                        className={`notify-level notify-level--${
+                          r.currentPercent >= r.dangerThreshold
+                            ? 'danger'
+                            : r.currentPercent >= r.warnThreshold
+                            ? 'warn'
+                            : 'ok'
+                        }`}
+                      >
+                        {r.currentPercent.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="notify-dim">—</span>
+                    )}
+                  </td>
                   <td>
                     <Button variant="ghost" size="sm" onClick={() => openEditRule(r)}>编辑</Button>
                   </td>

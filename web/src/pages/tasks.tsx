@@ -17,8 +17,8 @@ import { Field, Input, Select, TextArea } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, del, download } from '../api/client';
-import { getToken, isAdmin } from '../api/auth';
+import { get, post, put, del, download } from '../api/client';
+import { isAdmin } from '../api/auth';
 import {
   CronTask,
   CronTaskListResponse,
@@ -182,45 +182,6 @@ function isValidCron(cron: string): boolean {
   const parts = (cron || '').trim().split(/\s+/);
   if (parts.length !== 5) return false;
   return parts.every((p) => p.length > 0);
-}
-
-/**
- * 局部封装的 PUT 请求：client.ts 未提供 put，
- * 此处用原生 fetch 携带鉴权 token 调用 PUT /api/tasks/:id。
- * @param url 接口路径（以 /api 开头）
- * @param body 要提交的 JSON 对象
- */
-async function put(url: string, body?: any): Promise<any> {
-  const headers = new Headers();
-  headers.set('Content-Type', 'application/json');
-  const token = getToken();
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'PUT',
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch {
-    throw new Error('无法连接后端服务，请确认服务已启动');
-  }
-  const text = await res.text();
-  let data: any = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
-    }
-  }
-  if (!res.ok) {
-    const message = data?.error || data?.message || `请求失败 (${res.status})`;
-    throw new Error(message);
-  }
-  return data;
 }
 
 /**

@@ -13,8 +13,8 @@ import { Field, Input, Select } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, del, download, ApiError } from '../api/client';
-import { getToken, isAdmin, canOperate } from '../api/auth';
+import { get, post, put, del, download } from '../api/client';
+import { isAdmin, canOperate } from '../api/auth';
 import {
   DatabaseInstance,
   DatabaseListResponse,
@@ -46,49 +46,6 @@ const TYPE_LABELS: Record<DatabaseType, string> = {
   mariadb: 'MariaDB',
   redis: 'Redis',
 };
-
-/**
- * 局部 PUT 请求封装：后端编辑实例接口为 PUT，而 client 仅提供 get/post/del，
- * 因此此处用原生 fetch 携带 token 发起 PUT，解析与错误处理风格与 client 保持一致。
- * @param url 接口路径
- * @param body 请求体
- */
-async function put<T = any>(url: string, body?: any): Promise<T> {
-  const headers = new Headers();
-  headers.set('Content-Type', 'application/json');
-  const token = getToken();
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'PUT',
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch {
-    throw new ApiError(0, '无法连接后端服务，请确认服务已启动');
-  }
-
-  let data: any = null;
-  const text = await res.text();
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
-    }
-  }
-
-  if (!res.ok) {
-    const message = res.status === 403
-      ? '权限不足，仅管理员可执行此操作'
-      : data?.error || data?.message || `请求失败 (${res.status})`;
-    throw new ApiError(res.status, message);
-  }
-  return data as T;
-}
 
 /**
  * 数据库可视化管理页面组件
@@ -1173,8 +1130,8 @@ function SqlQueryPanel({
   databases: string[];
 }) {
   const { showToast } = useToast();
-  // SQL 执行为敏感能力，仅管理员可用（后端已强制校验）
-  const canManage = isAdmin();
+  // SQL 执行为敏感能力，需操作员/管理员权限（后端 requireOperator 强制校验）
+  const canManage = canOperate();
   const [sql, setSql] = useState('');
   const [db, setDb] = useState(activeDb);
   const [querying, setQuerying] = useState(false);
@@ -1284,9 +1241,9 @@ function SqlQueryPanel({
  */
 function RedisPanel({ instance }: { instance: DatabaseInstance }) {
   const { showToast } = useToast();
-  const canDelete = isAdmin();
-  // Redis 命令交互为敏感能力，仅管理员可用（后端已强制校验）
-  const canManage = isAdmin();
+  const canDelete = canOperate();
+  // Redis 命令交互为敏感能力，需操作员/管理员权限（后端 requireOperator 强制校验）
+  const canManage = canOperate();
   const [keys, setKeys] = useState<RedisKeyItem[]>([]);
   const [info, setInfo] = useState<RedisInfo>({});
   const [pattern, setPattern] = useState('*');

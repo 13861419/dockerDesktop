@@ -36,6 +36,7 @@ import {
 } from '../alerting';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
+import { getCurrentMonitor } from '../docker/monitor';
 
 const router = Router();
 
@@ -170,12 +171,24 @@ router.post(
 
 /**
  * GET /api/notifications/rules
- * 获取告警规则
+ * 获取告警规则（附带各资源的实时使用率，供前端"当前使用率"列展示）
  */
 router.get(
   '/rules',
   asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ rules: getAlertRules() });
+    const rules = getAlertRules();
+    // 读取实时监控点，为 cpu / mem / disk 规则补充当前使用率
+    const point = getCurrentMonitor();
+    const current = point
+      ? { cpu: point.cpu.percent, mem: point.mem.percent, disk: point.disk.percent }
+      : { cpu: null, mem: null, disk: null };
+    res.json({
+      rules: rules.map((r) => ({
+        ...r,
+        currentPercent: r.type in current ? (current as any)[r.type] : null,
+      })),
+      current,
+    });
   }),
 );
 

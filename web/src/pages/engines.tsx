@@ -5,7 +5,7 @@
  * 切换当前引擎后，面板所有 Docker 相关能力（容器/镜像/卷/网络/Compose/事件等）指向新引擎。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { get, post, del } from '../api/client';
+import { get, post, put, del } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
@@ -190,7 +190,7 @@ export default function EnginesPage() {
     setSaving(true);
     try {
       if (editing) {
-        await post(`/api/engines/${editing.id}`, { name: name.trim(), endpoint: endpoint.trim() });
+        await put(`/api/engines/${editing.id}`, { name: name.trim(), endpoint: endpoint.trim() });
         showToast('引擎已更新');
       } else {
         const data = await post<{ ok: boolean; isCurrent: boolean }>('/api/engines', {
