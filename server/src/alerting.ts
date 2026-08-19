@@ -18,7 +18,7 @@ import { getDockerClient } from './docker/client';
 import { listChannels, sendAlert } from './notify';
 
 /** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
-export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port';
+export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net';
 /** 告警级别 */
 export type AlertLevel = 'warn' | 'danger' | 'recovery';
 
@@ -66,6 +66,8 @@ const DEFAULT_RULES: Array<{ type: AlertType; name: string; warn: number; danger
   { type: 'cpu', name: 'CPU', warn: 75, danger: 90 },
   { type: 'mem', name: '内存', warn: 75, danger: 90 },
   { type: 'disk', name: '磁盘', warn: 75, danger: 90 },
+  { type: 'gpu', name: 'GPU', warn: 75, danger: 90 },
+  { type: 'net', name: '网络带宽', warn: 100, danger: 200 },
 ];
 
 /** 检测 tick 间隔（毫秒）：沿用监控采集节奏，但检测不必过频，10s 足够 */
@@ -206,12 +208,20 @@ function isInSilentWindow(rule: AlertRule, now: Date): boolean {
 }
 
 /**
- * 构建资源告警文案（CPU/内存/磁盘）
+ * 构建资源告警文案（CPU/内存/磁盘/GPU，net 使用 Mbps 后缀）
  * @param type 资源类型
  * @param level 级别
+ * @param value 判定值（使用率或带宽 Mbps）
  */
 function buildMessage(type: AlertType, level: AlertLevel, value: number): string {
-  const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘' };
+  const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络带宽' };
+  if (type === 'net') {
+    // 网络带宽以 Mbps 为单位，文案语义为「带宽过高/偏高」
+    return level === 'danger'
+      ? `Docker 面板【${names[type]}】带宽过高：${value.toFixed(1)} Mbps`
+      : `Docker 面板【${names[type]}】带宽偏高：${value.toFixed(1)} Mbps`;
+  }
+  // 其余类型（CPU/内存/磁盘/GPU）均以 % 表示使用率
   if (level === 'danger') {
     return `Docker 面板【${names[type]}】使用率过高：${value.toFixed(1)}%`;
   }
@@ -285,8 +295,9 @@ async function fireAlert(type: AlertType, level: AlertLevel, value: number): Pro
  * @param value 使用率
  */
 async function fireRecovery(type: AlertType, value: number): Promise<void> {
-  const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘' };
-  await emitAlert(type, 'recovery', `Docker 面板【${names[type]}】已恢复正常：${value.toFixed(1)}%`, value);
+  const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络带宽' };
+  const unit = type === 'net' ? ' Mbps' : '%';
+  await emitAlert(type, 'recovery', `Docker 面板【${names[type]}】已恢复正常：${value.toFixed(1)}${unit}`, value);
 }
 
 /**
@@ -323,12 +334,19 @@ async function check(): Promise<void> {
   const point = getCurrentMonitor();
   if (!point) return; // 监控尚未就绪
   const rules = loadRules();
+  // GPU：取所有 GPU 的最大利用率作为判定值（任一张超阈值即触发）；无 GPU 则跳过该维度
+  const gpuUtil = point.gpu && point.gpu.length > 0 ? Math.max(...point.gpu.map((g) => g.utilization || 0)) : -1;
+  // 网络：取上下行较大者作为判定值（阈值语义为 Mbps）
+  const netMax = point.netRate ? Math.max(point.netRate.rxMbps, point.netRate.txMbps) : -1;
   const samples: Array<{ type: AlertType; percent: number }> = [
     { type: 'cpu', percent: point.cpu.percent },
     { type: 'mem', percent: point.mem.percent },
     { type: 'disk', percent: point.disk.percent },
+    { type: 'gpu', percent: gpuUtil },
+    { type: 'net', percent: netMax },
   ];
   for (const s of samples) {
+    if (s.percent < 0) continue; // 该维度当前无数据（无 GPU / 首轮无网络速率），跳过
     const rule = rules[s.type];
     const prev = activeAlerts.get(s.type) ?? null;
     if (!rule.enabled) {
@@ -481,7 +499,7 @@ export function updateAlertRule(
     workEnd?: string | null;
   },
 ): void {
-  if (!['cpu', 'mem', 'disk'].includes(type)) {
+  if (!['cpu', 'mem', 'disk', 'gpu', 'net'].includes(type)) {
     throw Object.assign(new Error('不支持的告警类型'), { statusCode: 400 });
   }
   const d = getDb();
