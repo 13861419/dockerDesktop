@@ -44,8 +44,9 @@ router.post('/:token', (req: Request, res: Response) => {
     .then((r) => {
       logOperation('webhook', r?.ok ? 'Webhook 触发任务执行' : 'Webhook 触发任务执行（失败）', 'task', row.name, r?.detail, r?.ok);
     })
-    .catch(() => {
-      // 失败已在 dispatchTask / 调度器内记录
+    .catch((err) => {
+      // 触发异常时记录服务端错误日志，便于排障
+      console.error(`[webhook] 触发任务执行失败 taskId=${row.id}:`, err?.message || err);
     });
   res.json({ ok: true, taskId: row.id, name: row.name });
 });
