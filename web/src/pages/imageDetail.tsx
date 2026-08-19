@@ -12,8 +12,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { PageLoading } from '../components/Loading';
 import Empty from '../components/Empty';
 import { useToast } from '../components/Toast';
-import { get, del } from '../api/client';
-import { getToken, isAdmin } from '../api/auth';
+import { get, del, post } from '../api/client';
+import { getToken, isAdmin, canOperate } from '../api/auth';
 import './imageDetail.less';
 
 /** Docker 镜像 inspect 结果的结构 */
@@ -65,6 +65,24 @@ interface LayerAnalysis {
   }>;
   dominant: { createdBy: string; ratio: number; size: number } | null;
   suggestions: string[];
+}
+
+/** Trivy 镜像扫描结果（/api/images/:name/scan 返回） */
+interface ImageScan {
+  available: boolean;
+  scannedAt?: string;
+  summary?: { critical: number; high: number; medium: number; low: number; unknown: number };
+  vulnerabilities?: Array<{
+    id: string;
+    severity: string;
+    pkgName?: string;
+    installedVersion?: string;
+    fixedVersion?: string;
+    title?: string;
+    description?: string;
+    refs?: string[];
+  }>;
+  notAvailableReason?: string;
 }
 
 /** 使用该镜像的容器列表条目（/api/containers 返回结构） */
@@ -171,6 +189,7 @@ export default function ImageDetailPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const canDelete = isAdmin();
+  const canOperateNow = canOperate();
   const [image, setImage] = useState<ImageInspect | null>(null);
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -180,6 +199,9 @@ export default function ImageDetailPage() {
   // 层空间分析数据
   const [layerAnalysis, setLayerAnalysis] = useState<LayerAnalysis | null>(null);
   const [layerLoading, setLayerLoading] = useState(false);
+  // 漏洞扫描（Trivy）结果
+  const [scanResult, setScanResult] = useState<ImageScan | null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
   // 导出是否进行中
   const [exporting, setExporting] = useState(false);
   // 待删除的单个标签（用于二次确认弹窗）
@@ -217,7 +239,22 @@ export default function ImageDetailPage() {
     }
   }, [name, showToast]);
 
-  /** 拉取指定镜像的层空间分析 */
+  /** 执行镜像漏洞扫描（Trivy） */
+  const handleScan = useCallback(async () => {
+    if (!name) return;
+    setScanLoading(true);
+    try {
+      const r = await post<ImageScan>('/api/images/' + encodeURIComponent(name) + '/scan');
+      setScanResult(r);
+    } catch (e: any) {
+      showToast(e?.message || '漏洞扫描失败', 'error');
+      setScanResult(null);
+    } finally {
+      setScanLoading(false);
+    }
+  }, [name, showToast]);
+
+  /** 拉取该镜像的层空间分析 */
   const fetchLayers = useCallback(async () => {
     if (!name) return;
     setLayerLoading(true);
@@ -560,6 +597,87 @@ export default function ImageDetailPage() {
                     ))}
                   </ul>
                 </>
+              )}
+            </>
+          )}
+        </Card>
+
+        {/* 漏洞扫描（Trivy） */}
+        <Card title="漏洞扫描（Trivy）">
+          {scanLoading ? (
+            <div className="desc-value">扫描中…（首次可能较慢）</div>
+          ) : !scanResult ? (
+            <div className="desc-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="desc-value">
+                {canOperateNow
+                  ? '点击扫描以检测镜像中的已知漏洞（依赖本机 Trivy）。'
+                  : '无扫描权限。'}
+              </div>
+              {canOperateNow && (
+                <Button variant="primary" size="sm" onClick={handleScan} disabled={scanLoading}>
+                  立即扫描
+                </Button>
+              )}
+            </div>
+          ) : !scanResult.available ? (
+            <div className="desc-value" style={{ color: 'var(--warn, #d97706)' }}>
+              <strong>未检测到 Trivy</strong>：{scanResult.notAvailableReason}
+            </div>
+          ) : (
+            <>
+              <div className="desc-row" style={{ justifyContent: 'space-between' }}>
+                <span className="desc-label">扫描时间</span>
+                <span className="desc-value">{scanResult.scannedAt ? new Date(scanResult.scannedAt).toLocaleString() : '-'}</span>
+              </div>
+              {/* 等级分布 */}
+              <div className="scan-sev-summary">
+                {[
+                  { k: 'critical', label: '严重', color: '#e11d48' },
+                  { k: 'high', label: '高危', color: '#f97316' },
+                  { k: 'medium', label: '中危', color: '#eab308' },
+                  { k: 'low', label: '低危', color: '#3b82f6' },
+                  { k: 'unknown', label: '未知', color: '#6b7280' },
+                ].map((s) => (
+                  <span key={s.k} className="scan-sev-chip" style={{ color: s.color, borderColor: s.color }}>
+                    {s.label} {scanResult.summary?.[s.k as keyof typeof scanResult.summary] ?? 0}
+                  </span>
+                ))}
+              </div>
+              {/* 漏洞明细 */}
+              {scanResult.vulnerabilities && scanResult.vulnerabilities.length > 0 ? (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '16%' }}>CVE</th>
+                      <th style={{ width: '10%' }}>等级</th>
+                      <th style={{ width: '20%' }}>依赖包</th>
+                      <th style={{ width: '22%' }}>版本</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scanResult.vulnerabilities.map((v, i) => (
+                      <tr key={i}>
+                        <td>
+                          {v.refs && v.refs.length > 0 ? (
+                            <a href={v.refs[0]} target="_blank" rel="noreferrer" className="scan-cve">{v.id}</a>
+                          ) : (
+                            <span className="scan-cve">{v.id}</span>
+                          )}
+                        </td>
+                        <td><span className={`scan-sev-badge scan-sev-${v.severity.toLowerCase()}`}>{v.severity}</span></td>
+                        <td>{v.pkgName || '-'}</td>
+                        <td>
+                          {v.installedVersion || '-'}
+                          {v.fixedVersion ? ` → ${v.fixedVersion}` : '（未修复）'}
+                        </td>
+                        <td className="scan-desc" title={v.description}>{v.title || v.description || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="desc-value">未发现已知漏洞（或 Trivy 未检出）。</div>
               )}
             </>
           )}

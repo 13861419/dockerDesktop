@@ -272,3 +272,46 @@
   font-size: 13px;
   color: var(--text-primary);
 }
+
+/* 漏洞扫描（Trivy）等级分布 */
+.scan-sev-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.scan-sev-chip {
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scan-cve {
+  font-family: monospace;
+  color: var(--link, #2563eb);
+  text-decoration: none;
+}
+
+.scan-sev-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.scan-sev-critical { background: #e11d48; }
+.scan-sev-high { background: #f97316; }
+.scan-sev-medium { background: #ca8a04; }
+.scan-sev-low { background: #2563eb; }
+.scan-sev-unknown { background: #6b7280; }
+
+.scan-desc {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
