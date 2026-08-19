@@ -64,6 +64,29 @@ export interface MonitorAlert {
   message: string;
 }
 
+/**
+ * 计算网络带宽速率（Mbps）。
+ * 基于相邻两次采样累计字节差分：速率 = (增量字节 * 8) / 时间秒 / 1e6。
+ * 倒置差分（计数器重置）或零间隔时返回 0，避免误报与除零。
+ * @param curRx 本次接收累计字节
+ * @param curTx 本次发送累计字节
+ * @param prevRx 上次接收累计字节
+ * @param prevTx 上次发送累计字节
+ * @param elapsedSec 两次采样间隔秒数
+ * @returns { rxMbps, txMbps } 上行/下行速率
+ */
+export function computeNetRate(
+  curRx: number, curTx: number, prevRx: number, prevTx: number, elapsedSec: number,
+): { rxMbps: number; txMbps: number } {
+  if (!elapsedSec || elapsedSec <= 0) return { rxMbps: 0, txMbps: 0 };
+  const toRate = (cur: number, prev: number) => {
+    const delta = cur - prev;
+    if (delta < 0) return 0; // 计数器重置，本采样点无法计算，视为 0
+    return Number(((delta * 8) / elapsedSec / 1e6).toFixed(3));
+  };
+  return { rxMbps: toRate(curRx, prevRx), txMbps: toRate(curTx, prevTx) };
+}
+
 /** 单个监控数据点 */
 export interface MonitorPoint {
   timestamp: number;
@@ -73,9 +96,25 @@ export interface MonitorPoint {
   disks: DiskPartition[];
   gpu: GpuInfo[];
   net: { rx: number; tx: number }; // 累计字节
+  /** 网络 RX/TX 速率（Mbps，由累计字节差分得到，首轮为 0） */
+  netRate: { rxMbps: number; txMbps: number };
+  /** 逐容器资源统计（供容器级阈值告警） */
+  containerStats: MonitorContainerStat[];
   containers: { running: number; total: number };
   images: number;
   alerts: MonitorAlert[];
+}
+
+/** 单个容器的资源使用统计（供容器级 CPU/内存阈值告警） */
+export interface MonitorContainerStat {
+  /** 容器 id */
+  id: string;
+  /** 容器显示名 */
+  name: string;
+  /** CPU 使用率（0-100） */
+  cpuPercent: number;
+  /** 内存使用率（0-100） */
+  memPercent: number;
 }
 
 /** 资源使用率高占用告警阈值（>= 该值触发对应级别，danger 优先于 warn） */
@@ -92,6 +131,9 @@ const history: MonitorPoint[] = [];
 
 // CPU 采样状态（需要两次采样计算使用率）
 let lastCpu: { total: number; idle: number } | null = null;
+
+/** 网络累计字节采样状态（用于差分求速率） */
+let lastNet: { rx: number; tx: number; at: number } | null = null;
 
 /** 采集器是否已启动 */
 let started = false;
@@ -136,34 +178,37 @@ function cpuPercent(current: { total: number; idle: number }, prev: { total: num
 }
 
 /**
- * 聚合所有运行中容器的 CPU / 网络使用情况
+ * 聚合所有运行中容器的 CPU / 网络使用情况，并产出逐容器资源统计
  * @param docker dockerode 客户端
  */
 async function aggregateContainerStats(docker: Dockerode): Promise<{
   cpuPercent: number;
   netRx: number;
   netTx: number;
+  containerStats: MonitorContainerStat[];
 }> {
   const containers = await docker.listContainers({ all: false });
   let cpuTotal = 0;
   let cpuCoresAcc = 0;
   let netRx = 0;
   let netTx = 0;
+  const containerStats: MonitorContainerStat[] = [];
 
-  // 并发抓取每个运行中容器的 stats
   const statsArr = await Promise.all(
     containers.map(async (c) => {
       try {
+        const nm = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '') || c.Id.slice(0, 12);
         const stats = await docker.getContainer(c.Id).stats({ stream: false });
-        return stats as any;
+        return { id: c.Id, name: nm, stats: stats as any };
       } catch {
         return null;
       }
     }),
   );
 
-  for (const s of statsArr) {
-    if (!s) continue;
+  for (const item of statsArr) {
+    if (!item) continue;
+    const s = item.stats;
     const cpuDelta = (s.cpu_stats?.cpu_usage?.total_usage || 0) - (s.precpu_stats?.cpu_usage?.total_usage || 0);
     const sysDelta = (s.cpu_stats?.system_cpu_usage || 0) - (s.precpu_stats?.system_cpu_usage || 0);
     const onlineCpus = s.cpu_stats?.online_cpus || 1;
@@ -175,12 +220,25 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
       netRx += s.networks[key].rx_bytes || 0;
       netTx += s.networks[key].tx_bytes || 0;
     }
+    // 逐容器 CPU / 内存使用率
+    let cCpu = 0;
+    if (sysDelta > 0) cCpu = Math.min(100, Math.max(0, (cpuDelta / sysDelta) * onlineCpus * 100));
+    const mLimit = s.memory_stats?.limit || 0;
+    const mUsage = s.memory_stats?.usage || 0;
+    const cMem = mLimit > 0 ? Math.min(100, ((mUsage / mLimit) * 100)) : 0;
+    containerStats.push({
+      id: item.id,
+      name: item.name,
+      cpuPercent: Number(cCpu.toFixed(2)),
+      memPercent: Number(cMem.toFixed(2)),
+    });
   }
 
   return {
     cpuPercent: cpuCoresAcc > 0 ? cpuTotal / containers.length || 0 : 0,
     netRx,
     netTx,
+    containerStats,
   };
 }
 
@@ -352,15 +410,24 @@ async function collect() {
     let aggCpu = 0;
     let netRx = 0;
     let netTx = 0;
+    let containerStats: MonitorContainerStat[] = [];
 
     try {
       const agg = await aggregateContainerStats(docker);
       aggCpu = agg.cpuPercent;
       netRx = agg.netRx;
       netTx = agg.netTx;
+      containerStats = agg.containerStats;
     } catch {
       // 聚合失败时静默处理
     }
+    // 网络速率差分：基于相邻两次采样的累计字节
+    const nowMs = Date.now();
+    let netRate = { rxMbps: 0, txMbps: 0 };
+    if (lastNet) {
+      netRate = computeNetRate(netRx, netTx, lastNet.rx, lastNet.tx, (nowMs - lastNet.at) / 1000);
+    }
+    lastNet = { rx: netRx, tx: netTx, at: nowMs };
 
     // 宿主机真实内存（Windows 物理内存）：已用 = 总量 - 空闲
     const osm = require('os') as typeof import('os');
@@ -410,6 +477,8 @@ async function collect() {
       disks: diskPartitions,
       gpu: collectGpu(),
       net: { rx: netRx, tx: netTx },
+      netRate,
+      containerStats,
       containers: { running, total: containers.length },
       images: info.Images || 0,
       alerts,
