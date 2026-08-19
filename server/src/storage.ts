@@ -532,6 +532,19 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+
+  // 迁移：为 cron_tasks 补充 Webhook 触发 token 列（NULL/空=未开启 Webhook）
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN webhook_token TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
 }
 
 /**
