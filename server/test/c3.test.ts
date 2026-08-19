@@ -13,7 +13,7 @@ import fs from 'fs';
 const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-c3-test-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 import { initStorage } from '../src/storage';
-import { updateAlertRule } from '../src/alerting';
+import { updateAlertRule, createContainerAlertRule, deleteContainerAlertRule } from '../src/alerting';
 initStorage();
 
 test('computeNetRate 正确计算 Mbps 速率', () => {
@@ -51,4 +51,16 @@ test('updateAlertRule 的非 net 类型仍保持 0-100 校验', () => {
   assert.doesNotThrow(() => updateAlertRule('cpu', { dangerThreshold: 99 }));
   // 超过 100 仍应拒绝
   assert.throws(() => updateAlertRule('cpu', { dangerThreshold: 200 }), /阈值需为 0-100/);
+});
+
+test('容器 cpu 规则可创建并持久化阈值', () => {
+  const r = createContainerAlertRule({ containerId: 'c3-test-cpu', watchType: 'cpu', warnThreshold: 70, dangerThreshold: 85 });
+  assert.strictEqual(r.watchType, 'cpu');
+  assert.strictEqual(r.warnThreshold, 70);
+  assert.strictEqual(r.dangerThreshold, 85);
+  deleteContainerAlertRule(r.id); // 清理，避免污染其它测试
+});
+
+test('容器 cpu 规则阈值越界被拒绝', () => {
+  assert.throws(() => createContainerAlertRule({ containerId: 'c3-test-cpu2', watchType: 'cpu', warnThreshold: 150, dangerThreshold: 85 }));
 });
