@@ -12,6 +12,8 @@
  */
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
+import { encryptSecret, decryptSecret } from '../storage';
+import { gitCloneOrPull, gitAvailable, randomHex, GitCred } from '../gitCli';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -137,6 +139,15 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
   } catch {
     config = {};
   }
+  let gitCred: { type?: 'token' | 'ssh'; hasCred: boolean } = { hasCred: false };
+  if ((row as any).git_cred_encrypted) {
+    try {
+      const parsed = JSON.parse(decryptSecret(String((row as any).git_cred_encrypted)) || '{}');
+      gitCred = { type: parsed?.type || undefined, hasCred: true };
+    } catch {
+      gitCred = { hasCred: false };
+    }
+  }
   return {
     id: row.id,
     name: row.name,
@@ -144,6 +155,8 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
     cron: row.cron,
     enabled: row.enabled === 1,
     config,
+    webhookToken: (row as any).webhook_token || null,
+    gitCred,
     lastRunAt: row.last_run_at,
     lastStatus: row.last_status,
     lastDetail: row.last_detail,
@@ -161,7 +174,7 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
 function getTaskRow(id: string): CronTaskRow | null {
   const row = getDb()
     .prepare(
-      'SELECT id, name, type, cron, enabled, config, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks WHERE id = ?',
+      'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks WHERE id = ?',
     )
     .get(id) as unknown as CronTaskRow | undefined;
   return row || null;
@@ -507,6 +520,95 @@ async function runHealthcheckHandler(task: CronTaskRow, config: Record<string, a
   return { ok: unhealthy === 0, detail: lines.join('\n') };
 }
 
+/**
+ * handler：Git 拉取 + 构建/部署（git-pull-build）
+ * config={repoUrl, branch?, mode:'compose'|'image', destDir?, composeProject?, alsoBuild?,
+ *         imageName?, dockerfile?, buildArgs?}
+ *  - compose 模式：克隆/拉取到 COMPOSE_ROOT/composeProject，执行 docker compose up -d（可加 --build）；
+ *  - image 模式：在本地目录构建镜像并打上 imageName tag。
+ * 私有仓库凭证从 git_cred_encrypted 解密获取。
+ * @param task 任务行
+ * @param config 任务配置
+ * @returns 执行结果与日志
+ */
+async function runGitPullBuildHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const repoUrl = config.repoUrl;
+  if (!repoUrl || typeof repoUrl !== 'string') {
+    return { ok: false, detail: '缺少 Git 仓库地址(repoUrl)' };
+  }
+  let cred: GitCred | null = null;
+  const encCred = (task as any).git_cred_encrypted;
+  if (encCred) {
+    try {
+      const parsed = JSON.parse(decryptSecret(String(encCred)) || '{}');
+      if (parsed) cred = parsed;
+    } catch {
+      cred = null;
+    }
+  }
+  const notAvail = await gitAvailable();
+  if (!notAvail) {
+    return { ok: false, detail: '本机未检测到 git 命令，无法执行 Git 部署' };
+  }
+  const mode = config.mode === 'compose' ? 'compose' : 'image';
+  const lines: string[] = [];
+  const repoDir =
+    mode === 'compose' && config.composeProject
+      ? path.join(COMPOSE_ROOT, config.composeProject)
+      : config.destDir || path.join(os.tmpdir(), 'docker-git-pipeline', task.id);
+
+  try {
+    const gitOut = await gitCloneOrPull({ repoUrl, dir: repoDir, branch: config.branch, cred });
+    lines.push(gitOut);
+  } catch (e: any) {
+    return { ok: false, detail: String(e?.message || e) };
+  }
+
+  if (mode === 'image') {
+    const imageName = config.imageName;
+    if (!imageName || typeof imageName !== 'string') {
+      return { ok: false, detail: 'image 模式缺少镜像名(imageName)' };
+    }
+    try {
+      const docker = await getDockerClient();
+      const dockerfile = config.dockerfile || 'Dockerfile';
+      const buildArgs = config.buildArgs && typeof config.buildArgs === 'object' ? config.buildArgs : {};
+      const stream = await docker.buildImage(
+        { context: repoDir, src: ['.'] },
+        { t: imageName, dockerfile, buildargs: buildArgs, pull: true },
+      );
+      const logTail = await new Promise<string>((resolve, reject) => {
+        let acc = '';
+        stream.on('data', (d: Buffer) => { acc = (acc + d.toString()) || ''; if (acc.length > 200000) acc = acc.slice(-200000); });
+        stream.on('end', () => resolve(acc));
+        stream.on('error', reject);
+      });
+      if (/error|failed/i.test(logTail)) {
+        return { ok: false, detail: `镜像构建可能失败:\n${logTail.slice(-4000)}` };
+      }
+      lines.push(`镜像构建完成: ${imageName}`);
+      lines.push(logTail.slice(-1500));
+    } catch (e: any) {
+      return { ok: false, detail: `镜像构建失败: ${e?.message || e}` };
+    }
+    return { ok: true, detail: lines.join('\n') };
+  }
+
+  const dir = path.join(COMPOSE_ROOT, config.composeProject || '');
+  const composeFile = findComposeFile(dir);
+  if (!composeFile) {
+    return { ok: false, detail: `compose 项目 ${config.composeProject} 不存在或缺少 compose 文件` };
+  }
+  try {
+    const buildFlag = config.alsoBuild ? ' --build' : '';
+    const output = await runCmd(`docker compose -f "${composeFile}" up -d${buildFlag}`, dir);
+    lines.push(output || 'compose up 完成');
+    return { ok: true, detail: lines.join('\n') };
+  } catch (e: any) {
+    return { ok: false, detail: String(e?.message || e) };
+  }
+}
+
 /** 任务类型 → handler 的本地注册表（供手动执行与注册到调度器共用） */
 const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, any>) => Promise<TaskRunResult>> = {
   prune: runPruneHandler,
@@ -517,6 +619,7 @@ const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, an
   restart: runRestartHandler,
   command: runCommandHandler,
   healthcheck: runHealthcheckHandler,
+  'git-pull-build': runGitPullBuildHandler,
 };
 
 /** 记录一次执行结果到历史表（由 setTaskRunCallback 注册，手动执行亦复用） */
@@ -605,7 +708,7 @@ router.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const rows = getDb()
       .prepare(
-        'SELECT id, name, type, cron, enabled, config, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks ORDER BY created_at DESC',
+        'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks ORDER BY created_at DESC',
       )
       .all() as unknown as CronTaskRow[];
     const projects = listProjectDirs();
@@ -633,15 +736,27 @@ router.post(
     if (nextRunTime(cron) === null) {
       return res.status(400).json({ error: 'cron 表达式无法解析' });
     }
+    const gitCred = req.body?.gitCred;
+    const gitCredEnc =
+      gitCred && (gitCred.token || gitCred.privateKey)
+        ? encryptSecret(
+            JSON.stringify({
+              type: gitCred.type === 'ssh' ? 'ssh' : 'token',
+              token: gitCred.token || undefined,
+              privateKey: gitCred.privateKey || undefined,
+              passphrase: gitCred.passphrase || undefined,
+            }),
+          )
+        : null;
     const id = uuid();
     const now = Date.now();
     const nextRun = nextRunTime(cron, now) as number;
     const isEnabled = enabled === true || enabled === undefined ? 1 : 0;
     getDb()
       .prepare(
-        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), nextRun, now, now);
+      .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), gitCredEnc, nextRun, now, now);
     logOperation(res.locals.username, '新建计划任务', 'task', name, `类型: ${type}`);
     res.json({ ok: true, id });
   }),
@@ -667,14 +782,64 @@ router.put(
     const newCron = cron !== undefined ? cron : row.cron;
     const newEnabled = enabled !== undefined ? (enabled === true ? 1 : 0) : row.enabled;
     const newConfig = config !== undefined ? JSON.stringify(config) : row.config;
+    // 仅当请求给了 gitCred 才更新凭证；null 表示清空；不含敏感字段表示保留
+    let newGitCredEnc = (row as any).git_cred_encrypted;
+    if (req.body?.gitCred === null) {
+      newGitCredEnc = null;
+    } else if (req.body?.gitCred && (req.body.gitCred.token || req.body.gitCred.privateKey)) {
+      const gc = req.body.gitCred;
+      newGitCredEnc = encryptSecret(
+        JSON.stringify({
+          type: gc.type === 'ssh' ? 'ssh' : 'token',
+          token: gc.token || undefined,
+          privateKey: gc.privateKey || undefined,
+          passphrase: gc.passphrase || undefined,
+        }),
+      );
+    }
     // 重新计算 next_run_at（禁用时清空，启用时按新 cron 计算）
     const nextRun = newEnabled === 1 ? (nextRunTime(newCron, Date.now()) as number) : row.next_run_at;
     getDb()
       .prepare(
-        'UPDATE cron_tasks SET name = ?, cron = ?, enabled = ?, config = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
+        'UPDATE cron_tasks SET name = ?, cron = ?, enabled = ?, config = ?, git_cred_encrypted = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
       )
-      .run(newName, newCron, newEnabled, newConfig, nextRun, Date.now(), row.id);
+      .run(newName, newCron, newEnabled, newConfig, newGitCredEnc, nextRun, Date.now(), row.id);
     logOperation(res.locals.username, '更新计划任务', 'task', newName);
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/tasks/:id/webhook
+ * 生成（或重置）任务专属 Webhook Token，用于远程触发任务执行
+ * @returns 生成的 token 及其完整 Webhook URL
+ */
+router.post(
+  '/:id/webhook',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = getTaskRow(req.params.id);
+    if (!row) return res.status(404).json({ error: '任务不存在' });
+    const token = randomHex(32);
+    getDb().prepare('UPDATE cron_tasks SET webhook_token = ?, updated_at = ? WHERE id = ?').run(token, Date.now(), row.id);
+    logOperation(res.locals.username, '生成计划任务 Webhook', 'task', row.name);
+    const base = `${req.protocol}://${req.get('host')}`;
+    res.json({ ok: true, url: `${base}/api/webhook/${token}`, token });
+  }),
+);
+
+/**
+ * DELETE /api/tasks/:id/webhook
+ * 关闭任务 Webhook，清空已生成的 Token
+ */
+router.delete(
+  '/:id/webhook',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = getTaskRow(req.params.id);
+    if (!row) return res.status(404).json({ error: '任务不存在' });
+    getDb().prepare('UPDATE cron_tasks SET webhook_token = NULL, updated_at = ? WHERE id = ?').run(Date.now(), row.id);
+    logOperation(res.locals.username, '关闭计划任务 Webhook', 'task', row.name);
     res.json({ ok: true });
   }),
 );
