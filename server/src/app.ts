@@ -45,6 +45,7 @@ import configTransferRouter from './routes/configTransfer';
 import notificationsRouter from './routes/notifications';
 import transferRouter from './routes/transfer';
 import authRouter from './routes/auth';
+import webhookRouter from './routes/webhook';
 import { requireAuth } from './auth';
 
 const app = express();
@@ -67,6 +68,9 @@ app.get('/api/health', (_req, res) => {
 
 // 登录鉴权路由（/login 匿名访问，/logout /me 内部校验会话）
 app.use('/api/auth', authRouter);
+
+// Webhook 触发（匿名入口，靠 token 鉴权，不套 requireAuth）
+app.use('/api/webhook', webhookRouter);
 
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);

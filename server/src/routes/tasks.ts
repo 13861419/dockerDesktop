@@ -644,7 +644,7 @@ setTaskRunCallback(recordTaskRun);
  * @returns 执行结果
  * @throws 任务不存在时抛错
  */
-async function dispatchTask(id: string): Promise<TaskRunResult> {
+export async function dispatchTask(id: string): Promise<TaskRunResult> {
   const row = getTaskRow(id);
   if (!row) {
     const notFound: any = new Error('任务不存在');
