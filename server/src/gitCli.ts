@@ -62,6 +62,18 @@ function assertSafeCloneUrl(raw: string): string {
   if (/[\u0000-\u001F\u007F]/.test(raw)) {
     throw new Error('仓库 URL 包含非法控制字符，已拒绝');
   }
+  // 优先识别 SCP 风格 SSH 地址（user@host:path，无 :// 前缀），如 git@github.com:user/repo.git
+  // 这类地址无法用 new URL 解析，单独按 ssh 协议校验后原样放行
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:.+/.test(raw)) {
+    // 禁止换行（path 部分不允许换行，已在控制字符检查中覆盖）、空白与 shell 元字符
+    if (/[\s]/.test(raw)) {
+      throw new Error('仓库 URL 包含空白字符，已拒绝');
+    }
+    if (/[&|;`$()]/.test(raw)) {
+      throw new Error('仓库 URL 包含非法 shell 字符，已拒绝');
+    }
+    return raw;
+  }
   let u: URL;
   try {
     u = new URL(raw);
