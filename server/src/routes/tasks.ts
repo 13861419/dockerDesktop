@@ -546,8 +546,8 @@ async function runGitPullBuildHandler(task: CronTaskRow, config: Record<string, 
       cred = null;
     }
   }
-  const notAvail = await gitAvailable();
-  if (!notAvail) {
+  const isGitAvailable = await gitAvailable();
+  if (!isGitAvailable) {
     return { ok: false, detail: '本机未检测到 git 命令，无法执行 Git 部署' };
   }
   const mode = config.mode === 'compose' ? 'compose' : 'image';
