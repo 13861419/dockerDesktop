@@ -48,6 +48,28 @@ export function sanitizeTag(branch?: string): string {
 }
 
 /**
+ * 对字符串做 Windows-compatible shell 转义，防止命令注入
+ * @param s 待转义字符串
+ * @returns 用双引号包裹并转义内部引号/% 后的命令片段
+ */
+function shellQuote(s: string): string {
+  // cmd.exe / PowerShell 下用双引号包裹，内部 " 转义为 \"，% 转义为 %% 避免 cmd 解释
+  return `"${s.replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
+}
+
+/**
+ * 校验分支名是否安全（git 分支名不允许空格/引号/分号等）
+ * @param branch 分支名
+ * @returns 合法返回分支名，非法抛出清晰错误
+ */
+function assertSafeBranch(branch: string): string {
+  if (/[^\w./-]/.test(branch)) {
+    throw new Error(`非法的 git 分支名: "${branch}"（仅允许字母数字 . _ / -）`);
+  }
+  return branch;
+}
+
+/**
  * 写入一个 SSH 私钥临时文件（600 权限）
  * @param privateKey 私钥内容
  * @returns 临时文件路径（调用方负责清理）
@@ -89,11 +111,11 @@ function buildGitContext(cred?: GitCred | null): { env: Record<string, string>; 
   const env: Record<string, string> = {};
   let sshKeyFile: string | null = null;
   if (cred && cred.type === 'ssh') {
-    if (cred.passphrase) env.GIT_SSH_COMMAND = `ssh -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`;
     sshKeyFile = cred.privateKey ? writeSshKeyFile(cred.privateKey) : null;
-    env.GIT_SSH_COMMAND = sshKeyFile
-      ? `ssh -i "${sshKeyFile}" -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`
-      : 'ssh -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes';
+    const args = sshKeyFile ? `-i "${sshKeyFile}"` : '';
+    // 带口令私钥无法在无人值守下完成交互，追加 BatchMode=yes 使 ssh 立即失败而非挂起
+    const batch = cred.passphrase ? ' -o BatchMode=yes' : '';
+    env.GIT_SSH_COMMAND = `ssh ${args} -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes${batch}`.trim();
   }
   return { env, sshKeyFile };
 }
@@ -114,19 +136,21 @@ export async function gitCloneOrPull(opts: {
   const { repoUrl, dir, branch, cred } = opts;
   const cloneUrl = buildCloneUrl(repoUrl, cred);
   const { env, sshKeyFile } = buildGitContext(cred);
+  // 对 branch 做宽松校验（合法则返回原值），阻止任何潜在的注入输入
+  const safeBranch = branch ? assertSafeBranch(branch) : undefined;
   const needClone =
     !fs.existsSync(dir) || fs.readdirSync(dir).filter((f) => f !== '.git').length === 0;
 
   let cmd: string;
   if (needClone) {
     fs.mkdirSync(dir, { recursive: true });
-    cmd = branch
-      ? `git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${dir}"`
-      : `git clone --depth 1 "${cloneUrl}" "${dir}"`;
+    cmd = safeBranch
+      ? `git clone --depth 1 --branch ${shellQuote(safeBranch)} ${shellQuote(cloneUrl)} ${shellQuote(dir)}`
+      : `git clone --depth 1 ${shellQuote(cloneUrl)} ${shellQuote(dir)}`;
   } else {
-    cmd = `git -C "${dir}" fetch origin`;
-    if (branch) cmd += ` && git -C "${dir}" checkout "${branch}"`;
-    cmd += ` && git -C "${dir}" pull --ff-only`;
+    cmd = `git -C ${shellQuote(dir)} fetch origin`;
+    if (safeBranch) cmd += ` && git -C ${shellQuote(dir)} checkout ${shellQuote(safeBranch)}`;
+    cmd += ` && git -C ${shellQuote(dir)} pull --ff-only`;
   }
 
   try {
@@ -136,7 +160,12 @@ export async function gitCloneOrPull(opts: {
     return (needClone ? '[clone] ' : '[pull] ') + (stdout || stderr || '').trim();
   } catch (err: any) {
     if (sshKeyFile) cleanupSshKey(sshKeyFile);
-    const apiErr: any = new Error(`Git 操作失败: ${err?.stderr || err?.message || err}`);
+    let msg = err?.stderr || err?.message || err;
+    // 带口令私钥在 BatchMode=yes 下会立即失败，提示用户处理口令
+    if (cred?.type === 'ssh' && cred.passphrase) {
+      msg += '（若 SSH 私钥带口令，请先为该私钥配置 ssh-agent 或去除口令）';
+    }
+    const apiErr: any = new Error(`Git 操作失败: ${msg}`);
     apiErr.statusCode = 400;
     throw apiErr;
   }
