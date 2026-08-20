@@ -1289,13 +1289,13 @@ export default function NotificationsPage() {
             启用该项资源告警
           </label>
         </Field>
-        <Field label="警告阈值（%）" required>
+        <Field label={`警告阈值（${ruleModal ? unitOf(ruleModal.type) : '%'}）`} required>
           <Input
             value={ruleForm.warnThreshold}
             onChange={(e) => setRuleForm((f) => ({ ...f, warnThreshold: e.target.value }))}
           />
         </Field>
-        <Field label="危险阈值（%）" required>
+        <Field label={`危险阈值（${ruleModal ? unitOf(ruleModal.type) : '%'}）`} required>
           <Input
             value={ruleForm.dangerThreshold}
             onChange={(e) => setRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}

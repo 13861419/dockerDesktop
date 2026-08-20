@@ -666,7 +666,8 @@ export function renderAlertRecordsCsv(rows: AlertRecordRow[]): string {
     // 含逗号 / 引号 / 换行的字段用双引号包裹，内部引号转义
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const header = ['ID', '时间', '类型', '级别', '消息', '使用率(%)', '渠道ID', '推送状态', '推送详情'];
+  // 第 6 列：告警触发时的判定值，CPU/内存/磁盘/GPU 为使用率 %，网络为带宽 Mbps
+  const header = ['ID', '时间', '类型', '级别', '消息', '数值(%/Mbps)', '渠道ID', '推送状态', '推送详情'];
   const lines = [header.map(esc).join(',')];
   for (const r of rows) {
     lines.push(
