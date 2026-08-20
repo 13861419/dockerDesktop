@@ -2,7 +2,7 @@
  * C3「更细粒度告警」Task 1 单元测试（node:test，零第三方依赖）
  * 覆盖：网络带宽速率差分纯函数 computeNetRate
  */
-import { test } from 'node:test';
+import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { computeNetRate } from '../src/docker/monitor';
 
@@ -16,51 +16,55 @@ import { initStorage } from '../src/storage';
 import { updateAlertRule, createContainerAlertRule, deleteContainerAlertRule } from '../src/alerting';
 initStorage();
 
-test('computeNetRate 正确计算 Mbps 速率', () => {
-  // 100MB 累计差，2 秒间隔 → 每秒 50MB = 419.43Mbps（二进制 MB）
-  const r = computeNetRate(100 * 1024 * 1024, 50 * 1024 * 1024, 0, 0, 2);
-  assert.ok(Math.abs(r.rxMbps - 419.43) < 1e-3, `rxMbps=${r.rxMbps}`);
-  assert.ok(Math.abs(r.txMbps - 209.715) < 1e-3, `txMbps=${r.txMbps}`);
-});
+// 顶层 test() 在 node:test 默认并发执行；涉及 SQLite 并发写会触发 database is locked。
+// 收敛到 concurrency:1 的 describe 块内，令同文件测试串行执行。
+describe('C3 更细粒度告警（串行执行，避免 SQLite 并发写锁）', { concurrency: 1 }, () => {
+  test('computeNetRate 正确计算 Mbps 速率', () => {
+    // 100MB 累计差，2 秒间隔 → 每秒 50MB = 419.43Mbps（二进制 MB）
+    const r = computeNetRate(100 * 1024 * 1024, 50 * 1024 * 1024, 0, 0, 2);
+    assert.ok(Math.abs(r.rxMbps - 419.43) < 1e-3, `rxMbps=${r.rxMbps}`);
+    assert.ok(Math.abs(r.txMbps - 209.715) < 1e-3, `txMbps=${r.txMbps}`);
+  });
 
-test('computeNetRate 倒置差分回落为 0（防突刺）', () => {
-  const r = computeNetRate(0, 0, 100, 100, 2);
-  assert.strictEqual(r.rxMbps, 0);
-  assert.strictEqual(r.txMbps, 0);
-});
+  test('computeNetRate 倒置差分回落为 0（防突刺）', () => {
+    const r = computeNetRate(0, 0, 100, 100, 2);
+    assert.strictEqual(r.rxMbps, 0);
+    assert.strictEqual(r.txMbps, 0);
+  });
 
-test('computeNetRate 零间隔返回 0（避免除零）', () => {
-  const r = computeNetRate(100, 100, 0, 0, 0);
-  assert.strictEqual(r.rxMbps, 0);
-});
+  test('computeNetRate 零间隔返回 0（避免除零）', () => {
+    const r = computeNetRate(100, 100, 0, 0, 0);
+    assert.strictEqual(r.rxMbps, 0);
+  });
 
-test('updateAlertRule 的 net 类型放开阈值上限（Mbps 可 >100）', () => {
-  // net 默认 danger=200 > 100，仅开关 enabled（阈值回落 row）也应放行不抛错
-  assert.doesNotThrow(() => updateAlertRule('net', { dangerThreshold: 200 }));
-  // 更大的 Mbps 值同样放行
-  assert.doesNotThrow(() => updateAlertRule('net', { dangerThreshold: 1e6 }));
-  // 依旧禁止负数
-  assert.throws(
-    () => updateAlertRule('net', { warnThreshold: -1 }),
-    /阈值需为非负数/,
-  );
-});
+  test('updateAlertRule 的 net 类型放开阈值上限（Mbps 可 >100）', () => {
+    // net 默认 danger=200 > 100，仅开关 enabled（阈值回落 row）也应放行不抛错
+    assert.doesNotThrow(() => updateAlertRule('net', { dangerThreshold: 200 }));
+    // 更大的 Mbps 值同样放行
+    assert.doesNotThrow(() => updateAlertRule('net', { dangerThreshold: 1e6 }));
+    // 依旧禁止负数
+    assert.throws(
+      () => updateAlertRule('net', { warnThreshold: -1 }),
+      /阈值需为非负数/,
+    );
+  });
 
-test('updateAlertRule 的非 net 类型仍保持 0-100 校验', () => {
-  // 生效：cpu 已关闭静默/工作时段，仅改阈值不触发 400
-  assert.doesNotThrow(() => updateAlertRule('cpu', { dangerThreshold: 99 }));
-  // 超过 100 仍应拒绝
-  assert.throws(() => updateAlertRule('cpu', { dangerThreshold: 200 }), /阈值需为 0-100/);
-});
+  test('updateAlertRule 的非 net 类型仍保持 0-100 校验', () => {
+    // 生效：cpu 已关闭静默/工作时段，仅改阈值不触发 400
+    assert.doesNotThrow(() => updateAlertRule('cpu', { dangerThreshold: 99 }));
+    // 超过 100 仍应拒绝
+    assert.throws(() => updateAlertRule('cpu', { dangerThreshold: 200 }), /阈值需为 0-100/);
+  });
 
-test('容器 cpu 规则可创建并持久化阈值', () => {
-  const r = createContainerAlertRule({ containerId: 'c3-test-cpu', watchType: 'cpu', warnThreshold: 70, dangerThreshold: 85 });
-  assert.strictEqual(r.watchType, 'cpu');
-  assert.strictEqual(r.warnThreshold, 70);
-  assert.strictEqual(r.dangerThreshold, 85);
-  deleteContainerAlertRule(r.id); // 清理，避免污染其它测试
-});
+  test('容器 cpu 规则可创建并持久化阈值', () => {
+    const r = createContainerAlertRule({ containerId: 'c3-test-cpu', watchType: 'cpu', warnThreshold: 70, dangerThreshold: 85 });
+    assert.strictEqual(r.watchType, 'cpu');
+    assert.strictEqual(r.warnThreshold, 70);
+    assert.strictEqual(r.dangerThreshold, 85);
+    deleteContainerAlertRule(r.id); // 清理，避免污染其它测试
+  });
 
-test('容器 cpu 规则阈值越界被拒绝', () => {
-  assert.throws(() => createContainerAlertRule({ containerId: 'c3-test-cpu2', watchType: 'cpu', warnThreshold: 150, dangerThreshold: 85 }));
+  test('容器 cpu 规则阈值越界被拒绝', () => {
+    assert.throws(() => createContainerAlertRule({ containerId: 'c3-test-cpu2', watchType: 'cpu', warnThreshold: 150, dangerThreshold: 85 }));
+  });
 });
