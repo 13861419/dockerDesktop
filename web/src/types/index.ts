@@ -819,7 +819,7 @@ export interface ComposeStructure {
 /** ===================== 告警中心 ===================== */
 
 /** 容器级告警监控类型 */
-export type ContainerRuleWatchType = 'exited' | 'health' | 'port';
+export type ContainerRuleWatchType = 'exited' | 'health' | 'port' | 'cpu' | 'mem';
 
 /** 容器级告警规则（/api/notifications/container-rules 返回的单条规则） */
 export interface ContainerRule {
@@ -829,10 +829,16 @@ export interface ContainerRule {
   containerId: string;
   /** 目标容器名（后端补充，可能缺失） */
   containerName?: string;
-  /** 监控类型：exited=容器退出 / health=健康检查失败 / port=端口不可达 */
+  /** 监控类型：exited=容器退出 / health=健康检查失败 / port=端口不可达 / cpu=CPU 使用率 / mem=内存使用率 */
   watchType: ContainerRuleWatchType;
   /** 是否启用 */
   enabled: boolean;
+  /** CPU/内存阈值（watchType=cpu/mem 时使用）：警告阈值（0-100） */
+  warnThreshold: number;
+  /** CPU/内存阈值（watchType=cpu/mem 时使用）：危险阈值（0-100） */
+  dangerThreshold: number;
+  /** 当前使用率（后端为 cpu/mem 行补充，可选） */
+  currentValue?: number | null;
   /** 探测端口（watchType=port 时使用，其余为 null） */
   port: number | null;
   /** 静默时段开始（HH:mm） */

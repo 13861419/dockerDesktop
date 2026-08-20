@@ -22,9 +22,9 @@ import { Field, Input, Select } from '../components/Form';
 import type { ContainerListItem, ContainerRule, ContainerRuleListResponse, ContainerRuleWatchType } from '../types';
 import './notifications.less';
 
-/** 告警规则 */
+/** 告警规则（type 放宽为 string 以兼容新增的 gpu/net） */
 interface AlertRule {
-  type: 'cpu' | 'mem' | 'disk';
+  type: string;
   name: string;
   enabled: boolean;
   warnThreshold: number;
@@ -72,11 +72,13 @@ const CHANNEL_LABELS: Record<string, string> = {
   feishu: '飞书',
 };
 
-/** 告警记录类型中文名（含任务失败 type=task 与容器告警 exited/health/port） */
+/** 告警记录类型中文名（含任务失败 type=task 与容器告警 exited/health/port/cpu/mem） */
 const TYPE_LABELS: Record<string, string> = {
   cpu: 'CPU',
   mem: '内存',
   disk: '磁盘',
+  gpu: 'GPU',
+  net: '网络',
   task: '任务',
   exited: '容器退出',
   health: '健康检查',
@@ -88,6 +90,8 @@ const WATCH_LABELS: Record<ContainerRuleWatchType, string> = {
   exited: '退出',
   health: '健康检查',
   port: '端口',
+  cpu: 'CPU',
+  mem: '内存',
 };
 
 /** 容器级告警监控类型选项目文案（带说明） */
@@ -95,7 +99,16 @@ const WATCH_OPTIONS: Array<{ value: ContainerRuleWatchType; label: string }> = [
   { value: 'exited', label: '退出（容器退出/重启循环）' },
   { value: 'health', label: '健康检查（health 未通过）' },
   { value: 'port', label: '端口（端口不可达）' },
+  { value: 'cpu', label: 'CPU 使用率（超过阈值告警）' },
+  { value: 'mem', label: '内存使用率（超过阈值告警）' },
 ];
+
+/**
+ * 按告警规则类型取阈值/当前值的单位
+ * @param type 规则类型（cpu/mem/disk/gpu/net）
+ * @returns 单位字符串（网络用 Mbps，其余用 %）
+ */
+const unitOf = (type: string): string => (type === 'net' ? 'Mbps' : '%');
 
 /** 告警记录级别中文名（含恢复 recovery） */
 const LEVEL_LABELS: Record<string, string> = {
@@ -137,8 +150,8 @@ const EMPTY_FORM: ChannelForm = {
   webhookUrl: '',
 };
 
-/** 规则初始值 */
-const RULE_NAMES: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘' };
+/** 规则名称映射（含新增 gpu/net） */
+const RULE_NAMES: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络' };
 
 /**
  * 格式化时间
@@ -224,6 +237,8 @@ export default function NotificationsPage() {
     containerId: string;
     watchType: ContainerRuleWatchType;
     port: string;
+    warnThreshold: string;
+    dangerThreshold: string;
     enabled: boolean;
     silentStart: string;
     silentEnd: string;
@@ -234,6 +249,8 @@ export default function NotificationsPage() {
     containerId: '',
     watchType: 'exited',
     port: '',
+    warnThreshold: '75',
+    dangerThreshold: '90',
     enabled: true,
     silentStart: '',
     silentEnd: '',
@@ -572,6 +589,8 @@ export default function NotificationsPage() {
       containerId: '',
       watchType: 'exited',
       port: '',
+      warnThreshold: '75',
+      dangerThreshold: '90',
       enabled: true,
       silentStart: '',
       silentEnd: '',
@@ -594,6 +613,8 @@ export default function NotificationsPage() {
         containerId: rule.containerId,
         watchType: rule.watchType,
         port: rule.port != null ? String(rule.port) : '',
+        warnThreshold: rule.warnThreshold != null ? String(rule.warnThreshold) : '75',
+        dangerThreshold: rule.dangerThreshold != null ? String(rule.dangerThreshold) : '90',
         enabled: rule.enabled,
         silentStart: rule.silentStart || '',
         silentEnd: rule.silentEnd || '',
@@ -623,6 +644,19 @@ export default function NotificationsPage() {
         return;
       }
     }
+    // cpu/mem 时校验阈值须为 0-100 且警告阈值不高于危险阈值
+    if (containerRuleForm.watchType === 'cpu' || containerRuleForm.watchType === 'mem') {
+      const warn = Number(containerRuleForm.warnThreshold);
+      const danger = Number(containerRuleForm.dangerThreshold);
+      if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || warn > 100 || danger < 0 || danger > 100) {
+        setContainerRuleError('阈值需为 0-100 的数字');
+        return;
+      }
+      if (warn > danger) {
+        setContainerRuleError('警告阈值不能高于危险阈值');
+        return;
+      }
+    }
     setSavingContainerRule(true);
     try {
       const body: Record<string, any> = {
@@ -636,6 +670,11 @@ export default function NotificationsPage() {
         workStart: containerRuleForm.workStart || null,
         workEnd: containerRuleForm.workEnd || null,
       };
+      // cpu/mem 时携带警告/危险阈值
+      if (containerRuleForm.watchType === 'cpu' || containerRuleForm.watchType === 'mem') {
+        body.warnThreshold = Number(containerRuleForm.warnThreshold);
+        body.dangerThreshold = Number(containerRuleForm.dangerThreshold);
+      }
       if (containerRuleModal.editing) {
         await put(`/api/notifications/container-rules/${containerRuleModal.editing.id}`, body);
         showToast('容器规则已更新');
@@ -791,10 +830,12 @@ export default function NotificationsPage() {
                       </div>
                     )}
                   </td>
-                  <td>≥ {r.warnThreshold}%</td>
-                  <td>≥ {r.dangerThreshold}%</td>
+                  <td>≥ {r.warnThreshold}{unitOf(r.type)}</td>
+                  <td>≥ {r.dangerThreshold}{unitOf(r.type)}</td>
                   <td>
-                    {r.currentPercent != null ? (
+                    {r.type === 'gpu' && r.currentPercent == null ? (
+                      <span className="notify-dim">未检测到 GPU</span>
+                    ) : r.currentPercent != null ? (
                       <span
                         className={`notify-level notify-level--${
                           r.currentPercent >= r.dangerThreshold
@@ -804,7 +845,7 @@ export default function NotificationsPage() {
                             : 'ok'
                         }`}
                       >
-                        {r.currentPercent.toFixed(1)}%
+                        {r.type === 'net' ? `${r.currentPercent.toFixed(1)} Mbps` : `${r.currentPercent.toFixed(1)}%`}
                       </span>
                     ) : (
                       <span className="notify-dim">—</span>
@@ -831,7 +872,7 @@ export default function NotificationsPage() {
           </div>
         }
       >
-        <p className="notify-desc">对指定容器监听 退出/健康检查失败/端口不可达。</p>
+        <p className="notify-desc">对指定容器监听 退出/健康检查失败/端口不可达，或 CPU/内存使用率阈值。</p>
         {containerRuleLoading ? (
           <SkeletonRows rows={3} />
         ) : containerRules.length === 0 ? (
@@ -840,11 +881,12 @@ export default function NotificationsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '24%' }}>容器</th>
-                <th style={{ width: '16%' }}>监控类型</th>
-                <th style={{ width: '14%' }}>目标端口</th>
-                <th style={{ width: '16%' }}>状态</th>
-                <th style={{ width: '30%' }}>操作</th>
+                <th style={{ width: '20%' }}>容器</th>
+                <th style={{ width: '14%' }}>监控类型</th>
+                <th style={{ width: '12%' }}>目标端口</th>
+                <th style={{ width: '18%' }}>阈值/当前值</th>
+                <th style={{ width: '14%' }}>状态</th>
+                <th style={{ width: '22%' }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -864,6 +906,20 @@ export default function NotificationsPage() {
                     <span className={`notify-badge notify-badge--${r.watchType}`}>{WATCH_LABELS[r.watchType] || r.watchType}</span>
                   </td>
                   <td>{r.watchType === 'port' && r.port != null ? r.port : <span className="notify-dim">—</span>}</td>
+                  <td>
+                    {r.watchType === 'cpu' || r.watchType === 'mem' ? (
+                      <span className="notify-rule-threshold">
+                        ≥{r.warnThreshold}% / ≥{r.dangerThreshold}%
+                        {r.currentValue != null ? (
+                          <span className="notify-dim">当前 {r.currentValue.toFixed(1)}%</span>
+                        ) : (
+                          <span className="notify-dim">当前 -</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="notify-dim">—</span>
+                    )}
+                  </td>
                   <td>
                     <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
                   </td>
@@ -957,6 +1013,8 @@ export default function NotificationsPage() {
               <option value="cpu">CPU</option>
               <option value="mem">内存</option>
               <option value="disk">磁盘</option>
+              <option value="gpu">GPU</option>
+              <option value="net">网络</option>
               <option value="task">任务</option>
               <option value="exited">容器退出</option>
               <option value="health">健康检查</option>
@@ -1350,6 +1408,28 @@ export default function NotificationsPage() {
               onChange={(e) => setContainerRuleForm((f) => ({ ...f, port: e.target.value }))}
             />
           </Field>
+        )}
+        {(containerRuleForm.watchType === 'cpu' || containerRuleForm.watchType === 'mem') && (
+          <>
+            <Field label="警告阈值（%）" required hint="使用率超过该值触发警告（0-100）">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={containerRuleForm.warnThreshold}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, warnThreshold: e.target.value }))}
+              />
+            </Field>
+            <Field label="危险阈值（%）" required hint="使用率超过该值触发危险告警（0-100）">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={containerRuleForm.dangerThreshold}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
+              />
+            </Field>
+          </>
         )}
         <Field label="启用规则">
           <label className="notify-checkbox">
