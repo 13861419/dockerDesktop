@@ -768,6 +768,8 @@ export interface ContainerAlertRule {
   workdaysOnly: boolean;
   workStart: string | null;
   workEnd: string | null;
+  /** 当前使用率（纯展示；仅 watchType=cpu/mem 时由 getContainerAlertRules 回填，可为 null） */
+  currentValue?: number | null;
 }
 
 /** 容器告警规则归一化为 AlertRule（复用现有静默/时段判定结构） */
@@ -1100,7 +1102,19 @@ export async function getContainerAlertRules(): Promise<ContainerAlertRule[]> {
   } catch {
     // 忽略，名称回退
   }
-  return loadContainerRules(names);
+  const rules = loadContainerRules(names);
+  const point = getCurrentMonitor();
+  const statMap = new Map<string, { cpuPercent: number; memPercent: number }>();
+  if (point && point.containerStats) {
+    for (const cs of point.containerStats) statMap.set(cs.id, { cpuPercent: cs.cpuPercent, memPercent: cs.memPercent });
+  }
+  for (const r of rules) {
+    if (r.watchType === 'cpu' || r.watchType === 'mem') {
+      const st = statMap.get(r.containerId);
+      r.currentValue = st ? (r.watchType === 'cpu' ? st.cpuPercent : st.memPercent) : null;
+    }
+  }
+  return rules;
 }
 
 /**

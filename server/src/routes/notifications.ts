@@ -179,9 +179,11 @@ router.get(
     const rules = getAlertRules();
     // 读取实时监控点，为 cpu / mem / disk 规则补充当前使用率
     const point = getCurrentMonitor();
+    const curGpu = point && point.gpu && point.gpu.length > 0 ? Math.max(...point.gpu.map((g) => g.utilization || 0)) : null;
+    const curNet = point && point.netRate ? Math.max(point.netRate.rxMbps, point.netRate.txMbps) : null;
     const current = point
-      ? { cpu: point.cpu.percent, mem: point.mem.percent, disk: point.disk.percent }
-      : { cpu: null, mem: null, disk: null };
+      ? { cpu: point.cpu.percent, mem: point.mem.percent, disk: point.disk.percent, gpu: curGpu, net: curNet }
+      : { cpu: null, mem: null, disk: null, gpu: null, net: null };
     res.json({
       rules: rules.map((r) => ({
         ...r,
