@@ -1,4 +1,4 @@
-# C3 更细粒度告警 实现计划
+﻿# C3 更细粒度告警 实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -32,7 +32,7 @@
   - `MonitorPoint.containerStats: MonitorContainerStat[]`
   - `export function computeNetRate(curRx: number, curTx: number, prevRx: number, prevTx: number, elapsedSec: number): { rxMbps: number; txMbps: number }`（纯函数，可测）
 
-- [ ] **Step 1: 写失败测试**（新建 `server/test/c3.test.ts`，TDD 先测纯函数）
+- [x] **Step 1: 写失败测试**（新建 `server/test/c3.test.ts`，TDD 先测纯函数）
 
 ```ts
 import { computeNetRate } from '../src/docker/monitor';
@@ -56,14 +56,14 @@ test('computeNetRate 零间隔返回 0（避免除零）', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd server; npx ts-node --project tsconfig.test.json --eval "import('ts-node')"` 不可用，用项目现有测试框架。
 
 Run: `cd server; node --test --require ts-node/register test/c3.test.ts`
 Expected: FAIL with `computeNetRate is not exported` / module 解析失败。
 
-- [ ] **Step 3: 实现 computeNetRate 与接口**（monitor.ts 顶部新增导出纯函数）
+- [x] **Step 3: 实现 computeNetRate 与接口**（monitor.ts 顶部新增导出纯函数）
 
 在 `import`/常量区附近（`MonitorPoint` 接口前）新增：
 
@@ -108,7 +108,7 @@ export interface MonitorContainerStat {
 }
 ```
 
-- [ ] **Step 4: 实现扩展字段**（monitor.ts 顶层新增网络状态变量）
+- [x] **Step 4: 实现扩展字段**（monitor.ts 顶层新增网络状态变量）
 
 在 `lastCpu` 声明（L94）附近新增：
 
@@ -117,7 +117,7 @@ export interface MonitorContainerStat {
 let lastNet: { rx: number; tx: number; at: number } | null = null;
 ```
 
-- [ ] **Step 5: 重构 aggregateContainerStats 支持逐容器统计**（替换 L142-185）
+- [x] **Step 5: 重构 aggregateContainerStats 支持逐容器统计**（替换 L142-185）
 
 将原聚合函数改为同时返回逐容器 CPU/内存统计（用同一批 stats 一次计算，避免重复抓取）：
 
@@ -188,7 +188,7 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
 }
 ```
 
-- [ ] **Step 6: 扩展 MonitorPoint 结构并在 collect() 填充 netRate 与 containerStats**
+- [x] **Step 6: 扩展 MonitorPoint 结构并在 collect() 填充 netRate 与 containerStats**
 
 修改 `MonitorPoint` 接口（L76 处）新增两个字段：
 
@@ -233,11 +233,11 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
       containerStats,
 ```
 
-- [ ] **Step 7: 精简历史点剔除嵌套结构**（避免把 containerStats 透传到历史趋势接口）
+- [x] **Step 7: 精简历史点剔除嵌套结构**（避免把 containerStats 透传到历史趋势接口）
 
 `MetricPoint` 接口（L490-505）与 `leanPoint` 精简映射函数无需新增 containerStats/netRate——保持现状即可（当前 leanPoint 只挑指定字段，天然剔除）。**无需改动**。若存在显式展开全部字段的映射，需确认不含 containerStats/netRate；若无则本步骤为核查项。
 
-- [ ] **Step 8: 跑测试**
+- [x] **Step 8: 跑测试**
 
 Run: `cd server; node --test --require ts-node/register test/c3.test.ts`
 Expected: PASS（computeNetRate 三用例通过）。
@@ -247,7 +247,7 @@ Expected: PASS（computeNetRate 三用例通过）。
 Run: `cd server; npx tsc --noEmit -p tsconfig.json`
 Expected: no errors.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add server/src/docker/monitor.ts server/test/c3.test.ts
@@ -265,7 +265,7 @@ git commit -m "feat(monitor): 新增逐容器 CPU/内存统计与网络速率 Mb
 - Consumes: 无。
 - Produces: `container_alert_rules` 新增两列 `warn_threshold REAL DEFAULT 75`、`danger_threshold REAL DEFAULT 90`。
 
-- [ ] **Step 1: 在迁移函数中添加列**
+- [x] **Step 1: 在迁移函数中添加列**
 
 在 storage.ts migrate 中 `alert_rules` 静默字段迁移块（L534 之后、cron_tasks 迁移之前）插入两段 try/catch ALTER：
 
@@ -283,7 +283,7 @@ git commit -m "feat(monitor): 新增逐容器 CPU/内存统计与网络速率 Mb
   }
 ```
 
-- [ ] **Step 2: 验证迁移幂等**
+- [x] **Step 2: 验证迁移幂等**
 
 Run: `cd server; node -e "const s=require('ts-node/register');const st=require('./src/storage');st.openDb&&st.openDb({});console.log('db initialized')"`
 
@@ -291,7 +291,7 @@ Expected: 无异常；重复执行不报"duplicate column"。用 `npx tsc --noEm
 
 （若 openDb 签名需参数，参照现有 storage 用法；此处仅验证迁移逻辑被加载即算通过。）
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server/src/storage.ts
@@ -312,7 +312,7 @@ git commit -m "feat(storage): container_alert_rules 新增 CPU/内存阈值列"
   - `AlertType` 增加 `'gpu' | 'net'`。
   - `check()` 宿主 samples 含 gpu（最大利用率）与 net（max(rxMbps,txMbps)）。
 
-- [ ] **Step 1: 扩展 AlertType 与 DEFAULT_RULES**
+- [x] **Step 1: 扩展 AlertType 与 DEFAULT_RULES**
 
 L21 AlertType 改为：
 
@@ -328,7 +328,7 @@ L65-69 DEFAULT_RULES 增加两行：
   { type: 'net', name: '网络带宽', warn: 100, danger: 200 },
 ```
 
-- [ ] **Step 2: 扩展 check() 宿主 samples**
+- [x] **Step 2: 扩展 check() 宿主 samples**
 
 L326-330 samples 数组增加 gpu/net 两维（在 `getCurrentMonitor()` 可用数据中取）：
 
@@ -359,7 +359,7 @@ L326-330 samples 数组增加 gpu/net 两维（在 `getCurrentMonitor()` 可用�
   }
 ```
 
-- [ ] **Step 3: 定制 gpu/net 告警文案**（丰富消息内容）
+- [x] **Step 3: 定制 gpu/net 告警文案**（丰富消息内容）
 
 `check()` 循环中触发时，对 gpu/net 需要附加信息（GPU 名称/方向）。在 `maybeFire` 调用前为这两类定制 message。将触发分支改为按类型组装 message：
 
@@ -393,7 +393,7 @@ L326-330 samples 数组增加 gpu/net 两维（在 `getCurrentMonitor()` 可用�
 
 > 说明：为最小改动，gpu/net 的告警**记录落库**仍沿用 maybeFire → fireAlert 现有文案路径（含 `%` 后缀）。文案定制可放在 `emitAlert`/`fireAlert` 的消息参数处，若实现复杂，可接受 gpu/net 记录复用统一文案（`Docker 面板【GPU】使用率 xx%`），因 value 字段已记录数值、前端按 type 显示单位。**实现时分两步**：先保证触发/记录/推送与阈值判定正确（本步），文案精细化视复杂度决定，非阻塞。
 
-- [ ] **Step 4: 扩展 fireRecovery names 与 updateAlertRule 白名单**
+- [x] **Step 4: 扩展 fireRecovery names 与 updateAlertRule 白名单**
 
 L288 names 映射补：
 
@@ -409,7 +409,7 @@ L483 updateAlertRule 类型白名单补 gpu/net：
   }
 ```
 
-- [ ] **Step 5: 跑测试**
+- [x] **Step 5: 跑测试**
 
 Run: `cd server; npx tsc --noEmit -p tsconfig.json`
 Expected: no errors。
@@ -422,7 +422,7 @@ cd server; node --test --require ts-node/register test/auth-security.test.ts tes
 
 Expected: 全部通过（c3 3 项 + 既有 16 项 = 19 项）。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/src/alerting.ts
@@ -444,7 +444,7 @@ git commit -m "feat(alerting): 宿主级新增 GPU 使用率与网络带宽 Mbps
   - `checkContainerRules()` 读取 `getCurrentMonitor().containerStats` 构建 `Map<containerId, stats>`，传给 `checkOneContainerRule`
   - `checkOneContainerRule` 对 watch_type cpu/mem 用容器统计判定
 
-- [ ] **Step 1: 扩展容器类型与结构**
+- [x] **Step 1: 扩展容器类型与结构**
 
 找到 `ContainerWatchType` 定义（grep 定位，应在文件顶部类型区），改为：
 
@@ -487,7 +487,7 @@ function containerRuleToQuiet(r: ContainerAlertRule): AlertRule {
 }
 ```
 
-- [ ] **Step 2: 更新 SELECT/INSERT/UPDATE 语句纳入阈值列**
+- [x] **Step 2: 更新 SELECT/INSERT/UPDATE 语句纳入阈值列**
 
 `loadContainerRules`（L987）SELECT 补列：
 
@@ -563,7 +563,7 @@ function validateContainerRuleInput(body: any): { containerId: string; watchType
   );
 ```
 
-- [ ] **Step 3: checkContainerRules 接入容器统计**
+- [x] **Step 3: checkContainerRules 接入容器统计**
 
 在 `checkContainerRules`（L934-978）中读取容器统计并传给逐条判定。改为：
 
@@ -626,7 +626,7 @@ async function checkContainerRules(): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: 新增 checkContainerResourceRule 判定函数**
+- [x] **Step 4: 新增 checkContainerResourceRule 判定函数**
 
 在 `checkOneContainerRule` 之后新增（复用 emitContainerAlert 写记录 + 去重状态机）：
 
@@ -683,7 +683,7 @@ async function checkContainerResourceRule(
 }
 ```
 
-- [ ] **Step 5: 跑测试**
+- [x] **Step 5: 跑测试**
 
 Run: `cd server; npx tsc --noEmit -p tsconfig.json`
 Expected: no errors。
@@ -691,7 +691,7 @@ Expected: no errors。
 Run: `cd server; node --test --require ts-node/register test/auth-security.test.ts test/webhook-git.test.ts test/trivy.test.ts test/c3.test.ts`
 Expected: 全部通过。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/src/alerting.ts
@@ -710,7 +710,7 @@ git commit -m "feat(alerting): 容器级新增 CPU/内存阈值告警（watch_ty
 - Consumes: Task 4 的 create/updateContainerAlertRule（已支持阈值）。
 - Produces: 容器规则 CRUD 对 cpu/mem + 阈值的端到端可用性；测试覆盖。
 
-- [ ] **Step 1: 写容器 CRUD 测试**（追加到 test/c3.test.ts）
+- [x] **Step 1: 写容器 CRUD 测试**（追加到 test/c3.test.ts）
 
 ```ts
 import { createContainerAlertRule, updateContainerAlertRule, deleteContainerAlertRule } from '../src/alerting';
@@ -732,16 +732,16 @@ function cleanup(id: number) {
 }
 ```
 
-- [ ] **Step 2: 跑测试**
+- [x] **Step 2: 跑测试**
 
 Run: `cd server; node --test --require ts-node/register test/c3.test.ts`
 Expected: PASS（增加容器 CRUD 用例）。
 
-- [ ] **Step 3: 核查路由**（无需改代码，验证 container-rules 路由透传 body 即可）
+- [x] **Step 3: 核查路由**（无需改代码，验证 container-rules 路由透传 body 即可）
 
 `/container-rules` 的 POST/PUT 已调用 createContainerAlertRule/updateContainerAlertRule(req.body)，Task 4 已让这两个函数接受 warnThreshold/dangerThreshold。核查无额外改动。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/test/c3.test.ts
@@ -760,11 +760,11 @@ git commit -m "test: 覆盖容器 CPU 资源阈值规则 CRUD 与校验"
 - Consumes: 后端 `/rules` 返回含 gpu/net（currentPercent 兼容，前端按 type 显示单位）；`/container-rules` 返回含 watchType=cpu/mem + warnThreshold/dangerThreshold + 前端回填当前值。
 - Produces: 告警中心展示 GPU/网络规则行；容器规则支持 cpu/mem 监听与阈值输入。
 
-- [ ] **Step 1: 扩展 AlertRule 类型与宿主规则表**
+- [x] **Step 1: 扩展 AlertRule 类型与宿主规则表**
 
 在 notifications.tsx 的 `AlertRule` 类型（L26-38）— 该类型按后端返回结构。后端 `getAlertRules()` 返回的数组项已是 `type/name/enabled/warnThreshold/dangerThreshold/...`，`GET /rules` 再附 `currentPercent`。类型无需新增字段（type 放宽为 string 即可），但前端渲染需按 type 显示单位。核查类型定义，若 type 是字面量联合需放宽。
 
-- [ ] **Step 2: 渲染 GPU/网络 规则行**
+- [x] **Step 2: 渲染 GPU/网络 规则行**
 
 宿主规则表格中遍历 `rules`（来自 `/rules`），对每行按 type 渲染单位后缀：
 
@@ -779,7 +779,7 @@ const unitOf = (type: string) => (type === 'net' ? 'Mbps' : type === 'gpu' ? '%'
 
 并将当前值展示 `currentPercent`（网络可能为 0，属正常）。
 
-- [ ] **Step 3: 扩展容器规则表单与列表**
+- [x] **Step 3: 扩展容器规则表单与列表**
 
 `ContainerRule` 类型（types/index.ts L820-858）增 `warnThreshold`/`dangerThreshold` 字段；`ContainerRuleWatchType` 增 `'cpu' | 'mem'`。
 
@@ -790,12 +790,12 @@ const unitOf = (type: string) => (type === 'net' ? 'Mbps' : type === 'gpu' ? '%'
 
 新建/编辑弹窗的表单 state 增加 warnThreshold/dangerThreshold 字段并在提交 body 中带上。
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run: `cd web; npx tsc -b`
 Expected: no errors。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/pages/notifications.tsx web/src/pages/notifications.less web/src/types/index.ts
@@ -814,7 +814,7 @@ git commit -m "feat(web): 告警中心支持 GPU/网络规则与容器 CPU/内�
 - Consumes: Task 1 的 `MonitorPoint`（gpu、netRate、containerStats）。
 - Produces: 前端可展示 GPU 当前利用率、网络当前 Mbps、容器当前 CPU/内存使用率。
 
-- [ ] **Step 1: `/rules` 的 current 补齐 gpu/net**
+- [x] **Step 1: `/rules` 的 current 补齐 gpu/net**
 
 L182-184 current 对象补：
 
@@ -827,7 +827,7 @@ L182-184 current 对象补：
       : { cpu: null, mem: null, disk: null, gpu: null, net: null };
 ```
 
-- [ ] **Step 2: `/container-rules` 为 cpu/mem 行回填当前值**
+- [x] **Step 2: `/container-rules` 为 cpu/mem 行回填当前值**
 
 修改 `getContainerAlertRules`（alerting.ts L1002-1015），读取 `getCurrentMonitor().containerStats` 构建 id→usage 映射，给 cpu/mem 规则附加 `currentValue`：
 
@@ -862,7 +862,7 @@ export async function getContainerAlertRules(): Promise<ContainerAlertRule[]> {
 
 `ContainerAlertRule` 类型（L735）可加可选字段 `currentValue?: number | null` 以承载（非必须，可用 `any` 扩展，但为类型干净建议加）。
 
-- [ ] **Step 3: 跑全量测试**
+- [x] **Step 3: 跑全量测试**
 
 Run: `cd server; node --test --require ts-node/register test/auth-security.test.ts test/webhook-git.test.ts test/trivy.test.ts test/c3.test.ts`
 Expected: 全部通过。
@@ -871,7 +871,7 @@ Run 前后端类型检查：
 - `cd server; npx tsc --noEmit -p tsconfig.json`
 - `cd web; npx tsc -b`
 
-- [ ] **Step 4: 端到端冒烟（启动服务）**
+- [x] **Step 4: 端到端冒烟（启动服务）**
 
 Run（后台）: `cd server; npm run start`（或项目既有 dev 命令）→ 等待就绪。
 验证接口：
@@ -880,7 +880,7 @@ Run（后台）: `cd server; npm run start`（或项目既有 dev 命令）→ �
 
 Expected: 均 200，结构含新维度。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/routes/notifications.ts server/src/alerting.ts
@@ -897,14 +897,14 @@ git commit -m "feat(notifications): /rules 与容器规则接口补充 GPU/网�
 **Interfaces:**
 - Consumes: 全部前述任务。
 
-- [ ] **Step 1: 全仓 diff 审查**
+- [x] **Step 1: 全仓 diff 审查**
 
 Run: `git diff origin/main..HEAD --stat` 与 `git diff origin/main..HEAD`
 Expected: 改动集中在 monitor.ts、alerting.ts、storage.ts、notifications.ts、notifications.tsx、types/index.ts、test/c3.test.ts。核查：无密钥泄露、无注入面、类型一致、字段命名跨任务一致（netRate/containerStats/currentValue/warnThreshold/dangerThreshold）。
 
-- [ ] **Step 2: 补充集成测试（可选）**——若端到端冒烟发现 `/container-rules` 当前值或 gpu/net current 结构相关问题，补修。
+- [x] **Step 2: 补充集成测试（可选）**——若端到端冒烟发现 `/container-rules` 当前值或 gpu/net current 结构相关问题，补修。
 
-- [ ] **Step 3: 运行完整测试与双端构建**
+- [x] **Step 3: 运行完整测试与双端构建**
 
 Run: `cd server; node --test --require ts-node/register test/auth-security.test.ts test/webhook-git.test.ts test/trivy.test.ts test/c3.test.ts`
 Run: `cd server; npx tsc --noEmit -p tsconfig.json`
@@ -912,7 +912,7 @@ Run: `cd web; npx tsc -b`
 
 Expected: 全部通过 / 无类型错误。
 
-- [ ] **Step 4: 推送**
+- [x] **Step 4: 推送**
 
 ```bash
 git add -A
@@ -940,3 +940,4 @@ git push
 **类型一致性：** `computeNetRate`、`MonitorContainerStat`、`netRate`、`containerStats`、`warnThreshold/dangerThreshold`、`currentValue` 在各任务签名保持一致。
 
 > 已知实现风险提示：GPU 告警的_定制文案_（含 GPU 名/方向）在 Task 3 Step 3 标注为"可接受复用统一文案"，若实现复杂非阻塞；判定与记录/推送正确性优先。
+
