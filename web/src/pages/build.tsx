@@ -270,7 +270,7 @@ export default function BuildPage() {
           <Field label="构建上下文目录" required hint="宿主机上包含 Dockerfile 的目录（绝对路径）">
             <Input
               value={context}
-              placeholder="如 D:\\docker\\myapp 或 C:\\work\\app"
+              placeholder="如 /home/user/myapp 或 D:\\docker\\myapp"
               onChange={(e) => setContext(e.target.value)}
             />
           </Field>

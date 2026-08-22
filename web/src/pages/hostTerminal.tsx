@@ -212,6 +212,8 @@ export default function HostTerminalPage() {
           >
             <option value="powershell">PowerShell</option>
             <option value="cmd">CMD</option>
+            <option value="bash">Bash</option>
+            <option value="sh">sh</option>
           </Select>
           {connState === 'connected' ? (
             <Button variant="ghost" size="sm" onClick={disconnect}>断开</Button>

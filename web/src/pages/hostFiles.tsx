@@ -331,7 +331,7 @@ export default function HostFilesPage() {
     }
     if (!createName.trim()) return;
     try {
-      const target = curPath.replace(/\\$/, '') + '\\' + createName.trim();
+      const target = curPath.replace(/[\\/]+$/, '') + '/' + createName.trim();
       await post('/api/hostfiles/write', { path: target, content: '' });
       showToast('文件已创建');
       setCreateOpen(false);
@@ -395,7 +395,7 @@ export default function HostFilesPage() {
           showToast('请填写文件名', 'error');
           return;
         }
-        const target = curPath.replace(/\\$/, '') + '\\' + name;
+        const target = curPath.replace(/[\\/]+$/, '') + '/' + name;
         await post('/api/hostfiles/write', { path: target, content: editor.content });
         showToast('文件已创建');
         setEditor((s) => ({ ...s, open: false }));

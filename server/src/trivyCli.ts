@@ -9,6 +9,7 @@
  */
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { isWindows, isUbuntu, isCentOS } from './platform/detect';
 
 const execAsync = promisify(exec);
 
@@ -70,11 +71,19 @@ export async function trivyAvailable(): Promise<boolean> {
   }
 }
 
-/** 未安装 Trivy 的引导文案 */
-const NOT_AVAILABLE_REASON =
-  '本机未检测到 Trivy。请先安装 Trivy 后使用镜像漏洞扫描：' +
-  '1) Windows 可用 winget install AquaSecurity.Trivy 或下载二进制；' +
-  '2) 源码构建见 https://aquasecurity.github.io/trivy/。安装后刷新即可扫描。';
+/** 未安装 Trivy 的引导文案（按平台生成） */
+function getNotAvailableReason(): string {
+  if (isWindows()) {
+    return '本机未检测到 Trivy。请先安装 Trivy：winget install AquaSecurity.Trivy 或下载二进制。安装后刷新即可扫描。';
+  }
+  if (isUbuntu()) {
+    return '本机未检测到 Trivy。请先安装 Trivy：sudo apt install trivy 或从 https://aquasecurity.github.io/trivy/ 下载二进制。安装后刷新即可扫描。';
+  }
+  if (isCentOS()) {
+    return '本机未检测到 Trivy。请先安装 Trivy：sudo dnf install trivy 或从 https://aquasecurity.github.io/trivy/ 下载二进制。安装后刷新即可扫描。';
+  }
+  return '本机未检测到 Trivy。请从 https://aquasecurity.github.io/trivy/ 下载安装后刷新即可扫描。';
+}
 
 /**
  * 执行 trivy image 扫描并解析 JSON；失败抛带 statusCode 的错误
@@ -89,7 +98,7 @@ export async function scanImage(name: string, timeoutMs = 180000): Promise<Image
     throw mkErr(400, String(e?.message || '无效的镜像名'));
   }
   if (!(await trivyAvailable())) {
-    return { available: false, notAvailableReason: NOT_AVAILABLE_REASON };
+    return { available: false, notAvailableReason: getNotAvailableReason() };
   }
   let stdout: string;
   try {

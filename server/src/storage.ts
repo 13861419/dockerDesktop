@@ -16,8 +16,9 @@ import { DatabaseSync } from 'node:sqlite';
 /**
  * 解析数据目录（优先级从高到低）：
  *  1. 环境变量 DOCKERMANAGER_DATA（若已显式设置）
- *  2. 系统数据目录 %PROGRAMDATA%\DockerManager\data（正式安装到 Program Files 等受保护目录时使用，
- *     此处所有用户可写，规避安装目录不可写导致的启动失败）
+ *  2. 系统数据目录：
+ *     - Windows：%PROGRAMDATA%\DockerManager\data
+ *     - Linux：/var/lib/docker-manager（标准 FHS 路径）
  *  3. 回退：项目/安装目录下 data（开发环境与便携场景）
  *
  * @returns 数据目录绝对路径
@@ -26,12 +27,24 @@ function resolveDataDir(): string {
   if (process.env.DOCKERMANAGER_DATA) {
     return path.resolve(process.env.DOCKERMANAGER_DATA);
   }
+  // Windows：PROGRAMDATA
   const programData = process.env.PROGRAMDATA;
   if (programData) {
     const systemDir = path.join(programData, 'DockerManager', 'data');
-    // 仅当安装位置不可写（位于系统保护目录）时，才启用系统数据目录
     if (!isDirWritable(path.join(__dirname, '..', '..', 'data'))) {
       return systemDir;
+    }
+  }
+  // Linux：标准 FHS 路径
+  if (process.platform === 'linux') {
+    const linuxDir = '/var/lib/docker-manager';
+    try {
+      // 若该目录已存在或其父目录可写，优先使用
+      if (fs.existsSync(linuxDir) || isDirWritable('/var/lib')) {
+        return linuxDir;
+      }
+    } catch {
+      // ignore
     }
   }
   // 默认回退到项目/安装目录下的 data（开发与便携场景）
