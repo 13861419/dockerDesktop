@@ -119,6 +119,42 @@ server/src/platform/
 
 - 保留 `isWindows()`，新增 `isLinux()` / `getDistro()` 于 `platform/detect.ts`，业务侧改用平台对象，避免散落 `process.platform`。
 
+### 3.9 宿主机文件 — `server/src/routes/hostFiles.ts`（🔴 全量核查新发现，Linux 整页不可用）
+
+- **问题（Windows 专用假设）**：
+  - `assertSafePath`（第 58-63 行）`path.parse(p).root` 强制根为盘符（`C:\` / `D:\`），Linux 的 `/`、`/etc`、`/var` 全被判为「非法路径」→ **整页不可用**。
+  - 盘符枚举（第 76-83 行）遍历 `A:\`–`Z:\` 用 `existsSync` 探测 → Linux 无名盘符，`load('/')` 返回空。
+  - 反斜杠拼接：`hostFiles.tsx:334,398` 用 `'\\'` 拼绝对路径 → Linux 生成错误路径。
+- **改造**：按 `isWindows()` 分流根路径（Win=`A:\..`，Linux=`/`）；`assertSafePath` 放宽为「Linux 允许绝对路径、仅拦截路径穿越」；前端路径分隔统一由后端返回或按平台约定 `/`。
+
+### 3.10 宿主机终端（REST 版）— `server/src/routes/hostTerminal.ts`
+
+- WS 版见 §3.2；**REST 单命令版同样需改**：
+  - `sessionCwd` 回退 `'C:\\'`（第 30 行）→ Linux 用 `os.homedir()` / `/`。
+  - `spawn('powershell.exe'/'cmd.exe')`（第 128 行）→ 用 `platform/exec.ts getHostShell()`。
+  - `applyCdIfAny`（第 185 行）用 Windows 盘符正则 → Linux 改 `path.isAbsolute`。
+  - GBK 编码（第 76-106 行）对 Linux 用 utf8；前端 shell 下拉（`hostTerminal.tsx:213-214`）增加 bash/sh。
+
+### 3.11 数据目录 — `server/src/storage.ts`
+
+- 第 31 行优先读 `%PROGRAMDATA%\DockerManager\data`（Windows）。
+- **改造**：Linux 建议读 `DOCKERMANAGER_DATA` 环境变量 + 回退 `<install>/data`（Linux 无 PROGRAMDATA 已有回退，但需显式支持标准目录 `/var/lib/docker-manager`，见 §6.3）。
+
+### 3.12 跨引擎迁移绑定挂载路径 — `server/src/routes/transfer.ts`
+
+- 第 ~280 行 `isAbsolutePath` 用 `/^[a-zA-Z]:[\\/]/` 识别 Windows 盘符做绝对路径判定。
+- **改造**：Windows 用盘符判定；Linux 用 `path.isAbsolute()`（`/` 开头）。
+
+### 3.13 镜像构建上下文的宿主路径 — `server/src/routes/build.ts`
+
+- 第 131/136 行 `path.resolve(context)` 直接以用户填写的宿主目录作构建上下文（`D:\work` 风格在 Linux 失效）。
+- **改造**：API 层校验/规范化路径（Linux 用 `/` 绝对路径）；前端 `build.tsx:273` 的 Windows 示例文案改为 Linux 路径示例。
+
+### 3.14 安装引导文案 — `server/src/trivyCli.ts`
+
+- 第 74-77 行安装提示仅写 Windows（`winget install`）。
+- **改造**：按平台分支——Windows `winget`；Linux `apt install trivy` / `dnf install trivy` / 官方二进制。（见 §3.6）
+
 ---
 
 ## 4. 测试层面改造
@@ -257,7 +293,50 @@ WantedBy=multi-user.target
 
 ---
 
-## 8. RBI 里程碑与验收
+## 8. 逐页功能点核查（30 页全量）
+
+> 对全部 30 个前端页面的每个功能点，核对前端 → 后端 `文件:行号` → 平台依赖后汇总。
+> ✅ = 无需改动（dockerode / SQLite / HTTP / 容器内命令）；🔒 = Windows-only，Linux 降级隐藏；🟠/🔴 = 需改造，对应 §3 小节。
+
+| 页面 | 风险 | 核心平台问题 | 处理（§3） |
+| --- | --- | --- | --- |
+| 宿主机文件 hostFiles | 🔴 | 盘符断言/枚举 + 前端反斜杠 → 整页不可用 | §3.9 |
+| 宿主机终端 hostTerminal | 🔴 | REST(:128) 与 WS(:112) 均 spawn `powershell/cmd`、cwd 回退 `C:\` | §3.2 + §3.10 |
+| 备份恢复 backups | 🔴 | compose/site 备份的宿主 tar 硬编码 `shell:'cmd.exe'`(manager.ts:139,157) | §3.5 |
+| 数据库 databases | 🔴 | 备份/恢复宿主机通道 `cmd.exe`(dbBackup.ts:184, databases.ts:1169) | §3.5 |
+| 总览/监控 overview、健康 health、存储 storage | 🔴 | 磁盘分区 `wmic`(monitor.ts:253) → 磁盘曲线/体检/告警失真 | §3.4 |
+| Compose | 🟠 | 全套 `docker compose` CLI，依赖宿主 compose 插件 | §3.7 |
+| 应用商店 appstore | 🟠 | compose 套件 CLI + 挂载卷 source 路径(:670) | §3.7 + §3.12 |
+| 计划任务 tasks | 🟠 | `command` 任务宿主 shell(:476)、git 依赖(:186) | §3.7 |
+| 镜像扫描 imageDetail | 🟠 | 依赖宿主 `trivy` 可执行文件；安装文案仅 Windows | §3.6 + §3.14 |
+| 跨引擎迁移 transfer | 🟠 | bind 路径盘符判定(:280) | §3.12 |
+| 镜像构建 build | 🟠 | 构建上下文宿主路径(:131)、前端示例文案 | §3.13 |
+| 容器 containers/containerDetail | 🟡 | create/recreate 的 bind 源路径(宿主路径) | §3.12 |
+| 设置 settings | 🟢 | 数据目录 `PROGRAMDATA`(storage.ts:31) | §3.11 |
+| 容器模板 templates | 🟢 | 纯 SQLite，无平台依赖 | — |
+| 容器文件 files | 🟢 | 命令均在容器内执行 | — |
+| 数据卷 volumes | 🟢 | dockerode；卷备份走容器内 tar | — |
+| 网络 networks | 🟢 | dockerode，无平台依赖 | — |
+| Swarm / 编排 | 🟢 | dockerode，无平台依赖 | — |
+| 站点反代 sites | 🟢 | 容器化 nginx，无宿主命令 | — |
+| 引擎 engines | 🟢 | unix socket 探测已支持 | §3.1 验证 |
+| 镜像 images / imageDetail(导出等) | 🟢 | save/load/tag/push 全 dockerode，无 CLI | — |
+| 镜像中心 hub | 🟢 | HTTP + dockerode pull | — |
+| 事件流 events | 🟢 | dockerode 事件流 | — |
+| 操作日志 operationLogs | 🟢 | SQLite/CSV | — |
+| 云备份 cloudBackup | 🟢 | 纯 http/https 手写 | — |
+| 登录 login | 🟢 | 纯鉴权 | — |
+| 防火墙 firewall | 🔒 | `netsh` Windows-only；Linux 降级 `supported:false` | §3.3 |
+
+**关键结论**
+- **必改（🔴）**：hostFiles、hostTerminal、backups(compose/site)、databases(宿主机备份)、monitor(wmic)。
+- **需装依赖/路径规范化（🟠）**：compose CLI、trivy、git、bind/构建上下文路径。
+- **开箱可用（🟢）**：绝大多数 Docker 资源操作走 dockerode，Linux 上基本无需改。
+- **设计降级（🔒）**：firewall。
+
+---
+
+## 9. RBI 里程碑与验收
 
 | 里程碑 | 内容 | 验收标准 |
 | --- | --- | --- |
@@ -268,7 +347,7 @@ WantedBy=multi-user.target
 
 ---
 
-## 9. 风险与对策（PM 视角）
+## 10. 风险与对策（PM 视角）
 
 | 风险 | 说明 | 对策 |
 | --- | --- | --- |
@@ -282,7 +361,7 @@ WantedBy=multi-user.target
 
 ---
 
-## 10. 附：涉及文件一览
+## 11. 附：涉及文件一览
 
 | 文件 | 改动类型 |
 | --- | --- |
@@ -313,6 +392,13 @@ WantedBy=multi-user.target
 | `packaging/linux/build-deb.sh` | 新增：打 `.deb`（amd64/arm64 参数化） |
 | `packaging/linux/build-rpm.sh` | 新增：打 `.rpm`（x86_64/aarch64 参数化） |
 | `package.json` | 增：`version` 语义化 + `package:linux` 脚本 |
+| `server/src/routes/hostFiles.ts` | 改：盘符断言/枚举 + 根路径平台化（🔴） |
+| `web/src/pages/hostFiles.tsx` | 改：路径分隔符按平台（反斜杠 → `/`） |
+| `server/src/routes/hostTerminal.ts` | 改：REST 版 shell 平台化（cwd / shell / 编码） |
+| `server/src/storage.ts` | 改：数据目录支持 `DOCKERMANAGER_DATA`（Linux） |
+| `server/src/routes/transfer.ts` | 改：bind 绝对路径判定平台化 |
+| `server/src/routes/build.ts` | 改：构建上下文宿主路径规范化 + 前端示例文案 |
+| `server/test/api-hostFiles.test.ts` 等 | 改：平台断言参数化 |
 
 ---
 
