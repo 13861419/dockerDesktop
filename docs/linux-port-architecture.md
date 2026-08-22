@@ -213,7 +213,51 @@ WantedBy=multi-user.target
 
 ---
 
-## 7. RBI 里程碑与验收
+## 7. 多端打包与发布（GitHub Releases）
+
+> 确认决策：多端 = **细分多包**（Windows + Ubuntu 24 + CentOS 7+，且按架构拆分）；承载 = **GitHub Releases**；触发 = **CI 自动构建（tag 触发）**。
+
+### 7.1 多端产物清单
+
+| 平台 | 包格式 | 架构 | 命名示例 |
+| --- | --- | --- | --- |
+| Windows | NSIS `setup.exe` | x86_64 | `DockerManager-setup-<ver>-win-x64.exe` |
+| Ubuntu 24 | `.deb` | x86_64 / aarch64 | `docker-manager-<ver>-ubuntu24-amd64.deb` / `...-arm64.deb` |
+| CentOS 7+ | `.rpm` | x86_64 / aarch64 | `docker-manager-<ver>-centos7-x86_64.rpm`（7/8/9 各自构建） |
+
+- 每包内含安装脚本（Linux `install.sh` / Windows `install.bat`）+ systemd unit（Linux）+ 说明文档。
+- Linux 包在对应基础镜像容器（Ubuntu 24 / CentOS 7）内构建，确保 glibc / 依赖与目标系统兼容；**架构（x86_64 / aarch64）分开产出**。
+- 版本管理：`package.json` 统一 bump + `tag vX.Y.Z` 触发构建。
+
+### 7.2 GitHub Actions 发布流程
+
+- 触发：打 tag（如 `v0.2.0`）时运行 `.github/workflows/release.yml`。
+- Job 矩阵：`os` = [windows-latest, ubuntu-24.04, centos-7] × 架构（amd64/arm64）。
+  - Windows：沿用现有 NSIS 打包（`npm run package:installer`）。
+  - Ubuntu 24：容器内 `dpkg-deb` / fpm 打 `.deb`。
+  - CentOS 7：容器内 `rpmbuild` / fpm 打 `.rpm`（CentOS 8/9 另出，或在同一 rpm 但标注最低版本）。
+- 构件上传 `softprops/action-gh-release` → 自动发布到 GitHub Releases 并生成下载链接。
+- 附带 `sha256sums.txt` 校验和与变更日志（`git log` / manifest）。
+
+### 7.3 下载入口
+
+- **GitHub Releases 页面**是主要下载入口：每个版本下列出全部平台安装包、架构、校验值。
+- 可选增强：README / 官网放"下载最新版"按钮，指向该 tag 的资产；支持后续做版本检测与升级提示。
+
+### 7.4 新增文件
+
+| 文件 | 说明 |
+| --- | --- |
+| `.github/workflows/release.yml` | tag 触发，多平台矩阵构建 + 发布到 Releases |
+| `packaging/linux/Dockerfile.ubuntu24` | 构建 deb 用的 Ubuntu 24 构建环境 |
+| `packaging/linux/Dockerfile.centos7` | 构建 rpm 用的 CentOS 7 构建环境 |
+| `packaging/linux/build-deb.sh` | 生成 `.deb`（dpkg-deb / fpm，架构参数化） |
+| `packaging/linux/build-rpm.sh` | 生成 `.rpm`（rpmbuild / fpm） |
+| `packaging/linux/install.sh`（见 §6.2） | 安装脚本（随包分发） |
+
+---
+
+## 8. RBI 里程碑与验收
 
 | 里程碑 | 内容 | 验收标准 |
 | --- | --- | --- |
@@ -224,7 +268,7 @@ WantedBy=multi-user.target
 
 ---
 
-## 8. 风险与对策（PM 视角）
+## 9. 风险与对策（PM 视角）
 
 | 风险 | 说明 | 对策 |
 | --- | --- | --- |
@@ -238,7 +282,7 @@ WantedBy=multi-user.target
 
 ---
 
-## 9. 附：涉及文件一览
+## 10. 附：涉及文件一览
 
 | 文件 | 改动类型 |
 | --- | --- |
@@ -263,6 +307,12 @@ WantedBy=multi-user.target
 | `packaging/linux/install.sh` | 新增 |
 | `server/test/api-firewall.test.ts` 等 | 改：平台断言参数化 |
 | `server/test/platform-detect.test.ts` | 新增 |
+| `.github/workflows/release.yml` | 新增：tag 触发多平台矩阵构建 + 发布到 Releases |
+| `packaging/linux/Dockerfile.ubuntu24` | 新增：构建 deb 用 Ubuntu 24 环境 |
+| `packaging/linux/Dockerfile.centos7` | 新增：构建 rpm 用 CentOS 7 环境 |
+| `packaging/linux/build-deb.sh` | 新增：打 `.deb`（amd64/arm64 参数化） |
+| `packaging/linux/build-rpm.sh` | 新增：打 `.rpm`（x86_64/aarch64 参数化） |
+| `package.json` | 增：`version` 语义化 + `package:linux` 脚本 |
 
 ---
 
