@@ -9,18 +9,28 @@
  * 注意：Windows named pipe 无法用 fs.existsSync 检测，必须通过真实连接验证。
  */
 import Dockerode from 'dockerode';
-import os from 'os';
+import { isWindows, isLinux } from '../platform/detect';
 import { getDb } from '../storage';
 
-/** 常见 Docker 访问端点的探测顺序，按优先级排列 */
-const DEFAULT_ENDPOINTS: string[] = [
-  // 环境变量显式指定时优先（通过 getClient 注入）
-  'npipe:////./pipe/dockerDesktopLinuxEngine',
-  // Windows 默认 pipe
-  'npipe:////./pipe/docker_engine',
-  // Linux/macOS 默认 socket
-  'unix:///var/run/docker.sock',
-];
+/**
+ * 常见 Docker 访问端点的探测顺序，按平台优先级排列
+ * Windows：named pipe 优先；Linux：unix socket 优先
+ */
+function getDefaultEndpoints(): string[] {
+  if (isLinux()) {
+    return [
+      'unix:///var/run/docker.sock',
+      'npipe:////./pipe/dockerDesktopLinuxEngine',
+      'npipe:////./pipe/docker_engine',
+    ];
+  }
+  // Windows（默认）
+  return [
+    'npipe:////./pipe/dockerDesktopLinuxEngine',
+    'npipe:////./pipe/docker_engine',
+    'unix:///var/run/docker.sock',
+  ];
+}
 
 /**
  * 将访问端点字符串转为 dockerode 连接配置
@@ -75,9 +85,10 @@ async function detectDockerEndpoint(candidates: string[]): Promise<string> {
       return endpoint;
     }
   }
-  throw new Error(
-    '无法连接 Docker 引擎。请确认 Docker Desktop 已启动，或通过 DOCKER_HOST 环境变量指定端点。',
-  );
+  const platformHint = isWindows()
+    ? '请确认 Docker Desktop 已启动，或通过 DOCKER_HOST 环境变量指定端点。'
+    : '请确认 Docker daemon 已启动并可访问 /var/run/docker.sock，或通过 DOCKER_HOST 环境变量指定端点。';
+  throw new Error(`无法连接 Docker 引擎。${platformHint}`);
 }
 
 /** 缓存已探测到的默认端点，避免每次请求都重复探测 */
@@ -171,7 +182,7 @@ export async function getDockerClient(): Promise<Dockerode> {
 
   let endpoint = cachedDetectedEndpoint;
   if (!endpoint) {
-    const candidates = [envEndpoint || '', ...DEFAULT_ENDPOINTS];
+    const candidates = [envEndpoint || '', ...getDefaultEndpoints()];
     endpoint = await detectDockerEndpoint(candidates);
     cachedDetectedEndpoint = endpoint;
   }
@@ -191,10 +202,4 @@ export function getDockerInfo(): Promise<Dockerode.DockerVersion> {
   return getDockerClient().then((client) => client.version());
 }
 
-/**
- * 判断当前是否在 Windows 平台上
- * @returns 是否 Windows
- */
-export function isWindows(): boolean {
-  return os.platform() === 'win32';
-}
+

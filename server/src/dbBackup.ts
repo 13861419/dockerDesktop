@@ -20,6 +20,7 @@ import { promisify } from 'util';
 import Dockerode from 'dockerode';
 import { getDockerClient } from './docker/client';
 import { DATA_DIR, decryptSecret } from './storage';
+import { hostShellForExec, quoteForHost } from './platform/exec';
 
 const execAsync = promisify(exec);
 
@@ -181,7 +182,7 @@ async function dumpOnHost(inst: DbInstance, db: string, file: string, pwd: strin
     cmd = `${pwdPrefix}pg_dump -h${inst.host} -p${port} -U ${csh(user)} -d ${csh(db)} | gzip > ${csh(file)}`;
   }
   try {
-    await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 64 * 1024 * 1024 });
+    await execAsync(cmd, { shell: hostShellForExec(), maxBuffer: 64 * 1024 * 1024 });
   } catch (err: any) {
     if (/ENOENT|not recognized|不是内部或外部命令/i.test(String(err?.message || ''))) {
       throw new Error('宿主机未安装对应数据库客户端 CLI（mysqldump/pg_dump），无法在宿主机模式备份');

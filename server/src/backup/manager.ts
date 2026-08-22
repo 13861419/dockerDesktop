@@ -23,6 +23,7 @@ import { exec as execCb } from 'child_process';
 import { promisify } from 'util';
 import { getDb, DATA_DIR, importDatabaseBuffer } from '../storage';
 import { getDockerClient } from '../docker/client';
+import { hostShellForExec, quoteForHost } from '../platform/exec';
 import type Dockerode from 'dockerode';
 import { listBackups, getBackup, writeBackup, updateBackupStatus } from './manifest';
 import type { BackupKind, BackupManifest, BackupStatus } from './types';
@@ -131,12 +132,11 @@ function payloadName(kind: BackupKind): string {
 async function packDirToTar(srcDir: string, tarPath: string): Promise<void> {
   if (!fs.existsSync(srcDir)) throw new Error(`源目录不存在: ${srcDir}`);
   fs.mkdirSync(path.dirname(tarPath), { recursive: true });
-  const escapedSrc = srcDir.replace(/"/g, '\\"');
-  const escapedTar = tarPath.replace(/"/g, '\\"');
-  // Windows 下使用系统 tar（Win10+ 自带 bsdtar）；cmd 内参数用引号包裹
-  const cmd = `tar -czf "${escapedTar}" -C "${escapedSrc}" .`;
+  const escapedSrc = quoteForHost(srcDir);
+  const escapedTar = quoteForHost(tarPath);
+  const cmd = `tar -czf ${escapedTar} -C ${escapedSrc} .`;
   try {
-    await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 1024 * 1024 * 50 });
+    await execAsync(cmd, { shell: hostShellForExec(), maxBuffer: 1024 * 1024 * 50 });
   } catch (err: any) {
     throw new Error(`目录打包失败: ${err?.stderr || err?.message || 'tar 执行错误'}`);
   }
@@ -150,11 +150,11 @@ async function packDirToTar(srcDir: string, tarPath: string): Promise<void> {
 async function unpackTarToDir(tarPath: string, destDir: string): Promise<void> {
   if (!fs.existsSync(tarPath)) throw new Error(`备份文件不存在: ${tarPath}`);
   fs.mkdirSync(destDir, { recursive: true });
-  const escapedTar = tarPath.replace(/"/g, '\\"');
-  const escapedDest = destDir.replace(/"/g, '\\"');
-  const cmd = `tar -xzf "${escapedTar}" -C "${escapedDest}"`;
+  const escapedTar = quoteForHost(tarPath);
+  const escapedDest = quoteForHost(destDir);
+  const cmd = `tar -xzf ${escapedTar} -C ${escapedDest}`;
   try {
-    await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 1024 * 1024 * 50 });
+    await execAsync(cmd, { shell: hostShellForExec(), maxBuffer: 1024 * 1024 * 50 });
   } catch (err: any) {
     throw new Error(`解包失败: ${err?.stderr || err?.message || 'tar 执行错误'}`);
   }

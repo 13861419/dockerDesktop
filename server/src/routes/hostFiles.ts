@@ -1,12 +1,16 @@
 /**
  * 宿主机文件管理 API 路由（挂载路径 /api/hostfiles）
  *
- * 提供宿主机（Windows）文件系统的浏览 / 上传 / 下载 / 新建 / 重命名 / 移动 / 删除能力。
+ * 提供宿主机文件系统的浏览 / 上传 / 下载 / 新建 / 重命名 / 移动 / 删除能力。
  * 全部基于 Node 内置 fs/promises 与 stream，无任何第三方新增依赖。
+ *
+ * 平台说明：
+ *  - Windows：以逻辑盘符（C:\ D:\）为根，拒绝路径穿越
+ *  - Linux：以 / 为根，拒绝路径穿越
  *
  * 安全约束：
  *  - 所有路径统一使用 path.resolve 规整为绝对路径。
- *  - 路径与父路径都必须落在 Windows 逻辑盘符根之下，且拒绝路径穿越（'..'）。
+ *  - 路径与父路径都必须落在平台合法根之下，且拒绝路径穿越（'..'）。
  *  - 删除目录需显式传真 force=true（递归删除），默认仅允许空目录或单文件。
  */
 import { Router, Request, Response } from 'express';
@@ -18,6 +22,7 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
+import { isWindows } from '../platform/detect';
 
 const router = Router();
 
@@ -52,13 +57,23 @@ function resolvePath(raw: string | undefined | null): string {
 }
 
 /**
- * 校验路径落在合法盘符根下
+ * 校验路径落在合法根之下
+ * - Windows：盘符根（C:\ D:\ 等），拒绝 \ 或 /
+ * - Linux：/ 根，拒绝非 / 开头的路径
  * @param p 绝对路径
  */
 function assertSafePath(p: string): void {
   const root = path.parse(p).root;
-  if (!root || root === '\\' || root === '/') {
-    throw Object.assign(new Error('非法路径'), { statusCode: 400 });
+  if (isWindows()) {
+    // Windows：盘符根必须是 X:\ 形式（非 \ 也非 /）
+    if (!root || root === '\\' || root === '/') {
+      throw Object.assign(new Error('非法路径'), { statusCode: 400 });
+    }
+  } else {
+    // Linux：根必须是 /
+    if (root !== '/') {
+      throw Object.assign(new Error('非法路径'), { statusCode: 400 });
+    }
   }
 }
 
@@ -74,13 +89,18 @@ router.get(
     let target: string;
 
     if (!rawPath) {
-      // 未指定路径：返回 Windows 逻辑盘符
-      const drives: string[] = [];
-      for (let c = 65; c <= 90; c++) {
-        const letter = String.fromCharCode(c) + ':\\';
-        if (fs.existsSync(letter)) drives.push(letter);
+      if (isWindows()) {
+        // Windows：返回逻辑盘符列表
+        const drives: string[] = [];
+        for (let c = 65; c <= 90; c++) {
+          const letter = String.fromCharCode(c) + ':\\';
+          if (fs.existsSync(letter)) drives.push(letter);
+        }
+        return res.json({ items: drives.map((d) => ({ name: d, type: 'drive', path: d })), path: '' });
+      } else {
+        // Linux：根目录即为顶层
+        return res.json({ items: [{ name: '/', type: 'drive', path: '/' }], path: '' });
       }
-      return res.json({ items: drives.map((d) => ({ name: d, type: 'drive', path: d })), path: '' });
     }
 
     target = resolvePath(rawPath);

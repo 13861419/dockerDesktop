@@ -1,12 +1,14 @@
 /**
  * 宿主机终端 API 路由（挂载路径 /api/hostterminal）
  *
- * 非交互式命令执行器：通过 child_process 在宿主机（Windows）执行单条
- * PowerShell / cmd 命令并返回输出。后端维护一个"会话工作目录"，执行 cd 后
- * 后续命令基于新目录执行，以获得接近交互式终端的基础体验。
+ * 非交互式命令执行器：通过 child_process 在宿主机执行单条命令并返回输出。
+ * 后端维护一个"会话工作目录"，执行 cd 后后续命令基于新目录执行。
+ *
+ * 平台说明：
+ *  - Windows：支持 powershell / cmd 两种 shell
+ *  - Linux：支持 bash / sh 两种 shell
  *
  * 安全约束：
- *  - 仅支持 powershell / cmd 两种 shell。
  *  - 命令最大长度限制（防滥用）。
  *  - 每条命令超时限制（默认 60 秒，防卡死），stdout+stderr 合并返回。
  */
@@ -16,6 +18,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
+import { isWindows, getDefaultShells, getDefaultShell, type ShellName } from '../platform/detect';
 
 const router = Router();
 
@@ -27,10 +30,10 @@ const DEFAULT_TIMEOUT_MS = 60000;
 const MAX_OUTPUT_LEN = 200000;
 
 /** 会话工作目录（全局单会话） */
-let sessionCwd = process.env.USERPROFILE || process.env.HOME || 'C:\\';
+let sessionCwd = process.env.HOME || process.env.USERPROFILE || (isWindows() ? 'C:\\' : '/');
 
-/** 支持的 shell */
-type Shell = 'powershell' | 'cmd';
+/** 支持的 shell（按平台） */
+type Shell = ShellName;
 
 /**
  * 统一兜底错误处理
@@ -66,43 +69,62 @@ function normalizeCwd(raw: string | undefined | null): string {
 
 /**
  * 为指定 shell 构造 UTF-8 输出前缀，修复中文 Windows 下宿主终端中文乱码。
- * 仅 PowerShell 需要前缀：强制其控制台/stdout 编码为 UTF-8，使 Node 端可按 UTF-8 解码。
- * cmd 无法通过 chcp 改变管道输出的代码页（仍是系统 OEM 代码页），
- * 故 cmd 分支不改命令，改为在接收端按 GBK 解码（见 decodeOutput）。
+ * Linux 原生 UTF-8，无需前缀。
  * @param shell shell 类型
  * @param command 原始命令
  * @returns 拼接 UTF-8 适配前缀后的命令
  */
 function withUtf8(shell: Shell, command: string): string {
-  if (shell === 'cmd') {
-    // cmd：不注入前缀，保持原命令原样执行
-    return command;
+  if (isWindows()) {
+    if (shell === 'cmd') {
+      return command;
+    }
+    // PowerShell：强制 stdout/控制台输出编码为 UTF-8
+    return `$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${command}`;
   }
-  // PowerShell：强制 stdout/控制台输出编码为 UTF-8，避免 GBK 输出被按 UTF-8 解码成乱码
-  return `$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${command}`;
+  // Linux：原生 UTF-8，无需前缀
+  return command;
 }
 
 /**
  * 按 shell 把收集到的输出字节解码为可读文本。
- * PowerShell 已在前缀中强制 UTF-8 输出，此处按 UTF-8 解码；
- * cmd 管道输出使用系统 OEM 代码页（中文 Windows 为 GBK/CP936），
- * 通过内置 TextDecoder（ICU 支持 gbk，零第三方依赖）解码，避免中文乱码。
- * 若目标编码不可用则回退 UTF-8。
+ * Linux 原生 UTF-8，直接解码。
+ * Windows PowerShell 已在前缀中强制 UTF-8；
+ * cmd 使用系统 OEM 代码页（中文 Windows 为 GBK/CP936）。
  * @param shell shell 类型
  * @param buf 原始输出字节
  * @returns 解码后的文本
  */
 function decodeOutput(shell: Shell, buf: Buffer): string {
-  if (shell === 'powershell' || buf.length === 0) {
-    return buf.toString('utf8');
+  if (buf.length === 0) return '';
+  if (isWindows()) {
+    if (shell === 'powershell') return buf.toString('utf8');
+    try {
+      return new TextDecoder('gbk').decode(buf);
+    } catch {
+      return buf.toString('utf8');
+    }
   }
-  try {
-    // cmd：按中文 Windows 的 GBK 代码页解码
-    return new TextDecoder('gbk').decode(buf);
-  } catch {
-    // ICU 不可用或编码不支持时回退 UTF-8
-    return buf.toString('utf8');
+  // Linux：UTF-8
+  return buf.toString('utf8');
+}
+
+/**
+ * 获取 spawn 配置：按平台返回 shell 二进制与参数
+ * @param shell shell 类型
+ * @param command 命令文本
+ * @returns { bin, args }
+ */
+function getSpawnConfig(shell: Shell, command: string): { bin: string; args: string[] } {
+  if (isWindows()) {
+    if (shell === 'powershell') {
+      return { bin: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', withUtf8(shell, command)] };
+    }
+    return { bin: 'cmd.exe', args: ['/d', '/c', withUtf8(shell, command)] };
   }
+  // Linux
+  const bin = shell === 'sh' ? '/bin/sh' : '/bin/bash';
+  return { bin, args: ['-c', command] };
 }
 
 /**
@@ -119,15 +141,12 @@ async function runShell(
   cwd: string,
   timeoutMs: number,
 ): Promise<{ output: string; exitCode: number | null }> {
-  const args =
-    shell === 'powershell'
-      ? ['-NoProfile', '-NonInteractive', '-Command', withUtf8(shell, command)]
-      : ['/d', '/c', withUtf8(shell, command)];
+  const { bin, args } = getSpawnConfig(shell, command);
 
   return await new Promise((resolve) => {
-    const child = spawn(shell === 'powershell' ? 'powershell.exe' : 'cmd.exe', args, {
+    const child = spawn(bin, args, {
       cwd,
-      windowsHide: true,
+      ...(isWindows() ? { windowsHide: true } : {}),
     });
     const chunks: Buffer[] = [];
 
@@ -181,8 +200,8 @@ function applyCdIfAny(command: string, shell: Shell): string | null {
   let target = m[1].trim().replace(/^["']|["']$/g, '').replace(/;$/, '');
   let next: string;
   if (target === '~') {
-    next = process.env.USERPROFILE || sessionCwd;
-  } else if (/^[a-zA-Z]:[\\/]/.test(target) || target.startsWith('\\')) {
+    next = process.env.HOME || process.env.USERPROFILE || sessionCwd;
+  } else if (path.isAbsolute(target)) {
     next = path.resolve(target);
   } else if (target === '..') {
     next = path.dirname(sessionCwd);
@@ -205,7 +224,7 @@ router.get(
   '/info',
   requireAdmin,
   asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ cwd: sessionCwd, shell: 'powershell' as Shell, shells: ['powershell', 'cmd'] });
+    res.json({ cwd: sessionCwd, shell: getDefaultShell(), shells: getDefaultShells() });
   }),
 );
 
@@ -222,7 +241,10 @@ router.post(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const command = String(req.body?.command || '').trim();
-    const shell: Shell = req.body?.shell === 'cmd' ? 'cmd' : 'powershell';
+    const requestedShell = String(req.body?.shell || getDefaultShell());
+    const shell: Shell = getDefaultShells().includes(requestedShell as ShellName)
+      ? (requestedShell as Shell)
+      : getDefaultShell();
     const cwd = normalizeCwd(req.body?.cwd);
     const timeout = Math.min(Number(req.body?.timeout) || DEFAULT_TIMEOUT_MS, 300000);
 

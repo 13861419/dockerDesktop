@@ -9,22 +9,10 @@
  * - 通过 docker system df 获取磁盘占用
  */
 import Dockerode from 'dockerode';
-import { getDockerClient, isWindows } from './client';
+import { getDockerClient } from './client';
+import { isWindows } from '../platform/detect';
+import { getDiskPartitions, DiskPartition } from '../platform/diskMonitor';
 import { getDb } from '../storage';
-
-/** 单个磁盘分区信息 */
-export interface DiskPartition {
-  /** 盘符/挂载点，如 "C:" */
-  mount: string;
-  /** 分区总容量（字节） */
-  total: number;
-  /** 分区已用空间（字节） */
-  used: number;
-  /** 分区剩余空间（字节） */
-  free: number;
-  /** 分区使用率（0-100） */
-  percent: number;
-}
 
 /**
  * 告警条目标注
@@ -243,63 +231,7 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
 }
 
 /**
- * 获取宿主机各固定磁盘分区信息（Windows：所有 DriveType=3 的本地分区）
- * @returns 各分区明细数组
- */
-function getDiskPartitions(): DiskPartition[] {
-  try {
-    const cp = require('child_process');
-    // 用 wmic 读取所有本地固定磁盘分区（DriveType=3，排除光驱/可移动盘等）的容量与剩余空间
-    const out = cp.execSync(
-      'wmic logicaldisk where DriveType=3 get DeviceID,Size,FreeSpace /value',
-      { encoding: 'utf8' },
-    );
-    // wmic 输出存在 \r\r\n 等混合换行，统一按行拆分并去除空白，再用状态机解析
-    const result: DiskPartition[] = [];
-    let current: { mount: string; total: number; free: number } | null = null;
-    for (const raw of out.split(/\r+\n?/)) {
-      const line = raw.trim();
-      if (!line) continue;
-      const eq = line.indexOf('=');
-      if (eq <= 0) continue;
-      const key = line.slice(0, eq).trim();
-      const value = line.slice(eq + 1).trim();
-      if (key === 'DeviceID') {
-        // 新分区开始，若上一个分区有效则收尾
-        if (current && current.total > 0) {
-          result.push({
-            mount: current.mount,
-            total: current.total,
-            free: current.free,
-            used: current.total - current.free,
-            percent: Number((((current.total - current.free) / current.total) * 100).toFixed(1)),
-          });
-        }
-        current = { mount: value, total: 0, free: 0 };
-      } else if (current) {
-        if (key === 'Size') current.total = Number(value) || 0;
-        else if (key === 'FreeSpace') current.free = Number(value) || 0;
-      }
-    }
-    // 收尾最后一个分区
-    if (current && current.total > 0) {
-      result.push({
-        mount: current.mount,
-        total: current.total,
-        free: current.free,
-        used: current.total - current.free,
-        percent: Number((((current.total - current.free) / current.total) * 100).toFixed(1)),
-      });
-    }
-    return result;
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-/**
- * 获取宿主机磁盘占用（Windows：所有固定磁盘分区的已用 / 总容量）
+ * 获取宿主机磁盘占用（所有固定磁盘分区的已用 / 总容量）
  * @param docker dockerode 客户端
  * @returns 磁盘已用、总容量（字节）
  */

@@ -21,6 +21,7 @@ import { getDb, encryptSecret, decryptSecret } from '../storage';
 import { requireAdmin, requireOperator } from '../auth';
 import { logOperation } from '../operationLog';
 import { APP_LABEL_KEY, APP_CATALOG } from '../appstore/catalog';
+import { hostShellForExec, quoteForHost } from '../platform/exec';
 import {
   createDbBackup,
   listDbBackups,
@@ -1162,11 +1163,12 @@ router.post(
           await helper.remove({ force: true }).catch(() => undefined);
         }
       } else {
-        // 宿主机型：exec 管道（Windows cmd 用双引号包裹路径；库名仅允许安全字符防注入）
+        // 宿主机型：exec 管道（库名仅允许安全字符防注入）
         const dbSafe = String(db || '').replace(/[^a-zA-Z0-9_]/g, '');
-        const cmd = `cmd /c "gunzip -c "${filePath}" | ${row.type === 'postgres' ? 'psql' : 'mysql'} ${dbSafe}"`;
+        const cli = row.type === 'postgres' ? 'psql' : 'mysql';
+        const cmd = `gunzip -c ${quoteForHost(filePath)} | ${cli} ${dbSafe}`;
         try {
-          await execAsync(cmd, { shell: 'cmd.exe', maxBuffer: 64 * 1024 * 1024 });
+          await execAsync(cmd, { shell: hostShellForExec(), maxBuffer: 64 * 1024 * 1024 });
         } catch (err: any) {
           if (/ENOENT|not recognized|不是内部或外部命令/i.test(String(err?.message || ''))) {
             throw new Error('宿主机未安装对应数据库客户端 CLI（mysql/psql），无法恢复');
