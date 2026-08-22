@@ -2,7 +2,7 @@
   "name": "docker-manager",
   "version": "0.1.0",
   "private": true,
-  "description": "Windows 版 Docker 管理面板（类似 1Panel）",
+  "description": "Docker 管理面板（支持 Windows / Ubuntu 24 / CentOS 7+，类似 1Panel）",
   "workspaces": [
     "server",
     "web"
@@ -46,7 +46,9 @@
     "test:e2e:functional": "node scripts/e2e-functional-test.js",
     "mock:hub-search": "node scripts/mock-hub-search.js",
     "package": "node packaging/build-release.js",
-    "package:installer": "node packaging/build-installer.js"
+    "package:installer": "node packaging/build-installer.js",
+    "package:deb": "bash packaging/linux/build-deb.sh",
+    "package:rpm": "bash packaging/linux/build-rpm.sh"
   },
   "devDependencies": {
     "playwright-core": "^1.55.0"
