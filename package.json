@@ -51,6 +51,7 @@
     "package:rpm": "bash packaging/linux/build-rpm.sh"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "playwright-core": "^1.55.0"
   },
   "engines": {

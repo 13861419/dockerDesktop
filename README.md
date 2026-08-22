@@ -1,6 +1,6 @@
 # Docker Manager（Docker 管理面板）
 
-一个面向 **Windows** 的 Docker 容器管理面板，提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
+一个跨平台的 Docker 容器管理面板（类似 1Panel），支持 **Windows**、**Ubuntu 24** 和 **CentOS 7+**，提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
 
 ## ✨ 功能特性
 
@@ -31,9 +31,10 @@
 | 层级        | 技术                                                                  |
 | --------- | ------------------------------------------------------------------- |
 | 前端        | React 18 · TypeScript · Vite · Less · xterm.js · ECharts(LineChart) |
-| 后端        | Node.js · TypeScript · Express 4 · ws（WebSocket）                    |
+| 后端        | Node.js ≥ 22 · TypeScript · Express 4 · ws（WebSocket）              |
 | Docker 交互 | dockerode（Docker Engine API）                                        |
-| 打包发布      | NSIS（安装包）· NSSM（服务注册）· TrayApp（托盘程序）                                |
+| 数据存储      | SQLite（node:sqlite，零依赖）                                          |
+| 打包发布      | Windows: NSIS + NSSM + TrayApp · Linux: deb/rpm + systemd          |
 
 ## 💾 数据存储说明（SQLite，无第三方数据库服务）
 
@@ -158,10 +159,11 @@ dockerDesktop/
 
 ## 📋 环境要求
 
-- **Node.js ≥ 18**（推荐使用 LTS 版本）
+- **Node.js ≥ 22**（推荐使用 LTS 版本）
 - **npm**（随 Node.js 安装）
-- 已启动的 **Docker 引擎**（Windows 下使用 **Docker Desktop**，需开启 WSL2 后端）
-- 仅支持 **Windows** 平台（打包发布脚本与 NSSM 服务注册仅适用于 Windows）
+- 已启动的 **Docker 引擎**
+  - **Windows**：Docker Desktop（需开启 WSL2 后端）
+  - **Ubuntu 24 / CentOS 7+**：docker-ce + docker-compose-plugin
 
 ## 🚀 安装与运行
 
@@ -192,7 +194,9 @@ cd server && npm start
 
 打开浏览器访问 `http://localhost:9528`。
 
-### 方式三：打安装包（Windows）
+### 方式三：打安装包
+
+#### Windows
 
 ```bash
 # 生成发布目录 dist-release/DockerManager（含 NSSM、托盘、安装脚本）
@@ -204,6 +208,28 @@ npm run package:installer
 
 生成 `DockerManager-setup-0.1.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
 
+#### Linux（Ubuntu 24 / CentOS 7+）
+
+```bash
+# 方式 A：使用安装脚本（推荐）
+# 1. 从 GitHub Releases 下载对应平台的安装包
+# 2. 解压后运行安装脚本
+sudo bash install.sh
+
+# 方式 B：从源码打包
+npm run package          # 生成 dist-release/DockerManager
+npm run package:deb -- amd64   # 生成 .deb 包（需要 Docker）
+npm run package:rpm -- x86_64  # 生成 .rpm 包（需要 Docker）
+```
+
+安装完成后通过 `systemctl` 管理服务：
+
+```bash
+sudo systemctl start docker-manager    # 启动
+sudo systemctl status docker-manager   # 查看状态
+sudo systemctl enable docker-manager   # 开机自启
+```
+
 ## 🔑 使用说明
 
 | 项目     | 说明                                            |
@@ -212,7 +238,7 @@ npm run package:installer
 | 默认登录密码 | `admin888`                                    |
 | 默认端口   | `9528`（后端）/ `9526`（前端开发）                      |
 | 会话有效期  | 24 小时（可用环境变量 `AUTH_TTL_HOURS` 调整）             |
-| 数据目录   | 项目根目录 `data/`（SQLite 数据库 `docker-manager.db`） |
+| 数据目录   | Windows: `<安装目录>/data/` · Linux: `/var/lib/docker-manager/` |
 
 ### 环境变量
 
@@ -224,15 +250,20 @@ npm run package:installer
 | `ADMIN_USER` / `ADMIN_PASS` | 初始管理员账号/密码                                     | `admin` / `admin888` |
 | `AUTH_TTL_HOURS`            | 会话过期小时数                                        | `24`                 |
 | `STATIC_DIR`                | 生产模式前端静态目录（可选）                                 | `web/dist`           |
+| `DOCKERMANAGER_DATA`        | 自定义数据目录路径（Linux 可选）                              | `/var/lib/docker-manager` |
 
 ## ⚙️ 环境变量补充说明：Docker 引擎连接
 
 后端通过 `server/src/docker/client.ts` 自动探测可用的 Docker 引擎，按以下顺序连接（使用真实 `ping` 验证）：
 
+**Linux**：
+1. 环境变量 `DOCKER_HOST` 显式指定的端点
+2. `unix:///var/run/docker.sock`（Linux 默认）
+
+**Windows**：
 1. 环境变量 `DOCKER_HOST` 显式指定的端点
 2. `npipe:////./pipe/dockerDesktopLinuxEngine`（Docker Desktop WSL2）
 3. `npipe:////./pipe/docker_engine`（Windows 默认）
-4. `unix:///var/run/docker.sock`（Linux/macOS）
 
 > 注意：Windows named pipe 无法用 `fs.existsSync` 检测，需通过真实连接验证，因此新增端点会自动尝试逐个探测。
 
@@ -253,7 +284,8 @@ npm run package:installer
   - 上述可搜索源为社区公益服务，可能限流或变更；搜索仍不可用时，可直接在镜像中心点选"常用镜像"，或在"拉取镜像"输入已知镜像名（走镜像源拉取可靠）。
   - 本地开发/自动化回归可启动自带的本地 mock 搜索服务（`npm run mock:hub-search`）作为不依赖外网的兜底。
 - **忘记密码**：停止服务后删除 `data/docker-manager.db`（及同目录 `-wal` / `-shm` 文件），重新启动服务，会以 `ADMIN_USER` / `ADMIN_PASS`（默认 `admin` / `admin888`）重新初始化管理员和默认配置。
-- **备份/迁移数据**：只需复制整个 `data/` 目录（核心是 `docker-manager.db`）即可完成配置的备份与迁移。
+- **备份/迁移数据**：只需复制整个 `data/` 目录（核心是 `docker-manager.db`）即可完成配置的备份与迁移。详见 [数据迁移指南](docs/migration-guide.md)。
+- **Linux 安装后无法连接 Docker**：确保 `dockerman` 用户已加入 `docker` 组（`sudo usermod -aG docker dockerman`），并重启服务。
 
 ## 📜 License
 

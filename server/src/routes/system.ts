@@ -281,6 +281,44 @@ router.get(
 );
 
 /**
+ * GET /api/system/update-check
+ * 查询 GitHub Releases 获取最新版本号（用于前端更新提示）
+ */
+router.get(
+  '/update-check',
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch('https://api.github.com/repos/13861419/dockerDesktop/releases/latest', {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'docker-manager' },
+      });
+      clearTimeout(timeout);
+      if (!resp.ok) {
+        return res.json({ available: false, error: `GitHub API ${resp.status}` });
+      }
+      const data = await resp.json() as { tag_name?: string; html_url?: string };
+      const latest = (data.tag_name || '').replace(/^v/, '');
+      // 读取当前版本
+      let current = '0.1.0';
+      try {
+        const pkg = require(path.join(__dirname, '..', '..', 'package.json'));
+        current = pkg.version || current;
+      } catch { /* ignore */ }
+      res.json({
+        available: latest && latest !== current,
+        current,
+        latest: latest || current,
+        url: data.html_url || '',
+      });
+    } catch (e: any) {
+      res.json({ available: false, error: e?.message || '检查更新失败' });
+    }
+  }),
+);
+
+/**
  * GET /api/system/users
  * 获取全部用户
  */

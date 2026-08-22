@@ -47,6 +47,14 @@ interface SettingsInfo {
   engine: EngineInfo | null;
 }
 
+interface UpdateInfo {
+  available: boolean;
+  current?: string;
+  latest?: string;
+  url?: string;
+  error?: string;
+}
+
 interface CurrentUserInfo {
   username: string;
   role?: UserRole;
@@ -87,6 +95,10 @@ export default function SettingsPage() {
   const [currentRole, setCurrentRole] = useState<UserRole>('user');
   const [loading, setLoading] = useState(true);
 
+  // 版本更新检测
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+
   // 新增用户表单
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -124,6 +136,21 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /**
+   * 检查 GitHub Releases 获取最新版本
+   */
+  async function handleCheckUpdate() {
+    setCheckingUpdate(true);
+    try {
+      const info = await get<UpdateInfo>('/api/system/update-check');
+      setUpdateInfo(info);
+    } catch (e: any) {
+      setUpdateInfo({ available: false, error: e?.message || '检查失败' });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
 
   /**
    * 新增用户
@@ -666,11 +693,46 @@ export default function SettingsPage() {
         <div className="settings-info">
           <div className="settings-info__row">
             <span>面板版本</span>
-            <span>{settings?.version || '-'}</span>
+            <span>
+              v{settings?.version || '-'}
+              {updateInfo?.available && (
+                <span style={{ marginLeft: 8, color: '#f59e0b', fontSize: 12 }}>
+                  (最新版 v{updateInfo.latest})
+                </span>
+              )}
+            </span>
           </div>
           <div className="settings-info__row">
             <span>服务端口</span>
             <span>{settings?.port ?? '-'}</span>
+          </div>
+          <div className="settings-info__row">
+            <span>更新检查</span>
+            <span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCheckUpdate}
+                loading={checkingUpdate}
+              >
+                {updateInfo?.available ? '有新版本可用' : updateInfo ? '已是最新版' : '检查更新'}
+              </Button>
+              {updateInfo?.available && updateInfo.url && (
+                <a
+                  href={updateInfo.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ marginLeft: 8, fontSize: 12, color: '#3b82f6' }}
+                >
+                  前往下载
+                </a>
+              )}
+              {updateInfo?.error && (
+                <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af' }}>
+                  {updateInfo.error}
+                </span>
+              )}
+            </span>
           </div>
         </div>
 
