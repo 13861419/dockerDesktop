@@ -1,0 +1,650 @@
+# Docker Manager User Manual
+
+> This manual describes the purpose and step-by-step operations for each module of the **Docker Manager** admin panel.
+>
+> Modules marked with 🔒 are **administrator-only**: they are not visible to regular users in the menu and their routes are guarded.
+
+---
+
+## Table of Contents
+
+- [1. Login & Getting Started](#1-login--getting-started)
+- [2. Overview & Health Check](#2-overview--health-check)
+- [3. Container Management](#3-container-management)
+- [4. Container Templates 🔒](#4-container-templates-)
+- [5. Container Orchestration 🔒](#5-container-orchestration-)
+- [6. Image Management](#6-image-management)
+- [7. Image Build 🔒](#7-image-build-)
+- [8. Volumes / Storage / Networks](#8-volumes--storage--networks)
+- [9. Compose](#9-compose)
+- [10. App Store](#10-app-store)
+- [11. Scheduled Tasks](#11-scheduled-tasks)
+- [12. Files / Host Files / Host Terminal](#12-files--host-files--host-terminal)
+- [13. Docker Engines 🔒](#13-docker-engines-)
+- [14. Cloud Backup 🔒](#14-cloud-backup-)
+- [15. Backup & Restore](#15-backup--restore)
+- [16. Swarm 🔒](#16-swarm-)
+- [17. Database Explorer](#17-database-explorer)
+- [18. Image Hub](#18-image-hub)
+- [19. Event Stream](#19-event-stream)
+- [20. Operation Logs](#20-operation-logs)
+- [21. Notifications 🔒](#21-notifications-)
+- [22. Reverse Proxy Sites 🔒](#22-reverse-proxy-sites-)
+- [23. Firewall 🔒](#23-firewall-)
+- [24. App Store & System Settings](#24-app-store--system-settings)
+- [25. Reference: Form Fields](#25-reference-form-fields)
+- [26. FAQ](#26-faq)
+
+> **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
+
+---
+
+## 1. Login & Getting Started
+
+### 1.1 Access
+
+| Mode | URL | When to use |
+| --- | --- | --- |
+| Development | `http://localhost:9526` | Running from source |
+| Production / installed | `http://localhost:9528` | Packaged deployment |
+
+> In production the backend serves the frontend static files, so just visit the backend port.
+
+### 1.2 Default Credentials
+
+| Item | Value |
+| --- | --- |
+| Default username | `admin` |
+| Default password | `admin888` |
+| Session lifetime | 24 hours |
+
+### 1.3 Login Steps
+
+1. Open the URL in a browser to reach the login page.
+2. Enter username and password, then click the **Login** button.
+   > The button text is "Log in" (rendered as "登 录" with a space in the Chinese UI) — this is normal.
+3. You are redirected to the **Overview** page. The current username and role (Admin / User) are shown in the top corner.
+4. Use the avatar / menu in the top-right to **log out**.
+
+> Sessions use an in-memory token; they expire when the service restarts.
+
+---
+
+## 2. Overview & Health Check
+
+### 2.1 Overview (`/`)
+
+The default landing page shows:
+
+- **Docker engine info**: version, status, and counts of containers / images / volumes / networks.
+- **Live resource graphs**: CPU, memory, network, and disk usage (ECharts).
+- **GPU monitoring (optional)**: on NVIDIA hosts, GPU utilization / VRAM / temperature via `nvidia-smi`.
+
+All data refreshes in real time — no manual action needed.
+
+![Overview](images/overview.png)
+
+### 2.2 Health Check (`/health`)
+
+- Shows engine connection health and key component status.
+- Useful to quickly identify engine dropouts or anomalies.
+
+![Health check](images/health.png)
+
+---
+
+## 3. Container Management
+
+### 3.1 Container List
+
+Menu: **Containers** (`/containers`)
+
+- Lists containers with name, image, status, ports, resource usage, and creation time.
+- Top bar offers **status filter** (Running / all) and a **search box** (by name / image).
+- A counter shows the number of running containers.
+
+### 3.2 Create a Container
+
+1. Click **"+ Create container"**.
+2. Fill the create dialog: image, name, port mapping, environment variables, volume mounts, etc.
+3. Optionally choose **"Create from template"** and pick a template saved under **Container Templates** to reuse its configuration.
+4. Click **Create**.
+
+### 3.3 Container Actions
+
+The **Actions** column of each row offers:
+
+- **Start / Stop** — toggle running state.
+- **Restart**.
+- **Delete** (optionally remove associated volumes).
+- **Clone** — create a new container from the current configuration.
+- **Rename**.
+- **Logs / Details** — open the detail page.
+- **Restart policy** — `no` / `always` / `on-failure` / `unless-stopped`.
+
+### 3.4 Container Detail Page
+
+Click a container to open its detail page (`containerDetail`), which provides:
+
+1. **Basic info**: status, image, ports, networks, mounts, env vars, restart policy.
+2. **Logs**: streaming standard output.
+3. **Built-in Web Terminal**: interact with the container's `sh` / `bash` (xterm.js + WebSocket).
+4. **Export config**: export the container configuration as JSON (can be saved as a template).
+5. **File browser**: see the Files section.
+
+![Container list](images/containers.png)
+
+---
+
+## 4. Container Templates 🔒
+
+Menu: **Container Templates** (`/templates`, admin only)
+
+- Displays saved deployment templates as a **card grid**.
+- Each card shows the template name, image, description, creation time, and a collapsible **config JSON** preview.
+
+### 4.1 Create a Template
+
+1. Click **"+ New template"**.
+2. Fill in:
+   - **Name** (required)
+   - **Description** (optional)
+   - **Image** (optional, e.g. `nginx:latest`)
+   - **config (JSON)**: matches the exported container config structure; paste it here.
+3. Click **Create**.
+
+### 4.2 Edit a Template
+
+- Click **Edit** on the card, modify the values, then click **Save**.
+
+### 4.3 Use a Template
+
+- Templates are used in **Containers → Create → From template**.
+- Clicking **Use** on a card shows a hint to go to the Containers page.
+
+### 4.4 Delete a Template
+
+- Click **Delete** on the card, then confirm with **Delete**. This cannot be undone.
+
+### 4.5 Search
+
+- The search box at the top filters in real time by **name / description / image**; the header shows matched vs. total counts.
+
+![Templates](images/templates.png)
+
+---
+
+## 5. Container Orchestration 🔒
+
+Menu: **Orchestrate** (`/orchestrate`, admin only)
+
+- Unified orchestration of multi-container applications (start/stop, scale, etc.).
+- Operations here are recorded in the operation logs.
+
+![Orchestration](images/orchestrate.png)
+
+---
+
+## 6. Image Management
+
+Menu: **Images** (`/images`)
+
+### 6.1 Image List
+
+- Shows image with name/tag, size, image ID, build time, and pulled time, plus totals for image count / total size / unused images.
+
+### 6.2 Pull an Image
+
+1. Click **"Pull image"**.
+2. Enter the reference (e.g. `nginx:latest`).
+3. Select an image source (optionally a mirror accelerator). The system tries sources in order and retries on failure.
+4. Refresh the list when done.
+
+### 6.3 Image Actions
+
+- **Delete** the image (remove containers first if in use).
+- **Push / Import / Export**.
+- **Tag** — add a new tag.
+- **Prune** — clean up dangling images.
+- **View detail / build history** — open the `imageDetail` page.
+
+![Image list](images/images.png)
+
+---
+
+## 7. Image Build 🔒
+
+Menu: **Image Build** (`/build`, admin only)
+
+1. Select a host directory containing a `Dockerfile`.
+2. Configure **build args** and the **noCache** switch.
+3. Click **"Start build"** and watch the streaming build log.
+4. Builds are persisted as **build history**: browse past logs, **reuse** last configuration, or **clear** history.
+
+![Image build](images/build.png)
+
+---
+
+## 8. Volumes / Storage / Networks
+
+### 8.1 Volumes (`/volumes`)
+
+- Lists name, driver, status, mount point, and creation time.
+- **New volume** — set a name and driver.
+- **Delete** — only for unused volumes.
+- **Detail** — view mount points and using containers.
+- **Prune** — reclaim volumes not referenced by any container.
+
+### 8.2 Storage (`/storage`)
+
+- Shows disk usage by partition.
+- **One-click cleanup** — reclaim space from dangling images, unused volumes, etc.
+
+### 8.3 Networks (`/networks`)
+
+- Lists name, driver, scope, and internal flag.
+- **New network** — enter the **network name** (first input) and other parameters to create.
+- **Delete** — remove unused networks.
+- **Detail** — view connected containers and IPAM subnet.
+- **Prune** — reclaim networks without containers.
+
+![Volumes & networks](images/volumes-networks.png)
+
+---
+
+## 9. Compose
+
+Menu: **Compose** (`/compose`)
+
+- Lists Compose projects with name, status, file, and path.
+- **New / edit**: enter or paste `docker-compose.yml` content.
+- Actions: **Up**, **Down**, **Pull**, **Build**.
+- Expand to inspect the Compose file content and structure (port mapping, etc.).
+
+![Compose](images/compose.png)
+
+---
+
+## 10. App Store
+
+Menu: **App Store** (`/appstore`)
+
+1. Browse the built-in app catalog (cards with category filters).
+2. Click an app card to view details, version, and ports.
+3. Fill in **app parameters** (ports, image source, etc.; you may use the default mirror).
+4. Click **Install** to deploy with one click; installed instances show their status.
+5. Stop / uninstall installed instances as needed.
+
+![App Store](images/appstore.png)
+
+---
+
+## 11. Scheduled Tasks
+
+Menu: **Scheduled Tasks** (`/tasks`)
+
+- Manage scheduled automation (periodic runs / container operations by trigger).
+- **New task**: choose task type, schedule (cron / interval), target container, and action.
+- Enable / pause, run now, delete, and edit tasks.
+- **Run logs** show the result and failure reason of each run.
+
+![Scheduled tasks](images/tasks.png)
+
+---
+
+## 12. Files / Host Files / Host Terminal
+
+### 12.1 Container Files (`/files`)
+
+- **Browse** a container's file system.
+- **Upload / download / edit** files inside the container.
+
+### 12.2 Host Files (`/hostfiles`)
+
+- Browse the host file system (handle with care — system-level reads/writes).
+- Basic upload / download / edit support.
+
+### 12.3 Host Terminal (`/hostterminal`)
+
+- Open a host remote terminal (xterm) to run host commands.
+- **Administrators only** — proceed with caution.
+
+![Files & terminal](images/files-terminal.png)
+
+---
+
+## 13. Docker Engines 🔒
+
+Menu: **Docker Engines** (`/engines`, admin only)
+
+- Manage multiple Docker engine endpoints (local or remote).
+- **New engine**: enter an endpoint (`npipe://` / `tcp://` / `unix://`, e.g. `tcp://192.168.1.10:2375`).
+- **Edit / Delete** existing endpoints.
+- **Set current** — switch the active engine.
+- Endpoints are auto-detected and validated.
+
+![Docker engines](images/engines.png)
+
+---
+
+## 14. Cloud Backup 🔒
+
+Menu: **Cloud Backup** (`/cloudbackup`, admin only)
+
+- Configure cloud backup targets: **S3 / OSS / WebDAV**.
+- **New target**: fill in type, name, endpoint, bucket, credentials.
+- **Connectivity test** — verify the target can be written.
+- **Upload** — push backup files to the cloud target.
+- Cloud backups can be combined with local backups under Backup & Restore.
+
+![Cloud backup](images/cloudbackup.png)
+
+---
+
+## 15. Backup & Restore
+
+Menu: **Backup & Restore** (`/backups`)
+
+### 15.1 Create a Backup
+
+- Backup types: **DATA (panel data) / Compose / Volumes / Sites**.
+- Click "New backup", pick a type, and run it to create a backup record.
+
+### 15.2 Restore & Download
+
+- From the backup list you can **download**, **restore**, or **delete** backups.
+- You can **upload a backup to the cloud** (after configuring a target under Cloud Backup).
+
+### 15.3 Data Migration
+
+- Copy the whole `data/` directory (core file `docker-manager.db`) to back up or migrate the configuration.
+
+![Backup & restore](images/backups.png)
+
+---
+
+## 16. Swarm 🔒
+
+Menu: **Swarm** (`/swarm`, admin only)
+
+- View / manage Docker Swarm cluster nodes and services.
+- Available when the host has initialized or joined a Swarm; optional for most setups.
+
+![Swarm](images/swarm.png)
+
+---
+
+## 17. Database Explorer
+
+Menu: **Databases** (`/databases`)
+
+- Visually explore containerized **MySQL / PostgreSQL / Redis** instances (**read-only protection**; it does not modify data directly).
+
+### 17.1 Add an Instance
+
+1. Click "Add instance".
+2. Fill in name, type, and connection info (host / port / username / password).
+3. Save, then open the instance to run visual queries.
+
+### 17.2 Query & View
+
+- Open an instance to view table structure, run read-only queries, and browse data.
+- Provides read-only display only — **no destructive write operations**.
+
+![Databases](images/databases.png)
+
+---
+
+## 18. Image Hub
+
+Menu: **Image Hub** (`/hub`)
+
+### 18.1 Source Configuration
+
+- View / configure **Docker mirror sources** (built-in defaults such as Xuanyuan, 1ms).
+- **Search source**: used to search Docker Hub online. Replace if the default doesn't support search (see FAQ).
+
+### 18.2 Online Search & Quick Pull
+
+- **Search** Docker Hub images online by keyword.
+- **Common images** — one-click quick pull of popular images (nginx, redis, mysql, etc.).
+- Search results can jump straight to the Images page to pull.
+
+![Image Hub](images/hub.png)
+
+---
+
+## 19. Event Stream
+
+Menu: **Event Stream** (`/events`)
+
+- Watch the Docker engine event stream in real time (create / start / stop / die, etc.).
+- Events are **persisted to SQLite**; query **historical events**.
+- Support **Export CSV** and **Clear** history.
+
+![Events](images/events.png)
+
+---
+
+## 20. Operation Logs
+
+Menu: **Operation Logs** (`/operation-logs`)
+
+- Audit trail of admin management operations (deletes, creates, config changes) for tracking and security.
+
+![Operation logs](images/operation-logs.png)
+
+---
+
+## 21. Notifications 🔒
+
+Menu: **Notifications** (`/notifications`, admin only)
+
+- Configure alert channels (Webhook / mail, etc.) and alert rules.
+- **Container rules**: set alert triggers for specific containers (exit, restart loop, resource anomalies).
+- Alerts are pushed to targets per rules; the list shows triggered alerts with timestamps.
+
+![Notifications](images/notifications.png)
+
+---
+
+## 22. Reverse Proxy Sites 🔒
+
+Menu: **Sites (proxy / port mapping)** (`/sites`, admin only)
+
+- Manage **reverse proxy / port mapping** for sites via a proxy container.
+- **New site**: enter domain, upstream address, and port.
+- **Start / stop** and config **reload**.
+- **SSL certificates**: view status / expiry and **upload a certificate** to replace it (the "Upload certificate" button).
+
+![Sites](images/sites.png)
+
+---
+
+## 23. Firewall 🔒
+
+Menu: **Firewall** (`/firewall`, admin only)
+
+- Manage Windows firewall **inbound port allow** rules (based on `netsh`).
+- **New rule**: enter a port and protocol to allow inbound traffic.
+- Delete unneeded allow rules.
+- Requires admin privileges; system prompts may appear.
+
+![Firewall](images/firewall.png)
+
+---
+
+## 24. App Store & System Settings
+
+### 24.1 System Settings (`/settings`)
+
+- **Theme**: switch light / dark.
+- **Language**: switch the UI language.
+- **Users & passwords**: admins can add / remove users and change passwords (linked to login auth).
+
+![Settings](images/settings.png)
+
+---
+
+## 25. Reference: Form Fields
+
+The fields of each create / edit dialog are listed below. Items marked `*` are required.
+
+### 25.1 Docker Engine Endpoint (`/engines`)
+
+| Field | Description | Required |
+| --- | --- | --- |
+| Engine name * | e.g. "Server B" | Yes |
+| Endpoint * | `npipe://` / `tcp://host:2375` / `unix://`, e.g. `tcp://192.168.1.10:2375` | Yes |
+
+> Engine identity/connection is determined by the endpoint scheme (npipe / tcp / unix); there is no separate TLS field.
+
+### 25.2 Cloud Backup Target (`/cloudbackup`)
+
+| Field | Description | Required |
+| --- | --- | --- |
+| Type | `WebDAV` / `S3` / `Aliyun OSS` | No |
+| Name * | e.g. "My NAS / Tencent COS" | Yes |
+| Endpoint * | WebDAV server; OSS `https://oss-cn-hangzhou.aliyuncs.com`; S3 `https://s3.region.amazonaws.com` | Yes |
+| Bucket | Only for S3 / OSS, e.g. `my-bucket` | S3/OSS only |
+| Region | Only for S3, e.g. `us-east-1` | No |
+| Base path (optional) | e.g. `backup/app1` | No |
+| AccessKey / Username | Username for WebDAV; access key ID for S3/OSS | No |
+| Password / SecretKey | Password (WebDAV) or SecretKey (S3/OSS); blank keeps the current on edit | No |
+
+### 25.3 Database Instance (`/databases`)
+
+| Field | Description | Required |
+| --- | --- | --- |
+| Name * | e.g. "Primary DB" | Yes |
+| Type | `MySQL` / `PostgreSQL` / `MariaDB` / `Redis` | Yes |
+| Host * | `127.0.0.1` or container name | Yes |
+| Port * | `3306` / `5432` / `6379` | Yes |
+| Username | `root` (optional) | No |
+| Password | Blank keeps the current / passwordless connection on edit | No |
+
+> New database (MySQL/MariaDB): database name (required) + charset (`utf8mb4` / `utf8mb3` / `utf8` / `gbk` / `latin1`, immutable after creation).
+> Redis query: match pattern (e.g. `*`, `user:*`) + limit.
+
+### 25.4 Site (proxy / port mapping, `/sites`)
+
+| Field | Description | Required |
+| --- | --- | --- |
+| Domain * | e.g. `app.example.com` | Yes |
+| Upstream * | `localhost` / `127.0.0.1` / container name | Yes |
+| Upstream port * | 1–65535 | Yes |
+| Listen port | Host external port (HTTP 80 default, HTTPS 443 recommended) | No |
+| Enable HTTPS | Shows "certificate file path" when enabled | No |
+| Certificate path | Host absolute path, e.g. `C:\certs\app.pem` | HTTPS only |
+| Advanced: WebSocket / gzip / access control | Each a toggle | No |
+| Access control user / password | Shown when access control enabled | Required when enabled |
+| Rate limit | e.g. `5r/s` or `10r/m` | No |
+| Client body limit | e.g. `10m` (default `1m`) | No |
+| Proxy timeout (s) | Default 60 | No |
+| Custom config snippet | Extra nginx directives (textarea) | No |
+
+### 25.5 Notifications (`/notifications`)
+
+**Channels**: channel name *, channel type (`Webhook` / `SMTP mail` / `DingTalk bot` / `Feishu bot`).
+
+| Type | Fields |
+| --- | --- |
+| Webhook | Webhook URL *, Secret |
+| SMTP | SMTP host *, port *, use SSL, account, password, sender *, recipients (comma-separated) * |
+| DingTalk | access_token *, signing Secret |
+| Feishu | Webhook URL * |
+
+**Resource alert rules (CPU / memory / disk / GPU / network)**: enable toggle, warn threshold % *, danger threshold % *, silence window, workdays only, work hours.
+
+**Container alert rules**: target container *, monitor type * (exit / healthcheck / port / CPU / memory), probe port (port type), warn %, danger %, enable, silence window, workdays only, work hours.
+
+### 25.6 Firewall (`/firewall`)
+
+| Field | Description | Required |
+| --- | --- | --- |
+| Port * | 1–65535, e.g. `8080` | Yes |
+| Protocol | `TCP` / `UDP` | No |
+| Comment (optional) | e.g. "Nginx external service" | No |
+
+### 25.7 Scheduled Tasks (`/tasks`)
+
+Common fields: task name *, task type *, cron expression * (5 fields: min hour day month weekday), enable toggle.
+
+Task types and their parameters:
+- **Prune**: scope (unused images / stopped containers / unused volumes / unused networks / build cache)
+- **Backup**: target (panel database / named volumes), volume names (comma-separated, required for volumes), retention count
+- **Pull**: image name * (e.g. `nginx:latest`)
+- **Restart / Healthcheck**: target containers * (multi-select)
+- **Command**: command *, working directory
+- **Compose up / down**: Compose project *
+- **Git auto-deploy**: deploy mode (build image / compose up), Git URL *, branch, image name / Compose project, private repo credentials (HTTPS token / SSH key)
+
+### 25.8 Compose Project (`/compose`)
+
+- New: project name * + `docker-compose.yml` (required; from template: blank / WordPress / Nginx static / Redis / PostgreSQL / Node.js; supports uploading `.yml` / `.yaml`)
+- Edit: only `docker-compose.yml`
+- Save as template: template name *, description
+- Delete: optional "also delete this project's volumes"
+
+### 25.9 App Store (`/appstore`)
+
+Install-time configuration:
+- **Environment variables**: fill each declared KEY / value (marked required when it has a default but no description)
+- **Port mappings** (add/remove rows): container port, host port (optional), protocol (tcp / udp)
+- **Volume mounts** (single container): source (host path or volume name), container path (e.g. `/data`), read-only
+- **Image source**: default mirror or a specific enabled source (blank tries all in order)
+
+### 25.10 Backup & Restore (`/backups`)
+
+- Type: `Panel database` / `Volumes` / `Compose config` / `Site config`
+- Name *, source (optional, e.g. a volume name)
+- Upload to cloud requires a target configured under `/cloudbackup`
+
+---
+
+## 26. FAQ
+
+| Issue | Resolution |
+| --- | --- |
+| "Cannot connect to Docker engine" | Make sure Docker Desktop is running; if needed set `DOCKER_HOST` to a reachable endpoint. |
+| Image search fails (502 / unavailable) | Most mirror accelerators only proxy pulls, not Docker Hub search. In **Image Hub → Sources → Search source** enter a search-capable source (e.g. `https://docker-0.unsee.tech`, fallback `https://docker.tbap.top`). If still failing, use "Common images" or pull a known image name. |
+| Forgot the admin password | Stop the service, delete `data/docker-manager.db` (plus `-wal` / `-shm` files), restart; defaults (`admin` / `admin888`) are re-initialized. |
+| Backup / migrate data | Copy the whole `data/` directory (core file `docker-manager.db`). |
+| Why does the login button read "登 录" | The button text is "登 录" (with a space) — normal. Enter credentials and click it to log in. |
+
+---
+
+## Appendix: Modules & Routes
+
+| Menu | Route | Access |
+| --- | --- | --- |
+| Overview | `/` | All users |
+| Health Check | `/health` | All users |
+| Containers | `/containers` | All users |
+| Container Templates | `/templates` | Admin 🔒 |
+| Orchestrate | `/orchestrate` | Admin 🔒 |
+| Images | `/images` | All users |
+| Image Build | `/build` | Admin 🔒 |
+| Volumes | `/volumes` | All users |
+| Storage | `/storage` | All users |
+| Networks | `/networks` | All users |
+| Compose | `/compose` | All users |
+| App Store | `/appstore` | All users |
+| Scheduled Tasks | `/tasks` | All users |
+| Files | `/files` | All users |
+| Host Files | `/hostfiles` | All users |
+| Host Terminal | `/hostterminal` | All users |
+| Docker Engines | `/engines` | Admin 🔒 |
+| Cloud Backup | `/cloudbackup` | Admin 🔒 |
+| Swarm | `/swarm` | Admin 🔒 |
+| Backup & Restore | `/backups` | All users |
+| Databases | `/databases` | All users |
+| Settings | `/settings` | All users |
+| Image Hub | `/hub` | All users |
+| Operation Logs | `/operation-logs` | All users |
+| Notifications | `/notifications` | Admin 🔒 |
+| Event Stream | `/events` | All users |
+| Sites (proxy / port mapping) | `/sites` | Admin 🔒 |
+| Firewall | `/firewall` | Admin 🔒 |
+
+> This document reflects the current version; the installed version may differ. Administrator-only (🔒) pages are hidden from regular users in both menu and routes.
