@@ -262,7 +262,7 @@ export default function NetworksPage() {
   const fetchNetworks = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await get<NetworkItem[]>('/api/networks');
+      const data = await get<NetworkItem[]>('/api/networks', { all: true });
       setNetworks(data || []);
       setLoadError('');
     } catch (e: any) {

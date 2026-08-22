@@ -797,6 +797,129 @@ function migratePullHistory(d: DatabaseSync): void {
 export function initStorage(): void {
   getDb();
   migrateLegacyData();
+  seedContainerTemplates(getDb());
+}
+
+/**
+ * 内置示例容器模板：config 结构与创建接口 /api/containers 兼容，
+ * 供容器页「从模板创建」一键回填，方便快速体验常用镜像部署。
+ * 仅在 container_templates 表为空时注入一次（幂等），不覆盖用户已保存的模板。
+ */
+const BUILTIN_TEMPLATES: Array<{
+  name: string;
+  description: string;
+  image: string;
+  config: Record<string, unknown>;
+}> = [
+  {
+    name: 'Nginx 静态站点',
+    description: '高性能 Web 服务器 / 反向代理，映射宿主机 8080 端口',
+    image: 'nginx:alpine',
+    config: {
+      name: 'nginx-site',
+      image: 'nginx:alpine',
+      command: '',
+      networkMode: 'default',
+      restartPolicy: 'unless-stopped',
+      tty: true,
+      ports: [{ host: '8080', container: '80', protocol: 'tcp' }],
+      volumes: [],
+      env: [],
+    },
+  },
+  {
+    name: 'MySQL 数据库',
+    description: '关系型数据库，含数据卷持久化与初始账号配置',
+    image: 'mysql:8',
+    config: {
+      name: 'mysql',
+      image: 'mysql:8',
+      command: '',
+      networkMode: 'default',
+      restartPolicy: 'unless-stopped',
+      tty: true,
+      ports: [{ host: '3306', container: '3306', protocol: 'tcp' }],
+      volumes: [{ source: 'mysql_data', target: '/var/lib/mysql', readonly: false }],
+      env: [
+        'MYSQL_ROOT_PASSWORD=root123456',
+        'MYSQL_DATABASE=app',
+        'MYSQL_USER=app',
+        'MYSQL_PASSWORD=app123456',
+      ],
+    },
+  },
+  {
+    name: 'Redis 缓存',
+    description: '高性能键值缓存数据库，映射宿主机 6379 端口',
+    image: 'redis:7-alpine',
+    config: {
+      name: 'redis',
+      image: 'redis:7-alpine',
+      command: '',
+      networkMode: 'default',
+      restartPolicy: 'unless-stopped',
+      tty: false,
+      ports: [{ host: '6379', container: '6379', protocol: 'tcp' }],
+      volumes: [{ source: 'redis_data', target: '/data', readonly: false }],
+      env: [],
+    },
+  },
+  {
+    name: 'Portainer 管理面板',
+    description: 'Docker 图形化管理面板（需挂载 Docker Socket）',
+    image: 'portainer/portainer-ce',
+    config: {
+      name: 'portainer',
+      image: 'portainer/portainer-ce',
+      command: '',
+      networkMode: 'default',
+      restartPolicy: 'unless-stopped',
+      tty: true,
+      privileged: true,
+      ports: [{ host: '9000', container: '9000', protocol: 'tcp' }],
+      volumes: [{ source: '/var/run/docker.sock', target: '/var/run/docker.sock', readonly: false }],
+      env: [],
+    },
+  },
+  {
+    name: 'Uptime Kuma 监控面板',
+    description: '开源网站 / 服务可用性监控面板，映射宿主机 3001 端口',
+    image: 'louislam/uptime-kuma:1',
+    config: {
+      name: 'uptime-kuma',
+      image: 'louislam/uptime-kuma:1',
+      command: '',
+      networkMode: 'default',
+      restartPolicy: 'unless-stopped',
+      tty: true,
+      ports: [{ host: '3001', container: '3001', protocol: 'tcp' }],
+      volumes: [{ source: 'uptime_data', target: '/app/data', readonly: false }],
+      env: [],
+    },
+  },
+];
+
+function seedContainerTemplates(d: DatabaseSync): void {
+  // 内置示例模板：固定 id（builtin-N），存在则同步为最新定义，缺失则插入。
+  // 用 id 强制覆盖内置定义（便于修正/升级内置模板），不会影响用户自定义模板（其 id 为 UUID）。
+  const now = Date.now();
+  const getRow = d.prepare('SELECT id FROM container_templates WHERE id = ?');
+  const upd = d.prepare(
+    'UPDATE container_templates SET name = ?, description = ?, image = ?, config = ?, updated_at = ? WHERE id = ?',
+  );
+  const ins = d.prepare(
+    'INSERT OR IGNORE INTO container_templates (id, name, description, image, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  );
+  BUILTIN_TEMPLATES.forEach((t, i) => {
+    const id = `builtin-${i + 1}`;
+    const cfg = JSON.stringify(t.config);
+    if (getRow.get(id)) {
+      upd.run(t.name, t.description, t.image, cfg, now, id);
+    } else {
+      // 若与用户模板重名（name 唯一约束），INSERT OR IGNORE 会自动跳过该内置示例
+      ins.run(id, t.name, t.description, t.image, cfg, now, now);
+    }
+  });
 }
 
 export { DATA_DIR, DB_FILE };

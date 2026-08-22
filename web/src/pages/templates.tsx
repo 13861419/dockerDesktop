@@ -3,16 +3,16 @@
  *
  * 提供容器模板的完整 CRUD：
  *  - 新建 / 编辑模板（名称、描述、镜像、config JSON 文本）
- *  - 列表展示（名称、描述、镜像、创建时间）
+ *  - 卡片网格展示（名称、镜像、描述、创建时间、config 预览）
+ *  - 支持按名称/描述/镜像搜索过滤
  *  - 删除（二次确认）
  *  - "使用"按钮：引导用户到容器页"从模板创建"
  * 仅管理员可进入（路由级 RequireAdmin + 页面内 isAdmin 控制）。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { get, post, put, del } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
-import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -43,6 +43,11 @@ interface TemplateForm {
 /** 空表单初始值 */
 const EMPTY_FORM: TemplateForm = { name: '', description: '', image: '', config: '{}' };
 
+/** 从模板名取首字符作为卡片图标 */
+function initials(name: string): string {
+  return (name?.trim()?.[0] || 'T').toUpperCase();
+}
+
 /**
  * 格式化时间（秒级时间戳 → 本地时间字符串）
  * @param sec 秒级时间戳
@@ -51,7 +56,7 @@ function formatTime(sec: number): string {
   if (!sec) return '—';
   const d = new Date(sec * 1000);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /**
@@ -64,6 +69,10 @@ export default function TemplatesPage() {
   const [list, setList] = useState<TemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // 搜索关键字（匹配名称 / 描述 / 镜像）
+  const [keyword, setKeyword] = useState('');
+  // 展开查看 config 的模板 id
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // 新建/编辑弹窗
   const [editorOpen, setEditorOpen] = useState(false);
@@ -96,6 +105,15 @@ export default function TemplatesPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 搜索过滤
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return list;
+    return list.filter((t) =>
+      [t.name, t.description, t.image].some((v) => (v || '').toLowerCase().includes(kw)),
+    );
+  }, [list, keyword]);
 
   /**
    * 打开"新建模板"弹窗
@@ -212,59 +230,97 @@ export default function TemplatesPage() {
     <div className="templates-page">
       <div className="templates-page__header">
         <h1 className="templates-page__title">容器模板</h1>
-        <p className="templates-page__desc">管理容器部署模板，可在容器页一键按模板创建容器</p>
+        <p className="templates-page__desc">
+          管理容器部署模板，可在容器页一键按模板创建容器 · 共 {filtered.length} / {list.length} 个
+        </p>
       </div>
 
       <div className="templates-toolbar">
+        <input
+          className="input templates-toolbar__search"
+          placeholder="搜索名称 / 描述 / 镜像"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
+        <div className="templates-toolbar__spacer" />
         <Button onClick={openCreate} disabled={!canManage}>+ 新建模板</Button>
         <Button variant="ghost" onClick={load}>刷新</Button>
       </div>
 
-      <Card>
-        {loading ? (
-          <SkeletonRows rows={4} />
-        ) : loadError ? (
-          <Empty kind="error" title="加载模板列表失败" description={loadError} />
-        ) : list.length === 0 ? (
-          <Empty
-            title="暂无模板"
-            description="点击「新建模板」创建，或在容器详情页将容器配置保存为模板。"
-          />
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: '18%' }}>名称</th>
-                <th style={{ width: '26%' }}>描述</th>
-                <th style={{ width: '20%' }}>镜像</th>
-                <th style={{ width: '18%' }}>创建时间</th>
-                <th style={{ width: '18%' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((t) => (
-                <tr key={t.id}>
-                  <td><strong>{t.name}</strong></td>
-                  <td className="templates-cell--ellipsis" title={t.description}>{t.description || '—'}</td>
-                  <td className="templates-cell--ellipsis" title={t.image}>{t.image || '—'}</td>
-                  <td>{formatTime(t.createdAt)}</td>
-                  <td>
-                    <div className="templates-actions">
-                      <Button variant="ghost" size="sm" onClick={() => handleUse(t)}>使用</Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(t)} disabled={!canManage}>
-                        编辑
-                      </Button>
-                      <Button variant="danger" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canManage}>
-                        删除
-                      </Button>
+      {loading ? (
+        <SkeletonRows rows={4} />
+      ) : loadError ? (
+        <Empty kind="error" title="加载模板列表失败" description={loadError} />
+      ) : filtered.length === 0 ? (
+        <Empty
+          title={list.length === 0 ? '暂无模板' : '未找到匹配模板'}
+          description={
+            list.length === 0
+              ? '点击「新建模板」创建，或在容器详情页将容器配置保存为模板。'
+              : '尝试更换搜索关键字'
+          }
+        />
+      ) : (
+        <div className="templates-grid">
+          {filtered.map((t) => {
+            const expanded = expandedId === t.id;
+            return (
+              <div className="templates-card" key={t.id}>
+                <div className="templates-card__head">
+                  <div className="templates-card__icon" aria-hidden="true">
+                    {initials(t.name)}
+                  </div>
+                  <div className="templates-card__meta">
+                    <div className="templates-card__name" title={t.name}>
+                      {t.name}
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+                    {t.image ? (
+                      <span className="templates-card__image" title={t.image}>
+                        {t.image}
+                      </span>
+                    ) : (
+                      <span className="templates-card__image templates-card__image--empty">未指定镜像</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="templates-card__desc" title={t.description || ''}>
+                  {t.description || '暂无描述'}
+                </div>
+
+                <div className="templates-card__config">
+                  <button
+                    type="button"
+                    className="templates-card__config-toggle"
+                    onClick={() => setExpandedId(expanded ? null : t.id)}
+                  >
+                    <span>config</span>
+                    <span className="templates-card__config-arrow">{expanded ? '▾' : '▸'}</span>
+                  </button>
+                  {expanded && (
+                    <pre className="templates-card__config-body">
+                      {JSON.stringify(t.config ?? {}, null, 2)}
+                    </pre>
+                  )}
+                </div>
+
+                <div className="templates-card__footer">
+                  <span className="templates-card__time">创建于 {formatTime(t.createdAt)}</span>
+                  <div className="templates-card__actions">
+                    <Button variant="ghost" size="sm" onClick={() => handleUse(t)}>使用</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(t)} disabled={!canManage}>
+                      编辑
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canManage}>
+                      删除
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* 新建/编辑模板弹窗 */}
       <Modal

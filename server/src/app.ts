@@ -84,6 +84,7 @@ app.use('/api/volumes', requireAuth, volumesRouter);
 app.use('/api/hub', requireAuth, hubRouter);
 app.use('/api/networks', requireAuth, networksRouter);
 app.use('/api/compose', requireAuth, composeRouter);
+app.use('/api/compose-templates', requireAuth, composeTemplatesRouter);
 app.use('/api/appstore', requireAuth, appstoreRouter);
 app.use('/api/operation-logs', requireAuth, operationLogsRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
