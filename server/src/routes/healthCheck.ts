@@ -274,9 +274,23 @@ router.get(
 
     // ---------- 7. 孤儿卷（未被任何容器引用的卷） ----------
     const allVolumes = (volumes.Volumes || []) as any[];
+    // 卷的引用信息：listVolumes 不返回 UsageData（RefCount），
+    // 用容器 Mounts 交叉比对 + df 的 RefCount 双重判定，避免把所有在用卷误判为孤儿。
+    const usedVolumeNames = new Set<string>();
+    const dfVols = (df as any)?.Volumes || [];
+    const dfRefCount: Record<string, number> = {};
+    dfVols.forEach((v: any) => {
+      if (v?.Name && v.UsageData?.RefCount != null) dfRefCount[v.Name] = v.UsageData.RefCount;
+    });
+    (containers as any[]).forEach((c) => {
+      (c.Mounts || []).forEach((m: any) => {
+        if (m?.Name) usedVolumeNames.add(m.Name);
+      });
+    });
     const orphanVolumes = allVolumes.filter((v) => {
-      const refCount = Number(v?.UsageData?.RefCount ?? 0);
-      return refCount === 0;
+      if (usedVolumeNames.has(v.Name)) return false;
+      const rc = dfRefCount[v.Name] != null ? dfRefCount[v.Name] : Number(v?.UsageData?.RefCount ?? 0);
+      return rc === 0;
     });
     items.push({
       key: 'orphanVolumes',
@@ -290,13 +304,21 @@ router.get(
     });
 
     // ---------- 8. 未使用的自定义网络 ----------
+    // listNetworks 不返回每个网络的 Containers 字段，
+    // 改用容器实际连接的网络（NetworkSettings.Networks）交叉比对，避免把被用的网络误判为未使用。
+    const usedNetworks = new Set<string>();
+    (containers as any[]).forEach((c) => {
+      const ns = c?.NetworkSettings?.Networks;
+      if (ns) Object.keys(ns).forEach((k) => usedNetworks.add(k));
+    });
     const unusedNetworks = (networks as any[]).filter((n) => {
-      // 仅关注 user 驱动的自定义网络（排除内置 bridge/host/none 等系统网络）
+      // 仅关注自定义网络（排除内置 bridge/host/none 系统网络），driver 为 bridge/overlay
+      const name = n.Name || '';
+      const isBuiltin = name === 'bridge' || name === 'host' || name === 'none';
+      if (isBuiltin) return false;
       const driver = n.Driver || '';
       const isUserNetwork = driver === 'bridge' || driver === 'overlay';
-      const containers = n.Containers;
-      const hasContainer = containers && (Array.isArray(containers) ? containers.length > 0 : Object.keys(containers).length > 0);
-      return isUserNetwork && !hasContainer;
+      return isUserNetwork && !usedNetworks.has(name);
     });
     items.push({
       key: 'unusedNetworks',

@@ -821,9 +821,24 @@ router.post(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
       const all = req.body?.all === true;
-      // all=true 时 dangling=false（清理所有未使用镜像）；否则保持 dangling=true
-      const dangling = !all;
-      const result = await docker.pruneImages({ dangling });
+      // Docker prune 接口的过滤条件需通过 filters（JSON 数组格式）传递；
+      // dockerode 的 pruneImages({ dangling }) 会把 dangling 编码成顶层 query 参数，
+      // daemon 会忽略它（等效于无过滤条件），导致 dangling=false（清理所有未使用镜像）失效。
+      // 这里改用底层 modem 发送正确格式的 filters。
+      //   - all=true ：dangling=false，清理所有未被容器使用的镜像（含非悬空、有标签者）
+      //   - all=false：dangling=true ，仅清理悬空（无标签）镜像
+      const filters = JSON.stringify({ dangling: [all ? 'false' : 'true'] });
+      const result: any = await new Promise((resolve, reject) => {
+        (docker as any).modem.dial(
+          {
+            path: '/images/prune?',
+            method: 'POST',
+            options: { filters },
+            statusCodes: { 200: true, 500: 'server error' },
+          },
+          (err: any, data: any) => (err ? reject(err) : resolve(data)),
+        );
+      });
       // 汇总清理详情：列出被清理的镜像（Untagged/Deleted）与释放空间
       const deleted: string[] = [];
       for (const item of result.ImagesDeleted || []) {

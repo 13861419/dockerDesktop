@@ -178,9 +178,19 @@ router.post(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { host, name } = req.body || {};
-    const source = addSource(host, name);
-    logOperation(res.locals.username, '新增镜像源', 'hubSource', source.name || source.host, source.host);
-    res.json({ ok: true, source });
+    try {
+      const source = addSource(host, name);
+      logOperation(res.locals.username, '新增镜像源', 'hubSource', source.name || source.host, source.host);
+      res.json({ ok: true, source });
+    } catch (err: any) {
+      if (err?.message?.includes('已存在')) {
+        return res.status(409).json({ error: err.message });
+      }
+      if (err?.message?.includes('不能为空') || err?.message?.includes('格式不正确')) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
   }),
 );
 

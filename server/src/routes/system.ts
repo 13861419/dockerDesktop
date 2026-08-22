@@ -144,8 +144,20 @@ router.post(
 
     // 清理 build cache（全部）
     if (want(b.buildCache)) {
-      // @types/dockerode 的 PruneBuilderOptions 不含 all，但 runtime 支持，局部断言规避
-      const r: any = await (docker.pruneBuilder as any)({ all: true });
+      // dockerode 4.0.x 的 pruneBuilder 实现有缺陷（未把 opts 拼进 query string，
+      // 等价于不带 --all 的 builder prune，只会清理悬空构建缓存，回收不了正在使用的构建缓存）。
+      // 改用底层 modem 直接 POST /build/prune?all=true，确保全量清理。
+      const r: any = await new Promise((resolve, reject) => {
+        (docker as any).modem.dial(
+          {
+            path: '/build/prune?',
+            method: 'POST',
+            options: { all: true },
+            statusCodes: { 200: true, 500: 'server error' },
+          },
+          (err: any, data: any) => (err ? reject(err) : resolve(data)),
+        );
+      });
       // pruneBuilder 仅返回回收空间，无对象名
       results.buildCache = { objects: [], space: toNum(r?.SpaceReclaimed) };
     }

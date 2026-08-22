@@ -85,6 +85,8 @@ export default function VolumesPage() {
   const canDelete = canManage;
   const [volumes, setVolumes] = useState<VolumeItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // 卷名 -> 引用它的容器名数组（用于列表展示「使用中」状态与挂载容器）
+  const [volumeUsage, setVolumeUsage] = useState<Record<string, string[]>>({});
   // 列表加载失败的错误信息（用于展示可重试的错误态）
   const [loadError, setLoadError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -129,8 +131,26 @@ export default function VolumesPage() {
     setLoading(true);
     try {
       const data = await get<{ volumes: VolumeItem[] }>('/api/volumes');
-      setVolumes(data?.volumes || []);
+      const vols = data?.volumes || [];
+      setVolumes(vols);
       setLoadError('');
+      // 拉取容器列表，构建「卷名 -> 引用它的容器名」映射，用于列表展示使用状态
+      try {
+        const containers = await get<VolumeContainerItem[]>('/api/containers', { all: true });
+        const usage: Record<string, string[]> = {};
+        vols.forEach((v) => (usage[v.Name] = []));
+        (containers || []).forEach((c) => {
+          const cname = (c.Names && c.Names[0]?.replace(/^\//, '')) || c.Id?.slice(0, 12);
+          (c.Mounts || []).forEach((m) => {
+            if (m && m.Name && usage[m.Name] && !usage[m.Name].includes(cname)) {
+              usage[m.Name].push(cname);
+            }
+          });
+        });
+        setVolumeUsage(usage);
+      } catch {
+        // 容器映射拉取失败时保留空映射，仅影响状态增强展示
+      }
     } catch (e: any) {
       setLoadError(e?.message || '拉取数据卷列表失败');
       showToast(e?.message || '拉取数据卷列表失败', 'error');
@@ -396,6 +416,7 @@ export default function VolumesPage() {
                 <tr>
                   <th>名称</th>
                   <th>驱动</th>
+                  <th>状态</th>
                   <th>挂载点</th>
                   <th>创建时间</th>
                   <th className="col-actions">操作</th>
@@ -411,6 +432,20 @@ export default function VolumesPage() {
                   </td>
                   <td>
                     <span className="badge badge--muted">{vol.Driver}</span>
+                  </td>
+                  <td className="vol-status">
+                    <span
+                      className={`badge ${(volumeUsage[vol.Name] || []).length ? 'badge--used' : 'badge--unused'}`}
+                      title={
+                        (volumeUsage[vol.Name] || []).length
+                          ? `被容器引用：${(volumeUsage[vol.Name] || []).join(', ')}`
+                          : '未被任何容器引用'
+                      }
+                    >
+                      {(volumeUsage[vol.Name] || []).length
+                        ? `使用中 · ${(volumeUsage[vol.Name] || []).join(', ')}`
+                        : '未使用'}
+                    </span>
                   </td>
                   <td className="col-mono" title={vol.Mountpoint}>
                     {vol.Mountpoint}

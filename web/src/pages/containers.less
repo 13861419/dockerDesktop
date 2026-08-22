@@ -150,6 +150,73 @@
     background: var(--primary-soft, #eef2ff) !important;
   }
 
+  /* Compose 分组头行 */
+  .compose-group {
+    background: var(--bg-elevated, rgba(0, 0, 0, 0.02));
+
+    &:hover {
+      background: var(--bg-elevated, rgba(0, 0, 0, 0.02));
+    }
+
+    td {
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
+
+    &--collapsed .compose-group__title {
+      opacity: 0.65;
+    }
+  }
+
+  .compose-group__cell {
+    padding-left: 0;
+  }
+
+  .compose-group__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: var(--primary-soft, #f5f5ff);
+    }
+  }
+
+  .compose-group__caret {
+    width: 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .compose-group__icon {
+    color: var(--primary);
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .compose-group__title {
+    color: var(--text-primary);
+  }
+
+  .compose-group__badge {
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: var(--primary-soft, #eef2ff);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
   .cell-name {
     font-weight: 500;
     color: var(--text-primary);

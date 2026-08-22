@@ -164,6 +164,18 @@ textarea {
   border-color: var(--border-color);
 }
 
+.badge--used {
+  color: var(--success, #16a34a);
+  border-color: var(--success-border, rgba(22, 163, 74, 0.4));
+  background: var(--success-soft, rgba(22, 163, 74, 0.08));
+}
+
+.badge--unused {
+  color: var(--warning, #d97706);
+  border-color: var(--warning-border, rgba(217, 119, 6, 0.4));
+  background: var(--warning-soft, rgba(217, 119, 6, 0.08));
+}
+
 .badge--dot::before {
   content: '';
   width: 6px;

@@ -4,7 +4,7 @@
  * 拉取 /api/containers?all=true 容器列表，支持状态本地筛选，
  * 提供启动 / 停止 / 重启 / 删除等行操作（删除需二次确认）。
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get, post, del } from '../api/client';
 import { canOperate } from '../api/auth';
@@ -138,6 +138,10 @@ export default function ContainersPage() {
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // 折叠的 Compose 组合键集合（key 结构见 composeGroupKey）
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // 正在执行分组批量操作的组合键（用于按钮 loading 态）
+  const [groupActionKey, setGroupActionKey] = useState<string | null>(null);
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   // 批量「编辑资源」弹窗状态：CPU 核数 / 内存 GB（留空=不修改），loading 控制提交中
@@ -521,6 +525,32 @@ export default function ContainersPage() {
   /** 当前页展示的容器列表 */
   const pageItems = sortedList.slice((page - 1) * pageSize, page * pageSize);
 
+  /**
+   * 将当前页容器按 Compose 归属分组为「分组头 + 成员行」的渲染序列。
+   * 同一 Compose 项目的全部容器（无论是否相邻）在组内首次出现处归入同一个分组；
+   * 单个容器直接作为普通行渲染。
+   * 分组折叠与否在渲染时由 collapsedGroups 决定（折叠时隐藏成员行、保留分组头）。
+   */
+  const renderRows = useMemo(() => {
+    const rows: Array<
+      | { type: 'group'; key: string; label: string; members: ContainerListItem[] }
+      | { type: 'row'; data: ContainerListItem }
+    > = [];
+    const emitted = new Set<string>();
+    for (const c of pageItems) {
+      const key = composeGroupKey(c);
+      if (!key) {
+        rows.push({ type: 'row', data: c });
+        continue;
+      }
+      if (emitted.has(key)) continue;
+      emitted.add(key);
+      const members = pageItems.filter((x) => composeGroupKey(x) === key);
+      rows.push({ type: 'group', key, label: composeGroupLabel(key), members });
+    }
+    return rows;
+  }, [pageItems]);
+
   /** 是否所有当前页容器均被选中 */
   const allChecked = pageItems.length > 0 && pageItems.every((c) => selectedIds.includes(c.Id));
 
@@ -882,6 +912,69 @@ export default function ContainersPage() {
   /** 提取容器显示名称（去前导斜杠） */
   function displayName(c: ContainerListItem): string {
     return (c.Names && c.Names[0]?.replace(/^\//, '')) || c.Id;
+  }
+
+  /**
+   * 计算容器的 Compose 组合键。
+   * 基于 Docker Compose 标注的 project 名称，
+   * 并用 working_dir 区分同名但不同路径的项目（返回 null 表示非 Compose 容器）。
+   * working_dir 统一转小写，避免 Windows 盘符/路径大小写差异导致同项目被拆分。
+   */
+  function composeGroupKey(c: ContainerListItem): string | null {
+    const project = c.Labels?.['com.docker.compose.project'];
+    if (!project) return null;
+    const workingDir = (c.Labels?.['com.docker.compose.project.working_dir'] || '').toLowerCase();
+    return `${project}@${workingDir}`;
+  }
+
+  /** 从组合键还原出可展示的 Compose 项目名（取 project 部分） */
+  function composeGroupLabel(key: string): string {
+    const at = key.indexOf('@');
+    return at === -1 ? key : key.slice(0, at);
+  }
+
+  /** 折叠 / 展开某个 Compose 分组 */
+  function toggleGroup(key: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /**
+   * 对 Compose 分组的全部成员执行批量操作（启动 / 停止 / 重启）。
+   * 复用后端批量接口一次完成，按成员数量与成功数提示。
+   */
+  async function groupAction(key: string, action: 'start' | 'stop' | 'restart') {
+    const group = renderRows.find((r) => r.type === 'group' && r.key === key) as
+      | { type: 'group'; members: ContainerListItem[] }
+      | undefined;
+    if (!group || group.members.length === 0) return;
+    setGroupActionKey(key);
+    try {
+      const ids = group.members.map((m) => m.Id);
+      const r = await post<{ success: number; fail: number }>(
+        `/api/containers/batch/${action}`,
+        { ids }
+      );
+      const success = r?.success ?? 0;
+      const fail = r?.fail ?? 0;
+      const label = action === 'start' ? '启动' : action === 'stop' ? '停止' : '重启';
+      if (fail === 0) {
+        showToast(`${label}成功 ${success} 个容器`);
+      } else if (success === 0) {
+        showToast(`${label}失败 ${fail} 个容器`, 'error');
+      } else {
+        showToast(`${label}成功 ${success} 个，失败 ${fail} 个`, 'info');
+      }
+      load();
+    } catch (e: any) {
+      showToast(`操作失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setGroupActionKey(null);
+    }
   }
 
   /** 批量操作确认对话框的标题 */
@@ -1526,6 +1619,118 @@ export default function ContainersPage() {
     return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
   }
 
+  /** 渲染单个容器行（普通独立容器，或 Compose 分组内的成员行共用） */
+  function rowFor(c: ContainerListItem) {
+    const name = displayName(c);
+    const running = c.State === 'running';
+    const checked = selectedIds.includes(c.Id);
+    return (
+      <tr key={c.Id} className={checked ? 'row--selected' : ''}>
+        <td className="col-select">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => toggleSelect(c.Id)}
+            aria-label={`选择 ${name}`}
+          />
+        </td>
+        <td className="cell-name" title={c.Id}>
+          {name}
+        </td>
+        <td className="cell-image">{c.Image || '-'}</td>
+        <td>
+          <span className="cell-status">
+            <StatusBadge status={c.State} />
+            {c.health && c.health !== 'none' && (
+              <span className={`health-badge health-badge--${c.health}`}>{c.health}</span>
+            )}
+          </span>
+        </td>
+        <td className="cell-ports">{renderPortCell(c)}</td>
+        {renderStatCells(c)}
+        <td className="cell-limit">
+          <span className="cell-limit__line">
+            CPU <em>{formatCpuLimit(c.cpuLimit)}</em>
+          </span>
+          <span className="cell-limit__line">
+            内存 <em>{formatMemLimit(c.memLimit)}</em>
+          </span>
+        </td>
+        <td className="cell-created">{formatCreated(c.Created)}</td>
+        <td className="col-actions">
+          <div className="containers__actions">
+            {c.State === 'paused' ? (
+              <Button variant="secondary" size="sm" onClick={() => handleUnpause(c.Id, name)}>
+                恢复
+              </Button>
+            ) : !running ? (
+              <Button variant="secondary" size="sm" onClick={() => handleStart(c.Id, name)}>
+                启动
+              </Button>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={() => handleStop(c.Id, name)}>
+                停止
+              </Button>
+            )}
+            {running && (
+              <Button variant="secondary" size="sm" onClick={() => handlePause(c.Id, name)}>
+                暂停
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={() => handleRestart(c.Id, name)}>
+              重启
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openRename(c.Id, name)}
+              disabled={!canDelete}
+            >
+              重命名
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openEditImage(c.Id, name, c.Image)}
+              disabled={!canDelete}
+            >
+              编辑镜像
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => openClone(c.Id, name)} disabled={!canDelete}>
+              克隆
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openMigrate(c)}
+              disabled={!canDelete || !hasMigrateTarget}
+              loading={migratingId === c.Id}
+              title={
+                !hasMigrateTarget ? '无其它可用引擎，无法迁移（需至少配置一个非当前引擎）' : ''
+              }
+            >
+              迁移
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => openLogs(c.Id, name)}>
+              日志
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => navigate(`/containerDetail/${c.Id}`)}>
+              详情
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setDeleteTarget({ id: c.Id, name })}
+              disabled={!canDelete}
+            >
+              删除
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   if (loading) return <PageLoading />;
 
   return (
@@ -1692,151 +1897,87 @@ export default function ContainersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((c) => {
-                    const name = displayName(c);
-                    const running = c.State === 'running';
-                    const checked = selectedIds.includes(c.Id);
+                  {renderRows.map((r) => {
+                    if (r.type === 'row') return rowFor(r.data);
+                    const collapsed = collapsedGroups.has(r.key);
+                    const isMulti = r.members.length > 1;
+                    const groupChecked =
+                      r.members.length > 0 && r.members.every((m) => selectedIds.includes(m.Id));
+                    const someChecked = r.members.some((m) => selectedIds.includes(m.Id));
+                    const anyRunning = r.members.some((m) => m.State === 'running');
+                    const anyStopped = r.members.some((m) => m.State !== 'running');
+                    const groupBusy = groupActionKey === r.key;
                     return (
-                      <tr key={c.Id} className={checked ? 'row--selected' : ''}>
-                        <td className="col-select">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleSelect(c.Id)}
-                            aria-label={`选择 ${name}`}
-                          />
-                        </td>
-                        <td className="cell-name" title={c.Id}>
-                          {name}
-                        </td>
-                        <td className="cell-image">{c.Image || '-'}</td>
-                        <td>
-                          <span className="cell-status">
-                            <StatusBadge status={c.State} />
-                            {c.health && c.health !== 'none' && (
-                              <span className={`health-badge health-badge--${c.health}`}>
-                                {c.health}
-                              </span>
+                      <Fragment key={r.key}>
+                        <tr className={`compose-group${collapsed ? ' compose-group--collapsed' : ''}`}>
+                          <td className="col-select">
+                            {isMulti && (
+                              <input
+                                type="checkbox"
+                                checked={groupChecked}
+                                ref={(el) => {
+                                  if (el) el.indeterminate = someChecked && !groupChecked;
+                                }}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setSelectedIds((prev) => {
+                                    const next = new Set(prev);
+                                    r.members.forEach((m) =>
+                                      checked ? next.add(m.Id) : next.delete(m.Id)
+                                    );
+                                    return Array.from(next);
+                                  });
+                                }}
+                                aria-label={`选择 Compose 分组 ${r.label}`}
+                              />
                             )}
-                          </span>
-                        </td>
-                        <td className="cell-ports">{renderPortCell(c)}</td>
-                        {renderStatCells(c)}
-                        <td className="cell-limit">
-                          <span className="cell-limit__line">
-                            CPU <em>{formatCpuLimit(c.cpuLimit)}</em>
-                          </span>
-                          <span className="cell-limit__line">
-                            内存 <em>{formatMemLimit(c.memLimit)}</em>
-                          </span>
-                        </td>
-                        <td className="cell-created">{formatCreated(c.Created)}</td>
-                        <td className="col-actions">
-                          <div className="containers__actions">
-                            {c.State === 'paused' ? (
+                          </td>
+                          <td className="compose-group__cell" colSpan={8}>
+                            <button
+                              type="button"
+                              className="compose-group__toggle"
+                              onClick={() => toggleGroup(r.key)}
+                              title={collapsed ? '展开该 Compose 分组' : '折叠该 Compose 分组'}
+                            >
+                              <span className="compose-group__caret">{collapsed ? '▸' : '▾'}</span>
+                              <span className="compose-group__icon">
+                                <span aria-hidden>⊞</span>
+                              </span>
+                              <span className="compose-group__title">{r.label}</span>
+                              <span className="compose-group__badge">{r.members.length} 个容器</span>
+                            </button>
+                          </td>
+                          <td className="col-actions">
+                            <div className="containers__actions">
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => handleUnpause(c.Id, name)}
-                              >
-                                恢复
-                              </Button>
-                            ) : !running ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => handleStart(c.Id, name)}
+                                onClick={() => groupAction(r.key, 'start')}
+                                disabled={groupBusy || !anyStopped || !canDelete}
                               >
                                 启动
                               </Button>
-                            ) : (
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => handleStop(c.Id, name)}
+                                onClick={() => groupAction(r.key, 'stop')}
+                                disabled={groupBusy || !anyRunning || !canDelete}
                               >
                                 停止
                               </Button>
-                            )}
-                            {running && (
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => handlePause(c.Id, name)}
+                                onClick={() => groupAction(r.key, 'restart')}
+                                disabled={groupBusy || !anyRunning || !canDelete}
                               >
-                                暂停
+                                重启
                               </Button>
-                            )}
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => handleRestart(c.Id, name)}
-                            >
-                              重启
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openRename(c.Id, name)}
-                              disabled={!canDelete}
-                            >
-                              重命名
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openEditImage(c.Id, name, c.Image)}
-                              disabled={!canDelete}
-                            >
-                              编辑镜像
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openClone(c.Id, name)}
-                              disabled={!canDelete}
-                            >
-                              克隆
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openMigrate(c)}
-                              disabled={!canDelete || !hasMigrateTarget}
-                              loading={migratingId === c.Id}
-                              title={
-                                !hasMigrateTarget
-                                  ? '无其它可用引擎，无法迁移（需至少配置一个非当前引擎）'
-                                  : ''
-                              }
-                            >
-                              迁移
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openLogs(c.Id, name)}
-                            >
-                              日志
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => navigate(`/containerDetail/${c.Id}`)}
-                            >
-                              详情
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => setDeleteTarget({ id: c.Id, name })}
-                              disabled={!canDelete}
-                            >
-                              删除
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                            </div>
+                          </td>
+                        </tr>
+                        {!collapsed && r.members.map((m) => rowFor(m))}
+                      </Fragment>
                     );
                   })}
                 </tbody>

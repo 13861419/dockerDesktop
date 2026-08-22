@@ -29,13 +29,35 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
 /**
  * GET /api/volumes
  * 获取数据卷列表
+ * listVolumes / volume inspect 均不返回 UsageData（RefCount），
+ * 改用 docker system df 获取各卷引用数，供前端展示「使用中 / 未使用」状态。
  */
 router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
     const docker = await getDockerClient();
     const data = await docker.listVolumes();
-    res.json({ volumes: data.Volumes || [] });
+    const volumes = data.Volumes || [];
+    // 从 system df 提取卷引用数（RefCount）
+    const refCount: Record<string, number> = {};
+    try {
+      const df: any = await docker.df();
+      (df?.Volumes || []).forEach((v: any) => {
+        if (v?.Name && v.UsageData?.RefCount != null) {
+          refCount[v.Name] = v.UsageData.RefCount;
+        }
+      });
+    } catch {
+      // df 失败时回落为不带 UsageData
+    }
+    const enriched = volumes.map((v: any) => ({
+      ...v,
+      UsageData:
+        refCount[v.Name] != null
+          ? { RefCount: refCount[v.Name], Size: (v as any)?.UsageData?.Size ?? null }
+          : null,
+    }));
+    res.json({ volumes: enriched });
   }),
 );
 

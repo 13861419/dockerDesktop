@@ -37,6 +37,13 @@
     "regression:imagedetail": "node scripts/regression-imagedetail.js",
     "regression:notifications": "node scripts/regression-notifications.js",
     "regression:all": "node scripts/run-regression-all.js",
+    "regression:deep": "node scripts/regression-all-pages.js",
+    "test:server": "npm run test --workspace server",
+    "test:server:unit": "npm run test:unit --workspace server",
+    "test:server:api": "npm run test:api --workspace server",
+    "test:e2e": "node scripts/regression-all-pages.js",
+    "test:e2e:deep": "node scripts/e2e-functional-test.js",
+    "test:e2e:functional": "node scripts/e2e-functional-test.js",
     "mock:hub-search": "node scripts/mock-hub-search.js",
     "package": "node packaging/build-release.js",
     "package:installer": "node packaging/build-installer.js"
