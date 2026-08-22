@@ -1,0 +1,26 @@
+[Unit]
+Description=Docker Manager - Container Management Panel
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=dockerman
+Group=docker
+WorkingDirectory=/opt/docker-manager/server
+EnvironmentFile=/opt/docker-manager/server/.env
+ExecStart=/usr/bin/node /opt/docker-manager/server/dist/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=docker-manager
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/docker-manager/server /var/lib/docker-manager
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

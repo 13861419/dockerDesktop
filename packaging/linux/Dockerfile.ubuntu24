@@ -1,0 +1,47 @@
+# ============================================================
+#  Docker Manager - Ubuntu 24.04 构建环境
+#  用于生成 .deb 安装包
+#  用法: docker build --build-arg TARGETARCH=amd64 -f Dockerfile.ubuntu24 .
+# ============================================================
+FROM ubuntu:24.04
+
+ARG TARGETARCH=amd64
+ARG NODE_VERSION=22
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TARGETARCH=${TARGETARCH}
+
+# 系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gnupg \
+    git \
+    build-essential \
+    dpkg-dev \
+    fakeroot \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Node.js
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}.x" | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# 验证
+RUN node -v && npm -v
+
+WORKDIR /build
+
+# 复制项目源码（由 build-deb.sh 在 Docker context 中提供）
+COPY . /build/
+
+# 安装依赖 & 构建
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+RUN cd server && npm ci --omit=dev 2>/dev/null || (cd server && npm install --omit=dev)
+RUN cd web && npm ci 2>/dev/null || (cd web && npm install)
+RUN cd web && npm run build
+RUN cd server && npx tsc
+
+# 默认入口：由 build-deb.sh 调用打包
+CMD ["bash", "-c", "echo '使用 build-deb.sh 调用此容器完成 .deb 打包'"]

@@ -1,0 +1,57 @@
+# ============================================================
+#  Docker Manager - CentOS 7 构建环境
+#  用于生成 .rpm 安装包
+#  用法: docker build --build-arg TARGETARCH=x86_64 -f Dockerfile.centos7 .
+#  注意: CentOS 7 官方源已停更，使用 vault 镜像 + EPEL + nvm 安装 Node 22
+# ============================================================
+FROM centos:7
+
+ARG TARGETARCH=x86_64
+ARG NODE_VERSION=22
+
+ENV TARGETARCH=${TARGETARCH}
+
+# 切换到 vault 镜像（官方源已停更）
+RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
+    && sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
+
+# 系统依赖
+RUN yum install -y --setopt=tsflags=nodocs \
+    curl \
+    ca-certificates \
+    git \
+    gcc \
+    gcc-c++ \
+    make \
+    rpm-build \
+    jq \
+    && yum clean all
+
+# 安装 nvm + Node.js（CentOS 7 的 nodesource 不支持 Node 22）
+RUN curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh" | bash
+ENV NVM_DIR="/root/.nvm"
+RUN . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION} && nvm alias default ${NODE_VERSION}
+# 链接 node/npm 到 PATH
+RUN . "$NVM_DIR/nvm.sh" && \
+    NVM_BIN="$(nvm which ${NODE_VERSION})" && \
+    ln -sf "$NVM_BIN" /usr/local/bin/node && \
+    ln -sf "$(dirname "$NVM_BIN")/npm" /usr/local/bin/npm && \
+    ln -sf "$(dirname "$NVM_BIN")/npx" /usr/local/bin/npx
+
+# 验证
+RUN node -v && npm -v
+
+WORKDIR /build
+
+# 复制项目源码（由 build-rpm.sh 在 Docker context 中提供）
+COPY . /build/
+
+# 安装依赖 & 构建
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+RUN cd server && npm ci --omit=dev 2>/dev/null || (cd server && npm install --omit=dev)
+RUN cd web && npm ci 2>/dev/null || (cd web && npm install)
+RUN cd web && npm run build
+RUN cd server && npx tsc
+
+# 默认入口：由 build-rpm.sh 调用打包
+CMD ["bash", "-c", "echo '使用 build-rpm.sh 调用此容器完成 .rpm 打包'"]

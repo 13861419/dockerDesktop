@@ -1,0 +1,140 @@
+# ============================================================
+#  Docker Manager - Release CI
+#  触发条件: push tag v*
+#  构建矩阵: Windows (x64) + Ubuntu 24 (amd64/arm64) + CentOS 7 (x86_64/aarch64)
+#  产物: GitHub Releases
+# ============================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ----------------------------------------------------------
+  #  Windows 构建 (NSIS setup.exe)
+  # ----------------------------------------------------------
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build web
+        run: npm run build --workspace web
+
+      - name: Build server
+        run: npx tsc --project server/tsconfig.json
+        working-directory: server
+
+      - name: Install server production deps
+        run: npm install --omit=dev
+        working-directory: server
+
+      - name: Package Windows release
+        run: node packaging/build-release.js
+
+      - name: Upload Windows artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-release/DockerManager/**
+          prerelease: false
+
+  # ----------------------------------------------------------
+  #  Ubuntu 24.04 构建 (.deb, amd64 + arm64)
+  # ----------------------------------------------------------
+  build-ubuntu:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64)
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build .deb package
+        run: |
+          chmod +x packaging/linux/build-deb.sh
+          bash packaging/linux/build-deb.sh ${{ matrix.arch }}
+
+      - name: Upload Ubuntu artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/docker-manager-*.deb
+          prerelease: false
+
+  # ----------------------------------------------------------
+  #  CentOS 7 构建 (.rpm, x86_64 + aarch64)
+  # ----------------------------------------------------------
+  build-centos:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for aarch64)
+        if: matrix.arch == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build .rpm package
+        run: |
+          chmod +x packaging/linux/build-rpm.sh
+          bash packaging/linux/build-rpm.sh ${{ matrix.arch }}
+
+      - name: Upload CentOS artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/docker-manager-*.rpm
+          prerelease: false
+
+  # ----------------------------------------------------------
+  #  生成校验和
+  # ----------------------------------------------------------
+  checksums:
+    needs: [build-windows, build-ubuntu, build-centos]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Generate sha256sums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.rpm" \) \
+            -exec sha256sum {} \; > ../sha256sums.txt
+          cat ../sha256sums.txt
+
+      - name: Upload checksums
+        uses: softprops/action-gh-release@v2
+        with:
+          files: sha256sums.txt
+          prerelease: false
