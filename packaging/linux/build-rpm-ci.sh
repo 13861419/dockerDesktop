@@ -146,10 +146,9 @@ fi
 /usr/local/bin/docker-manager-install
 SPECEOF
 
-  # 构建 RPM
+  # 构建 RPM（架构已在 spec 中设置 BuildArch）
   rpmbuild -bb "$RPM_DIR/SPECS/${PKG_NAME}.spec" \
-    --define "_topdir $RPM_DIR" \
-    --buildarch "${ARCH_LABEL}" 2>&1 || {
+    --define "_topdir $RPM_DIR" 2>&1 || {
       info "rpmbuild 失败，尝试用 fpm ..."
       if command -v fpm &>/dev/null; then
         fpm -s dir -t rpm \
