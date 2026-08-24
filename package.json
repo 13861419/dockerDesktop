@@ -1,8 +1,15 @@
 {
-  "name": "docker-manager",
+  "name": "@13861419/docker-manager",
   "version": "0.1.0",
   "private": true,
   "description": "Docker 管理面板（支持 Windows / Ubuntu 24 / CentOS 7+，类似 1Panel）",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/13861419/dockerDesktop.git"
+  },
   "workspaces": [
     "server",
     "web"

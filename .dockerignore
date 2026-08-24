@@ -1,0 +1,16 @@
+.dockerignore
+node_modules
+server/node_modules
+web/node_modules
+web/dist
+server/dist
+data
+dist-release
+packaging
+docs
+images
+*.md
+.git
+.github
+.opencode
+.vscode

@@ -1,8 +1,11 @@
 # ============================================================
-#  Docker Manager - Release CI
+#  Docker Manager - Release CI (全渠道发布)
 #  触发条件: push tag v*
-#  构建矩阵: Windows (x64) + Ubuntu 24 (amd64/arm64) + CentOS 7 (x86_64/aarch64)
-#  产物: GitHub Releases
+#  发布渠道:
+#    1. GitHub Releases — deb / rpm / exe 直接下载
+#    2. ghcr.io — Docker 镜像（多架构）
+#    3. GitHub Packages (npm) — npm 包
+#    4. GitHub Pages — APT / YUM 仓库源
 # ============================================================
 name: Release
 
@@ -13,128 +16,219 @@ on:
 
 permissions:
   contents: write
+  packages: write
+  pages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ----------------------------------------------------------
-  #  Windows 构建 (NSIS setup.exe)
-  # ----------------------------------------------------------
+  # ==========================================================
+  #  1. GitHub Releases — deb / rpm / exe
+  # ==========================================================
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Build web
-        run: npm run build --workspace web
-
-      - name: Build server
-        run: npx tsc --project server/tsconfig.json
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --ignore-scripts
+      - run: npm run build --workspace web
+      - run: npx tsc --project server/tsconfig.json
         working-directory: server
-
-      - name: Install server production deps
-        run: npm install --omit=dev
+      - run: npm install --omit=dev
         working-directory: server
-
-      - name: Package Windows release
-        run: node packaging/build-release.js
-
-      - name: Upload Windows artifact
-        uses: softprops/action-gh-release@v2
+      - run: node packaging/build-release.js
+      - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist-release/DockerManager/**
+          files: dist-release/DockerManager/**
           prerelease: false
 
-  # ----------------------------------------------------------
-  #  Ubuntu 24.04 构建 (.deb, amd64 + arm64)
-  # ----------------------------------------------------------
   build-ubuntu:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU (for arm64)
-        if: matrix.arch == 'arm64'
+      - uses: actions/checkout@v4
+      - if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build .deb package
-        run: |
+      - uses: docker/setup-buildx-action@v3
+      - run: |
           chmod +x packaging/linux/build-deb.sh
           bash packaging/linux/build-deb.sh ${{ matrix.arch }}
-
-      - name: Upload Ubuntu artifact
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.deb
           prerelease: false
 
-  # ----------------------------------------------------------
-  #  CentOS 7 构建 (.rpm, x86_64 + aarch64)
-  # ----------------------------------------------------------
   build-centos:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
         arch: [x86_64, aarch64]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU (for aarch64)
-        if: matrix.arch == 'aarch64'
+      - uses: actions/checkout@v4
+      - if: matrix.arch == 'aarch64'
         uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build .rpm package
-        run: |
+      - uses: docker/setup-buildx-action@v3
+      - run: |
           chmod +x packaging/linux/build-rpm.sh
           bash packaging/linux/build-rpm.sh ${{ matrix.arch }}
-
-      - name: Upload CentOS artifact
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.rpm
           prerelease: false
 
-  # ----------------------------------------------------------
-  #  生成校验和
-  # ----------------------------------------------------------
   checksums:
     needs: [build-windows, build-ubuntu, build-centos]
     runs-on: ubuntu-24.04
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts/, merge-multiple: true }
+      - run: |
+          cd artifacts
+          find . -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.rpm" \) \
+            -exec sha256sum {} \; > ../sha256sums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: sha256sums.txt
+          prerelease: false
+
+  # ==========================================================
+  #  2. ghcr.io — Docker 多架构镜像
+  # ==========================================================
+  publish-docker:
+    runs-on: ubuntu-24.04
+    needs: [checksums]
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.ref_name }}
+            type=raw,value=${{ matrix.arch }},enable=true
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platform: ${{ matrix.platform }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+
+  # 生成 manifest list（合并多架构）
+  docker-manifest:
+    runs-on: ubuntu-24.04
+    needs: [publish-docker]
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
+          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
+          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
+          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  # ==========================================================
+  #  3. GitHub Packages (npm)
+  # ==========================================================
+  publish-npm:
+    runs-on: ubuntu-24.04
+    needs: [checksums]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: '@13861419'
+      - run: npm ci --ignore-scripts
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================
+  #  4. GitHub Pages — APT / YUM 仓库
+  # ==========================================================
+  publish-repo:
+    runs-on: ubuntu-24.04
+    needs: [build-ubuntu, build-centos]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts/
           merge-multiple: true
 
-      - name: Generate sha256sums
+      - name: Prepare deb/rpm files
         run: |
-          cd artifacts
-          find . -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.rpm" \) \
-            -exec sha256sum {} \; > ../sha256sums.txt
-          cat ../sha256sums.txt
+          mkdir -p dist/deb dist/rpm
+          find artifacts -name "*.deb" -exec cp {} dist/deb/ \;
+          find artifacts -name "*.rpm" -exec cp {} dist/rpm/ \;
+          echo "=== deb files ==="
+          ls -la dist/deb/
+          echo "=== rpm files ==="
+          ls -la dist/rpm/
 
-      - name: Upload checksums
-        uses: softprops/action-gh-release@v2
+      - name: Install dpkg-scanpackages
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+
+      - name: Generate APT/YUM repo metadata
+        run: |
+          chmod +x packaging/linux/generate-repo.sh
+          bash packaging/linux/generate-repo.sh dist/deb dist/rpm pages-site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          files: sha256sums.txt
-          prerelease: false
+          path: pages-site
+
+  deploy-pages:
+    runs-on: ubuntu-24.04
+    needs: [publish-repo]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
