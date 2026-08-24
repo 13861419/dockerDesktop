@@ -22,7 +22,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository_owner }}/dockerdesktop
 
 jobs:
   # ==========================================================
@@ -151,14 +151,15 @@ jobs:
       - name: Create and push manifest
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
-          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
-          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
-          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          IMAGE_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          docker manifest create ${{ env.REGISTRY }}/${IMAGE_LOWER}:${VERSION} \
+            ${{ env.REGISTRY }}/${IMAGE_LOWER}:${VERSION}-amd64 \
+            ${{ env.REGISTRY }}/${IMAGE_LOWER}:${VERSION}-arm64
+          docker manifest create ${{ env.REGISTRY }}/${IMAGE_LOWER}:latest \
+            ${{ env.REGISTRY }}/${IMAGE_LOWER}:latest-amd64 \
+            ${{ env.REGISTRY }}/${IMAGE_LOWER}:latest-arm64
+          docker manifest push ${{ env.REGISTRY }}/${IMAGE_LOWER}:${VERSION}
+          docker manifest push ${{ env.REGISTRY }}/${IMAGE_LOWER}:latest
 
   # ==========================================================
   #  3. GitHub Packages (npm)

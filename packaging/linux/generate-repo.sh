@@ -99,22 +99,25 @@ info "生成 YUM 仓库元数据 ..."
 YUM_DIR="$OUTPUT_DIR/yum"
 mkdir -p "$YUM_DIR/repodata"
 
-# 复制 .rpm 文件
-for rpm in "$RPM_DIR"/*.rpm; do
-  [ -f "$rpm" ] || continue
-  cp "$rpm" "$YUM_DIR/"
-  info "  已添加: $(basename "$rpm")"
-done
+# 检查是否有 .rpm 文件
+rpm_count=$(find "$RPM_DIR" -maxdepth 1 -name '*.rpm' -type f 2>/dev/null | wc -l)
+if [ "$rpm_count" -gt 0 ]; then
+  # 复制 .rpm 文件
+  for rpm in "$RPM_DIR"/*.rpm; do
+    [ -f "$rpm" ] || continue
+    cp "$rpm" "$YUM_DIR/"
+    info "  已添加: $(basename "$rpm")"
+  done
 
-# 生成 repodata（如果 createrepo 可用）
-if command -v createrepo &>/dev/null; then
-  createrepo "$YUM_DIR"
-  info "  repodata 已生成"
-else
-  # 手动创建 minimal repomd.xml
-  RPM_FILE=$(ls "$YUM_DIR"/*.rpm 2>/dev/null | head -1)
-  if [ -n "$RPM_FILE" ]; then
-    cat > "$YUM_DIR/repodata/repomd.xml" <<XML
+  # 生成 repodata（如果 createrepo 可用）
+  if command -v createrepo &>/dev/null; then
+    createrepo "$YUM_DIR"
+    info "  repodata 已生成"
+  else
+    # 手动创建 minimal repomd.xml
+    RPM_FILE=$(ls "$YUM_DIR"/*.rpm 2>/dev/null | head -1)
+    if [ -n "$RPM_FILE" ]; then
+      cat > "$YUM_DIR/repodata/repomd.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <repomd xmlns="http://linux.duke.edu/metadata/repo">
   <revision>$(date +%s)</revision>
@@ -127,8 +130,11 @@ else
   </data>
 </repomd>
 XML
-    info "  minimal repomd.xml 已生成（安装 createrepo 可生成完整元数据）"
+      info "  minimal repomd.xml 已生成（安装 createrepo 可生成完整元数据）"
+    fi
   fi
+else
+  info "  无 RPM 文件，跳过 YUM 仓库生成"
 fi
 
 cat > "$YUM_DIR/README.md" <<'README'
