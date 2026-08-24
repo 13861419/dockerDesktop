@@ -32,8 +32,7 @@ web/build/
 web/.cache/
 dist-release/
 
-# 打包依赖（可重新生成）
-packaging/nssm/
+# 打包依赖
 packaging/nsis/
 packaging/tray/TrayApp.exe
 
