@@ -135,6 +135,7 @@ jobs:
           platform: ${{ matrix.platform }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
 
