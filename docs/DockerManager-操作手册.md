@@ -7,6 +7,7 @@
 
 ## 目录
 
+- [0. 安装部署](#0-安装部署)
 - [1. 登录与使用准备](#1-登录与使用准备)
 - [2. 总览与健康体检](#2-总览与健康体检)
 - [3. 容器管理](#3-容器管理)
@@ -33,6 +34,168 @@
 - [24. 应用商店与系统设置](#24-应用商店与系统设置)
 - [25. 详细参数表](#25-详细参数表)
 - [26. 常见问题](#26-常见问题)
+
+---
+
+## 0. 安装部署
+
+### 0.1 环境要求
+
+| 依赖 | 版本要求 | 说明 |
+| --- | --- | --- |
+| Node.js | ≥ 22 | 安装脚本会自动安装 |
+| Docker Engine | 最新稳定版 | 安装脚本会自动安装 |
+| Docker Compose | v2 插件 | 安装脚本会自动安装 |
+| 操作系统 | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ | |
+
+> 默认账号 `admin` / `admin888`，默认端口 `9528`。首次登录后请立即修改密码。
+
+### 0.2 方式一：APT 源安装（Ubuntu / Debian，推荐）
+
+```bash
+# 添加 GPG 密钥
+curl -fsSL https://13861419.github.io/dockerDesktop/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/docker-manager.gpg
+
+# 添加 APT 源
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-manager.gpg] https://13861419.github.io/dockerDesktop/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/docker-manager.list
+
+# 安装
+sudo apt-get update
+sudo apt-get install -y docker-manager
+
+# 查看服务状态
+sudo systemctl status docker-manager
+```
+
+安装完成后访问 `http://<服务器IP>:9528`。
+
+### 0.3 方式二：YUM 源安装（CentOS / RHEL）
+
+```bash
+# 添加 YUM 源
+sudo tee /etc/yum.repos.d/docker-manager.repo <<'EOF'
+[docker-manager]
+name=Docker Manager
+baseurl=https://13861419.github.io/dockerDesktop/yum
+enabled=1
+gpgcheck=0
+EOF
+
+# 安装
+sudo yum install -y docker-manager
+# 或 CentOS 8+ / RHEL 使用 dnf
+sudo dnf install -y docker-manager
+
+# 查看服务状态
+sudo systemctl status docker-manager
+```
+
+安装完成后访问 `http://<服务器IP>:9528`。
+
+### 0.4 方式三：Deb / RPM 手动安装
+
+从 [GitHub Releases](https://github.com/13861419/dockerDesktop/releases/latest) 下载对应安装包：
+
+```bash
+# Ubuntu / Debian
+sudo dpkg -i docker-manager-*.deb
+sudo apt-get install -f    # 自动补齐依赖
+
+# CentOS / RHEL
+sudo rpm -ivh docker-manager-*.rpm
+# 或
+sudo yum install -y docker-manager-*.rpm
+```
+
+安装脚本会自动完成：创建用户、配置 systemd 服务、放行防火墙端口。
+
+### 0.5 方式四：Windows 安装
+
+从 [GitHub Releases](https://github.com/13861419/dockerDesktop/releases/latest) 下载 `DockerManager-windows-amd64.zip`。
+
+#### 手动安装（批处理）
+
+1. 解压 zip 到目标目录（如 `C:\DockerManager`）
+2. 右键 `install.bat` → **以管理员身份运行**
+3. 等待服务注册并启动完成
+
+安装内容：
+- 注册为 Windows 服务（通过 NSSM），开机自启
+- 创建开始菜单快捷方式
+- 启动系统托盘图标
+
+#### NSIS 安装包
+
+运行 `DockerManager-setup-*.exe`，按向导完成安装，支持标准的「安装→卸载」流程。
+
+### 0.6 方式五：Docker 运行
+
+```bash
+# 从 Docker Hub 拉取
+docker pull ghcr.io/13861419/dockerdesktop:latest
+
+# 启动
+docker run -d \
+  --name docker-manager \
+  -p 9528:9528 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v docker-manager-data:/data \
+  --restart=unless-stopped \
+  ghcr.io/13861419/dockerdesktop:latest
+```
+
+> 注意：必须挂载 Docker Socket（`/var/run/docker.sock`）才能管理宿主机的 Docker。
+
+### 0.7 方式六：npm 全局安装
+
+```bash
+npm install -g @13861419/docker-manager
+docker-manager
+```
+
+### 0.8 方式七：源码开发模式
+
+```bash
+# 克隆仓库
+git clone https://github.com/13861419/dockerDesktop.git
+cd dockerDesktop
+
+# 安装依赖
+npm install
+
+# 启动后端（端口 9528）
+npm run dev:server
+
+# 另开终端启动前端（端口 9526）
+npm run dev:web
+```
+
+访问 `http://localhost:9526`。
+
+### 0.9 服务管理（Linux）
+
+```bash
+# systemd 服务管理
+sudo systemctl start docker-manager     # 启动
+sudo systemctl stop docker-manager      # 停止
+sudo systemctl restart docker-manager   # 重启
+sudo systemctl status docker-manager    # 查看状态
+sudo systemctl enable docker-manager    # 开机自启
+
+# 查看日志
+journalctl -u docker-manager -f
+```
+
+### 0.10 数据目录
+
+| 平台 | 数据目录 | 说明 |
+| --- | --- | --- |
+| Linux | `/var/lib/docker-manager/` | 核心为 `docker-manager.db`（SQLite） |
+| Windows | `%PROGRAMDATA%\DockerManager\data\` | 同上 |
+| Docker | 容器内 `/data`（通过 `-v` 挂载） | 同上 |
+
+备份数据只需复制整个数据目录即可。
 
 ---
 
@@ -607,6 +770,9 @@
 | 忘记管理密码 | 停止服务，删除 `data/docker-manager.db`（连同 `-wal` / `-shm` 文件），重启后以默认 `admin` / `admin888` 重新初始化。 |
 | 备份 / 迁移数据 | 复制整个 `data/` 目录即可（核心为 `docker-manager.db`）。 |
 | 登录按钮为何显示"登 录" | 按钮文字为「登 录」（带空格），为正常显示，输入账号密码后点击即可。 |
+| Linux 安装后无法连接 Docker | 确保 `dockerman` 用户已加入 docker 组（`sudo usermod -aG docker dockerman`），并重启服务。 |
+| Windows 安装后无法访问 | 确认 Docker Desktop 已启动，且 nssm 服务状态正常（`services.msc` 中查看 DockerManager 服务）。 |
+| 防火墙拦截 | Linux：`firewall-cmd --permanent --add-port=9528/tcp && firewall-cmd --reload`；Windows：通过面板「防火墙」页面放行端口。 |
 
 ---
 
