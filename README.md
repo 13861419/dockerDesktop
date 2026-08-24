@@ -21,10 +21,24 @@
 - **云端备份**：S3 / OSS / WebDAV 目标配置（零第三方依赖，https 手写）、连通性测试、文件上传
 - **站点反代 / SSL**：基于反代容器的站点反向代理、启停与配置 reload、SSL 证书状态与替换
 - **防火墙**：Windows 防火墙入站端口放行管理（基于系统 `netsh`，管理员权限提示）
-- **事件流**：实时查看 Docker 引擎事件；事件**持久化到 SQLite**，可查询**历史**、**导出 CSV**、清空
-- **操作日志**：管理操作审计日志
-- **用户与鉴权**：登录鉴权、会话管理、用户增删/改密、RBAC（管理员专属页面 / 操作守卫）、内置权限边界自动化测试
-- **系统设置**：主题、语言等偏好设置
+- **事件流**：实时查看 Docker 引擎事件（含统计可视化）；事件**持久化到 SQLite**，可查询**历史**、**导出 CSV**、清空
+- **操作日志**：管理操作审计日志，含统计与 JSON / CSV 导出
+- **告警中心 / 通知渠道（C3）**：宿主级（CPU / 内存 / 磁盘 / GPU / 网络带宽 Mbps）与容器级（退出 / 健康状态 / 端口监听 / CPU 内存阈值）告警规则；支持**静默时段 / 仅工作日 / 工作时间**；通知渠道（Webhook / 邮件 / 钉钉 / 飞书，敏感凭证加密存储）；告警记录查询、**CSV 导出 / 归档**、实时资源快照手工检测
+- **镜像漏洞扫描**：镜像详情页基于本机 **Trivy** 的 CVE 漏洞扫描（零 npm 依赖，按严重等级分级，未安装时给出引导文案）
+- **容器模板 / Compose 模板库**：一键保存 / 复用容器创建配置（`/api/templates`）与 Compose 编排模板，支持"从模板创建"回填
+- **编排（启动依赖排序）**：为容器配置启动依赖，拓扑排序（含环检测）+ 一键分层并行启动 / 逆序停止 / 重启，编排历史失败项可重试
+- **Swarm 服务管理**：Swarm 集群状态、服务列表 / 详情、服务删除与副本伸缩（未启用 Swarm 时写入优雅降级）
+- **跨引擎容器迁移 / 镜像传输**：`docker save | load` 管道直通式跨引擎镜像迁移与容器迁移（自动带镜像传输），适合大镜像不占内存
+- **跨引擎聚合总览**：一次展示多台 Docker 主机的资源与对象数量（单引擎离线不影响其它）
+- **全局搜索**：顶栏全局搜索，跨 容器 / 镜像 / 卷 / 网络 / Compose 聚合匹配并跳转
+- **系统健康体检**：聚合引擎状态、资源使用率、未使用对象与容器重启状态，输出 0-100 健康评分与逐项体检
+- **容器资源占用看板**：总览页 Top CPU / Top 内存容器排行
+- **监控持久化历史**：实时监控数据落库，提供 1 小时 / 24 小时 / 7 天历史趋势
+- **模板 / 镜像中心增强**：镜像分类批量清理、创建容器端口占用检测、镜像漏洞扫描与构建历史
+- **配置导入 / 导出**：面板配置 JSON 级选择性导入导出（引擎 / 模板 / 计划任务 / 站点 / 告警规则 / 通知渠道 / 云端目标 / 数据库实例 / 镜像源 / 用户），敏感字段支持脱敏占位导出与导入端重新加密，冲突策略 skip / overwrite / error
+- **Webhook / Git 自动部署**：计划任务支持匿名 **Webhook token** 触发（`POST /api/webhook/:token`，可选 Header 二次校验）与 **Git 仓库 clone / pull 自动部署**（HTTPS / SSH 凭证加密存储）
+- **用户与鉴权**：登录鉴权、会话管理、用户增删/改密、RBAC（管理员专属页面 / 操作守卫 / operator 角色，数据库只读、批量操作等分级权限）、内置权限边界自动化测试
+- **系统设置**：主题、语言等偏好设置；告警静默 / 快捷引导等
 
 ## 🧰 技术栈
 
@@ -59,6 +73,16 @@
 | `image_build_history`| 镜像构建历史（日志预览 / 耗时 / 结果）      | `server/src/routes/build.ts`     |
 | `docker_events`      | Docker 事件持久化历史（实时事件落库）       | `server/src/docker/events.ts`   |
 | `firewall_ports`     | Windows 防火墙放行端口规则              | `server/src/routes/firewall.ts`  |
+| `notify_channels`    | 告警通知渠道（Webhook/邮件/钉钉/飞书，敏感凭证加密） | `server/src/notify.ts`           |
+| `alert_rules`        | 宿主级告警规则（CPU/内存/磁盘/GPU/网络带宽等，含静默时段） | `server/src/alerting.ts`         |
+| `alert_records`      | 告警触发记录 / 归档 / 导出                | `server/src/alerting.ts`         |
+| `container_alert_rules` | 容器级告警规则（退出/健康/端口监听/CPU/内存阈值） | `server/src/alerting.ts`         |
+| `host_metrics` / `container_metrics` | 资源监控持久化（1h/24h/7d 历史趋势） | `server/src/docker/monitor.ts`   |
+| `container_templates`| 容器模板库（一键回填创建配置）              | `server/src/routes/templates.ts` |
+| `compose_templates`  | Compose 编排模板库                      | `server/src/routes/composeTemplates.ts` |
+| `appstore_custom_apps` | 应用商店自定义应用                     | `server/src/appstore/`           |
+| `container_dependencies` | 容器启动依赖编排（拓扑排序）           | `server/src/routes/orchestrate.ts` |
+| `orchestrate_runs`   | 编排执行历史（失败项可重试）               | `server/src/routes/orchestrate.ts` |
 
 > **旧版兼容**：早期版本使用 JSON/文本文件存储（`data/users.json`、`data/hub-sources.json`、`data/hub-search-source.txt`、`data/image-pull-history.json`）。服务启动时会自动将旧文件数据迁移进 SQLite，并把旧文件重命名为 `.bak` 备份，实现平滑升级、不丢失任何现有配置。
 
@@ -71,6 +95,7 @@
 ### 安全与保障
 
 - 用户密码采用 **scrypt 加盐哈希**（`crypto.scryptSync`），绝不保存明文。
+- 通知渠道密钥 / 云端备份密钥 / 数据库口令 / Git 部署凭证等敏感字段采用**对称加密**落库（`storage.ts` 的 `encryptSecret`），前端回显仅标记"已配置"。
 - SQLite 数据库文件随 `data/` 目录自动创建；用户表为空时自动以默认管理员初始化，保证首次启动可用。
 
 ## 🏗️ 整体系统架构
@@ -85,7 +110,7 @@ flowchart TB
         API["REST API 路由<br/>/api/*"]
         WS["WebSocket 服务<br/>容器终端 / 事件 / 监控"]
         AUTH["鉴权中间件<br/>内存 Token 会话"]
-        MOD["业务模块<br/>containers/images/volumes<br/>networks/compose/appstore/hub"]
+        MOD["业务模块<br/>containers/images/volumes/networks<br/>compose/appstore/hub/alerting/templates<br/>orchestrate/swarm/transfer/config"]
         STORE["SQLite 存储层<br/>storage.ts + users/hubConfig/imagePullHistory"]
     end
 
@@ -145,13 +170,19 @@ dockerDesktop/
 ├── server/                     # 后端工程（Express + TS）
 │   └── src/
 │       ├── routes/             # REST API 路由
-│       ├── docker/             # dockerode 客户端、监控、终端
-│       ├── appstore/           # 应用商店目录与状态
-│       ├── storage.ts          # SQLite 存储层（连接/建表/旧数据迁移）
+│       ├── docker/             # dockerode 客户端、监控、事件、终端
+│       ├── appstore/           # 应用商店目录、状态与自定义应用
+│       ├── platform/           # 平台抽象层（Windows/Ubuntu/CentOS 的 detect / exec）
+│       ├── storage.ts          # SQLite 存储层（连接/建表/旧数据迁移/凭证加密）
+│       ├── auth.ts             # 会话鉴权与 RBAC 守卫
 │       ├── users.ts            # 用户存储（SQLite users 表）
 │       ├── hubConfig.ts        # 镜像源存储（SQLite hub_sources/setting 表）
 │       ├── imagePullHistory.ts # 拉取时间存储（SQLite image_pull_history 表）
-│       └── auth.ts             # 会话鉴权
+│       ├── alerting.ts         # 告警规则检测与记录（宿主级/容器级）
+│       ├── notify.ts           # 通知渠道（Webhook/邮件/钉钉/飞书）推送
+│       ├── trivyCli.ts         # 零依赖 Trivy 镜像漏洞扫描封装
+│       ├── gitCli.ts           # 零依赖 Git CLI 封装（clone/pull + 凭证注入）
+│       └── scheduler.ts        # 计划任务调度与下次执行时间计算
 ├── data/                       # 运行时数据（SQLite 数据库 + 旧 JSON 迁移备份，自动生成）
 ├── packaging/                  # 打包脚本与 NSIS 安装包工具
 └── dist-release/               # 发布产物（构建生成）
@@ -338,6 +369,8 @@ sudo systemctl enable docker-manager   # 开机自启
   - 本地开发/自动化回归可启动自带的本地 mock 搜索服务（`npm run mock:hub-search`）作为不依赖外网的兜底。
 - **忘记密码**：停止服务后删除 `data/docker-manager.db`（及同目录 `-wal` / `-shm` 文件），重新启动服务，会以 `ADMIN_USER` / `ADMIN_PASS`（默认 `admin` / `admin888`）重新初始化管理员和默认配置。
 - **备份/迁移数据**：只需复制整个 `data/` 目录（核心是 `docker-manager.db`）即可完成配置的备份与迁移。详见 [数据迁移指南](docs/migration-guide.md)。
+- **镜像漏洞扫描不可用**：镜像详情页的漏洞扫描依赖宿主机已安装 **Trivy**（未安装时会给出引导文案）。可在目标机器安装 Trivy 后刷新即可启用。
+- **Webhook 触发任务无反应**：确认计划任务已配置并启用 `webhook_token`，用 `POST /api/webhook/:token` 触发；如需二次校验可在 Header 携带 `X-Docker-Panel-Token`。
 - **Linux 安装后无法连接 Docker**：确保 `dockerman` 用户已加入 `docker` 组（`sudo usermod -aG docker dockerman`），并重启服务。
 
 ## 📜 License

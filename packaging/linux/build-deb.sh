@@ -25,6 +25,7 @@ error() { echo -e "${RED}[BUILD-DEB]${NC} $*" >&2; }
 info "构建 Docker 镜像 (Ubuntu 24, ${ARCH}) ..."
 docker buildx build \
   --platform "linux/${ARCH}" \
+  --load \
   -f "$SCRIPT_DIR/Dockerfile.ubuntu24" \
   -t "$IMAGE_NAME" \
   "$ROOT_DIR"

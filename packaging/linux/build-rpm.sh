@@ -25,6 +25,7 @@ error() { echo -e "${RED}[BUILD-RPM]${NC} $*" >&2; }
 info "构建 Docker 镜像 (CentOS 7, ${ARCH}) ..."
 docker buildx build \
   --platform "linux/${ARCH}" \
+  --load \
   -f "$SCRIPT_DIR/Dockerfile.centos7" \
   -t "$IMAGE_NAME" \
   "$ROOT_DIR"
