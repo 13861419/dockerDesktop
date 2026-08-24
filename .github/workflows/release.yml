@@ -184,7 +184,7 @@ jobs:
   # ==========================================================
   publish-repo:
     runs-on: ubuntu-24.04
-    needs: [build-ubuntu]
+    needs: [build-ubuntu, build-centos]
     permissions:
       contents: write
     steps:
@@ -195,9 +195,15 @@ jobs:
           tag: ${{ github.ref_name }}
           fileName: "docker-manager-*.deb"
           out-file-path: dist/deb
+      - name: Download rpm artifacts
+        uses: robinraju/release-downloader@v1.12
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: "docker-manager-*.rpm"
+          out-file-path: dist/rpm
       - name: Install dpkg-scanpackages
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev
-      - name: Generate APT repo metadata
+      - name: Generate APT/YUM repo metadata
         run: |
           mkdir -p dist/rpm
           chmod +x packaging/linux/generate-repo.sh
