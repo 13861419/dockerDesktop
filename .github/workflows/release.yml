@@ -185,6 +185,8 @@ jobs:
   publish-repo:
     runs-on: ubuntu-24.04
     needs: [build-ubuntu]
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Download deb artifacts
@@ -200,22 +202,6 @@ jobs:
           mkdir -p dist/rpm
           chmod +x packaging/linux/generate-repo.sh
           bash packaging/linux/generate-repo.sh dist/deb dist/rpm pages-site
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: pages-site
-
-  deploy-pages:
-    runs-on: ubuntu-24.04
-    needs: [publish-repo]
-    permissions:
-      contents: write
-    steps:
-      - name: Download Pages artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: github-pages
-          path: pages-site
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
