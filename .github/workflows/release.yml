@@ -85,6 +85,7 @@ jobs:
   #  2. ghcr.io — Docker 多架构镜像
   # ==========================================================
   publish-docker:
+    if: false
     runs-on: ubuntu-24.04
     needs: [checksums]
     strategy:
@@ -124,6 +125,7 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
 
   docker-manifest:
+    if: false
     runs-on: ubuntu-24.04
     needs: [publish-docker]
     steps:
