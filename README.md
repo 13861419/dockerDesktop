@@ -272,10 +272,63 @@ sudo systemctl enable docker-manager   # 开机自启
 功能总览：
 
 ![总览](images/1.png "总览")
-![容器](images/2.png "容器")
-![镜像](images/3.png "镜像")
-![应用商店](images/4.png "应用商店")
-![镜像中心](images/5.png "镜像中心")
+![监控体检](images/2.png "监控体检")
+![容器](images/3.png "容器")
+![容器模板](images/4.png "容器模板")
+![编排](images/5.png "编排")
+
+![镜像](images/6.png "镜像")
+
+![构建镜像](images/7.png "构建镜像")
+
+![数据卷](images/8.png "数据卷")
+
+![存储](images/9.png "存储")
+
+![储存](images/9-1.png "存储")
+
+![网络](images/10.png "网络")
+
+![Compose](images/11.png "Compose")
+
+![应用商店](images/12.png "应用商店")
+
+![计划任务](images/13.png "计划任务")
+
+![文件管理](images/14.png "文件管理")
+
+![宿主机文件](images/15.png "宿主机文件")
+
+![宿主机终端](images/16.png "宿主机终端")
+
+![Docker引擎](images/17.png "Docker引擎")
+
+![云端备份](images/18.png "云端备份")
+
+![Swarm](images/19.png "Swarm")
+
+![备份恢复](images/20.png "备份恢复")
+
+![数据库](images/21.png "数据库")
+
+![设置](images/22.png "设置")
+
+![设置](images/22-1.png "设置")
+
+![镜像中心](images/23.png "镜像中心")
+
+![操作日志](images/24.png "操作日志")
+
+![警告中心](images/25.png "警告中心")
+
+![事件流](images/26.png "事件流")
+
+![站点反代](images/27.png "站点反代")
+
+![防火墙](images/28.png "防火墙")
+
+
+
 ## 🧪 常见问题
 
 - **提示"无法连接 Docker 引擎"**：请确认 Docker Desktop 已启动，必要时设置 `DOCKER_HOST` 环境变量指向可用的引擎端点。
