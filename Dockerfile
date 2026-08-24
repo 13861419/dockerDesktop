@@ -15,9 +15,9 @@ COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY web/package.json web/
 
-RUN npm ci --ignore-scripts
-RUN cd server && npm ci --omit=dev
-RUN cd web && npm ci
+RUN npm install --ignore-scripts
+RUN cd server && npm install --omit=dev
+RUN cd web && npm install
 
 COPY . .
 RUN cd web && npm run build

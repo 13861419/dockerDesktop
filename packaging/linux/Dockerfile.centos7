@@ -47,9 +47,9 @@ WORKDIR /build
 COPY . /build/
 
 # 安装依赖 & 构建
-RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
-RUN cd server && npm ci --omit=dev 2>/dev/null || (cd server && npm install --omit=dev)
-RUN cd web && npm ci 2>/dev/null || (cd web && npm install)
+RUN npm install --ignore-scripts
+RUN cd server && npm install --omit=dev
+RUN cd web && npm install
 RUN cd web && npm run build
 RUN cd server && npx tsc
 
