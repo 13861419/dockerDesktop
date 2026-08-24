@@ -148,6 +148,7 @@ jobs:
   #  3. GitHub Packages (npm)
   # ==========================================================
   publish-npm:
+    if: false
     runs-on: ubuntu-24.04
     needs: [checksums]
     steps:
@@ -166,6 +167,7 @@ jobs:
   #  4. GitHub Pages — APT 仓库
   # ==========================================================
   publish-repo:
+    if: false
     runs-on: ubuntu-24.04
     needs: [build-ubuntu]
     steps:
@@ -189,6 +191,7 @@ jobs:
           path: pages-site
 
   deploy-pages:
+    if: false
     runs-on: ubuntu-24.04
     needs: [publish-repo]
     environment:
