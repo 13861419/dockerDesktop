@@ -2,10 +2,10 @@
 #  Docker Manager - Release CI (全渠道发布)
 #  触发条件: push tag v*
 #  发布渠道:
-#    1. GitHub Releases — deb / rpm / exe 直接下载
+#    1. GitHub Releases — zip / deb / rpm
 #    2. ghcr.io — Docker 镜像（多架构）
-#    3. GitHub Packages (npm) — npm 包
-#    4. GitHub Pages — APT / YUM 仓库源
+#    3. GitHub Packages (npm)
+#    4. GitHub Pages — APT 仓库源
 # ============================================================
 name: Release
 
@@ -26,7 +26,7 @@ env:
 
 jobs:
   # ==========================================================
-  #  1. GitHub Releases — deb / rpm / exe
+  #  1. GitHub Releases
   # ==========================================================
   build-windows:
     runs-on: windows-latest
@@ -38,10 +38,11 @@ jobs:
       - run: npm run build --workspace web
       - run: npx tsc --project server/tsconfig.json
       - run: node packaging/build-release.js
+      - name: Create release zip
+        run: Compress-Archive -Path dist-release/DockerManager -DestinationPath dist-release/DockerManager-windows-amd64.zip
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist-release/DockerManager/**
-          prerelease: false
+          files: dist-release/DockerManager-windows-amd64.zip
 
   build-ubuntu:
     runs-on: ubuntu-24.04
@@ -59,32 +60,12 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.deb
-          prerelease: false
-
-  build-centos:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: npm install --ignore-scripts
-      - run: npm run build --workspace web
-      - run: npx tsc --project server/tsconfig.json
-      - name: Install packaging tools
-        run: sudo apt-get update && sudo apt-get install -y rpm2cpio rpm-common
-      - name: Build .rpm packages
-        run: bash packaging/linux/build-rpm-ci.sh
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist-release/docker-manager-*.rpm
-          prerelease: false
 
   checksums:
-    needs: [build-windows, build-ubuntu, build-centos]
+    needs: [build-windows, build-ubuntu]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Download all release assets
+      - name: Download release assets
         uses: robinraju/release-downloader@v1.12
         with:
           tag: ${{ github.ref_name }}
@@ -93,13 +74,12 @@ jobs:
       - name: Generate sha256sums
         run: |
           cd artifacts
-          find . -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.rpm" \) \
+          find . -type f \( -name "*.zip" -o -name "*.deb" \) \
             -exec sha256sum {} \; > ../sha256sums.txt
           cat ../sha256sums.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: sha256sums.txt
-          prerelease: false
 
   # ==========================================================
   #  2. ghcr.io — Docker 多架构镜像
@@ -183,29 +163,24 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================
-  #  4. GitHub Pages — APT / YUM 仓库
+  #  4. GitHub Pages — APT 仓库
   # ==========================================================
   publish-repo:
     runs-on: ubuntu-24.04
-    needs: [build-ubuntu, build-centos]
+    needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@v4
-      - name: Download ubuntu deb artifacts
+      - name: Download deb artifacts
         uses: robinraju/release-downloader@v1.12
         with:
           tag: ${{ github.ref_name }}
           fileName: "docker-manager-*.deb"
           out-file-path: dist/deb
-      - name: Download centos rpm artifacts
-        uses: robinraju/release-downloader@v1.12
-        with:
-          tag: ${{ github.ref_name }}
-          fileName: "docker-manager-*.rpm"
-          out-file-path: dist/rpm
       - name: Install dpkg-scanpackages
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev
-      - name: Generate APT/YUM repo metadata
+      - name: Generate APT repo metadata
         run: |
+          mkdir -p dist/rpm
           chmod +x packaging/linux/generate-repo.sh
           bash packaging/linux/generate-repo.sh dist/deb dist/rpm pages-site
       - name: Upload Pages artifact
