@@ -793,6 +793,8 @@ journalctl -u docker-manager -f
 | 权限 | 登录用户 |
 | 后端依赖 | Trivy（自动检测，未安装时提示安装） |
 
+![镜像漏洞扫描截图](images/vuln-scan.png)
+
 ### 27.1 使用方法
 
 1. 进入 **镜像管理** 页面，选择目标镜像；
@@ -824,6 +826,8 @@ journalctl -u docker-manager -f
 | 路径 | Docker 引擎 → 引擎详情 → 迁移 / 传输 |
 | 权限 | 管理员 🔒 |
 
+![跨引擎迁移截图](images/cross-engine-migration.png)
+
 ### 28.1 功能说明
 
 支持将容器或镜像从一个 Docker 引擎迁移到另一个引擎，适用于：
@@ -854,6 +858,8 @@ journalctl -u docker-manager -f
 | 路径 | 总览 → 多引擎聚合 |
 | 权限 | 管理员 🔒 |
 
+![跨引擎聚合总览截图](images/cross-engine-overview.png)
+
 ### 29.1 功能说明
 
 当管理面板连接了多个 Docker 引擎时，聚合总览提供统一视角：
@@ -877,6 +883,8 @@ journalctl -u docker-manager -f
 | --- | --- |
 | 位置 | 顶部导航栏搜索框 |
 | 权限 | 登录用户 |
+
+![全局搜索截图](images/global-search.png)
 
 ### 30.1 功能说明
 
@@ -909,6 +917,8 @@ journalctl -u docker-manager -f
 | 路径 | 总览 → 资源看板 |
 | 权限 | 登录用户 |
 
+![容器资源占用看板截图](images/resource-dashboard.png)
+
 ### 31.1 功能说明
 
 实时展示所有运行中容器的资源占用排名，快速定位资源消耗最高的容器。
@@ -936,6 +946,8 @@ journalctl -u docker-manager -f
 | --- | --- |
 | 路径 | 总览 → 监控历史 |
 | 权限 | 登录用户 |
+
+![监控持久化历史截图](images/monitoring-history.png)
 
 ### 32.1 功能说明
 
@@ -968,6 +980,8 @@ journalctl -u docker-manager -f
 | 路径 | 镜像中心 / 容器模板 |
 | 权限 | 登录用户 |
 
+![模板与镜像中心增强截图](images/hub-enhanced.png)
+
 ### 33.1 镜像中心增强功能
 
 | 功能 | 说明 |
@@ -994,6 +1008,8 @@ journalctl -u docker-manager -f
 | --- | --- |
 | 路径 | 系统设置 → 配置管理 |
 | 权限 | 管理员 🔒 |
+
+![配置导入导出截图](images/config-import-export.png)
 
 ### 34.1 功能说明
 
@@ -1037,6 +1053,8 @@ journalctl -u docker-manager -f
 | --- | --- |
 | 路径 | 计划任务 → 新建任务 → Webhook / Git 部署 |
 | 权限 | 登录用户 |
+
+![Webhook 与 Git 自动部署截图](images/webhook-git-deploy.png)
 
 ### 35.1 Webhook 触发
 

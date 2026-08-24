@@ -788,6 +788,8 @@ Install-time configuration:
 | Access | All users |
 | Backend dependency | Trivy (auto-detected; install prompt shown if missing) |
 
+![Image vulnerability scanning](images/vuln-scan.png)
+
 ### 27.1 Usage
 
 1. Go to **Image Management** and select the target image;
@@ -819,6 +821,8 @@ Install-time configuration:
 | Path | Docker Engines → Engine Details → Migrate / Transfer |
 | Access | Admin 🔒 |
 
+![Cross-engine migration](images/cross-engine-migration.png)
+
 ### 28.1 Overview
 
 Migrate containers or images from one Docker engine to another. Use cases:
@@ -849,6 +853,8 @@ Migrate containers or images from one Docker engine to another. Use cases:
 | Path | Overview → Multi-Engine Aggregation |
 | Access | Admin 🔒 |
 
+![Cross-engine aggregated overview](images/cross-engine-overview.png)
+
 ### 29.1 Overview
 
 When multiple Docker engines are connected, the aggregated overview provides a unified view:
@@ -872,6 +878,8 @@ When multiple Docker engines are connected, the aggregated overview provides a u
 | --- | --- |
 | Location | Top navigation bar search box |
 | Access | All users |
+
+![Global search](images/global-search.png)
 
 ### 30.1 Overview
 
@@ -904,6 +912,8 @@ Global search allows quick lookup across all resources without browsing individu
 | Path | Overview → Resource Dashboard |
 | Access | All users |
 
+![Container resource dashboard](images/resource-dashboard.png)
+
 ### 31.1 Overview
 
 Displays real-time resource usage rankings for all running containers, helping identify the most resource-consuming containers.
@@ -931,6 +941,8 @@ Displays real-time resource usage rankings for all running containers, helping i
 | --- | --- |
 | Path | Overview → Monitoring History |
 | Access | All users |
+
+![Monitoring history](images/monitoring-history.png)
 
 ### 32.1 Overview
 
@@ -963,6 +975,8 @@ The system automatically persists monitoring data, supporting different time ran
 | Path | Image Hub / Container Templates |
 | Access | All users |
 
+![Template & image hub enhancements](images/hub-enhanced.png)
+
 ### 33.1 Image Hub Enhancements
 
 | Feature | Description |
@@ -989,6 +1003,8 @@ The system automatically persists monitoring data, supporting different time ran
 | --- | --- |
 | Path | System Settings → Configuration Management |
 | Access | Admin 🔒 |
+
+![Configuration import/export](images/config-import-export.png)
 
 ### 34.1 Overview
 
@@ -1032,6 +1048,8 @@ Export panel configuration to a JSON file, or import from a JSON file. Use cases
 | --- | --- |
 | Path | Scheduled Tasks → New Task → Webhook / Git Deploy |
 | Access | All users |
+
+![Webhook & Git auto deployment](images/webhook-git-deploy.png)
 
 ### 35.1 Webhook Trigger
 
