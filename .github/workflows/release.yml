@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm ci --ignore-scripts
+      - run: npm install --ignore-scripts
       - run: npm run build --workspace web
       - run: npx tsc --project server/tsconfig.json
         working-directory: server
@@ -56,9 +56,10 @@ jobs:
       - if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - run: |
-          chmod +x packaging/linux/build-deb.sh
-          bash packaging/linux/build-deb.sh ${{ matrix.arch }}
+      - name: Make scripts executable
+        run: chmod +x packaging/linux/*.sh
+      - name: Build .deb package
+        run: bash packaging/linux/build-deb.sh ${{ matrix.arch }}
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.deb
@@ -74,9 +75,10 @@ jobs:
       - if: matrix.arch == 'aarch64'
         uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - run: |
-          chmod +x packaging/linux/build-rpm.sh
-          bash packaging/linux/build-rpm.sh ${{ matrix.arch }}
+      - name: Make scripts executable
+        run: chmod +x packaging/linux/*.sh
+      - name: Build .rpm package
+        run: bash packaging/linux/build-rpm.sh ${{ matrix.arch }}
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.rpm
@@ -88,10 +90,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { path: artifacts/, merge-multiple: true }
-      - run: |
+      - name: Generate sha256sums
+        run: |
           cd artifacts
           find . -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.rpm" \) \
             -exec sha256sum {} \; > ../sha256sums.txt
+          cat ../sha256sums.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: sha256sums.txt
@@ -112,18 +116,14 @@ jobs:
             platform: linux/arm64
     steps:
       - uses: actions/checkout@v4
-
       - if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: docker/metadata-action@v5
         id: meta
         with:
@@ -133,7 +133,6 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ github.ref_name }}
             type=raw,value=${{ matrix.arch }},enable=true
             type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
-
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -144,7 +143,6 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
 
-  # 生成 manifest list（合并多架构）
   docker-manifest:
     runs-on: ubuntu-24.04
     needs: [publish-docker]
@@ -154,7 +152,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create and push manifest
         run: |
           VERSION=${GITHUB_REF_NAME#v}
@@ -180,7 +177,7 @@ jobs:
           node-version: 22
           registry-url: https://npm.pkg.github.com
           scope: '@13861419'
-      - run: npm ci --ignore-scripts
+      - run: npm install --ignore-scripts
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -193,30 +190,23 @@ jobs:
     needs: [build-ubuntu, build-centos]
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
           merge-multiple: true
-
       - name: Prepare deb/rpm files
         run: |
           mkdir -p dist/deb dist/rpm
           find artifacts -name "*.deb" -exec cp {} dist/deb/ \;
           find artifacts -name "*.rpm" -exec cp {} dist/rpm/ \;
-          echo "=== deb files ==="
-          ls -la dist/deb/
-          echo "=== rpm files ==="
-          ls -la dist/rpm/
-
+          echo "=== deb files ===" && ls -la dist/deb/
+          echo "=== rpm files ===" && ls -la dist/rpm/
       - name: Install dpkg-scanpackages
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev
-
       - name: Generate APT/YUM repo metadata
         run: |
           chmod +x packaging/linux/generate-repo.sh
           bash packaging/linux/generate-repo.sh dist/deb dist/rpm pages-site
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
