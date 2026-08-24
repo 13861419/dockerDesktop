@@ -36,10 +36,7 @@ jobs:
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - run: npm run build --workspace web
-      - run: npx tsc --project tsconfig.json
-        working-directory: server
-      - run: npm install --omit=dev
-        working-directory: server
+      - run: npx tsc --project server/tsconfig.json
       - run: node packaging/build-release.js
       - uses: softprops/action-gh-release@v2
         with:
@@ -48,18 +45,17 @@ jobs:
 
   build-ubuntu:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
-      - if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - name: Make scripts executable
-        run: chmod +x packaging/linux/*.sh
-      - name: Build .deb package
-        run: bash packaging/linux/build-deb.sh ${{ matrix.arch }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - run: npm run build --workspace web
+      - run: npx tsc --project server/tsconfig.json
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev fakeroot
+      - name: Build .deb packages
+        run: bash packaging/linux/build-deb-ci.sh
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.deb
@@ -67,18 +63,17 @@ jobs:
 
   build-centos:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
-      - if: matrix.arch == 'aarch64'
-        uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - name: Make scripts executable
-        run: chmod +x packaging/linux/*.sh
-      - name: Build .rpm package
-        run: bash packaging/linux/build-rpm.sh ${{ matrix.arch }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - run: npm run build --workspace web
+      - run: npx tsc --project server/tsconfig.json
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y rpm rpmbuild
+      - name: Build .rpm packages
+        run: bash packaging/linux/build-rpm-ci.sh
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-release/docker-manager-*.rpm
@@ -88,8 +83,13 @@ jobs:
     needs: [build-windows, build-ubuntu, build-centos]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
-        with: { path: artifacts/, merge-multiple: true }
+      - uses: actions/checkout@v4
+      - name: Download all release assets
+        uses: robinraju/release-downloader@v1.12
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: "*"
+          out-file-path: artifacts
       - name: Generate sha256sums
         run: |
           cd artifacts
@@ -190,17 +190,18 @@ jobs:
     needs: [build-ubuntu, build-centos]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Download ubuntu deb artifacts
+        uses: robinraju/release-downloader@v1.12
         with:
-          path: artifacts/
-          merge-multiple: true
-      - name: Prepare deb/rpm files
-        run: |
-          mkdir -p dist/deb dist/rpm
-          find artifacts -name "*.deb" -exec cp {} dist/deb/ \;
-          find artifacts -name "*.rpm" -exec cp {} dist/rpm/ \;
-          echo "=== deb files ===" && ls -la dist/deb/
-          echo "=== rpm files ===" && ls -la dist/rpm/
+          tag: ${{ github.ref_name }}
+          fileName: "docker-manager-*.deb"
+          out-file-path: dist/deb
+      - name: Download centos rpm artifacts
+        uses: robinraju/release-downloader@v1.12
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: "docker-manager-*.rpm"
+          out-file-path: dist/rpm
       - name: Install dpkg-scanpackages
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev
       - name: Generate APT/YUM repo metadata
