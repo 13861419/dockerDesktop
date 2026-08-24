@@ -8,6 +8,7 @@
 
 ## Table of Contents
 
+- [0. Installation](#0-installation)
 - [1. Login & Getting Started](#1-login--getting-started)
 - [2. Overview & Health Check](#2-overview--health-check)
 - [3. Container Management](#3-container-management)
@@ -36,6 +37,159 @@
 - [26. FAQ](#26-faq)
 
 > **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
+
+---
+
+## 0. Installation
+
+### 0.1 Prerequisites
+
+| Dependency | Version | Notes |
+| --- | --- | --- |
+| Node.js | ≥ 22 | Auto-installed by install script |
+| Docker Engine | Latest stable | Auto-installed by install script |
+| Docker Compose | v2 plugin | Auto-installed by install script |
+| OS | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ | |
+
+> Default credentials: `admin` / `admin888`. Change the password immediately after first login.
+
+### 0.2 Option 1: APT Repository (Ubuntu / Debian)
+
+```bash
+# Add GPG key
+curl -fsSL https://13861419.github.io/dockerDesktop/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/docker-manager.gpg
+
+# Add APT source
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-manager.gpg] https://13861419.github.io/dockerDesktop/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/docker-manager.list
+
+# Install
+sudo apt-get update
+sudo apt-get install -y docker-manager
+
+# Check service status
+sudo systemctl status docker-manager
+```
+
+Then visit `http://<server-ip>:9528`.
+
+### 0.3 Option 2: YUM Repository (CentOS / RHEL)
+
+```bash
+# Add YUM source
+sudo tee /etc/yum.repos.d/docker-manager.repo <<'EOF'
+[docker-manager]
+name=Docker Manager
+baseurl=https://13861419.github.io/dockerDesktop/yum
+enabled=1
+gpgcheck=0
+EOF
+
+# Install
+sudo yum install -y docker-manager
+# Or on CentOS 8+ / RHEL:
+sudo dnf install -y docker-manager
+
+# Check service status
+sudo systemctl status docker-manager
+```
+
+Then visit `http://<server-ip>:9528`.
+
+### 0.4 Option 3: Manual Deb / RPM Install
+
+Download from [GitHub Releases](https://github.com/13861419/dockerDesktop/releases/latest):
+
+```bash
+# Ubuntu / Debian
+sudo dpkg -i docker-manager-*.deb
+sudo apt-get install -f
+
+# CentOS / RHEL
+sudo rpm -ivh docker-manager-*.rpm
+# Or:
+sudo yum install -y docker-manager-*.rpm
+```
+
+The install script automatically creates the service user, configures systemd, and opens the firewall port.
+
+### 0.5 Option 4: Windows Install
+
+Download `DockerManager-windows-amd64.zip` from [GitHub Releases](https://github.com/13861419/dockerDesktop/releases/latest).
+
+#### Batch Install
+
+1. Extract the zip to a target directory (e.g. `C:\DockerManager`).
+2. Right-click `install.bat` → **Run as administrator**.
+3. Wait for the service to register and start.
+
+This registers a Windows service (via NSSM), adds a Start Menu shortcut, and starts a system tray icon.
+
+#### NSIS Installer
+
+Run `DockerManager-setup-*.exe` and follow the wizard for a standard install/uninstall flow.
+
+### 0.6 Option 5: Docker Run
+
+```bash
+docker pull ghcr.io/13861419/dockerdesktop:latest
+
+docker run -d \
+  --name docker-manager \
+  -p 9528:9528 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v docker-manager-data:/data \
+  --restart=unless-stopped \
+  ghcr.io/13861419/dockerdesktop:latest
+```
+
+> The Docker socket (`/var/run/docker.sock`) must be mounted for the panel to manage containers.
+
+### 0.7 Option 6: npm Global Install
+
+```bash
+npm install -g @13861419/docker-manager
+docker-manager
+```
+
+### 0.8 Option 7: Source (Development Mode)
+
+```bash
+git clone https://github.com/13861419/dockerDesktop.git
+cd dockerDesktop
+npm install
+
+# Backend (port 9528)
+npm run dev:server
+
+# Frontend (port 9526), in another terminal
+npm run dev:web
+```
+
+Visit `http://localhost:9526`.
+
+### 0.9 Service Management (Linux)
+
+```bash
+sudo systemctl start docker-manager
+sudo systemctl stop docker-manager
+sudo systemctl restart docker-manager
+sudo systemctl status docker-manager
+sudo systemctl enable docker-manager
+
+# View logs
+journalctl -u docker-manager -f
+```
+
+### 0.10 Data Directory
+
+| Platform | Path | Notes |
+| --- | --- | --- |
+| Linux | `/var/lib/docker-manager/` | Core file: `docker-manager.db` (SQLite) |
+| Windows | `%PROGRAMDATA%\DockerManager\data\` | Same |
+| Docker | Container `/data` (mount via `-v`) | Same |
+
+To back up, copy the entire data directory.
 
 ---
 
@@ -611,6 +765,9 @@ Install-time configuration:
 | Forgot the admin password | Stop the service, delete `data/docker-manager.db` (plus `-wal` / `-shm` files), restart; defaults (`admin` / `admin888`) are re-initialized. |
 | Backup / migrate data | Copy the whole `data/` directory (core file `docker-manager.db`). |
 | Why does the login button read "登 录" | The button text is "登 录" (with a space) — normal. Enter credentials and click it to log in. |
+| Cannot connect after Linux install | Ensure the `dockerman` user is in the docker group: `sudo usermod -aG docker dockerman`, then restart the service. |
+| Cannot access after Windows install | Confirm Docker Desktop is running and the NSSM service is healthy (check `services.msc` for the DockerManager service). |
+| Firewall blocks access | Linux: `firewall-cmd --permanent --add-port=9528/tcp && firewall-cmd --reload`; Windows: use the panel's **Firewall** page to allow the port. |
 
 ---
 
