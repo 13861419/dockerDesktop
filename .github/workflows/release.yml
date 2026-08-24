@@ -61,8 +61,25 @@ jobs:
         with:
           files: dist-release/docker-manager-*.deb
 
+  build-centos:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - run: npm run build --workspace web
+      - run: npx tsc --project server/tsconfig.json
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Build .rpm packages
+        run: bash packaging/linux/build-rpm-ci.sh
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/docker-manager-*.rpm
+
   checksums:
-    needs: [build-windows, build-ubuntu]
+    needs: [build-windows, build-ubuntu, build-centos]
     runs-on: ubuntu-24.04
     steps:
       - name: Download release assets
@@ -74,7 +91,7 @@ jobs:
       - name: Generate sha256sums
         run: |
           cd artifacts
-          find . -type f \( -name "*.zip" -o -name "*.deb" \) \
+          find . -type f \( -name "*.zip" -o -name "*.deb" -o -name "*.rpm" \) \
             -exec sha256sum {} \; > ../sha256sums.txt
           cat ../sha256sums.txt
       - uses: softprops/action-gh-release@v2
@@ -85,7 +102,6 @@ jobs:
   #  2. ghcr.io — Docker 多架构镜像
   # ==========================================================
   publish-docker:
-    if: false
     runs-on: ubuntu-24.04
     needs: [checksums]
     strategy:
@@ -125,7 +141,6 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
 
   docker-manifest:
-    if: false
     runs-on: ubuntu-24.04
     needs: [publish-docker]
     steps:
@@ -150,7 +165,6 @@ jobs:
   #  3. GitHub Packages (npm)
   # ==========================================================
   publish-npm:
-    if: false
     runs-on: ubuntu-24.04
     needs: [checksums]
     steps:
@@ -169,7 +183,6 @@ jobs:
   #  4. GitHub Pages — APT 仓库
   # ==========================================================
   publish-repo:
-    if: false
     runs-on: ubuntu-24.04
     needs: [build-ubuntu]
     steps:
@@ -193,7 +206,6 @@ jobs:
           path: pages-site
 
   deploy-pages:
-    if: false
     runs-on: ubuntu-24.04
     needs: [publish-repo]
     environment:
