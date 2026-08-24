@@ -35,6 +35,15 @@
 - [24. App Store & System Settings](#24-app-store--system-settings)
 - [25. Reference: Form Fields](#25-reference-form-fields)
 - [26. FAQ](#26-faq)
+- [27. Image Vulnerability Scanning](#27-image-vulnerability-scanning)
+- [28. Cross-Engine Container Migration / Image Transfer](#28-cross-engine-container-migration--image-transfer)
+- [29. Cross-Engine Aggregated Overview](#29-cross-engine-aggregated-overview)
+- [30. Global Search](#30-global-search)
+- [31. Container Resource Dashboard](#31-container-resource-dashboard)
+- [32. Monitoring History](#32-monitoring-history)
+- [33. Template / Image Hub Enhancements](#33-template--image-hub-enhancements)
+- [34. Configuration Import / Export](#34-configuration-import--export)
+- [35. Webhook / Git Auto Deployment](#35-webhook--git-auto-deployment)
 
 > **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
 
@@ -771,6 +780,294 @@ Install-time configuration:
 
 ---
 
+## 27. Image Vulnerability Scanning
+
+| Item | Details |
+| --- | --- |
+| Path | Images → Image List → Vulnerability Scan |
+| Access | All users |
+| Backend dependency | Trivy (auto-detected; install prompt shown if missing) |
+
+### 27.1 Usage
+
+1. Go to **Image Management** and select the target image;
+2. Click the **Vulnerability Scan** button;
+3. The system invokes Trivy to scan image layers and returns a CVE vulnerability list.
+
+### 27.2 Result Interpretation
+
+| Field | Meaning |
+| --- | --- |
+| CVE ID | Vulnerability identifier |
+| Severity | Critical / High / Medium / Low / Unknown |
+| Installed Version | Package version found in the image |
+| Fixed Version | Available fix version (if any) |
+| Title | Vulnerability description |
+
+### 27.3 Recommendations
+
+- **Critical / High** vulnerabilities should be addressed by updating the base image or upgrading dependencies;
+- Click **Rescan** to verify the fix;
+- Use the **Image Build** feature to rebuild with an updated base image.
+
+---
+
+## 28. Cross-Engine Container Migration / Image Transfer
+
+| Item | Details |
+| --- | --- |
+| Path | Docker Engines → Engine Details → Migrate / Transfer |
+| Access | Admin 🔒 |
+
+### 28.1 Overview
+
+Migrate containers or images from one Docker engine to another. Use cases:
+- Data migration when replacing a host;
+- Load balancing across engines;
+- Environment replication (production → staging).
+
+### 28.2 Steps
+
+1. Go to **Docker Engines** and select the source engine;
+2. Select the container or image to migrate;
+3. Select the target engine;
+4. Click **Migrate / Transfer**;
+5. The system uses `docker save` + `docker load` to complete the transfer.
+
+### 28.3 Notes
+
+- Large images take longer to transfer; ensure stable network connectivity;
+- Containers must be stopped before migration;
+- Transfer runs server-side; closing the browser does not interrupt it.
+
+---
+
+## 29. Cross-Engine Aggregated Overview
+
+| Item | Details |
+| --- | --- |
+| Path | Overview → Multi-Engine Aggregation |
+| Access | Admin 🔒 |
+
+### 29.1 Overview
+
+When multiple Docker engines are connected, the aggregated overview provides a unified view:
+- Summarized container counts (running / stopped / paused) across all engines;
+- Aggregated resource usage (CPU / Memory / Disk);
+- Quick identification of unhealthy engines.
+
+### 29.2 Page Elements
+
+| Area | Content |
+| --- | --- |
+| Engine Cards | One card per engine showing name, status, container count, resource usage |
+| Summary Metrics | Total containers, aggregate CPU usage, aggregate memory usage across all engines |
+| Engine Switch | Click a card to navigate to that engine's detailed management page |
+
+---
+
+## 30. Global Search
+
+| Item | Details |
+| --- | --- |
+| Location | Top navigation bar search box |
+| Access | All users |
+
+### 30.1 Overview
+
+Global search allows quick lookup across all resources without browsing individual pages.
+
+### 30.2 Search Scope
+
+| Resource Type | Search Fields |
+| --- | --- |
+| Containers | Name, ID, image name, status |
+| Images | Name, tag, ID |
+| Volumes | Name, driver |
+| Networks | Name, driver |
+| Compose Projects | Project name, path |
+| Host Files | File name, path |
+
+### 30.3 Usage
+
+1. Click the search box in the top navigation bar (or press `/` shortcut);
+2. Type keywords;
+3. Dropdown shows matching results in real time;
+4. Click a result to navigate directly to the corresponding page.
+
+---
+
+## 31. Container Resource Dashboard
+
+| Item | Details |
+| --- | --- |
+| Path | Overview → Resource Dashboard |
+| Access | All users |
+
+### 31.1 Overview
+
+Displays real-time resource usage rankings for all running containers, helping identify the most resource-consuming containers.
+
+### 31.2 Dashboard Content
+
+| Metric | Description |
+| --- | --- |
+| Top CPU | Containers sorted by CPU usage (descending) |
+| Top Memory | Containers sorted by memory usage (descending) |
+| Network I/O | Network send/receive traffic per container |
+| Disk I/O | Disk read/write volume per container |
+
+### 31.3 Operations
+
+- Click a container name to navigate to its detail page;
+- Filter by engine;
+- Data auto-refreshes every 5 seconds.
+
+---
+
+## 32. Monitoring History
+
+| Item | Details |
+| --- | --- |
+| Path | Overview → Monitoring History |
+| Access | All users |
+
+### 32.1 Overview
+
+The system automatically persists monitoring data, supporting different time ranges:
+- **1 Hour**: 5-second granularity, for instant anomaly investigation;
+- **24 Hours**: 1-minute granularity, for daily inspection;
+- **7 Days**: 5-minute granularity, for trend analysis.
+
+### 32.2 Charts
+
+| Chart | Content |
+| --- | --- |
+| CPU Usage | CPU usage trend per engine/container |
+| Memory Usage | Memory usage trend per engine/container |
+| Network Traffic | Network send/receive trend per engine/container |
+| Disk I/O | Disk read/write trend per engine/container |
+
+### 32.3 Data Management
+
+- Monitoring data is stored in the SQLite database;
+- Default retention is 30 days; configurable in **System Settings → Monitoring**;
+- CSV export of historical data is supported.
+
+---
+
+## 33. Template / Image Hub Enhancements
+
+| Item | Details |
+| --- | --- |
+| Path | Image Hub / Container Templates |
+| Access | All users |
+
+### 33.1 Image Hub Enhancements
+
+| Feature | Description |
+| --- | --- |
+| Batch cleanup by category | Clean unused images in bulk by category (e.g. `library`, `bitnami`) |
+| Port conflict detection | Automatically check for port conflicts before creating a container |
+| Vulnerability scan entry | Launch vulnerability scan directly from the image list (see Chapter 27) |
+| Build history | View history of images built through the panel |
+
+### 33.2 Template Library Enhancements
+
+| Feature | Description |
+| --- | --- |
+| Compose template library | Pre-built Compose templates for common apps (WordPress, MySQL, Redis, etc.) |
+| One-click deploy | Select a template and deploy a Compose project with one click |
+| Template favorites | Bookmark frequently used templates for quick access |
+| Custom templates | Save existing Compose configurations as custom templates |
+
+---
+
+## 34. Configuration Import / Export
+
+| Item | Details |
+| --- | --- |
+| Path | System Settings → Configuration Management |
+| Access | Admin 🔒 |
+
+### 34.1 Overview
+
+Export panel configuration to a JSON file, or import from a JSON file. Use cases:
+- Syncing configuration across multiple instances;
+- Restoring configuration after reinstallation;
+- Environment migration.
+
+### 34.2 Export Configuration
+
+1. Go to **System Settings → Configuration Management**;
+2. Select configuration items to export (multiple selection supported);
+3. Click **Export**;
+4. Browser downloads a JSON file.
+
+### 34.3 Exportable Configuration Items
+
+| Item | Content |
+| --- | --- |
+| Engine Configuration | Docker engine connection information |
+| Template Configuration | Container templates and Compose templates |
+| Scheduled Tasks | All cron task configurations |
+| Site Configuration | Reverse proxy and port mapping configurations |
+| Notification Configuration | Alert rules and notification channels |
+| System Settings | Panel global settings |
+
+### 34.4 Import Configuration
+
+1. Go to **System Settings → Configuration Management**;
+2. Click **Import** and select a JSON file;
+3. Preview the configuration items to be imported;
+4. Confirm the import.
+
+> **Note**: Import overwrites existing configurations with the same name. It is recommended to export the current configuration as a backup first.
+
+---
+
+## 35. Webhook / Git Auto Deployment
+
+| Item | Details |
+| --- | --- |
+| Path | Scheduled Tasks → New Task → Webhook / Git Deploy |
+| Access | All users |
+
+### 35.1 Webhook Trigger
+
+Trigger container operations via HTTP requests:
+
+| Parameter | Description |
+| --- | --- |
+| Task Type | Select "Webhook Trigger" |
+| Target Container | Select the container to operate |
+| Operation | Start / Stop / Restart |
+| Token | Auto-generated authentication token, required in the request |
+
+Trigger endpoint: `POST /api/webhook/{taskId}?token={token}`
+
+### 35.2 Git Auto Deployment
+
+Automated Git repository pull and deployment:
+
+| Parameter | Description |
+| --- | --- |
+| Task Type | Select "Git Deploy" |
+| Repository URL | Git repository URL |
+| Branch | Target branch (default: main) |
+| Deploy Path | Local clone path |
+| Deploy Command | Command to run after clone/pull (e.g. `docker compose up -d`) |
+
+### 35.3 Execution Modes
+
+| Mode | Description |
+| --- | --- |
+| Scheduled | Pull and deploy on a cron schedule |
+| Webhook Trigger | Trigger deployment after code push via webhook |
+| Manual | Click "Run Now" in the task list |
+
+---
+
 ## Appendix: Modules & Routes
 
 | Menu | Route | Access |
@@ -803,5 +1100,14 @@ Install-time configuration:
 | Event Stream | `/events` | All users |
 | Sites (proxy / port mapping) | `/sites` | Admin 🔒 |
 | Firewall | `/firewall` | Admin 🔒 |
+| Image Vulnerability Scan | `/images` → Scan | All users |
+| Cross-Engine Migration | `/engines` → Engine Details | Admin 🔒 |
+| Cross-Engine Aggregated Overview | Auto-displayed in multi-engine mode | Admin 🔒 |
+| Global Search | Top navigation bar search box | All users |
+| Resource Dashboard | Bottom of Overview page | All users |
+| Monitoring History | Overview → Monitoring History | All users |
+| Image Hub Enhancements | `/hub` | All users |
+| Config Import/Export | `/settings` → Config Management | Admin 🔒 |
+| Webhook / Git Deploy | `/tasks` → New Task | All users |
 
 > This document reflects the current version; the installed version may differ. Administrator-only (🔒) pages are hidden from regular users in both menu and routes.
