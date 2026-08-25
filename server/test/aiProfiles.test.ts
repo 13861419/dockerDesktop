@@ -114,3 +114,14 @@ test('getProfileApiKey 解密还原明文 key', () => {
   const p = createProfile({ name: 'K', apiKey: 'sk-very-secret' });
   assert.strictEqual(getProfileApiKey(p.id), 'sk-very-secret');
 });
+
+test('getProfileApiKey 配置存在但 key 为空时返回空串而非 404', () => {
+  resetProfiles();
+  const p = createProfile({ name: 'NoKey' });
+  assert.strictEqual(getProfileApiKey(p.id), '');
+});
+
+test('getProfileApiKey 配置不存在时抛 404', () => {
+  resetProfiles();
+  assert.throws(() => getProfileApiKey(999999), /配置不存在/);
+});

@@ -222,14 +222,14 @@ export function setDefaultProfile(id: number): AiProfilePublic {
   return mapRow(d.prepare('SELECT * FROM ai_profiles WHERE id = ?').get(id) as unknown as AiProfileRow);
 }
 
-/** 解密还原明文 apiKey（供调用方使用） */
+/** 解密还原明文 apiKey（供调用方使用）；配置存在但 key 为空时返回空串 */
 export function getProfileApiKey(id: number): string {
   const d = getDb();
   const row = d.prepare('SELECT api_key_enc FROM ai_profiles WHERE id = ?').get(id) as { api_key_enc: string } | undefined;
-  if (!row || !row.api_key_enc) {
+  if (!row) {
     const e: any = new Error('配置不存在');
     e.statusCode = 404;
     throw e;
   }
-  return decryptSecret(row.api_key_enc);
+  return row.api_key_enc ? decryptSecret(row.api_key_enc) : '';
 }
