@@ -156,11 +156,15 @@ async function fetchContainerLogContext(containerId: string): Promise<string> {
   return `容器 ${name} 最近日志${truncated ? '（已截断）' : ''}：\n${text.slice(-MAX)}`;
 }
 
-/** 收集运行中容器清单作为 AI 上下文 */
+/** 收集运行中容器清单作为 AI 上下文（最多 100 个，防止上下文过大） */
+const MAX_COMPOSE_CONTAINERS = 100;
+
 async function fetchContainersContext(): Promise<string> {
   const docker = await getDockerClient();
   const list = (await docker.listContainers({ all: false }).catch(() => [])) as any[];
-  const lines = list.map((c: any, i: number) => {
+  const truncated = list.length > MAX_COMPOSE_CONTAINERS;
+  const sliced = truncated ? list.slice(0, MAX_COMPOSE_CONTAINERS) : list;
+  const lines = sliced.map((c: any, i: number) => {
     const name = (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.slice(0, 12);
     const ports = Array.isArray(c.Ports)
       ? c.Ports.map((p: any) => (p.PublicPort ? `${p.PrivatePort}->${p.PublicPort}/${p.Type || 'tcp'}` : `${p.PrivatePort}/${p.Type || 'tcp'}`)).join(' ')
@@ -168,7 +172,8 @@ async function fetchContainersContext(): Promise<string> {
     return `[${i + 1}] id=${c.Id?.slice(0, 12)} name=${name} image=${c.Image || ''} status=${c.State || ''}${ports ? ` ports=${ports}` : ''}`;
   });
   if (lines.length === 0) return '当前没有运行中的容器。';
-  return `以下是当前运行中的容器（共 ${lines.length} 个）：\n${lines.join('\n')}`;
+  const hint = truncated ? `\n（共 ${list.length} 个运行中容器，已截取前 ${MAX_COMPOSE_CONTAINERS} 个）` : '';
+  return `以下是当前运行中的容器（共 ${lines.length} 个）：\n${lines.join('\n')}${hint}`;
 }
 
 // ============ 配置读写 ============
