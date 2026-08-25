@@ -329,3 +329,17 @@ export async function testAiConnection(cfg?: AiConfig): Promise<{ ok: boolean; m
 export function hasConfiguredCredentials(): boolean {
   return hasConfigured(getAiConfig());
 }
+
+import type { AiProfilePublic } from './aiProfiles';
+
+/** 把配置文件(profile)映射为 chatCompletion 所需 AiConfig */
+export function profileToAiConfig(p: AiProfilePublic): AiConfig {
+  return {
+    enabled: true,
+    baseUrl: p.baseUrl,
+    model: p.model,
+    apiKey: '', // 由调用方注入已解密的 key（见下）
+    systemPrompt: p.systemPrompt,
+    timeoutMs: p.timeoutMs,
+  };
+}
