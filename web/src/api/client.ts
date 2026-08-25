@@ -135,3 +135,79 @@ export const download = async (url: string, fallbackName = 'download.csv') => {
   a.remove();
   URL.revokeObjectURL(objectUrl);
 };
+
+/**
+ * POST 并读取 SSE 流式响应（用于 AI 打字机输出）
+ * @param url 接口路径（以 /api 开头）
+ * @param body 请求体
+ * @param handlers 事件回调：
+ *   - onData: 解析出每个 SSE data 事件（已 JSON.parse，失败时为原始字符串）
+ *   - onError: 网络/HTTP 错误
+ * @returns Promise，流结束后 resolve；HTTP 非 2xx 时 reject(ApiError)
+ */
+export const postStream = async (
+  url: string,
+  body: any,
+  handlers: { onData: (data: any) => void; onError?: (message: string) => void },
+): Promise<void> => {
+  const headers = new Headers();
+  headers.set('Content-Type', 'application/json');
+  const token = getToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  } catch {
+    throw new ApiError(0, '无法连接后端服务，请确认服务已启动');
+  }
+  if (!res.ok) {
+    let msg = `请求失败 (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.error || data?.message || msg;
+    } catch {
+      // 保留默认错误信息
+    }
+    throw new ApiError(res.status, msg);
+  }
+  if (!res.body) {
+    throw new ApiError(0, '后端不支持流式响应');
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let errorOccurred = '';
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const raw = trimmed.slice(5).trim();
+        let parsed: any = raw;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          // 保留原始字符串
+        }
+        if (parsed && parsed.type === 'error') {
+          errorOccurred = parsed.message || '流式响应出错';
+        }
+        handlers.onData(parsed);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (errorOccurred) {
+    throw new ApiError(502, errorOccurred);
+  }
+};

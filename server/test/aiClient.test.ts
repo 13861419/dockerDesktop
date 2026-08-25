@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { buildSystemPrompt, buildChatBody, parseChatResponse, profileToAiConfig } from '../src/aiClient';
+import { buildSystemPrompt, buildChatBody, parseChatResponse, profileToAiConfig, parseSseDelta } from '../src/aiClient';
 
 const cfg = {
   enabled: true,
@@ -41,6 +41,30 @@ test('parseChatResponse 提取 assistant 文本', () => {
   // 非法结构
   assert.strictEqual(parseChatResponse(null), '');
   assert.strictEqual(parseChatResponse('oops'), '');
+});
+
+test('parseSseDelta 从 SSE data 行提取 delta 文本', () => {
+  // 正常增量
+  assert.strictEqual(
+    parseSseDelta('data: {"choices":[{"delta":{"content":"你"}}]}'),
+    '你',
+  );
+  // 再一段
+  assert.strictEqual(
+    parseSseDelta('data: {"choices":[{"delta":{"content":"好"}}]}'),
+    '好',
+  );
+  // 结束标记 -> null
+  assert.strictEqual(parseSseDelta('data: [DONE]'), null);
+  // 无 content 的 delta -> null
+  assert.strictEqual(parseSseDelta('data: {"choices":[{"delta":{}}]}'), null);
+  // 非 data: 行 -> null
+  assert.strictEqual(parseSseDelta(': keep-alive'), null);
+  // 畸形 JSON -> null
+  assert.strictEqual(parseSseDelta('data: not-json'), null);
+  // 空行 -> null
+  assert.strictEqual(parseSseDelta(''), null);
+  assert.strictEqual(parseSseDelta('data:'), null);
 });
 
 // 合成一个 profilePublic 对象（不依赖 DB）

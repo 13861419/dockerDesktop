@@ -20,6 +20,7 @@ import {
   updateAiConfig,
   buildSystemPrompt,
   chatCompletion,
+  chatCompletionStream,
   testAiConnection,
   profileToAiConfig,
 } from '../aiClient';
@@ -377,6 +378,60 @@ router.get(
 // ============ 主对话 ============
 
 /**
+ * 解析对话请求：校验 + 采集 tool 上下文 + 构造最终消息（chat / chat/stream 共用）
+ * @returns { finalMessages, toolContext, tool }
+ */
+async function resolveChatRequest(req: Request, res: Response, cfg: ReturnType<typeof assertChatConfig>) {
+  const body = req.body || {};
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  if (messages.length === 0) {
+    const e: any = new Error('缺少 messages');
+    e.statusCode = 400;
+    throw e;
+  }
+
+  const tool = typeof body.tool === 'string' ? body.tool : '';
+  let context = '';
+  let toolContext: string | undefined;
+
+  try {
+    if (tool === 'compose-infer') {
+      context = await fetchContainersContext();
+      toolContext = context;
+    } else if (tool === 'logs') {
+      const target = body.target || body.containerId;
+      if (!target) {
+        const e: any = new Error('logs 工具需要指定容器（target）');
+        e.statusCode = 400;
+        throw e;
+      }
+      context = await fetchContainerLogContext(String(target));
+      toolContext = context;
+    }
+  } catch (err: any) {
+    if (err?.statusCode === 400) throw err;
+    // 上下文采集失败不阻断对话，附加提示
+    context = `（采集环境上下文失败：${err?.message || err}）`;
+  }
+
+  // 构造完整消息：system prompt + 对话历史
+  const systemMsgs = buildSystemPrompt(cfg, context, '');
+  // 对话历史：过滤掉前端可能带的 error 标记，保留 user/assistant 交替
+  const history = messages
+    .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+    .map((m: any) => ({ role: m.role as 'user' | 'assistant', content: String(m.content || '') }));
+  const finalMessages = [...systemMsgs, ...history];
+
+  // 兜底：如果历史为空（不应该），用最后一轮用户文本
+  if (history.length === 0) {
+    const lastUser = messages.filter((m: any) => m.role === 'user').pop();
+    finalMessages.push({ role: 'user', content: lastUser?.content || '请继续。' });
+  }
+
+  return { finalMessages, toolContext, tool, historyCount: history.length };
+}
+
+/**
  * POST /api/ai/chat
  * body: { messages: [{role, content}], tool?: 'compose-infer' | 'logs' | string }
  *  - tool='compose-infer'：注入运行中容器上下文
@@ -389,50 +444,76 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     ensureAiProfiles();
     const cfg = assertChatConfig();
-    const body = req.body || {};
-    const messages = Array.isArray(body.messages) ? body.messages : [];
-    if (messages.length === 0) {
-      return res.status(400).json({ error: '缺少 messages' });
-    }
-
-    const tool = typeof body.tool === 'string' ? body.tool : '';
-    let context = '';
-    let toolContext: string | undefined;
-
-    try {
-      if (tool === 'compose-infer') {
-        context = await fetchContainersContext();
-        toolContext = context;
-      } else if (tool === 'logs') {
-        const target = body.target || body.containerId;
-        if (!target) {
-          return res.status(400).json({ error: 'logs 工具需要指定容器（target）' });
-        }
-        context = await fetchContainerLogContext(String(target));
-        toolContext = context;
-      }
-    } catch (err: any) {
-      // 上下文采集失败不阻断对话，附加提示
-      context = `（采集环境上下文失败：${err?.message || err}）`;
-    }
-
-    // 构造完整消息：system prompt + 对话历史
-    const systemMsgs = buildSystemPrompt(cfg, context, '');
-    // 对话历史：过滤掉前端可能带的 error 标记，保留 user/assistant 交替
-    const history = messages
-      .filter((m: any) => m.role === 'user' || m.role === 'assistant')
-      .map((m: any) => ({ role: m.role as 'user' | 'assistant', content: String(m.content || '') }));
-    const finalMessages = [...systemMsgs, ...history];
-
-    // 兜底：如果历史为空（不应该），用最后一轮用户文本
-    if (history.length === 0) {
-      const lastUser = messages.filter((m: any) => m.role === 'user').pop();
-      finalMessages.push({ role: 'user', content: lastUser?.content || '请继续。' });
-    }
+    const { finalMessages, toolContext, tool, historyCount } = await resolveChatRequest(req, res, cfg);
 
     const reply = await chatCompletion(cfg, finalMessages);
-    logOperation(res.locals.username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，${history.length} 轮消息`);
+    logOperation(res.locals.username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
     res.json({ enabled: true, reply, toolContext });
+  }),
+);
+
+/**
+ * POST /api/ai/chat/stream
+ * body 同 /chat；流式返回 SSE 逐块文本（打字机效果）
+ * 事件:
+ *  - data: {"type":"context","toolContext":string}  可选，先于正文
+ *  - data: {"type":"chunk","text":string}            正文增量
+ *  - data: {"type":"done"}                            结束
+ *  - data: {"type":"error","message":string}         出错
+ */
+router.post(
+  '/chat/stream',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    ensureAiProfiles();
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    let cfg;
+    try {
+      cfg = assertChatConfig();
+    } catch (err: any) {
+      send({ type: 'error', message: err?.message || 'AI 未配置或不可用' });
+      return res.end();
+    }
+
+    let toolContext: string | undefined;
+    let tool = '';
+    let historyCount = 0;
+    let finalMessages;
+    let username = res.locals.username;
+    try {
+      const r = await resolveChatRequest(req, res, cfg);
+      finalMessages = r.finalMessages;
+      toolContext = r.toolContext;
+      tool = r.tool;
+      historyCount = r.historyCount;
+      username = res.locals.username;
+    } catch (err: any) {
+      send({ type: 'error', message: err?.message || '请求错误' });
+      return res.end();
+    }
+
+    if (toolContext) {
+      send({ type: 'context', toolContext });
+    }
+
+    let full = '';
+    try {
+      for await (const chunk of chatCompletionStream(cfg, finalMessages)) {
+        full += chunk;
+        send({ type: 'chunk', text: chunk });
+      }
+      send({ type: 'done' });
+      logOperation(username, 'AI 对话（流式）', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
+    } catch (err: any) {
+      send({ type: 'error', message: err?.message || '流式响应失败' });
+    }
+    res.end();
   }),
 );
 

@@ -303,6 +303,147 @@ export async function chatCompletion(cfg: AiConfig, messages: AiMessage[]): Prom
   return text;
 }
 
+/**
+ * 解析一条 SSE `data:` 行，返回其中的 delta 文本（纯函数）
+ * @param line 已 trim 的原始行（形如 `data: {...}` 或 `data: [DONE]`）
+ * @returns 命中 delta.content 时返回该字符串；`[DONE]`/畸形/无内容返回 null
+ */
+export function parseSseDelta(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith('data:')) return null;
+  const data = trimmed.slice(5).trim();
+  if (data === '[DONE]') return null;
+  try {
+    const parsed = JSON.parse(data);
+    const delta = parsed?.choices?.[0]?.delta?.content;
+    return typeof delta === 'string' && delta ? delta : null;
+  } catch {
+    return null;
+  }
+}
+
+/** AI 用量（OpenAI 兼容 stream 末尾 usage 块） */
+export interface AiStreamUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+/**
+ * 解析一条 SSE `data:` 行，同时提取 delta 文本与可选 usage（纯函数）
+ * @param line 已 trim 的原始行
+ * @returns { delta, usage }；无命中时为 null
+ */
+export function parseSseChunk(line: string): { delta: string | null; usage: AiStreamUsage | null } | null {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith('data:')) return null;
+  const data = trimmed.slice(5).trim();
+  if (data === '[DONE]') return { delta: null, usage: null };
+  try {
+    const parsed = JSON.parse(data);
+    let delta: string | null = null;
+    const c = parsed?.choices?.[0]?.delta?.content;
+    if (typeof c === 'string' && c) delta = c;
+    let usage: AiStreamUsage | null = null;
+    if (parsed?.usage && typeof parsed.usage === 'object') {
+      const u = parsed.usage;
+      if (typeof u.prompt_tokens === 'number' || typeof u.total_tokens === 'number') {
+        usage = {
+          prompt_tokens: typeof u.prompt_tokens === 'number' ? u.prompt_tokens : undefined,
+          completion_tokens: typeof u.completion_tokens === 'number' ? u.completion_tokens : undefined,
+          total_tokens: typeof u.total_tokens === 'number' ? u.total_tokens : undefined,
+        };
+      }
+    }
+    if (delta === null && usage === null) return null;
+    return { delta, usage };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 流式调用 OpenAI 兼容 /chat/completions，返回 AsyncGenerator 逐块 yield 文本片段
+ * @param cfg 配置（须已 enabled）
+ * @param messages 消息
+ * @param onUsage 可选回调：stream 末尾携带 usage 时触发（OpenAI 兼容实现）
+ * @yields 每次 yield 一个文本片段（delta.content）
+ * @throws 网络/HTTP 错误时抛带 statusCode 的错误
+ */
+export async function* chatCompletionStream(
+  cfg: AiConfig,
+  messages: AiMessage[],
+  onUsage?: (usage: AiStreamUsage) => void,
+): AsyncGenerator<string, void, unknown> {
+  const endpoint = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs || DEFAULT_TIMEOUT_MS);
+  let resp: Response;
+  try {
+    resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body: JSON.stringify({ ...buildChatBody(cfg.model, messages), stream: true }),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      const e: any = new Error(`AI 请求超时（${(cfg.timeoutMs || DEFAULT_TIMEOUT_MS) / 1000}s）`);
+      e.statusCode = 504;
+      throw e;
+    }
+    const e: any = new Error(`AI 连接失败: ${err?.message || err}`);
+    e.statusCode = 502;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!resp.ok) {
+    let detail = '';
+    try {
+      const j: any = await resp.json();
+      detail = j?.error?.message || JSON.stringify(j);
+    } catch {
+      detail = await resp.text().catch(() => '');
+    }
+    const e: any = new Error(`AI 接口返回 ${resp.status}: ${detail || '无错误详情'}`);
+    e.statusCode = 502;
+    throw e;
+  }
+
+  if (!resp.body) {
+    const e: any = new Error('AI 响应体为空，不支持流式');
+    e.statusCode = 502;
+    throw e;
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const chunk = parseSseChunk(line);
+        if (!chunk) continue;
+        if (chunk.delta) yield chunk.delta;
+        if (chunk.usage && onUsage) onUsage(chunk.usage);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /** 供 settings 页 HTTP 测试调用（仅发最小请求验证连通性） */
 export async function testAiConnection(cfg?: AiConfig): Promise<{ ok: boolean; message: string }> {
   const target = cfg || getAiConfig();

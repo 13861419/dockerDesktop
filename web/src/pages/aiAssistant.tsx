@@ -5,9 +5,9 @@ import { Field, Input, TextArea, Select } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, put, del } from '../api/client';
+import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiChatResponse, AiProfile, AiPreset, ContainerListItem } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -134,19 +134,41 @@ export default function AiAssistantPage() {
       const history = [...prev, { role: 'user' as const, content: text }]
         .slice(-40)
         .map((m) => ({ role: m.role, content: m.error ? '(请求失败)' : m.content }));
-      setMessages((m) => [...m, { role: 'user', content: text }]);
+      setMessages((m) => [
+        ...m,
+        { role: 'user', content: text },
+        { role: 'assistant', content: '' },
+      ]);
       setInput('');
       setSending(true);
-      try {
-        const res = await post<AiChatResponse>('/api/ai/chat', {
-          messages: history,
-          tool,
-          target,
+      const replaceLastAssistant = (content: string, error = false) => {
+        setMessages((m) => {
+          const copy = [...m];
+          if (copy.length && copy[copy.length - 1].role === 'assistant') {
+            copy[copy.length - 1] = { ...copy[copy.length - 1], content, error };
+          }
+          return copy;
         });
-        setMessages((m) => [...m, { role: 'assistant', content: res.reply || '(空回复)' }]);
+      };
+      let fullText = '';
+      try {
+        await postStream(
+          '/api/ai/chat/stream',
+          { messages: history, tool, target },
+          {
+            onData: (data) => {
+              if (!data || typeof data !== 'object' || data.type !== 'chunk') return;
+              if (typeof data.text === 'string') {
+                fullText += data.text;
+                replaceLastAssistant(fullText);
+              }
+            },
+          },
+        );
+        if (!fullText) replaceLastAssistant('(空回复)');
       } catch (e: any) {
         showToast(e?.message || 'AI 请求失败', 'error');
-        setMessages((m) => [...m, { role: 'assistant', content: e?.message || '请求失败', error: true }]);
+        replaceLastAssistant(e?.message || '请求失败', true);
       } finally {
         setSending(false);
       }
@@ -689,7 +711,7 @@ export default function AiAssistantPage() {
                 )}
               </div>
             )}
-          </Card>
+            </Card>
           </div>
         </div>
       )}
