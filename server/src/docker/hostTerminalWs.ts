@@ -32,6 +32,24 @@ type Shell = ShellName;
 /** 上调 shell 默认工作目录 */
 const DEFAULT_CWD = process.env.HOME || process.env.USERPROFILE || (isWindows() ? 'C:\\' : '/');
 
+/** 动态解码器（CMD 使用 GBK） */
+let _decoder: { decode(buf: Buffer): string } | null = null;
+function decodeBuffer(buf: Buffer, shell: Shell): string {
+  if (isWindows() && shell === 'cmd') {
+    try {
+      if (!_decoder) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { TextDecoder } = require('util') as { TextDecoder: new (label: string) => { decode(buf: Uint8Array): string } };
+        _decoder = new TextDecoder('gbk');
+      }
+      return _decoder.decode(buf);
+    } catch {
+      return buf.toString('utf8');
+    }
+  }
+  return buf.toString('utf8');
+}
+
 /**
  * 将 WebSocket 宿主终端附加到指定 HTTP 服务器
  * @param httpServer HTTP 服务
@@ -65,10 +83,11 @@ export function setupHostTerminalServer(httpServer: HttpServer): void {
  */
 function handleSession(ws: WebSocket): void {
   let child: ChildProcessWithoutNullStreams | null = null;
+  let activeShell: Shell = 'cmd';
 
   const send = (data: string | Buffer) => {
     if (ws.readyState === ws.OPEN) {
-      ws.send(typeof data === 'string' ? data : data.toString('utf8'));
+      ws.send(typeof data === 'string' ? data : decodeBuffer(data, activeShell));
     }
   };
 
@@ -105,11 +124,12 @@ function handleSession(ws: WebSocket): void {
         ? (requestedShell as Shell)
         : getDefaultShell();
       try {
+        activeShell = shell;
         if (isWindows()) {
           child = spawn(
             shell === 'powershell' ? 'powershell.exe' : 'cmd.exe',
             shell === 'powershell'
-              ? ['-NoLogo', '$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; ']
+              ? ['-NoLogo', '-NoExit', '-Command', '$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8']
               : [],
             { cwd: DEFAULT_CWD, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
           );
