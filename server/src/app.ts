@@ -46,6 +46,10 @@ import notificationsRouter from './routes/notifications';
 import transferRouter from './routes/transfer';
 import authRouter from './routes/auth';
 import webhookRouter from './routes/webhook';
+import aiRouter from './routes/ai';
+import logsRouter from './routes/logs';
+import gcRouter from './routes/gc';
+import topologyRouter from './routes/topology';
 import { requireAuth } from './auth';
 
 const app = express();
@@ -107,6 +111,10 @@ app.use('/api/volume-files', requireAuth, volumeFilesRouter);
 app.use('/api/aggregate', requireAuth, aggregateRouter);
 app.use('/api/orchestrate', requireAuth, orchestrateRouter);
 app.use('/api/search', requireAuth, searchRouter);
+app.use('/api/ai', aiRouter);
+app.use('/api/logs', requireAuth, logsRouter);
+app.use('/api/gc', gcRouter);
+app.use('/api/topology', requireAuth, topologyRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）

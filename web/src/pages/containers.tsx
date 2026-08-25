@@ -25,6 +25,7 @@ import Modal from '../components/Modal';
 import { Field, Input, Select } from '../components/Form';
 import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
+import ComposeInferModal from '../components/ComposeInferModal';
 import './containers.less';
 
 /** 状态筛选选项 */
@@ -138,6 +139,7 @@ export default function ContainersPage() {
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [inferOpen, setInferOpen] = useState(false);
   // 折叠的 Compose 组合键集合（key 结构见 composeGroupKey）
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   // 正在执行分组批量操作的组合键（用于按钮 loading 态）
@@ -1818,6 +1820,15 @@ export default function ContainersPage() {
               </Button>
             </div>
           )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setInferOpen(true)}
+            disabled={!canDelete}
+            title="从选中容器一键逆向生成 docker-compose 配置"
+          >
+            生成 Compose
+          </Button>
           <span className="containers__total">共 {filteredList.length} 个容器</span>
           <Button
             variant="primary"
@@ -2824,6 +2835,11 @@ export default function ContainersPage() {
           </Field>
         </div>
       </Modal>
+      <ComposeInferModal
+        open={inferOpen}
+        onClose={() => setInferOpen(false)}
+        initialIds={selectedIds}
+      />
     </div>
   );
 }

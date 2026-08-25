@@ -303,3 +303,66 @@ textarea:focus-visible {
 .data-table tbody tr:hover .col-actions {
   background: var(--bg-body);
 }
+
+/* ===== 全局移动端响应式 ===== */
+@media (max-width: 768px) {
+  /* 表格横向滚动 */
+  .data-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Card 内容紧凑 */
+  .card {
+    margin-bottom: 12px;
+  }
+
+  /* 按钮触摸区域增大 */
+  .btn,
+  button {
+    min-height: 44px;
+    min-width: 44px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* 表单输入增大 */
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  input[type="email"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px; /* 防止 iOS 自动缩放 */
+    min-height: 44px;
+  }
+
+  /* 弹窗适配 */
+  .modal {
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100vh - 48px) !important;
+    margin: 12px !important;
+  }
+
+  /* Toast 适配 */
+  .toast {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 24px !important;
+    top: auto !important;
+    max-width: none !important;
+  }
+
+  /* 空状态 */
+  .empty {
+    padding: 24px 12px;
+  }
+
+  /* 操作按钮组换行 */
+  .btn-group {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

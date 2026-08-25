@@ -1,0 +1,102 @@
+/* Compose 逆向弹窗样式 */
+
+.infer-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.infer-modal__services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.infer-modal__svc {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-muted, #eef0f5);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.infer-modal__warnings {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #b45309;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.infer-modal__validate-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--danger, #ef4444);
+  white-space: pre-wrap;
+}
+
+.infer-modal__editor {
+  min-height: 280px;
+  font-family: monospace;
+  resize: vertical;
+}
+
+.infer-modal__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.infer-modal__hint {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.infer-modal__list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.infer-modal__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  cursor: pointer;
+}
+
+.infer-modal__item:last-child {
+  border-bottom: none;
+}
+
+.infer-modal__item-name {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 140px;
+}
+
+.infer-modal__item-img {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infer-modal__item-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -3,7 +3,7 @@
  *
  * 浅色侧边栏 + 顶栏 + 内容区，使用 React Router 的 NavLink 实现导航。
  */
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
 import { post } from '../api/client';
@@ -88,6 +88,18 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/assistant',
+    label: 'AI 助手',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 3c-2 0-3.5 1.3-3.5 3L8 8" />
+        <path d="M12 3c2 0 3.5 1.3 3.5 3l.5 2" />
+        <path d="M8 8h8v2a4 4 0 0 1-8 0z" />
+        <path d="M8 14.5 6 20l6-3 6 3-2-5.5" />
+      </svg>
+    ),
+  },
+  {
     to: '/images',
     label: '镜像',
     icon: (
@@ -99,6 +111,18 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/gc',
+    label: '镜像GC',
+    adminOnly: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="M3 6h18M6 6V4h12v2" />
+        <path d="M5 6l1 14h12l1-14" />
+        <path d="M9 11h.01M15 11h.01" />
+      </svg>
+    ),
+  },
+  {
     to: '/build',
     label: '构建镜像',
     adminOnly: true,
@@ -106,6 +130,19 @@ const NAV_ITEMS: NavItem[] = [
       <svg {...iconProps}>
         <polygon points="3 11 3 21 14 21 11 11 3 11" />
         <rect x="3" y="3" width="7" height="4" />
+      </svg>
+    ),
+  },
+  {
+    to: '/hub',
+    label: '镜像中心',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M3 7a3 3 0 0 1 3-3h4c1.1 0 2 .9 2 2v3c0 1.1-.9 2-2 2H6a3 3 0 0 1-3-3V7Z" />
+        <path d="M3 7v5a3 3 0 0 0 3 3h4c1.1 0 2-.9 2-2V9a2 2 0 0 0-2-2H6z" />
+        <path d="M13 9a2 2 0 0 1 1-1.7 3 3 0 0 1 4.5 3 3 3 0 0 1 1 5.8 2.5 2.5 0 0 1-3.5 3.2" />
+        <path d="M13 17h6" />
+        <path d="M3 17h7" />
       </svg>
     ),
   },
@@ -140,6 +177,20 @@ const NAV_ITEMS: NavItem[] = [
         <circle cx="5" cy="19" r="2.5" />
         <circle cx="19" cy="19" r="2.5" />
         <path d="M10.5 6.5 6.5 17M13.5 6.5l4 10.5M7.5 19h9" />
+      </svg>
+    ),
+  },
+  {
+    to: '/topology',
+    label: '网络拓扑',
+    icon: (
+      <svg {...iconProps}>
+        <circle cx="12" cy="12" r="3" />
+        <circle cx="4" cy="6" r="2" />
+        <circle cx="20" cy="6" r="2" />
+        <circle cx="4" cy="18" r="2" />
+        <circle cx="20" cy="18" r="2" />
+        <path d="M9 12H6m12 0H12m-8-6l4 6m8 0l-4-6m0 12l-4-6m8 0l-4 6" />
       </svg>
     ),
   },
@@ -274,15 +325,12 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    to: '/hub',
-    label: '镜像中心',
+    to: '/logs',
+    label: '日志聚合',
     icon: (
       <svg {...iconProps}>
-        <path d="M3 7a3 3 0 0 1 3-3h4c1.1 0 2 .9 2 2v3c0 1.1-.9 2-2 2H6a3 3 0 0 1-3-3V7Z" />
-        <path d="M3 7v5a3 3 0 0 0 3 3h4c1.1 0 2-.9 2-2V9a2 2 0 0 0-2-2H6z" />
-        <path d="M13 9a2 2 0 0 1 1-1.7 3 3 0 0 1 4.5 3 3 3 0 0 1 1 5.8 2.5 2.5 0 0 1-3.5 3.2" />
-        <path d="M13 17h6" />
-        <path d="M3 17h7" />
+        <path d="M4 6h16M4 12h16M4 18h10" />
+        <circle cx="17" cy="18" r="2" />
       </svg>
     ),
   },
@@ -347,6 +395,7 @@ const NAV_ITEMS: NavItem[] = [
 export default function Layout() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
   const admin = isAdmin();
@@ -369,8 +418,22 @@ export default function Layout() {
 
   return (
     <div className="layout">
+      {/* 移动端汉堡菜单按钮 */}
+      <button
+        className="sidebar-toggle"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        aria-label="切换菜单"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 12h18M3 6h18M3 18h18" />
+        </svg>
+      </button>
+
+      {/* 遮罩层：移动端侧边栏打开时点击关闭 */}
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
       {/* 侧边栏 */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar--open' : ''}`}>
         <div className="sidebar__brand">
           <div className="sidebar__logo">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -392,6 +455,7 @@ export default function Layout() {
               to={item.to}
               end={item.end}
               className={({ isActive }) => `nav-item ${isActive ? 'nav-item--active' : ''}`}
+              onClick={() => setSidebarOpen(false)}
             >
               <span className="nav-item__icon">{item.icon}</span>
               <span className="nav-item__label">{item.label}</span>

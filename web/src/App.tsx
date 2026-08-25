@@ -46,6 +46,10 @@ const NotificationsPage = lazy(() => import('./pages/notifications'));
 const SwarmPage = lazy(() => import('./pages/swarm'));
 const HealthPage = lazy(() => import('./pages/health'));
 const OrchestratePage = lazy(() => import('./pages/orchestrate'));
+const AiAssistantPage = lazy(() => import('./pages/aiAssistant'));
+const LogsPage = lazy(() => import('./pages/logs'));
+const GcPage = lazy(() => import('./pages/gc'));
+const TopologyPage = lazy(() => import('./pages/topology'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -331,6 +335,40 @@ export default function App() {
                     <RequireAdmin>
                       <OrchestratePage />
                     </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/assistant"
+                element={
+                  <PageSuspense>
+                    <AiAssistantPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/logs"
+                element={
+                  <PageSuspense>
+                    <LogsPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/gc"
+                element={
+                  <PageSuspense>
+                    <RequireAdmin>
+                      <GcPage />
+                    </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/topology"
+                element={
+                  <PageSuspense>
+                    <TopologyPage />
                   </PageSuspense>
                 }
               />

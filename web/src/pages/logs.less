@@ -1,0 +1,102 @@
+/* 日志聚合中心页面样式 */
+
+.logs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.logs-page__filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(4, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.logs-page__selects select {
+  width: 100%;
+  min-height: 34px;
+}
+
+.logs-page__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.logs-page__count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.logs-page__view {
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #0f1117;
+  border-radius: 8px;
+  padding: 8px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.logs__line {
+  display: flex;
+  gap: 8px;
+  padding: 1px 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #e2e8f0;
+}
+
+.logs__line--stderr .logs__body {
+  color: #f87171;
+}
+
+.logs__ts {
+  color: #64748b;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.logs__container {
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+.logs__body {
+  flex: 1;
+}
+
+.logs__mark {
+  background: rgba(250, 204, 21, 0.4);
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* 日志页面移动端适配 */
+@media (max-width: 768px) {
+  .logs-page__filters {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .logs-page__actions {
+    flex-wrap: wrap;
+  }
+
+  .logs-page__view {
+    max-height: 50vh;
+    font-size: 11px;
+    padding: 6px;
+  }
+
+  .logs__line {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .logs__ts {
+    font-size: 10px;
+  }
+}

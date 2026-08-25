@@ -14,3 +14,12 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <App />
   </React.StrictMode>,
 );
+
+// PWA：生产模式注册 Service Worker（离线缓存 App Shell）；失败静默降级
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // 静默：非 HTTPS 或旧浏览器忽略
+    });
+  });
+}

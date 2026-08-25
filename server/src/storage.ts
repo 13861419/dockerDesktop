@@ -474,6 +474,18 @@ function createTables(): void {
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_orchestrate_runs_started ON orchestrate_runs(started_at DESC);
+
+    -- AI 助手配置表（单行：id 恒为 1），密钥经 encryptSecret 对称加密
+    CREATE TABLE IF NOT EXISTS ai_settings (
+      id            INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled       INTEGER NOT NULL DEFAULT 0,   -- 总开关
+      base_url      TEXT NOT NULL DEFAULT '',     -- OpenAI 兼容端点
+      model         TEXT NOT NULL DEFAULT '',     -- 模型名
+      api_key_enc   TEXT NOT NULL DEFAULT '',     -- encryptSecret(apiKey)
+      system_prompt TEXT NOT NULL DEFAULT '',     -- 自定义系统提示词
+      timeout_ms    INTEGER NOT NULL DEFAULT 60000,
+      updated_at    INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

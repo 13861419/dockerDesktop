@@ -12,6 +12,8 @@ import path from 'path';
 import os from 'os';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
+import { getDockerClient } from '../docker/client';
+import { inferCompose, type InferInput } from '../composeInfer';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -652,6 +654,72 @@ router.post(
       res.locals.username,
     );
     res.json({ ok: true, output });
+  }),
+);
+
+// ============ docker run → Compose 逆向 ============
+
+/**
+ * POST /api/compose/infer
+ * 从现存容器逆向出 docker-compose yaml（只读，不执行任何写操作）
+ * body:
+ *  - containerIds?: string[] ：要逆向的容器 id；缺省/为空时返回可逆向候选容器列表
+ * 返回：
+ *  - 有 containerIds：{ projectName, services, content, warnings, valid, validateError }
+ *  - 无 containerIds：{ candidates: [{id,name,image,status}] }
+ */
+router.post(
+  '/infer',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const ids = Array.isArray(req.body?.containerIds)
+      ? req.body.containerIds.map(String).filter(Boolean)
+      : [];
+
+    if (ids.length === 0) {
+      // 返回可逆向的容器候选列表（含停止态，便于用户选择）
+      const list = (await docker.listContainers({ all: true }).catch(() => [])) as any[];
+      const candidates = list.map((c: any) => ({
+        id: c.Id,
+        name: (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.slice(0, 12),
+        image: c.Image || '',
+        status: c.Status || c.State || '',
+      }));
+      return res.json({ candidates });
+    }
+
+    // 逐容器 inspect（并发但限流）
+    const inputs: InferInput[] = [];
+    const max = 50;
+    const slice = ids.slice(0, max);
+    const results = await Promise.allSettled(
+      slice.map(async (id: string) => {
+        const insp = await docker.getContainer(id).inspect();
+        return insp as unknown as InferInput;
+      }),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') inputs.push(r.value);
+    }
+    if (inputs.length === 0) {
+      return res.status(400).json({ error: '未获取到可逆向的容器详情' });
+    }
+
+    const { projectName, services, volumes, networks, yaml, warnings } = inferCompose(inputs);
+    // 用既有校验器做本地校验（不落盘）
+    const validateError = await validateComposeYaml(yaml);
+    logOperation(res.locals.username, 'Compose 逆向预览', 'compose', projectName, `${inputs.length} 个容器`);
+    res.json({
+      projectName,
+      services: services.map((s) => ({ name: s.name, image: s.image, ports: s.ports, networks: s.networks })),
+      volumes,
+      networks,
+      content: yaml,
+      warnings,
+      valid: !validateError,
+      validateError: validateError || undefined,
+    });
   }),
 );
 

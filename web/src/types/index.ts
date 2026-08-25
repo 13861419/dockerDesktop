@@ -361,7 +361,8 @@ export type TaskType =
   | 'restart'
   | 'command'
   | 'healthcheck'
-  | 'git-pull-build';
+  | 'git-pull-build'
+  | 'imageGc';
 
 /** 计划任务（/api/tasks 返回） */
 export interface CronTask {
@@ -908,4 +909,143 @@ export interface SystemConfigImportResponse {
   /** 各实体导入数量 */
   imported: Record<string, number>;
   note?: string;
+}
+
+// ---- AI 助手（/api/ai） ----
+export interface AiSettings {
+  enabled: boolean;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  systemPrompt: string;
+  timeoutMs: number;
+  /** 是否已配置且可用 */
+  available: boolean;
+}
+export interface AiCapability {
+  id: string;
+  label: string;
+  description: string;
+  prompt: string;
+  tool?: string;
+}
+export interface AiCapabilitiesResponse {
+  available: boolean;
+  capabilities: AiCapability[];
+}
+export interface AiChatRequest {
+  messages: Array<{ role: string; content: string }>;
+  tool?: string;
+  target?: string;
+}
+export interface AiChatResponse {
+  enabled: boolean;
+  reply: string;
+  toolContext?: string;
+}
+export interface AiTestResponse {
+  ok: boolean;
+  message: string;
+}
+
+// ---- Compose 逆向（/api/compose/infer） ----
+export interface ComposeInferCandidate {
+  id: string;
+  name: string;
+  image: string;
+  status?: string;
+}
+export interface ComposeInferService {
+  name: string;
+  image: string;
+  ports: string[];
+  networks: string[];
+}
+export interface ComposeInferResult {
+  projectName: string;
+  services: ComposeInferService[];
+  volumes: string[];
+  networks: string[];
+  content: string;
+  warnings: string[];
+  valid: boolean;
+  validateError?: string;
+}
+
+// ---- 日志聚合（/api/logs） ----
+export interface LogSourceContainer {
+  id: string;
+  name: string;
+  image: string;
+  status?: string;
+}
+export interface LogLine {
+  ts?: number;
+  container: string;
+  stream: 'stdout' | 'stderr';
+  text: string;
+}
+export interface LogsQueryResponse {
+  lines: LogLine[];
+  total: number;
+  truncated: boolean;
+  matched: boolean;
+}
+
+// ---- 镜像 GC 策略（/api/gc） ----
+export interface GcImageInfo {
+  id: string;
+  repoTags: string[];
+  created: number;
+  size: number;
+  usedByContainers: boolean;
+}
+export interface GcCandidate extends GcImageInfo {
+  lastPullAt?: number;
+  reasons: string[];
+}
+export interface GcPolicy {
+  keepPerRepo?: number;
+  olderThanDays?: number;
+  pruneDangling?: boolean;
+}
+export interface GcPlanResponse {
+  candidates: GcCandidate[];
+  keepers: GcImageInfo[];
+  skipped: Array<{ name: string; reason: string }>;
+  totals: { toFree: number; bytes: number; bytesText: string };
+  warnings: string[];
+}
+export interface GcRunResult {
+  ok: boolean;
+  deleted: string[];
+  spaceReclaimed: number;
+  detail: string;
+  policy: GcPolicy;
+}
+
+// ---- 网络拓扑（/api/topology） ----
+export interface TopoNode {
+  id: string;
+  kind: 'container' | 'network';
+  label: string;
+  name?: string;
+  status?: string;
+  health?: string;
+  image?: string;
+  projectName?: string;
+  networks?: string[];
+  ports?: Array<{ target: string; protocol: string; published?: string }>;
+  driver?: string;
+}
+export interface TopoEdge {
+  from: string;
+  to: string;
+  kind: 'network';
+}
+export interface TopologyResponse {
+  nodes: TopoNode[];
+  edges: TopoEdge[];
+  counts: { containers: number; networks: number };
+  truncated?: boolean;
 }

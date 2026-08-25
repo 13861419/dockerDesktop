@@ -47,6 +47,29 @@ const TYPE_COLOR: Record<string, string> = {
   app: 'pink',
 };
 
+/**
+ * 生成分页页码序列（超出阈值时用 0 占位表示省略号）
+ * 始终显示首页/末页，当前页前后各留 1 个页码。
+ */
+function getPageItems(current: number, total: number): number[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const items: number[] = [];
+  const add = (n: number) => {
+    if (n >= 1 && n <= total && (items.length === 0 || items[items.length - 1] !== n)) items.push(n);
+  };
+  const pushEllipsis = () => {
+    if (items.length > 0 && items[items.length - 1] !== 0) items.push(0);
+  };
+  add(1);
+  if (current > 3) pushEllipsis();
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) add(p);
+  if (current < total - 2) pushEllipsis();
+  add(total);
+  return items;
+}
+
 interface LogItem {
   id: number;
   username: string;
@@ -602,15 +625,21 @@ export default function OperationLogsPage() {
                 <button className="logs__page-btn" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
                   上一页
                 </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                  <button
-                    key={p}
-                    className={`logs__page-btn ${p === safePage ? 'logs__page-btn--active' : ''}`}
-                    onClick={() => setPage(p)}
-                  >
-                    {p}
-                  </button>
-                ))}
+                {getPageItems(safePage, totalPages).map((p) =>
+                  p === 0 ? (
+                    <span key={`e${p}`} className="logs__page-ellipsis">
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      className={`logs__page-btn ${p === safePage ? 'logs__page-btn--active' : ''}`}
+                      onClick={() => setPage(p)}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
                 <button
                   className="logs__page-btn"
                   disabled={safePage >= totalPages}

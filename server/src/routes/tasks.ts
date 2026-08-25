@@ -33,6 +33,7 @@ import {
   TaskRunResult,
 } from '../scheduler';
 import { logOperation } from '../operationLog';
+import { collectGcImages, planGc, summarizePlan, bytesText, type GcPolicy } from '../gc';
 import { getDockerClient } from '../docker/client';
 import { pullWithFailover } from '../docker/pull';
 import { reportTaskFailure } from '../alerting';
@@ -609,6 +610,41 @@ async function runGitPullBuildHandler(task: CronTaskRow, config: Record<string, 
   }
 }
 
+/**
+ * handler：镜像 GC 策略清理（按 keepPerRepo / olderThanDays / 悬空清理）
+ * config: { keepPerRepo?, olderThanDays?, pruneDangling? }；只清理未被容器引用的镜像。
+ * @param task 任务行
+ * @param config 任务配置
+ */
+async function runImageGcHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const docker = await getDockerClient();
+  const policy: GcPolicy = {
+    keepPerRepo: Number(config.keepPerRepo) > 0 ? Math.floor(Number(config.keepPerRepo)) : undefined,
+    olderThanDays: Number(config.olderThanDays) > 0 ? Math.floor(Number(config.olderThanDays)) : undefined,
+    pruneDangling: config.pruneDangling === true,
+  };
+  try {
+    const images = await collectGcImages(docker);
+    const plan = planGc(images, policy);
+    let deleted = 0;
+    let bytes = 0;
+    for (const cand of plan.candidates) {
+      try {
+        await docker.getImage(cand.id).remove();
+        deleted++;
+        bytes += cand.size || 0;
+      } catch {
+        // 删除失败跳过
+      }
+    }
+    const detail =
+      summarizePlan(plan) + `\n实际删除: ${deleted} 个, 释放 ${bytesText(bytes)}`;
+    return { ok: true, detail };
+  } catch (e: any) {
+    return { ok: false, detail: String(e?.message || e) };
+  }
+}
+
 /** 任务类型 → handler 的本地注册表（供手动执行与注册到调度器共用） */
 const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, any>) => Promise<TaskRunResult>> = {
   prune: runPruneHandler,
@@ -620,6 +656,7 @@ const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, an
   command: runCommandHandler,
   healthcheck: runHealthcheckHandler,
   'git-pull-build': runGitPullBuildHandler,
+  imageGc: runImageGcHandler,
 };
 
 /** 记录一次执行结果到历史表（由 setTaskRunCallback 注册，手动执行亦复用） */

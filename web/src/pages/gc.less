@@ -1,0 +1,147 @@
+/* 镜像 GC 策略页面样式 */
+
+.gc-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gc-page__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.gc-page__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.gc-page__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.gc-page__result {
+  margin-top: 16px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gc-page__summary {
+  font-size: 14px;
+}
+
+.gc-page__warnings {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #b45309;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gc-page__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gc-page__section-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.gc-page__scroll {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+}
+
+.gc-page__row {
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  font-size: 12.5px;
+  align-items: center;
+}
+
+.gc-page__row:last-child {
+  border-bottom: none;
+}
+
+.gc-page__name {
+  font-weight: 600;
+  min-width: 160px;
+}
+
+.gc-page__reasons {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.gc-page__size {
+  color: var(--text-muted);
+}
+
+.gc-page__run-result {
+  margin-top: 12px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 13px;
+}
+
+.gc-page__detail {
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* GC 页面移动端适配 */
+@media (max-width: 768px) {
+  .gc-page__form {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .gc-page__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 8px 10px;
+  }
+
+  .gc-page__name {
+    min-width: auto;
+    font-size: 13px;
+  }
+
+  .gc-page__reasons {
+    font-size: 11.5px;
+  }
+
+  .gc-page__size {
+    font-size: 11.5px;
+  }
+
+  .gc-page__scroll {
+    max-height: 200px;
+  }
+}

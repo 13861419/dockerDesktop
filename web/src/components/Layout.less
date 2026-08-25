@@ -169,3 +169,110 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* ===== 移动端响应式 ===== */
+
+/* 汉堡菜单按钮（仅移动端显示） */
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 1001;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.sidebar-toggle:active {
+  transform: scale(0.95);
+}
+
+/* 遮罩层 */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.4);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 移动端（≤768px） */
+@media (max-width: 768px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .sidebar-toggle {
+    display: flex;
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    width: 260px;
+    height: 100vh;
+    z-index: 1000;
+    transition: left 0.25s ease;
+    box-shadow: none;
+  }
+
+  .sidebar--open {
+    left: 0;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  }
+
+  .main {
+    width: 100%;
+    padding-top: 56px; /* 为汉堡按钮留空间 */
+  }
+
+  .main__content {
+    padding: 16px 12px 32px;
+  }
+
+  .main__toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  /* 导航项增大触摸区域 */
+  .nav-item {
+    padding: 12px 14px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .nav-item__icon {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+/* 大屏手机 landscape / 小平板（≤900px） */
+@media (min-width: 769px) and (max-width: 900px) {
+  .sidebar {
+    width: 160px;
+  }
+
+  .main__content {
+    padding: 20px 16px 40px;
+  }
+}
