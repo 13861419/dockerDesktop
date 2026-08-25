@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Field, Input, Select } from '../components/Form';
@@ -26,6 +26,8 @@ export default function LogsPage() {
   const [rangeMinutes, setRangeMinutes] = useState<number | 0>(5);
   const [streams, setStreams] = useState<'all' | 'stdout' | 'stderr'>('all');
   const [tailPer, setTailPer] = useState(500);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -44,6 +46,28 @@ export default function LogsPage() {
   useEffect(() => {
     loadContainers();
   }, [loadContainers]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleContainer = useCallback((id: string) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelected(containers.map((c) => c.id));
+  }, [containers]);
+
+  const clearAll = useCallback(() => {
+    setSelected([]);
+  }, []);
 
   const query = useCallback(async () => {
     if (selected.length === 0) {
@@ -113,20 +137,34 @@ export default function LogsPage() {
       <Card title="日志聚合中心" extra={<Button size="sm" onClick={loadContainers}>刷新容器</Button>}>
         <div className="logs-page__filters">
           <Field label="容器">
-            <div className="logs-page__selects">
-              <Select
-                multiple
-                value={selected}
-                onChange={(e: any) =>
-                  setSelected(Array.from(e.target.selectedOptions).map((o: any) => o.value))
-                }
-              >
-                {containers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.image})
-                  </option>
-                ))}
-              </Select>
+            <div className="logs-page__selects" ref={dropdownRef}>
+              <div className="logs-page__dropdown" onClick={() => setDropdownOpen(!dropdownOpen)}>
+                <span className="logs-page__dropdown-text">
+                  {selected.length === 0
+                    ? '选择容器…'
+                    : `已选 ${selected.length} 个容器`}
+                </span>
+                <span className="logs-page__dropdown-arrow">▾</span>
+              </div>
+              {dropdownOpen && (
+                <div className="logs-page__dropdown-menu">
+                  <div className="logs-page__dropdown-actions">
+                    <span className="logs-page__dropdown-action" onClick={selectAll}>全选</span>
+                    <span className="logs-page__dropdown-action" onClick={clearAll}>清空</span>
+                  </div>
+                  {containers.map((c) => (
+                    <label className="logs-page__dropdown-item" key={c.id}>
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(c.id)}
+                        onChange={() => toggleContainer(c.id)}
+                      />
+                      <span>{c.name}</span>
+                      <span className="logs-page__dropdown-image">{c.image}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </Field>
           <Field label="时间范围">
