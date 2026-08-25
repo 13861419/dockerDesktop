@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiChatResponse, AiProfile, AiPreset } from '../types';
+import type { AiSettings, AiCapability, AiChatResponse, AiProfile, AiPreset, ContainerListItem } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -76,18 +76,21 @@ export default function AiAssistantPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [logsTarget, setLogsTarget] = useState('');
+  const [containers, setContainers] = useState<ContainerListItem[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadAll = useCallback(async () => {
     try {
-      const [s, p, pr] = await Promise.all([
+      const [s, p, pr, c] = await Promise.all([
         get<AiSettings>('/api/ai/settings'),
         get<{ profiles: AiProfile[] }>('/api/ai/profiles'),
         get<{ presets: AiPreset[] }>('/api/ai/presets'),
+        get<ContainerListItem[]>('/api/containers').catch(() => []),
       ]);
       setSettings(s);
       setProfiles(p.profiles || []);
       setPresets(pr.presets || []);
+      setContainers(Array.isArray(c) ? c : []);
       setCurrentModelId(s.defaultProfile?.id ?? null);
       const caps = await get<{ available: boolean; capabilities: AiCapability[] }>('/api/ai/capabilities');
       setCapabilities(caps.capabilities || []);
@@ -351,12 +354,24 @@ export default function AiAssistantPage() {
                   <div className="ai-assistant__cap-label">
                     {cap.label}
                     {cap.tool === 'logs' && (
-                      <Input
+                      <Select
                         className="ai-assistant__cap-input"
-                        placeholder="容器名/ID"
                         value={logsTarget}
                         onChange={(e: any) => setLogsTarget(e.target.value)}
-                      />
+                      >
+                        <option value="">选择容器…</option>
+                        {containers
+                          .filter((c) => c.State === 'running')
+                          .map((c) => {
+                            const name = (c.Names[0] || '').replace(/^\//, '');
+                            const shortId = c.Id.slice(0, 12);
+                            return (
+                              <option key={c.Id} value={name || shortId}>
+                                {name || shortId}
+                              </option>
+                            );
+                          })}
+                      </Select>
                     )}
                   </div>
                   <div className="ai-assistant__cap-desc">{cap.description}</div>
