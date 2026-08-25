@@ -116,8 +116,16 @@ export default function AiAssistantPage() {
       setInput('');
       setSending(true);
       try {
+        // 构建完整对话历史，保留上下文（最近 20 轮防止 token 过大）
+        const history: { role: 'user' | 'assistant'; content: string }[] = [];
+        setMessages((prev) => {
+          const all = [...prev, { role: 'user' as const, content: text }];
+          const recent = all.slice(-40); // 最多保留最近 40 条（20 轮）
+          history.push(...recent.map((m) => ({ role: m.role, content: m.error ? '(请求失败)' : m.content })));
+          return all;
+        });
         const res = await post<AiChatResponse>('/api/ai/chat', {
-          messages: [{ role: 'user', content: text }],
+          messages: history,
           tool,
           target,
         });

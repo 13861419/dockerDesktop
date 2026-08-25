@@ -416,12 +416,22 @@ router.post(
       context = `（采集环境上下文失败：${err?.message || err}）`;
     }
 
-    // 用户消息 = 用户文本 + （可选）上下文提示
-    const userText = messages.filter((m: any) => m.role === 'user').map((m: any) => m.content).join('\n');
-    const finalMessages = buildSystemPrompt(cfg, context, userText || '请继续。');
+    // 构造完整消息：system prompt + 对话历史
+    const systemMsgs = buildSystemPrompt(cfg, context, '');
+    // 对话历史：过滤掉前端可能带的 error 标记，保留 user/assistant 交替
+    const history = messages
+      .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+      .map((m: any) => ({ role: m.role as 'user' | 'assistant', content: String(m.content || '') }));
+    const finalMessages = [...systemMsgs, ...history];
+
+    // 兜底：如果历史为空（不应该），用最后一轮用户文本
+    if (history.length === 0) {
+      const lastUser = messages.filter((m: any) => m.role === 'user').pop();
+      finalMessages.push({ role: 'user', content: lastUser?.content || '请继续。' });
+    }
 
     const reply = await chatCompletion(cfg, finalMessages);
-    logOperation(res.locals.username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，输入 ${userText.length} 字`);
+    logOperation(res.locals.username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，${history.length} 轮消息`);
     res.json({ enabled: true, reply, toolContext });
   }),
 );
