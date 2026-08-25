@@ -394,6 +394,14 @@ export default function AiAssistantPage() {
             </div>
 
             <div className="ai-assistant__main">
+              <div className="ai-assistant__list-header">
+                <span className="ai-assistant__list-title">对话</span>
+                {messages.length > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => { setMessages([]); messagesRef.current = []; }}>
+                    清除历史
+                  </Button>
+                )}
+              </div>
               <div className="ai-assistant__list" ref={listRef}>
                 {messages.length === 0 ? (
                   <Empty title="开始对话" description="输入问题，或点击右侧快捷能力。" />
@@ -403,7 +411,23 @@ export default function AiAssistantPage() {
                       key={i}
                       className={`ai-assistant__msg ${m.role === 'user' ? 'is-user' : 'is-assistant'} ${m.error ? 'is-error' : ''}`}
                     >
-                      {m.role === 'assistant' ? renderMarkdown(m.content) : <div className="ai-assistant__text">{m.content}</div>}
+                      {m.role === 'assistant' ? (
+                        <>
+                          {renderMarkdown(m.content)}
+                          <button
+                            className="ai-assistant__copy"
+                            title="复制"
+                            onClick={() => {
+                              navigator.clipboard.writeText(m.content);
+                              showToast('已复制', 'success');
+                            }}
+                          >
+                            复制
+                          </button>
+                        </>
+                      ) : (
+                        <div className="ai-assistant__text">{m.content}</div>
+                      )}
                     </div>
                   ))
                 )}

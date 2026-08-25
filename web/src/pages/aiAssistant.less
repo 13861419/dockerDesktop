@@ -299,6 +299,19 @@
   background: var(--bg, #fafafa);
 }
 
+.ai-assistant__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.ai-assistant__list-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
 .ai-assistant__msg {
   max-width: 85%;
   border-radius: 8px;
@@ -318,6 +331,31 @@
   align-self: flex-start;
   background: var(--card-bg, #fff);
   border: 1px solid var(--border, #e5e7eb);
+  position: relative;
+}
+
+.ai-assistant__copy {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-muted, #f3f4f6);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.ai-assistant__copy:hover {
+  color: var(--primary, #6366f1);
+  border-color: var(--primary, #6366f1);
+}
+
+.ai-assistant__msg.is-assistant:hover .ai-assistant__copy {
+  display: block;
 }
 
 .ai-assistant__msg.is-error {
