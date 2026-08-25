@@ -914,13 +914,10 @@ export interface SystemConfigImportResponse {
 // ---- AI 助手（/api/ai） ----
 export interface AiSettings {
   enabled: boolean;
-  baseUrl: string;
-  model: string;
-  hasApiKey: boolean;
-  systemPrompt: string;
-  timeoutMs: number;
   /** 是否已配置且可用 */
   available: boolean;
+  /** 当前默认 profile（null 表示未设置） */
+  defaultProfile: AiProfile | null;
 }
 export interface AiCapability {
   id: string;
@@ -946,6 +943,26 @@ export interface AiChatResponse {
 export interface AiTestResponse {
   ok: boolean;
   message: string;
+}
+export interface AiProfile {
+  id: number;
+  name: string;
+  kind: 'local' | 'cloud';
+  provider: string;
+  baseUrl: string;
+  model: string;
+  hasKey: boolean;
+  isDefault: boolean;
+  timeoutMs: number;
+  systemPrompt: string;
+}
+export interface AiPreset {
+  id: string;
+  name: string;
+  kind: 'local' | 'cloud';
+  baseUrl: string;
+  models: string[];
+  keyHint?: string;
 }
 
 // ---- Compose 逆向（/api/compose/infer） ----

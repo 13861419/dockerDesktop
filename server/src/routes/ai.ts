@@ -16,13 +16,26 @@
 import { Router, Request, Response } from 'express';
 import {
   getAiConfig,
-  isAiConfigured,
   assertAiEnabled,
   updateAiConfig,
   buildSystemPrompt,
   chatCompletion,
   testAiConnection,
+  profileToAiConfig,
 } from '../aiClient';
+import {
+  ensureAiProfiles,
+  listProfiles,
+  getDefaultProfile,
+  getProfileById,
+  getProfileApiKey,
+  createProfile,
+  updateProfile,
+  deleteProfile,
+  setDefaultProfile,
+  assertValidBaseUrl,
+} from '../aiProfiles';
+import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
@@ -39,17 +52,45 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
   };
 }
 
-/** 返回给前端的配置视图（apiKey 脱敏） */
-function publicConfig() {
-  const cfg = getAiConfig();
-  return {
-    enabled: cfg.enabled,
-    baseUrl: cfg.baseUrl,
-    model: cfg.model,
-    hasApiKey: !!cfg.apiKey,
-    systemPrompt: cfg.systemPrompt,
-    timeoutMs: cfg.timeoutMs,
-  };
+/** 全局开关（持久化于 ai_settings.enabled，向前兼容） */
+function isEnabled(): boolean {
+  return getAiConfig().enabled;
+}
+
+/** 默认 profile 是否已可供使用（存在且 baseUrl+model 合法） */
+function isAiAvailable(): boolean {
+  const prof = getDefaultProfile();
+  if (!prof || !prof.baseUrl || !prof.model) return false;
+  try {
+    assertValidBaseUrl(prof.baseUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 取默认 profile 对应的 AiConfig（含解密 key）；无 profile 返回 null */
+function profileAiConfig() {
+  const prof = getDefaultProfile();
+  if (!prof) return null;
+  const cfg = profileToAiConfig(prof);
+  cfg.apiKey = getProfileApiKey(prof.id);
+  return cfg;
+}
+
+/** /chat 用配置：优先默认 profile，否则回退旧单套配置；两者皆不可用抛 503 */
+function assertChatConfig() {
+  const prof = getDefaultProfile();
+  if (prof) {
+    if (!prof.baseUrl || !prof.model) {
+      const e: any = new Error('AI 助手默认配置未完成（缺少 baseUrl 或模型）');
+      e.statusCode = 503;
+      throw e;
+    }
+    return profileAiConfig()!;
+  }
+  // 无默认 profile：回退旧单套配置
+  return assertAiEnabled();
 }
 
 /** 工具能力清单（供前端快捷入口渲染） */
@@ -140,7 +181,8 @@ router.get(
   '/settings',
   requireAuth,
   asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ ...publicConfig(), available: isAiConfigured() });
+    ensureAiProfiles();
+    res.json({ enabled: isEnabled(), available: isAiAvailable(), defaultProfile: getDefaultProfile() });
   }),
 );
 
@@ -154,16 +196,14 @@ router.put(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const body = req.body || {};
-    updateAiConfig({
-      enabled: body.enabled,
-      baseUrl: body.baseUrl,
-      model: body.model,
-      apiKey: body.apiKey,
-      systemPrompt: body.systemPrompt,
-      timeoutMs: body.timeoutMs,
-    });
+    ensureAiProfiles();
+    // 仅更新全局开关（持久化到 ai_settings.enabled）+ 可选默认 profile
+    updateAiConfig({ enabled: body.enabled });
+    if (body.defaultProfileId !== undefined && body.defaultProfileId !== null && body.defaultProfileId !== '') {
+      setDefaultProfile(Number(body.defaultProfileId));
+    }
     logOperation(res.locals.username, '更新 AI 助手配置', 'ai', null);
-    res.json({ ...publicConfig(), available: isAiConfigured() });
+    res.json({ enabled: isEnabled(), available: isAiAvailable(), defaultProfile: getDefaultProfile() });
   }),
 );
 
@@ -179,8 +219,10 @@ router.post(
   requireAuth,
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
+    ensureAiProfiles();
     const body = req.body || {};
-    const cfg = getAiConfig();
+    let cfg = profileAiConfig();
+    if (!cfg) cfg = getAiConfig();
     const testCfg = {
       ...cfg,
       baseUrl: body.baseUrl !== undefined ? String(body.baseUrl) : cfg.baseUrl,
@@ -194,6 +236,124 @@ router.post(
   }),
 );
 
+// ============ 提供商预设 ============
+
+/**
+ * GET /api/ai/presets
+ * 返回内置 AI 提供商预设清单（只读）
+ */
+router.get(
+  '/presets',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ presets: AI_PRESETS });
+  }),
+);
+
+// ============ 多配置文件 ============
+
+/**
+ * GET /api/ai/profiles
+ * 返回所有 AI 配置文件
+ */
+router.get(
+  '/profiles',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    ensureAiProfiles();
+    res.json({ profiles: listProfiles() });
+  }),
+);
+
+/**
+ * POST /api/ai/profiles
+ * 新建 AI 配置文件
+ */
+router.post(
+  '/profiles',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const p = createProfile(req.body || {});
+    logOperation(res.locals.username, '新增 AI 配置', 'ai', null, p.name);
+    res.json(p);
+  }),
+);
+
+/**
+ * PUT /api/ai/profiles/:id
+ * 编辑 AI 配置文件
+ */
+router.put(
+  '/profiles/:id',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const p = updateProfile(id, req.body || {});
+    logOperation(res.locals.username, '编辑 AI 配置', 'ai', null, p.name);
+    res.json(p);
+  }),
+);
+
+/**
+ * DELETE /api/ai/profiles/:id
+ * 删除 AI 配置文件（至少保留一条）
+ */
+router.delete(
+  '/profiles/:id',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    deleteProfile(Number(req.params.id));
+    logOperation(res.locals.username, '删除 AI 配置', 'ai', null, String(req.params.id));
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/ai/profiles/:id/test
+ * 连通性测试指定配置文件（不要求其为默认）
+ */
+router.post(
+  '/profiles/:id/test',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const prof = getProfileById(id);
+    if (!prof) return res.status(404).json({ error: '配置不存在' });
+    const body = req.body || {};
+    const cfg = profileToAiConfig(prof);
+    cfg.apiKey = getProfileApiKey(id);
+    const testCfg = {
+      ...cfg,
+      baseUrl: body.baseUrl !== undefined ? String(body.baseUrl) : cfg.baseUrl,
+      model: body.model !== undefined ? String(body.model) : cfg.model,
+      apiKey: body.apiKey !== undefined && String(body.apiKey) ? String(body.apiKey) : cfg.apiKey,
+      timeoutMs: body.timeoutMs !== undefined ? Number(body.timeoutMs) : cfg.timeoutMs,
+    };
+    const result = await testAiConnection(testCfg);
+    logOperation(res.locals.username, 'AI 配置测试', 'ai', null, result.ok ? '成功' : `失败: ${result.message}`);
+    res.json({ ok: result.ok, message: result.message });
+  }),
+);
+
+/**
+ * PUT /api/ai/profiles/:id/default
+ * 设为默认配置文件
+ */
+router.put(
+  '/profiles/:id/default',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const p = setDefaultProfile(Number(req.params.id));
+    logOperation(res.locals.username, '切换默认 AI 配置', 'ai', null, p.name);
+    res.json(p);
+  }),
+);
+
 // ============ 能力清单 ============
 
 /**
@@ -204,7 +364,8 @@ router.get(
   '/capabilities',
   requireAuth,
   asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ available: isAiConfigured(), capabilities: CAPABILITIES });
+    ensureAiProfiles();
+    res.json({ available: isAiAvailable(), capabilities: CAPABILITIES });
   }),
 );
 
@@ -221,7 +382,8 @@ router.post(
   '/chat',
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    const cfg = assertAiEnabled();
+    ensureAiProfiles();
+    const cfg = assertChatConfig();
     const body = req.body || {};
     const messages = Array.isArray(body.messages) ? body.messages : [];
     if (messages.length === 0) {

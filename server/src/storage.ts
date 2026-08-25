@@ -486,6 +486,22 @@ function createTables(): void {
       timeout_ms    INTEGER NOT NULL DEFAULT 60000,
       updated_at    INTEGER NOT NULL
     );
+
+    -- AI 配置文件表（多套配置），密钥经 encryptSecret 对称加密
+    CREATE TABLE IF NOT EXISTS ai_profiles (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL DEFAULT '',
+      kind          TEXT NOT NULL DEFAULT 'local',
+      provider      TEXT NOT NULL DEFAULT 'custom',
+      base_url      TEXT NOT NULL DEFAULT '',
+      model         TEXT NOT NULL DEFAULT '',
+      api_key_enc   TEXT NOT NULL DEFAULT '',
+      system_prompt TEXT NOT NULL DEFAULT '',
+      timeout_ms    INTEGER NOT NULL DEFAULT 60000,
+      is_default    INTEGER NOT NULL DEFAULT 0,
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

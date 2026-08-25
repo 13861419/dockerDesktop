@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { buildSystemPrompt, buildChatBody, parseChatResponse } from '../src/aiClient';
+import { buildSystemPrompt, buildChatBody, parseChatResponse, profileToAiConfig } from '../src/aiClient';
 
 const cfg = {
   enabled: true,
@@ -41,4 +41,22 @@ test('parseChatResponse 提取 assistant 文本', () => {
   // 非法结构
   assert.strictEqual(parseChatResponse(null), '');
   assert.strictEqual(parseChatResponse('oops'), '');
+});
+
+// 合成一个 profilePublic 对象（不依赖 DB）
+const prof = {
+  id: 1, name: 'P', kind: 'local' as const, provider: 'ollama',
+  baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', hasKey: true,
+  isDefault: true, timeoutMs: 120000, systemPrompt: 'custom-sys',
+};
+
+test('profileToAiConfig 正确映射', () => {
+  const c = profileToAiConfig(prof as any);
+  assert.strictEqual(c.baseUrl, 'http://localhost:11434/v1');
+  assert.strictEqual(c.model, 'llama3.1');
+  assert.strictEqual(c.enabled, true);
+  assert.strictEqual(c.systemPrompt, 'custom-sys');
+  assert.strictEqual(c.timeoutMs, 120000);
+  // apiKey 占位为空，由路由层调用 getProfileApiKey 注入明文
+  assert.strictEqual(c.apiKey, '');
 });
