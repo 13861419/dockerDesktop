@@ -947,6 +947,26 @@ export interface AiTestResponse {
   ok: boolean;
   message: string;
 }
+export interface AiProfile {
+  id: number;
+  name: string;
+  kind: 'local' | 'cloud';
+  provider: string;
+  baseUrl: string;
+  model: string;
+  hasKey: boolean;
+  isDefault: boolean;
+  timeoutMs: number;
+  systemPrompt: string;
+}
+export interface AiPreset {
+  id: string;
+  name: string;
+  kind: 'local' | 'cloud';
+  baseUrl: string;
+  models: string[];
+  keyHint?: string;
+}
 
 // ---- Compose 逆向（/api/compose/infer） ----
 export interface ComposeInferCandidate {
