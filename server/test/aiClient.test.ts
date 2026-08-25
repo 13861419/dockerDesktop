@@ -47,7 +47,7 @@ test('parseChatResponse 提取 assistant 文本', () => {
 const prof = {
   id: 1, name: 'P', kind: 'local' as const, provider: 'ollama',
   baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', hasKey: true,
-  isDefault: true, timeoutMs: 60000, systemPrompt: '',
+  isDefault: true, timeoutMs: 120000, systemPrompt: 'custom-sys',
 };
 
 test('profileToAiConfig 正确映射', () => {
@@ -55,4 +55,8 @@ test('profileToAiConfig 正确映射', () => {
   assert.strictEqual(c.baseUrl, 'http://localhost:11434/v1');
   assert.strictEqual(c.model, 'llama3.1');
   assert.strictEqual(c.enabled, true);
+  assert.strictEqual(c.systemPrompt, 'custom-sys');
+  assert.strictEqual(c.timeoutMs, 120000);
+  // apiKey 占位为空，由路由层调用 getProfileApiKey 注入明文
+  assert.strictEqual(c.apiKey, '');
 });

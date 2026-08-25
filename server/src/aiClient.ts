@@ -13,6 +13,7 @@
  * 本文件不依赖任何第三方 npm 包（Node >= 18 内置 fetch / AbortController）。
  */
 import { getDb, encryptSecret, decryptSecret } from './storage';
+import type { AiProfilePublic } from './aiProfiles';
 
 /** AI 配置（解密后的运行时视图） */
 export interface AiConfig {
@@ -329,8 +330,6 @@ export async function testAiConnection(cfg?: AiConfig): Promise<{ ok: boolean; m
 export function hasConfiguredCredentials(): boolean {
   return hasConfigured(getAiConfig());
 }
-
-import type { AiProfilePublic } from './aiProfiles';
 
 /** 把配置文件(profile)映射为 chatCompletion 所需 AiConfig */
 export function profileToAiConfig(p: AiProfilePublic): AiConfig {
