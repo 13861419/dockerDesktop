@@ -73,6 +73,7 @@ export default function AiAssistantPage() {
 
   const [capabilities, setCapabilities] = useState<AiCapability[]>([]);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const messagesRef = useRef<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [logsTarget, setLogsTarget] = useState('');
@@ -109,21 +110,23 @@ export default function AiAssistantPage() {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages]);
 
+  // 同步 ref，供 send 同步读取历史
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   const send = useCallback(
     async (text: string, tool?: string, target?: string) => {
       if (!text.trim() || sending) return;
+      // 同步构建历史（基于 ref，不等 setState）
+      const prev = messagesRef.current;
+      const history = [...prev, { role: 'user' as const, content: text }]
+        .slice(-40)
+        .map((m) => ({ role: m.role, content: m.error ? '(请求失败)' : m.content }));
       setMessages((m) => [...m, { role: 'user', content: text }]);
       setInput('');
       setSending(true);
       try {
-        // 构建完整对话历史，保留上下文（最近 20 轮防止 token 过大）
-        const history: { role: 'user' | 'assistant'; content: string }[] = [];
-        setMessages((prev) => {
-          const all = [...prev, { role: 'user' as const, content: text }];
-          const recent = all.slice(-40); // 最多保留最近 40 条（20 轮）
-          history.push(...recent.map((m) => ({ role: m.role, content: m.error ? '(请求失败)' : m.content })));
-          return all;
-        });
         const res = await post<AiChatResponse>('/api/ai/chat', {
           messages: history,
           tool,
