@@ -914,13 +914,10 @@ export interface SystemConfigImportResponse {
 // ---- AI 助手（/api/ai） ----
 export interface AiSettings {
   enabled: boolean;
-  baseUrl: string;
-  model: string;
-  hasApiKey: boolean;
-  systemPrompt: string;
-  timeoutMs: number;
   /** 是否已配置且可用 */
   available: boolean;
+  /** 当前默认 profile（null 表示未设置） */
+  defaultProfile: AiProfile | null;
 }
 export interface AiCapability {
   id: string;

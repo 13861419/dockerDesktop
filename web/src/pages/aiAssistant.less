@@ -1,4 +1,4 @@
-/* AI 助手页面样式 */
+/* AI 模型配置中心页面样式 */
 
 .ai-assistant {
   min-height: 70vh;
@@ -28,6 +28,209 @@
   color: var(--text-muted);
 }
 
+/* ── 顶部模型选择 ── */
+.ai-assistant__topbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.ai-assistant__topbar .field {
+  flex: 0 0 320px;
+  max-width: 100%;
+}
+
+/* ── Tab 栏 ── */
+.ai-assistant__tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.ai-assistant__tab {
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ai-assistant__tab:hover {
+  color: var(--text);
+}
+
+.ai-assistant__tab.is-active {
+  color: var(--primary, #6366f1);
+  border-bottom-color: var(--primary, #6366f1);
+}
+
+/* ── 预设面板 ── */
+.ai-assistant__preset-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ai-assistant__preset-group-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-assistant__preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.ai-assistant__preset-card {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ai-assistant__preset-card:hover {
+  border-color: var(--primary, #6366f1);
+  box-shadow: 0 0 0 1px var(--primary, #6366f1);
+}
+
+.ai-assistant__preset-name {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.ai-assistant__preset-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.ai-assistant__preset-models {
+  font-size: 12px;
+  color: var(--primary, #6366f1);
+  margin-top: 6px;
+}
+
+/* ── 我的配置面板 ── */
+.ai-assistant__mine-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 表格 */
+.ai-assistant__profiles-table-wrap {
+  overflow-x: auto;
+}
+
+.ai-assistant__profiles-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ai-assistant__profiles-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  white-space: nowrap;
+}
+
+.ai-assistant__profiles-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  vertical-align: middle;
+}
+
+.ai-assistant__td-name {
+  font-weight: 600;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-assistant__row-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+/* 类型 badge */
+.ai-assistant__kind-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-assistant__kind-badge--local {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--success, #10b981);
+}
+
+.ai-assistant__kind-badge--cloud {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary, #6366f1);
+}
+
+/* Key 状态 */
+.ai-assistant__key-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-assistant__key-badge.is-on {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--success, #10b981);
+}
+
+.ai-assistant__key-badge.is-off {
+  background: var(--bg-muted, #eef0f5);
+  color: var(--text-muted);
+}
+
+/* 编辑表单 */
+.ai-assistant__edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-assistant__edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.ai-assistant__edit-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+/* ── 聊天区域 ── */
 .ai-assistant__body {
   display: flex;
   gap: 16px;
@@ -155,6 +358,7 @@
   resize: vertical;
 }
 
+/* ── 配置弹窗 ── */
 .ai-assistant__config-overlay {
   position: fixed;
   inset: 0;
@@ -167,7 +371,7 @@
 }
 
 .ai-assistant__config {
-  width: 480px;
+  width: 560px;
   max-width: 95vw;
   max-height: 90vh;
   overflow-y: auto;
@@ -190,9 +394,56 @@
     gap: 6px;
   }
 
+  .ai-assistant__topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ai-assistant__topbar .field {
+    flex: none;
+  }
+
   .ai-assistant__config {
     width: 100%;
     max-width: none;
     max-height: 80vh;
+  }
+
+  .ai-assistant__body {
+    flex-direction: column;
+  }
+
+  .ai-assistant__side {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ai-assistant__side-title {
+    width: 100%;
+  }
+
+  .ai-assistant__cap {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .ai-assistant__preset-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-assistant__profiles-table {
+    font-size: 12px;
+  }
+
+  .ai-assistant__profiles-table th,
+  .ai-assistant__profiles-table td {
+    padding: 6px 6px;
+  }
+
+  .ai-assistant__row-actions {
+    flex-direction: column;
+    gap: 2px;
   }
 }
