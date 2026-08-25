@@ -106,9 +106,12 @@ export function getDb(): DatabaseSync {
   if (db) return db;
   ensureDataDir();
   db = new DatabaseSync(DB_FILE);
-  // 开启外键约束（本库暂未使用外键，预留）与 WAL 日志模式提升并发读性能
+  // 开启外键约束（本库暂未使用外键，预留）与 WAL 日志模式提升并发读性能。
+  // busy_timeout 默认 0（遇到瞬时锁立即报 database is locked），
+  // 设置为 5000ms 以等待短暂写锁（多进程/多连接并发时避免偶发锁冲突）。
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
+  db.exec('PRAGMA busy_timeout = 5000;');
   createTables();
   return db;
 }
