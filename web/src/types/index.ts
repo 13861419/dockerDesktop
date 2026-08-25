@@ -940,6 +940,36 @@ export interface AiChatResponse {
   reply: string;
   toolContext?: string;
 }
+
+export interface AiUsageSummary {
+  totalPrompt: number;
+  totalCompletion: number;
+  total: number;
+  totalCalls: number;
+  successCalls: number;
+  failedCalls: number;
+}
+export interface AiUsageByModel {
+  model: string;
+  provider: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  successCalls: number;
+}
+export interface AiUsageByDay {
+  day: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+export interface AiUsageResponse {
+  summary: AiUsageSummary;
+  byModel: AiUsageByModel[];
+  byDay: AiUsageByDay[];
+}
 export interface AiTestResponse {
   ok: boolean;
   message: string;

@@ -446,6 +446,75 @@
   margin-top: 12px;
 }
 
+/* AI 用量统计面板 */
+.ai-assistant__usage {
+  width: 720px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.ai-assistant__usage-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-assistant__usage-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.ai-assistant__usage-card {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  background: var(--card-bg, #fff);
+}
+
+.ai-assistant__usage-card-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--primary, #4f46e5);
+  margin-bottom: 4px;
+}
+
+.ai-assistant__usage-card-label {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.ai-assistant__usage-section-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.ai-assistant__usage-table-wrap {
+  overflow-x: auto;
+}
+
+.ai-assistant__usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ai-assistant__usage-table th,
+.ai-assistant__usage-table td {
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ai-assistant__usage-table th {
+  color: var(--text-secondary, #6b7280);
+  font-weight: 500;
+}
+
 /* AI 助手移动端适配 */
 @media (max-width: 768px) {
   .ai-assistant {

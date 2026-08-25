@@ -502,6 +502,26 @@ function createTables(): void {
       created_at    INTEGER NOT NULL,
       updated_at    INTEGER NOT NULL
     );
+
+    -- AI 用量统计表（每次对话/流式调用记录一条 token 用量）
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id         INTEGER,                       -- 关联 ai_profiles.id，可为空
+      provider           TEXT NOT NULL DEFAULT '',      -- 冗余 provider 名便于展示
+      model              TEXT NOT NULL DEFAULT '',      -- 模型名快照
+      tool               TEXT NOT NULL DEFAULT '',      -- chat / compose-infer / logs 等
+      prompt_tokens      INTEGER NOT NULL DEFAULT 0,    -- 输入 token
+      completion_tokens  INTEGER NOT NULL DEFAULT 0,    -- 输出 token
+      total_tokens       INTEGER NOT NULL DEFAULT 0,    -- 合计
+      prompt_chars       INTEGER NOT NULL DEFAULT 0,    -- 估算输入字符（无法取到 usage 时用）
+      completion_chars   INTEGER NOT NULL DEFAULT 0,    -- 估算输出字符
+      success            INTEGER NOT NULL DEFAULT 1,    -- 是否成功
+      error_message      TEXT NOT NULL DEFAULT '',      -- 失败原因
+      username           TEXT NOT NULL DEFAULT '',      -- 调用者
+      created_at         INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at);
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_model   ON ai_usage(model);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

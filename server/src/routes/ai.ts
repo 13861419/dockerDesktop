@@ -40,6 +40,7 @@ import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
+import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage } from '../aiUsage';
 
 const router = Router();
 
@@ -92,6 +93,16 @@ function assertChatConfig() {
   }
   // 无默认 profile：回退旧单套配置
   return assertAiEnabled();
+}
+
+/** 当前默认 profile 元数据（用于用量记录的 provider 归集）；无则回退） */
+function aiProfileMeta() {
+  const prof = getDefaultProfile();
+  return {
+    id: prof?.id ?? null,
+    provider: prof?.provider || '',
+    model: prof?.model || '',
+  };
 }
 
 /** 工具能力清单（供前端快捷入口渲染） */
@@ -446,8 +457,38 @@ router.post(
     const cfg = assertChatConfig();
     const { finalMessages, toolContext, tool, historyCount } = await resolveChatRequest(req, res, cfg);
 
-    const reply = await chatCompletion(cfg, finalMessages);
-    logOperation(res.locals.username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
+    const username = res.locals.username;
+    const meta = aiProfileMeta();
+    const promptChars = finalMessages.reduce((n: number, m: any) => n + String(m.content || '').length, 0);
+    let reply = '';
+    try {
+      reply = await chatCompletion(cfg, finalMessages);
+      logOperation(username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
+      recordAiUsage({
+        profileId: meta.id,
+        provider: meta.provider || cfg.baseUrl,
+        model: cfg.model,
+        tool: tool || 'chat',
+        promptTokens: estimateTokens(finalMessages.map((m: any) => m.content).join('\n')),
+        completionTokens: estimateTokens(reply),
+        totalTokens: estimateTokens(finalMessages.map((m: any) => m.content).join('\n')) + estimateTokens(reply),
+        promptChars,
+        completionChars: reply.length,
+        success: true,
+        username,
+      });
+    } catch (err: any) {
+      recordAiUsage({
+        profileId: meta.id,
+        provider: meta.provider || cfg.baseUrl,
+        model: cfg.model,
+        tool: tool || 'chat',
+        success: false,
+        errorMessage: err?.message || '未知错误',
+        username,
+      });
+      throw err;
+    }
     res.json({ enabled: true, reply, toolContext });
   }),
 );
@@ -502,18 +543,85 @@ router.post(
       send({ type: 'context', toolContext });
     }
 
+    const promptText = finalMessages.map((m: any) => m.content).join('\n');
+    const promptChars = promptText.length;
+    const promptEst = estimateTokens(promptText);
+    const meta = aiProfileMeta();
+    const provider = meta.provider || cfg.baseUrl;
+    const model = cfg.model;
     let full = '';
+    const capturedUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } = {};
     try {
-      for await (const chunk of chatCompletionStream(cfg, finalMessages)) {
+      for await (const chunk of chatCompletionStream(cfg, finalMessages, (u) => {
+        if (u.prompt_tokens !== undefined) capturedUsage.prompt_tokens = u.prompt_tokens;
+        if (u.completion_tokens !== undefined) capturedUsage.completion_tokens = u.completion_tokens;
+        if (u.total_tokens !== undefined) capturedUsage.total_tokens = u.total_tokens;
+      })) {
         full += chunk;
         send({ type: 'chunk', text: chunk });
       }
       send({ type: 'done' });
       logOperation(username, 'AI 对话（流式）', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
+      recordAiUsage({
+        profileId: meta.id,
+        provider,
+        model,
+        tool: tool || 'chat',
+        promptTokens: capturedUsage.prompt_tokens ?? promptEst,
+        completionTokens: capturedUsage.completion_tokens ?? estimateTokens(full),
+        totalTokens: capturedUsage.total_tokens ?? promptEst + estimateTokens(full),
+        promptChars,
+        completionChars: full.length,
+        success: true,
+        username,
+      });
     } catch (err: any) {
+      recordAiUsage({
+        profileId: meta.id,
+        provider,
+        model,
+        tool: tool || 'chat',
+        promptTokens: capturedUsage.prompt_tokens ?? promptEst,
+        completionTokens: capturedUsage.completion_tokens ?? estimateTokens(full),
+        promptChars,
+        completionChars: full.length,
+        success: false,
+        errorMessage: err?.message || '未知错误',
+        username,
+      });
       send({ type: 'error', message: err?.message || '流式响应失败' });
     }
     res.end();
+  }),
+);
+
+/**
+ * GET /api/ai/usage
+ * 返回 AI 用量聚合汇总、按模型分布、按天趋势
+ */
+router.get(
+  '/usage',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({
+      summary: summarizeAiUsage(),
+      byModel: listAiUsageByModel(),
+      byDay: listAiUsageByDay(30),
+    });
+  }),
+);
+
+/**
+ * DELETE /api/ai/usage
+ * 清空全部 AI 用量记录（需管理员）
+ */
+router.delete(
+  '/usage',
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    clearAiUsage();
+    logOperation(res.locals.username, '清空 AI 用量', 'ai', null, '已清空全部 AI 用量统计');
+    res.json({ ok: true });
   }),
 );
 

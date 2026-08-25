@@ -7,13 +7,19 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
   error?: boolean;
+}
+
+/** 千分位格式化 */
+function formatCount(n: number): string {
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('en-US');
 }
 
 /** 简单 Markdown 代码块渲染（避免引入重库） */
@@ -90,6 +96,37 @@ export default function AiAssistantPage() {
   const [logsTarget, setLogsTarget] = useState('');
   const [containers, setContainers] = useState<ContainerListItem[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+
+  const [showUsage, setShowUsage] = useState(false);
+  const [usage, setUsage] = useState<AiUsageResponse | null>(null);
+  const [loadingUsage, setLoadingUsage] = useState(false);
+
+  const loadUsage = useCallback(async () => {
+    setLoadingUsage(true);
+    try {
+      const u = await get<AiUsageResponse>('/api/ai/usage');
+      setUsage(u);
+    } catch (e: any) {
+      showToast(e?.message || '加载用量统计失败', 'error');
+    } finally {
+      setLoadingUsage(false);
+    }
+  }, [showToast]);
+
+  const openUsage = useCallback(() => {
+    setShowUsage(true);
+    loadUsage();
+  }, [loadUsage]);
+
+  const handleClearUsage = useCallback(async () => {
+    try {
+      await del('/api/ai/usage');
+      showToast('已清空用量统计');
+      await loadUsage();
+    } catch (e: any) {
+      showToast(e?.message || '清空失败', 'error');
+    }
+  }, [loadUsage, showToast]);
 
   const loadAll = useCallback(async () => {
     try {
@@ -341,6 +378,9 @@ export default function AiAssistantPage() {
             <span className={`ai-assistant__badge ${available ? 'is-on' : 'is-off'}`}>
               {available ? '已启用' : '未配置'}
             </span>
+            <Button size="sm" variant="ghost" onClick={openUsage}>
+              用量统计
+            </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
                 配置模型
@@ -711,6 +751,103 @@ export default function AiAssistantPage() {
                 )}
               </div>
             )}
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showUsage && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowUsage(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="AI 用量统计"
+              extra={
+                <div className="ai-assistant__usage-actions">
+                  {admin && (
+                    <Button size="sm" variant="ghost" onClick={handleClearUsage}>
+                      清空统计
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={() => setShowUsage(false)}>
+                    关闭
+                  </Button>
+                </div>
+              }
+            >
+              {loadingUsage && !usage ? (
+                <SkeletonRows rows={4} />
+              ) : (
+                <>
+                  {usage && usage.summary && (
+                    <div className="ai-assistant__usage-cards">
+                      <div className="ai-assistant__usage-card">
+                        <div className="ai-assistant__usage-card-value">
+                          {formatCount(usage.summary.total)}
+                        </div>
+                        <div className="ai-assistant__usage-card-label">总 Token 数</div>
+                      </div>
+                      <div className="ai-assistant__usage-card">
+                        <div className="ai-assistant__usage-card-value">
+                          {formatCount(usage.summary.totalPrompt)}
+                        </div>
+                        <div className="ai-assistant__usage-card-label">输入 Token</div>
+                      </div>
+                      <div className="ai-assistant__usage-card">
+                        <div className="ai-assistant__usage-card-value">
+                          {formatCount(usage.summary.totalCompletion)}
+                        </div>
+                        <div className="ai-assistant__usage-card-label">输出 Token</div>
+                      </div>
+                      <div className="ai-assistant__usage-card">
+                        <div className="ai-assistant__usage-card-value">
+                          {usage.summary.totalCalls}
+                        </div>
+                        <div className="ai-assistant__usage-card-label">
+                          调用次数（成功 {usage.summary.successCalls} / 失败 {usage.summary.failedCalls}）
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="ai-assistant__usage-section-title">按模型分布</div>
+                  {usage && usage.byModel && usage.byModel.length > 0 ? (
+                    <div className="ai-assistant__usage-table-wrap">
+                      <table className="ai-assistant__usage-table">
+                        <thead>
+                          <tr>
+                            <th>模型</th>
+                            <th>Provider</th>
+                            <th>调用次数</th>
+                            <th>输入 Token</th>
+                            <th>输出 Token</th>
+                            <th>总 Token</th>
+                            <th>成功率</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {usage.byModel.map((m) => {
+                            const rate = m.calls > 0 ? Math.round((m.successCalls / m.calls) * 100) : 100;
+                            return (
+                              <tr key={m.model}>
+                                <td>{m.model}</td>
+                                <td>{m.provider || '-'}</td>
+                                <td>{m.calls}</td>
+                                <td>{formatCount(m.promptTokens)}</td>
+                                <td>{formatCount(m.completionTokens)}</td>
+                                <td>{formatCount(m.totalTokens)}</td>
+                                <td>{rate}%</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <Empty title="暂无用量数据" description="使用一次 AI 对话后，这里会展示统计。" />
+                  )}
+                </>
+              )}
             </Card>
           </div>
         </div>
