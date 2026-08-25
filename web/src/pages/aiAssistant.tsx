@@ -17,14 +17,25 @@ interface ChatMsg {
 }
 
 /** 简单 Markdown 代码块渲染（避免引入重库） */
-function renderMarkdown(text: string): React.ReactNode {
+function renderMarkdown(text: string, showToast?: (msg: string, type?: any) => void): React.ReactNode {
   if (!text) return null;
   const parts = text.split(/```(?:json|yaml|bash|shell|sh)?\n?/);
   return parts.map((part, i) => {
     if (i % 2 === 1) {
+      const code = part.replace(/\n$/, '');
       return (
         <pre className="ai-assistant__code" key={i}>
-          <code>{part.replace(/\n$/, '')}</code>
+          <button
+            className="ai-assistant__code-copy"
+            title="复制代码"
+            onClick={() => {
+              navigator.clipboard.writeText(code);
+              showToast?.('已复制', 'success');
+            }}
+          >
+            复制
+          </button>
+          <code>{code}</code>
         </pre>
       );
     }
@@ -413,7 +424,7 @@ export default function AiAssistantPage() {
                     >
                       {m.role === 'assistant' ? (
                         <>
-                          {renderMarkdown(m.content)}
+                          {renderMarkdown(m.content, showToast)}
                           <button
                             className="ai-assistant__copy"
                             title="复制"

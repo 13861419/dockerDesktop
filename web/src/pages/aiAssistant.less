@@ -381,6 +381,31 @@
   overflow-x: auto;
   margin: 4px 0;
   white-space: pre-wrap;
+  position: relative;
+}
+
+.ai-assistant__code-copy {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.ai-assistant__code-copy:hover {
+  color: var(--primary, #6366f1);
+  border-color: var(--primary, #6366f1);
+}
+
+.ai-assistant__code:hover .ai-assistant__code-copy {
+  display: block;
 }
 
 .ai-assistant__composer {
