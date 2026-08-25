@@ -48,11 +48,7 @@ const DEFAULT_TIMEOUT_MS = 60000;
 /** 允许的 baseUrl 前缀白名单（SSRF 防护） */
 function isAllowedBaseUrl(url: string): boolean {
   if (!url) return false;
-  if (url.startsWith('https://')) return true;
-  if (url.startsWith('http://localhost')) return true;
-  if (url.startsWith('http://127.0.0.1')) return true;
-  if (url.startsWith('http://[::1]')) return true;
-  return false;
+  return url.startsWith('https://') || url.startsWith('http://');
 }
 
 /** 读取配置行（不存在则返回默认关闭态，不落库） */
@@ -109,7 +105,7 @@ export function assertAiEnabled(): AiConfig {
  */
 export function assertValidBaseUrl(url: string): void {
   if (!isAllowedBaseUrl(url)) {
-    const e: any = new Error('baseUrl 仅允许 https:// 或本机 http://localhost');
+    const e: any = new Error('baseUrl 仅允许 http:// 或 https://');
     e.statusCode = 400;
     throw e;
   }

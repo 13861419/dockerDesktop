@@ -118,17 +118,13 @@ function hasChangedBaseUrl(prev: string, next: string | undefined): boolean {
 }
 
 /**
- * 校验 baseUrl 合法（SSRF 防护）。本地回环或 https 均可。
+ * 校验 baseUrl 合法（SSRF 防护）。允许 http/https 协议。
  */
 export function assertValidBaseUrl(url: string): void {
   if (!url) return;
-  const ok =
-    url.startsWith('https://') ||
-    url.startsWith('http://localhost') ||
-    url.startsWith('http://127.0.0.1') ||
-    url.startsWith('http://[::1]');
+  const ok = url.startsWith('https://') || url.startsWith('http://');
   if (!ok) {
-    const e: any = new Error('baseUrl 仅允许 https:// 或本机 http://localhost');
+    const e: any = new Error('baseUrl 仅允许 http:// 或 https://');
     e.statusCode = 400;
     throw e;
   }

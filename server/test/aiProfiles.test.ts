@@ -71,10 +71,13 @@ test('createProfile 首条自动设默认', () => {
 
 test('createProfile 校验 baseUrl（SSRF）', () => {
   resetProfiles();
-  assert.throws(() => createProfile({ baseUrl: 'http://192.168.1.5/v1' }), /仅允许/);
-  assert.throws(() => createProfile({ baseUrl: 'http://example.com/v1' }), /仅允许/);
+  // 非 http/https 协议应拒绝
+  assert.throws(() => createProfile({ baseUrl: 'ftp://example.com/v1' }), /仅允许/);
+  assert.throws(() => createProfile({ baseUrl: 'javascript:alert(1)' }), /仅允许/);
   // 合法值不抛
   assert.doesNotThrow(() => createProfile({ baseUrl: 'https://api.openai.com/v1' }));
+  assert.doesNotThrow(() => createProfile({ baseUrl: 'http://192.168.1.5/v1' }));
+  assert.doesNotThrow(() => createProfile({ baseUrl: 'http://example.com/v1' }));
   assert.doesNotThrow(() => createProfile({ baseUrl: 'http://127.0.0.1:9119/v1' }));
 });
 
