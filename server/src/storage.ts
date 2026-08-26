@@ -538,6 +538,18 @@ function createTables(): void {
       updated_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_session_user ON ai_chat_sessions(username, updated_at);
+
+    CREATE TABLE IF NOT EXISTS ai_prompt_templates (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      category    TEXT NOT NULL DEFAULT '通用',
+      prompt      TEXT NOT NULL,
+      is_system   INTEGER NOT NULL DEFAULT 0,  -- 1=预置模板（不可删除）
+      username    TEXT NOT NULL DEFAULT '',     -- 用户自定义模板归属
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_template_user ON ai_prompt_templates(username, category);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

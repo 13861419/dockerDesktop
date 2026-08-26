@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -105,6 +105,10 @@ export default function AiAssistantPage() {
   const [showUsage, setShowUsage] = useState(false);
   const [usage, setUsage] = useState<AiUsageResponse | null>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
+
+  const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
+  const [templateCategories, setTemplateCategories] = useState<string[]>([]);
+  const [templateCategory, setTemplateCategory] = useState('');
 
   const loadUsage = useCallback(async () => {
     setLoadingUsage(true);
@@ -225,6 +229,12 @@ export default function AiAssistantPage() {
       setCurrentModelId(s.defaultProfile?.id ?? null);
       const caps = await get<{ available: boolean; capabilities: AiCapability[] }>('/api/ai/capabilities');
       setCapabilities(caps.capabilities || []);
+      const [tplRes, catRes] = await Promise.all([
+        get<{ templates: AiPromptTemplate[] }>('/api/ai/templates'),
+        get<{ categories: string[] }>('/api/ai/templates/categories'),
+      ]);
+      setTemplates(tplRes.templates || []);
+      setTemplateCategories(catRes.categories || []);
     } catch (e: any) {
       showToast(e?.message || '加载数据失败', 'error');
     } finally {
@@ -886,7 +896,34 @@ export default function AiAssistantPage() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+              ))}
+              <div className="ai-assistant__side-title" style={{ marginTop: 16 }}>Prompt 模板</div>
+              {templateCategories.length > 0 && (
+                <Select
+                  className="ai-assistant__cap-input"
+                  value={templateCategory}
+                  onChange={(e: any) => setTemplateCategory(e.target.value)}
+                >
+                  <option value="">全部分类</option>
+                  {templateCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </Select>
+              )}
+              {templates
+                .filter((t) => !templateCategory || t.category === templateCategory)
+                .map((t) => (
+                  <div className="ai-assistant__cap" key={t.id}>
+                    <div className="ai-assistant__cap-label">
+                      {t.name}
+                      {t.isSystem && <span className="ai-assistant__cap-tag">预置</span>}
+                    </div>
+                    <div className="ai-assistant__cap-desc">{t.category} · {t.prompt.slice(0, 40)}…</div>
+                    <Button size="sm" onClick={() => { setInput(t.prompt); }}>
+                      使用
+                    </Button>
+                  </div>
+                ))}
                       </tbody>
                     </table>
                   </div>

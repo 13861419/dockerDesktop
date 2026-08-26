@@ -1117,3 +1117,21 @@ export interface TopologyResponse {
   counts: { containers: number; networks: number };
   truncated?: boolean;
 }
+
+/** AI Prompt 模板 */
+export interface AiPromptTemplate {
+  id: number;
+  name: string;
+  category: string;
+  prompt: string;
+  isSystem: boolean;
+  username: string;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface AiTemplatesResponse {
+  templates: AiPromptTemplate[];
+}
+export interface AiTemplateCategoriesResponse {
+  categories: string[];
+}

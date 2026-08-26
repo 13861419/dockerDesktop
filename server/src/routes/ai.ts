@@ -50,6 +50,14 @@ import {
   updateChatSessionMessages,
   deleteChatSession,
 } from '../aiChatHistory';
+import {
+  listTemplates,
+  getTemplate,
+  listTemplateCategories,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+} from '../aiTemplates';
 
 const router = Router();
 
@@ -775,6 +783,97 @@ router.delete(
     const ok = deleteChatSession(id, res.locals.username);
     if (!ok) return res.status(404).json({ error: '会话不存在' });
     logOperation(res.locals.username, '删除 AI 对话', 'ai', null, `session#${id}`);
+    res.json({ ok: true });
+  }),
+);
+
+// ============ Prompt 模板 ============
+
+/**
+ * GET /api/ai/templates
+ * 获取模板列表（可选 ?category=xxx 按分类过滤）
+ */
+router.get(
+  '/templates',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+    const templates = listTemplates(category, res.locals.username);
+    res.json({ templates });
+  }),
+);
+
+/**
+ * GET /api/ai/templates/categories
+ * 获取所有分类
+ */
+router.get(
+  '/templates/categories',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const categories = listTemplateCategories();
+    res.json({ categories });
+  }),
+);
+
+/**
+ * POST /api/ai/templates
+ * 创建自定义模板
+ */
+router.post(
+  '/templates',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body || {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    if (!name || !prompt) {
+      const e: any = new Error('名称和 prompt 内容不能为空');
+      e.statusCode = 400;
+      throw e;
+    }
+    const category = typeof body.category === 'string' ? body.category.trim() : '自定义';
+    const t = createTemplate({ name, category, prompt, username: res.locals.username });
+    logOperation(res.locals.username, '创建 AI 模板', 'ai', null, `模板#${t.id}: ${t.name}`);
+    res.json({ template: t });
+  }),
+);
+
+/**
+ * PUT /api/ai/templates/:id
+ * 更新自定义模板（预置模板不可修改）
+ */
+router.put(
+  '/templates/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的模板 ID' });
+    const body = req.body || {};
+    const input: { name?: string; category?: string; prompt?: string } = {};
+    if (body.name !== undefined) input.name = String(body.name).trim();
+    if (body.category !== undefined) input.category = String(body.category).trim();
+    if (body.prompt !== undefined) input.prompt = String(body.prompt).trim();
+    const t = updateTemplate(id, input, res.locals.username);
+    if (!t) return res.status(404).json({ error: '模板不存在、是预置模板或无权修改' });
+    logOperation(res.locals.username, '更新 AI 模板', 'ai', null, `模板#${t.id}: ${t.name}`);
+    res.json({ template: t });
+  }),
+);
+
+/**
+ * DELETE /api/ai/templates/:id
+ * 删除自定义模板（预置模板不可删除）
+ */
+router.delete(
+  '/templates/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的模板 ID' });
+    const ok = deleteTemplate(id, res.locals.username);
+    if (!ok) return res.status(404).json({ error: '模板不存在、是预置模板或无权删除' });
+    logOperation(res.locals.username, '删除 AI 模板', 'ai', null, `模板#${id}`);
     res.json({ ok: true });
   }),
 );
