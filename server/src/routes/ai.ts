@@ -16,7 +16,6 @@
 import { Router, Request, Response } from 'express';
 import {
   getAiConfig,
-  assertAiEnabled,
   updateAiConfig,
   buildSystemPrompt,
   chatCompletion,
@@ -24,6 +23,7 @@ import {
   testAiConnection,
   profileToAiConfig,
 } from '../aiClient';
+import type { AiConfig } from '../aiClient';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -36,6 +36,7 @@ import {
   setDefaultProfile,
   assertValidBaseUrl,
 } from '../aiProfiles';
+import type { AiProfilePublic } from '../aiProfiles';
 import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
@@ -88,29 +89,27 @@ function profileAiConfig() {
   return cfg;
 }
 
-/** /chat 用配置：优先默认 profile，否则回退旧单套配置；两者皆不可用抛 503 */
-function assertChatConfig() {
-  const prof = getDefaultProfile();
-  if (prof) {
-    if (!prof.baseUrl || !prof.model) {
-      const e: any = new Error('AI 助手默认配置未完成（缺少 baseUrl 或模型）');
-      e.statusCode = 503;
-      throw e;
-    }
-    return profileAiConfig()!;
-  }
-  // 无默认 profile：回退旧单套配置
-  return assertAiEnabled();
-}
-
 /** 当前默认 profile 元数据（用于用量记录的 provider 归集）；无则回退） */
-function aiProfileMeta() {
-  const prof = getDefaultProfile();
+function aiProfileMeta(profile?: AiProfilePublic | null) {
+  const prof = profile ?? getDefaultProfile();
   return {
     id: prof?.id ?? null,
     provider: prof?.provider || '',
     model: prof?.model || '',
   };
+}
+
+/** 获取所有可用 profile 转为 AiConfig（按优先级排序，默认在前） */
+function buildCandidateConfigs(): Array<{ cfg: AiConfig; profile: AiProfilePublic }> {
+  const profiles = listProfiles();
+  const out: Array<{ cfg: AiConfig; profile: AiProfilePublic }> = [];
+  for (const p of profiles) {
+    if (!p.baseUrl || !p.model) continue;
+    const cfg = profileToAiConfig(p);
+    cfg.apiKey = getProfileApiKey(p.id);
+    out.push({ cfg, profile: p });
+  }
+  return out;
 }
 
 /** 工具能力清单（供前端快捷入口渲染） */
@@ -400,7 +399,7 @@ router.get(
  * 解析对话请求：校验 + 采集 tool 上下文 + 构造最终消息（chat / chat/stream 共用）
  * @returns { finalMessages, toolContext, tool }
  */
-async function resolveChatRequest(req: Request, res: Response, cfg: ReturnType<typeof assertChatConfig>) {
+async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
   const body = req.body || {};
   const messages = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) {
@@ -462,42 +461,63 @@ router.post(
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     ensureAiProfiles();
-    const cfg = assertChatConfig();
-    const { finalMessages, toolContext, tool, historyCount } = await resolveChatRequest(req, res, cfg);
+    const candidates = buildCandidateConfigs();
+    if (candidates.length === 0) {
+      const e: any = new Error('AI 助手未配置（缺少可用的模型配置）');
+      e.statusCode = 503;
+      throw e;
+    }
+
+    // 提前解析请求（上下文采集与 profile 无关，只做一次）
+    const { finalMessages: baseMsgs, toolContext, tool, historyCount } = await resolveChatRequest(req, res, candidates[0].cfg);
 
     const username = res.locals.username;
-    const meta = aiProfileMeta();
-    const promptChars = finalMessages.reduce((n: number, m: any) => n + String(m.content || '').length, 0);
+    const promptChars = baseMsgs.reduce((n: number, m: any) => n + String(m.content || '').length, 0);
+    const promptEst = estimateTokens(baseMsgs.map((m: any) => m.content).join('\n'));
     let reply = '';
-    try {
-      reply = await chatCompletion(cfg, finalMessages);
-      logOperation(username, 'AI 对话', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
-      recordAiUsage({
-        profileId: meta.id,
-        provider: meta.provider || cfg.baseUrl,
-        model: cfg.model,
-        tool: tool || 'chat',
-        promptTokens: estimateTokens(finalMessages.map((m: any) => m.content).join('\n')),
-        completionTokens: estimateTokens(reply),
-        totalTokens: estimateTokens(finalMessages.map((m: any) => m.content).join('\n')) + estimateTokens(reply),
-        promptChars,
-        completionChars: reply.length,
-        success: true,
-        username,
-      });
-    } catch (err: any) {
-      recordAiUsage({
-        profileId: meta.id,
-        provider: meta.provider || cfg.baseUrl,
-        model: cfg.model,
-        tool: tool || 'chat',
-        success: false,
-        errorMessage: err?.message || '未知错误',
-        username,
-      });
-      throw err;
+    let usedProfile: AiProfilePublic = candidates[0].profile;
+    let fallback = false;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const { cfg, profile } = candidates[i];
+      if (i > 0) fallback = true;
+      const sysMsgs = buildSystemPrompt(cfg, '', '');
+      const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
+      try {
+        reply = await chatCompletion(cfg, finalMessages);
+        usedProfile = profile;
+        break;
+      } catch (err: any) {
+        recordAiUsage({
+          profileId: profile.id,
+          provider: profile.provider || cfg.baseUrl,
+          model: cfg.model,
+          tool: tool || 'chat',
+          success: false,
+          errorMessage: `[故障转移] ${err?.message || '未知错误'}`,
+          username,
+        });
+        if (i === candidates.length - 1) throw err;
+      }
     }
-    res.json({ enabled: true, reply, toolContext });
+
+    const meta = aiProfileMeta(usedProfile);
+    logOperation(username, 'AI 对话', 'ai', null,
+      `tool=${tool || 'chat'}，${historyCount} 轮消息${fallback ? '（故障转移）' : ''}`);
+    recordAiUsage({
+      profileId: meta.id,
+      provider: meta.provider || usedProfile.baseUrl,
+      model: usedProfile.model,
+      tool: tool || 'chat',
+      promptTokens: promptEst,
+      completionTokens: estimateTokens(reply),
+      totalTokens: promptEst + estimateTokens(reply),
+      promptChars,
+      completionChars: reply.length,
+      success: true,
+      username,
+    });
+    res.json({ enabled: true, reply, toolContext, fallback });
   }),
 );
 
@@ -522,26 +542,24 @@ router.post(
 
     const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
-    let cfg;
-    try {
-      cfg = assertChatConfig();
-    } catch (err: any) {
-      send({ type: 'error', message: err?.message || 'AI 未配置或不可用' });
+    const candidates = buildCandidateConfigs();
+    if (candidates.length === 0) {
+      send({ type: 'error', message: 'AI 助手未配置（缺少可用的模型配置）' });
       return res.end();
     }
 
+    // 提前解析请求（上下文采集与 profile 无关）
     let toolContext: string | undefined;
     let tool = '';
     let historyCount = 0;
-    let finalMessages;
-    let username = res.locals.username;
+    let baseMsgs;
+    const username = res.locals.username;
     try {
-      const r = await resolveChatRequest(req, res, cfg);
-      finalMessages = r.finalMessages;
+      const r = await resolveChatRequest(req, res, candidates[0].cfg);
+      baseMsgs = r.finalMessages;
       toolContext = r.toolContext;
       tool = r.tool;
       historyCount = r.historyCount;
-      username = res.locals.username;
     } catch (err: any) {
       send({ type: 'error', message: err?.message || '请求错误' });
       return res.end();
@@ -551,53 +569,86 @@ router.post(
       send({ type: 'context', toolContext });
     }
 
-    const promptText = finalMessages.map((m: any) => m.content).join('\n');
-    const promptChars = promptText.length;
-    const promptEst = estimateTokens(promptText);
-    const meta = aiProfileMeta();
-    const provider = meta.provider || cfg.baseUrl;
-    const model = cfg.model;
-    let full = '';
+    // 故障转移：逐个尝试候选配置，首个成功即锁定
+    let usedProfile: AiProfilePublic = candidates[0].profile;
+    let fallback = false;
+    let firstChunk: string | null = null;
+    let streamGen: AsyncGenerator<string, void, unknown> | null = null;
     const capturedUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } = {};
-    try {
-      for await (const chunk of chatCompletionStream(cfg, finalMessages, (u) => {
-        if (u.prompt_tokens !== undefined) capturedUsage.prompt_tokens = u.prompt_tokens;
-        if (u.completion_tokens !== undefined) capturedUsage.completion_tokens = u.completion_tokens;
-        if (u.total_tokens !== undefined) capturedUsage.total_tokens = u.total_tokens;
-      })) {
-        full += chunk;
-        send({ type: 'chunk', text: chunk });
+
+    for (let i = 0; i < candidates.length; i++) {
+      const { cfg, profile } = candidates[i];
+      if (i > 0) fallback = true;
+      const sysMsgs = buildSystemPrompt(cfg, '', '');
+      const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
+      try {
+        const gen = chatCompletionStream(cfg, finalMessages, (u) => {
+          if (u.prompt_tokens !== undefined) capturedUsage.prompt_tokens = u.prompt_tokens;
+          if (u.completion_tokens !== undefined) capturedUsage.completion_tokens = u.completion_tokens;
+          if (u.total_tokens !== undefined) capturedUsage.total_tokens = u.total_tokens;
+        });
+        const first = await gen.next();
+        if (!first.done && first.value) {
+          firstChunk = first.value;
+          streamGen = gen;
+          usedProfile = profile;
+          break;
+        }
+      } catch (err: any) {
+        recordAiUsage({
+          profileId: profile.id,
+          provider: profile.provider || cfg.baseUrl,
+          model: cfg.model,
+          tool: tool || 'chat',
+          success: false,
+          errorMessage: `[故障转移] ${err?.message || '未知错误'}`,
+          username,
+        });
+        if (i === candidates.length - 1) {
+          send({ type: 'error', message: err?.message || '流式响应失败' });
+          return res.end();
+        }
       }
-      send({ type: 'done' });
-      logOperation(username, 'AI 对话（流式）', 'ai', null, `tool=${tool || 'chat'}，${historyCount} 轮消息`);
-      recordAiUsage({
-        profileId: meta.id,
-        provider,
-        model,
-        tool: tool || 'chat',
-        promptTokens: capturedUsage.prompt_tokens ?? promptEst,
-        completionTokens: capturedUsage.completion_tokens ?? estimateTokens(full),
-        totalTokens: capturedUsage.total_tokens ?? promptEst + estimateTokens(full),
-        promptChars,
-        completionChars: full.length,
-        success: true,
-        username,
-      });
-    } catch (err: any) {
-      recordAiUsage({
-        profileId: meta.id,
-        provider,
-        model,
-        tool: tool || 'chat',
-        promptTokens: capturedUsage.prompt_tokens ?? promptEst,
-        completionTokens: capturedUsage.completion_tokens ?? estimateTokens(full),
-        promptChars,
-        completionChars: full.length,
-        success: false,
-        errorMessage: err?.message || '未知错误',
-        username,
-      });
-      send({ type: 'error', message: err?.message || '流式响应失败' });
+    }
+
+    // 流式输出已锁定的 stream
+    if (streamGen && firstChunk !== null) {
+      let full = firstChunk;
+      send({ type: 'chunk', text: firstChunk });
+      try {
+        for await (const chunk of streamGen) {
+          full += chunk;
+          send({ type: 'chunk', text: chunk });
+        }
+        send({ type: 'done' });
+        const meta = aiProfileMeta(usedProfile);
+        logOperation(username, 'AI 对话（流式）', 'ai', null,
+          `tool=${tool || 'chat'}，${historyCount} 轮消息${fallback ? '（故障转移）' : ''}`);
+        recordAiUsage({
+          profileId: meta.id,
+          provider: meta.provider || usedProfile.baseUrl,
+          model: usedProfile.model,
+          tool: tool || 'chat',
+          promptTokens: capturedUsage.prompt_tokens ?? estimateTokens(full),
+          completionTokens: capturedUsage.completion_tokens ?? estimateTokens(full),
+          totalTokens: capturedUsage.total_tokens ?? estimateTokens(full) + estimateTokens(full),
+          promptChars: baseMsgs.reduce((n: number, m: any) => n + String(m.content || '').length, 0),
+          completionChars: full.length,
+          success: true,
+          username,
+        });
+      } catch (err: any) {
+        recordAiUsage({
+          profileId: null,
+          provider: usedProfile.provider || usedProfile.baseUrl,
+          model: usedProfile.model,
+          tool: tool || 'chat',
+          success: false,
+          errorMessage: err?.message || '流式传输中断',
+          username,
+        });
+        send({ type: 'error', message: err?.message || '流式响应失败' });
+      }
     }
     res.end();
   }),
