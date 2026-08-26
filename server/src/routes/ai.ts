@@ -24,6 +24,7 @@ import {
   profileToAiConfig,
   parseActionsFromResponse,
   ACTION_SUGGEST_INSTRUCTION,
+  getLocalModelStatus,
 } from '../aiClient';
 import type { AiConfig } from '../aiClient';
 import {
@@ -863,6 +864,21 @@ router.delete(
     clearCache();
     logOperation(res.locals.username, '清空 AI 缓存', 'ai', null, '已清空全部 AI 语义缓存');
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/ai/local/status
+ * 检查本地模型服务状态（Ollama / vLLM / LM Studio）
+ */
+router.post(
+  '/local/status',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const baseUrl = req.body?.baseUrl || '';
+    if (!baseUrl) return res.status(400).json({ error: '请提供 baseUrl' });
+    const status = await getLocalModelStatus(baseUrl);
+    res.json(status);
   }),
 );
 

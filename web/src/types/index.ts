@@ -1161,3 +1161,11 @@ export interface AiActionStats {
   executed: number;
   failed: number;
 }
+
+// 本地模型状态
+export interface AiLocalModelStatus {
+  ok: boolean;
+  message: string;
+  models: Array<{ id: string; name: string; size?: number }>;
+  serviceInfo?: Record<string, unknown>;
+}

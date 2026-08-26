@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -129,6 +129,9 @@ export default function AiAssistantPage() {
   const [actionView, setActionView] = useState<'pending' | 'all'>('pending');
   const [loadingActions, setLoadingActions] = useState(false);
 
+  const [localStatus, setLocalStatus] = useState<AiLocalModelStatus | null>(null);
+  const [checkingLocal, setCheckingLocal] = useState(false);
+
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
   const [templateCategory, setTemplateCategory] = useState('');
@@ -188,6 +191,22 @@ export default function AiAssistantPage() {
       showToast(e?.message || '操作失败', 'error');
     }
   }, [loadActions, showToast]);
+
+  const checkLocalStatus = useCallback(async () => {
+    const url = configForm.baseUrl.trim();
+    if (!url) { showToast('请先填写 Base URL', 'error'); return; }
+    setCheckingLocal(true);
+    try {
+      const s = await post<AiLocalModelStatus>('/api/ai/local/status', { baseUrl: url });
+      setLocalStatus(s);
+      if (s.ok) showToast(`检测成功：发现 ${s.models.length} 个模型`, 'success');
+      else showToast(s.message, 'error');
+    } catch (e: any) {
+      showToast(e?.message || '检测失败', 'error');
+    } finally {
+      setCheckingLocal(false);
+    }
+  }, [configForm.baseUrl, showToast]);
 
   const handleClearUsage = useCallback(async () => {
     try {
@@ -849,11 +868,30 @@ export default function AiAssistantPage() {
                       />
                     </Field>
                     <Field label="Base URL" required hint="OpenAI 兼容端点，如 https://api.openai.com/v1">
-                      <Input
-                        value={configForm.baseUrl}
-                        onChange={(e: any) => setConfigForm((f) => ({ ...f, baseUrl: e.target.value }))}
-                      />
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Input
+                          value={configForm.baseUrl}
+                          onChange={(e: any) => setConfigForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                          style={{ flex: 1 }}
+                        />
+                        <Button size="sm" variant="ghost" onClick={checkLocalStatus} disabled={checkingLocal}>
+                          {checkingLocal ? '检测中...' : '检测本地服务'}
+                        </Button>
+                      </div>
                     </Field>
+                    {localStatus && (
+                      <div style={{ padding: '6px 0', fontSize: 13 }}>
+                        <span className={`ai-assistant__cap-tag is-${localStatus.ok ? 'cloud' : 'off'}`}>
+                          {localStatus.ok ? '连通' : '未连通'}
+                        </span>
+                        {localStatus.ok && localStatus.models.length > 0 && (
+                          <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                            模型：{localStatus.models.map((m) => m.name).join(', ')}
+                          </span>
+                        )}
+                        {!localStatus.ok && <span style={{ marginLeft: 8, opacity: 0.6 }}>{localStatus.message}</span>}
+                      </div>
+                    )}
                     <Field label="模型" required>
                       <Input
                         value={configForm.model}

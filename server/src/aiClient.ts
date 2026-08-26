@@ -497,6 +497,41 @@ export async function testAiConnection(cfg?: AiConfig): Promise<{ ok: boolean; m
   }
 }
 
+/**
+ * 获取本地模型服务状态（Ollama / vLLM / LM Studio 等 OpenAI 兼容服务）
+ * 返回：连通性、可用模型列表、服务信息
+ */
+export async function getLocalModelStatus(baseUrl: string): Promise<{
+  ok: boolean;
+  message: string;
+  models: Array<{ id: string; name: string; size?: number }>;
+  serviceInfo?: Record<string, unknown>;
+}> {
+  if (!baseUrl) return { ok: false, message: '未配置 baseUrl', models: [] };
+  if (!isAllowedBaseUrl(baseUrl)) return { ok: false, message: 'baseUrl 需为 https:// 或本机 http://localhost', models: [] };
+
+  const modelsUrl = baseUrl.replace(/\/+$/, '') + '/v1/models';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const resp = await fetch(modelsUrl, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return { ok: false, message: `HTTP ${resp.status}`, models: [] };
+    const data = await resp.json() as any;
+    const models = (data.data || []).map((m: any) => ({
+      id: m.id,
+      name: m.id,
+      size: m.size || undefined,
+    }));
+    return { ok: true, message: `发现 ${models.length} 个模型`, models, serviceInfo: data };
+  } catch (err: any) {
+    return { ok: false, message: err?.message || '无法连接本地模型服务', models: [] };
+  }
+}
+
 /** 是否至少已配置基础项（baseUrl+model+apiKey，但 enabled 可为 false），供前端「配置卡」判断 */
 export function hasConfiguredCredentials(): boolean {
   return hasConfigured(getAiConfig());
