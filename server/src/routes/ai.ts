@@ -22,6 +22,8 @@ import {
   chatCompletionStream,
   testAiConnection,
   profileToAiConfig,
+  parseActionsFromResponse,
+  ACTION_SUGGEST_INSTRUCTION,
 } from '../aiClient';
 import type { AiConfig } from '../aiClient';
 import {
@@ -43,6 +45,7 @@ import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
 import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage } from '../aiUsage';
 import { getCache, setCache, getCacheStats, clearCache } from '../aiCache';
+import { createAction, listPendingActions, getAction, approveAction, rejectAction, markExecuted, getActionStats, ACTION_TYPE_LABELS } from '../aiActions';
 import {
   listChatSessions,
   getChatSession,
@@ -563,6 +566,8 @@ router.post(
         continue;
       }
       const sysMsgs = buildSystemPrompt(cfg, '', '');
+      // 追加 action 建议指令（仅非流式）
+      sysMsgs[0] = { role: 'system' as const, content: sysMsgs[0].content + ACTION_SUGGEST_INSTRUCTION };
       const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
       try {
         reply = await chatCompletion(cfg, finalMessages);
@@ -587,6 +592,19 @@ router.post(
 
     } // end cache else
 
+    // 解析 action 块并存入数据库
+    const { text: cleanReply, actions: parsedActions } = parseActionsFromResponse(reply);
+    const createdActions: Array<{ id: number; type: string; label: string }> = [];
+    for (const pa of parsedActions) {
+      try {
+        const action = createAction(username, pa.type, pa.params, cleanReply);
+        createdActions.push({ id: action.id, type: pa.type, label: ACTION_TYPE_LABELS[pa.type] || pa.type });
+      } catch { /* 忽略写入失败 */ }
+    }
+    if (createdActions.length > 0) {
+      reply = cleanReply; // 返回清理后的纯文本
+    }
+
     const meta = aiProfileMeta(usedProfile);
     logOperation(username, 'AI 对话', 'ai', null,
       `tool=${tool || 'chat'}，${historyCount} 轮消息${fallback ? '（故障转移）' : ''}`);
@@ -603,7 +621,7 @@ router.post(
       success: true,
       username,
     });
-    res.json({ enabled: true, reply, toolContext, fallback });
+    res.json({ enabled: true, reply, toolContext, fallback, actions: createdActions.length > 0 ? createdActions : undefined });
   }),
 );
 
@@ -845,6 +863,92 @@ router.delete(
     clearCache();
     logOperation(res.locals.username, '清空 AI 缓存', 'ai', null, '已清空全部 AI 语义缓存');
     res.json({ ok: true });
+  }),
+);
+
+// ============ Action 审批 ============
+
+/**
+ * GET /api/ai/actions
+ * 查询待审批操作列表
+ */
+router.get(
+  '/actions',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const status = req.query.status as string | undefined;
+    const username = res.locals.username;
+    let actions;
+    if (status === 'all') {
+      const d = require('../storage').getDb();
+      const rows = d.prepare('SELECT * FROM ai_actions WHERE username = ? ORDER BY created_at DESC LIMIT 50').all(username);
+      actions = rows.map((r: any) => ({
+        id: r.id,
+        username: r.username,
+        actionType: r.action_type,
+        params: JSON.parse(r.params || '{}'),
+        status: r.status,
+        aiMessage: r.ai_message,
+        result: r.result,
+        createdAt: r.created_at,
+        resolvedAt: r.resolved_at,
+      }));
+    } else {
+      actions = listPendingActions(username);
+    }
+    res.json({ actions, actionTypes: ACTION_TYPE_LABELS });
+  }),
+);
+
+/**
+ * GET /api/ai/actions/stats
+ * 操作审批统计
+ */
+router.get(
+  '/actions/stats',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(getActionStats());
+  }),
+);
+
+/**
+ * POST /api/ai/actions/:id/approve
+ * 批准操作
+ */
+router.post(
+  '/actions/:id/approve',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的 ID' });
+    const action = getAction(id);
+    if (!action) return res.status(404).json({ error: '操作不存在' });
+    if (action.username !== res.locals.username) return res.status(403).json({ error: '无权操作' });
+    if (action.status !== 'pending') return res.status(400).json({ error: '该操作已处理' });
+    const updated = approveAction(id);
+    logOperation(res.locals.username, '批准 AI 操作', 'ai', null, `操作 #${id}: ${ACTION_TYPE_LABELS[action.actionType] || action.actionType}`);
+    res.json({ ok: true, action: updated });
+  }),
+);
+
+/**
+ * POST /api/ai/actions/:id/reject
+ * 拒绝操作
+ */
+router.post(
+  '/actions/:id/reject',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的 ID' });
+    const action = getAction(id);
+    if (!action) return res.status(404).json({ error: '操作不存在' });
+    if (action.username !== res.locals.username) return res.status(403).json({ error: '无权操作' });
+    if (action.status !== 'pending') return res.status(400).json({ error: '该操作已处理' });
+    const updated = rejectAction(id);
+    logOperation(res.locals.username, '拒绝 AI 操作', 'ai', null, `操作 #${id}: ${ACTION_TYPE_LABELS[action.actionType] || action.actionType}`);
+    res.json({ ok: true, action: updated });
   }),
 );
 

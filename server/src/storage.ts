@@ -562,6 +562,19 @@ function createTables(): void {
       expires_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_cache_hash ON ai_cache(prompt_hash, expires_at);
+
+    CREATE TABLE IF NOT EXISTS ai_actions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      username    TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      params      TEXT NOT NULL DEFAULT '{}',
+      status      TEXT NOT NULL DEFAULT 'pending',
+      ai_message  TEXT NOT NULL DEFAULT '',
+      result      TEXT NOT NULL DEFAULT '',
+      created_at  INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_actions_user_status ON ai_actions(username, status);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）

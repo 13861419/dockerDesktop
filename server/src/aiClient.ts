@@ -213,6 +213,40 @@ export function buildSystemPrompt(cfg: AiConfig, context: string, userText: stri
 }
 
 /**
+ * 解析 AI 响应中的 [ACTION:type:json] 块
+ * 返回 { text, actions } — text 为清理后的纯文本，actions 为解析出的操作列表
+ */
+export function parseActionsFromResponse(response: string): { text: string; actions: Array<{ type: string; params: Record<string, unknown> }> } {
+  const actions: Array<{ type: string; params: Record<string, unknown> }> = [];
+  const cleaned = response.replace(/\[ACTION:(\w+):(\{.*?\})\]/g, (_match, type: string, jsonStr: string) => {
+    try {
+      const params = JSON.parse(jsonStr);
+      actions.push({ type, params });
+    } catch {
+      // 解析失败则保留原文
+      return _match;
+    }
+    return '';
+  }).replace(/\n{3,}/g, '\n\n').trim();
+  return { text: cleaned, actions };
+}
+
+/**
+ * 构造 action 建议指令，追加到系统 prompt 中
+ */
+export const ACTION_SUGGEST_INSTRUCTION =
+  '\n\n当你的回答中包含建议执行的 Docker 运维操作时，请在回答末尾用以下格式列出操作（每个操作一行）：\n' +
+  '[ACTION:操作类型:{"参数名":"参数值"}]\n\n' +
+  '支持的操作类型：\n' +
+  '- restart_container: {"containerId":"容器ID或名称"}\n' +
+  '- stop_container: {"containerId":"容器ID或名称"}\n' +
+  '- start_container: {"containerId":"容器ID或名称"}\n' +
+  '- remove_container: {"containerId":"容器ID或名称"}\n' +
+  '- remove_image: {"imageId":"镜像ID或名称"}\n' +
+  '- system_prune: {}\n\n' +
+  '只有在用户明确要求执行操作，且操作安全可行时才输出。不要凭空建议删除或重启。';
+
+/**
  * 构造 OpenAI 兼容 /chat/completions 的请求体（纯函数，便于单测）
  * @param model 模型名
  * @param messages 消息
