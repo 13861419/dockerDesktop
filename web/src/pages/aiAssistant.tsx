@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -97,6 +97,11 @@ export default function AiAssistantPage() {
   const [containers, setContainers] = useState<ContainerListItem[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
 
+  // 对话历史（会话持久化）
+  const [sessions, setSessions] = useState<AiChatSessionLite[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+
   const [showUsage, setShowUsage] = useState(false);
   const [usage, setUsage] = useState<AiUsageResponse | null>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
@@ -128,6 +133,83 @@ export default function AiAssistantPage() {
     }
   }, [loadUsage, showToast]);
 
+  const refreshSessions = useCallback(async () => {
+    try {
+      const r = await get<{ sessions: AiChatSessionLite[] }>('/api/ai/sessions');
+      setSessions(r.sessions || []);
+    } catch {
+      // 静默：历史加载失败不阻断页面
+    } finally {
+      setSessionsLoaded(true);
+    }
+  }, []);
+
+  const switchToNewSession = useCallback(() => {
+    setCurrentSessionId(null);
+    setMessages([]);
+    messagesRef.current = [];
+  }, []);
+
+  const openSession = useCallback(
+    async (id: number) => {
+      try {
+        const s = await get<AiChatSession>(`/api/ai/sessions/${id}`);
+        setCurrentSessionId(s.id);
+        setMessages(s.messages || []);
+        messagesRef.current = s.messages || [];
+      } catch (e: any) {
+        showToast(e?.message || '加载会话失败', 'error');
+      }
+    },
+    [showToast],
+  );
+
+  const newSession = useCallback(async () => {
+    try {
+      const created = await post<AiChatSession>('/api/ai/sessions');
+      setCurrentSessionId(created.id);
+      setMessages([]);
+      messagesRef.current = [];
+      setSessions((list) => [
+        { id: created.id, title: created.title, messageCount: 0, tool: created.tool, target: created.target, createdAt: created.createdAt, updatedAt: created.updatedAt },
+        ...list,
+      ]);
+    } catch (e: any) {
+      showToast(e?.message || '新建会话失败', 'error');
+    }
+  }, [showToast]);
+
+  const saveSession = useCallback(
+    async (id: number, msgs: ChatMsg[]) => {
+      try {
+        await put(`/api/ai/sessions/${id}`, { messages: msgs });
+        setSessions((list) =>
+          list.map((s) => (s.id === id ? { ...s, messageCount: msgs.length, updatedAt: Date.now() } : s)),
+        );
+      } catch {
+        // 静默：保存失败不打扰用户
+      }
+    },
+    [],
+  );
+
+  const deleteCurrentSession = useCallback(async () => {
+    if (currentSessionId == null) {
+      switchToNewSession();
+      return;
+    }
+    try {
+      await del(`/api/ai/sessions/${currentSessionId}`);
+      setCurrentSessionId(null);
+      setMessages([]);
+      messagesRef.current = [];
+      setSessions((list) => list.filter((s) => s.id !== currentSessionId));
+      showToast('会话已删除');
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    }
+  }, [currentSessionId, showToast, switchToNewSession]);
+
   const loadAll = useCallback(async () => {
     try {
       const [s, p, pr, c] = await Promise.all([
@@ -152,7 +234,8 @@ export default function AiAssistantPage() {
 
   useEffect(() => {
     loadAll();
-  }, [loadAll]);
+    refreshSessions();
+  }, [loadAll, refreshSessions]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -171,6 +254,23 @@ export default function AiAssistantPage() {
       const history = [...prev, { role: 'user' as const, content: text }]
         .slice(-40)
         .map((m) => ({ role: m.role, content: m.error ? '(请求失败)' : m.content }));
+
+      // 确保存在会话（首次发送时自动创建）
+      let sessionId = currentSessionId;
+      if (sessionId == null) {
+        try {
+          const created = await post<AiChatSession>('/api/ai/sessions');
+          sessionId = created.id;
+          setCurrentSessionId(created.id);
+          setSessions((list) => [
+            { id: created.id, title: created.title, messageCount: 0, tool: created.tool, target: created.target, createdAt: created.createdAt, updatedAt: created.updatedAt },
+            ...list,
+          ]);
+        } catch {
+          sessionId = null;
+        }
+      }
+
       setMessages((m) => [
         ...m,
         { role: 'user', content: text },
@@ -188,6 +288,7 @@ export default function AiAssistantPage() {
         });
       };
       let fullText = '';
+      let hadError = false;
       try {
         await postStream(
           '/api/ai/chat/stream',
@@ -204,13 +305,34 @@ export default function AiAssistantPage() {
         );
         if (!fullText) replaceLastAssistant('(空回复)');
       } catch (e: any) {
+        hadError = true;
         showToast(e?.message || 'AI 请求失败', 'error');
         replaceLastAssistant(e?.message || '请求失败', true);
       } finally {
         setSending(false);
       }
+
+      // 持久化到当前会话
+      if (sessionId != null) {
+        const finalMsgs: ChatMsg[] = [
+          ...prev,
+          { role: 'user', content: text },
+          { role: 'assistant', content: fullText || '(空回复)', error: hadError || undefined },
+        ];
+        await saveSession(sessionId, finalMsgs);
+        // 用首条用户消息自动生成标题
+        if (prev.length === 0) {
+          const title = text.slice(0, 30);
+          try {
+            await put(`/api/ai/sessions/${sessionId}`, { title });
+            setSessions((list) => list.map((s) => (s.id === sessionId ? { ...s, title } : s)));
+          } catch {
+            // 忽略标题更新失败
+          }
+        }
+      }
     },
-    [sending, showToast],
+    [sending, showToast, currentSessionId, saveSession],
   );
 
   const onCapability = useCallback(
@@ -468,12 +590,32 @@ export default function AiAssistantPage() {
 
             <div className="ai-assistant__main">
               <div className="ai-assistant__list-header">
-                <span className="ai-assistant__list-title">对话</span>
-                {messages.length > 0 && (
-                  <Button size="sm" variant="ghost" onClick={() => { setMessages([]); messagesRef.current = []; }}>
-                    清除历史
+                <Select
+                  className="ai-assistant__session-select"
+                  value={currentSessionId ?? ''}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (v) openSession(v);
+                    else switchToNewSession();
+                  }}
+                >
+                  <option value="" >
+                    新建对话
+                  </option>
+                  {sessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}
+                    </option>
+                  ))}
+                </Select>
+                <div className="ai-assistant__list-header-actions">
+                  <Button size="sm" onClick={newSession}>
+                    新建
                   </Button>
-                )}
+                  <Button size="sm" variant="ghost" onClick={deleteCurrentSession}>
+                    删除
+                  </Button>
+                </div>
               </div>
               <div className="ai-assistant__list" ref={listRef}>
                 {messages.length === 0 ? (

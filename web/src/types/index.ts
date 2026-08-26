@@ -970,6 +970,27 @@ export interface AiUsageResponse {
   byModel: AiUsageByModel[];
   byDay: AiUsageByDay[];
 }
+
+export interface AiChatSessionLite {
+  id: number;
+  title: string;
+  messageCount: number;
+  tool: string;
+  target: string;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface AiChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  error?: boolean;
+}
+export interface AiChatSession extends AiChatSessionLite {
+  messages: AiChatMessage[];
+}
+export interface AiSessionsResponse {
+  sessions: AiChatSessionLite[];
+}
 export interface AiTestResponse {
   ok: boolean;
   message: string;

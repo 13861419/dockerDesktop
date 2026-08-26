@@ -41,6 +41,14 @@ import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
 import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage } from '../aiUsage';
+import {
+  listChatSessions,
+  getChatSession,
+  createChatSession,
+  updateChatSessionTitle,
+  updateChatSessionMessages,
+  deleteChatSession,
+} from '../aiChatHistory';
 
 const router = Router();
 
@@ -621,6 +629,101 @@ router.delete(
   asyncHandler(async (_req: Request, res: Response) => {
     clearAiUsage();
     logOperation(res.locals.username, '清空 AI 用量', 'ai', null, '已清空全部 AI 用量统计');
+    res.json({ ok: true });
+  }),
+);
+
+// ============ 对话历史（会话持久化） ============
+
+/**
+ * GET /api/ai/sessions
+ * 返回当前用户的会话列表（按更新时间倒序）
+ */
+router.get(
+  '/sessions',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const sessions = listChatSessions(res.locals.username);
+    res.json({ sessions });
+  }),
+);
+
+/**
+ * POST /api/ai/sessions
+ * body: { title?, tool?, target? } 可选
+ * 创建新会话，返回完整会话
+ */
+router.post(
+  '/sessions',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body || {};
+    const session = createChatSession(res.locals.username, {
+      title: typeof body.title === 'string' ? body.title : undefined,
+      tool: typeof body.tool === 'string' ? body.tool : '',
+      target: typeof body.target === 'string' ? body.target : '',
+    });
+    logOperation(res.locals.username, '新建 AI 对话', 'ai', null, `session#${session.id}`);
+    res.json(session);
+  }),
+);
+
+/**
+ * GET /api/ai/sessions/:id
+ * 获取会话详情（含消息）
+ */
+router.get(
+  '/sessions/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的会话 ID' });
+    const session = getChatSession(id, res.locals.username);
+    if (!session) return res.status(404).json({ error: '会话不存在' });
+    res.json(session);
+  }),
+);
+
+/**
+ * PUT /api/ai/sessions/:id
+ * body: { title? } 或 { messages: [{role,content,error?}] }
+ * 更新标题或消息
+ */
+router.put(
+  '/sessions/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的会话 ID' });
+    const body = req.body || {};
+    const username = res.locals.username;
+    let ok = false;
+    if (Array.isArray(body.messages)) {
+      const cleaned = body.messages
+        .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        .map((m: any) => ({ role: m.role, content: m.content, error: m.error ? true : undefined }));
+      ok = updateChatSessionMessages(id, username, cleaned);
+    } else if (typeof body.title === 'string') {
+      ok = updateChatSessionTitle(id, username, body.title);
+    }
+    if (!ok) return res.status(404).json({ error: '会话不存在或无权修改' });
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * DELETE /api/ai/sessions/:id
+ * 删除会话
+ */
+router.delete(
+  '/sessions/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的会话 ID' });
+    const ok = deleteChatSession(id, res.locals.username);
+    if (!ok) return res.status(404).json({ error: '会话不存在' });
+    logOperation(res.locals.username, '删除 AI 对话', 'ai', null, `session#${id}`);
     res.json({ ok: true });
   }),
 );

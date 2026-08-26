@@ -525,6 +525,19 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at);
     CREATE INDEX IF NOT EXISTS idx_ai_usage_model   ON ai_usage(model);
+
+    -- AI 对话历史表（每会话一条，messages 存 JSON 文本）
+    CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT NOT NULL DEFAULT '新对话',
+      messages    TEXT NOT NULL DEFAULT '[]',       -- JSON 数组 [{role,content,error?}]
+      tool        TEXT NOT NULL DEFAULT '',         -- 会话绑定的工具（chat/compose-infer/logs）
+      target      TEXT NOT NULL DEFAULT '',         -- logs 工具的目标容器
+      username    TEXT NOT NULL DEFAULT '',         -- 归属用户
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_session_user ON ai_chat_sessions(username, updated_at);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
