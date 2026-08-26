@@ -42,6 +42,7 @@ import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
 import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage } from '../aiUsage';
+import { getCache, setCache, getCacheStats, clearCache } from '../aiCache';
 import {
   listChatSessions,
   getChatSession,
@@ -530,6 +531,24 @@ router.post(
     let usedProfile: AiProfilePublic = routed[0].profile;
     let fallback = false;
 
+    // 语义缓存：检查最近一条用户消息是否命中
+    const cacheKeyMsg = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
+    const cachedReply = getCache(cacheKeyMsg, routed[0].cfg.model);
+    if (cachedReply) {
+      reply = cachedReply;
+      usedProfile = routed[0].profile;
+      recordAiUsage({
+        profileId: routed[0].profile.id,
+        provider: routed[0].profile.provider || routed[0].cfg.baseUrl,
+        model: routed[0].cfg.model,
+        tool: tool || 'chat',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        username,
+      });
+    } else {
+
     for (let i = 0; i < routed.length; i++) {
       const { cfg, profile } = routed[i];
       if (i > 0) fallback = true;
@@ -562,6 +581,11 @@ router.post(
         if (i === routed.length - 1) throw err;
       }
     }
+
+    // 写入缓存
+    if (reply) setCache(cacheKeyMsg, usedProfile.model, reply);
+
+    } // end cache else
 
     const meta = aiProfileMeta(usedProfile);
     logOperation(username, 'AI 对话', 'ai', null,
@@ -636,6 +660,25 @@ router.post(
     const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop()?.content || '';
     const routed = smartRoute(candidates, lastUserMsg, tool);
 
+    // 语义缓存：检查最近一条用户消息是否命中
+    const streamCacheMsg = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
+    const streamCached = getCache(streamCacheMsg, routed[0].cfg.model);
+    if (streamCached) {
+      send({ type: 'delta', content: streamCached });
+      send({ type: 'done', model: routed[0].cfg.model, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });
+      recordAiUsage({
+        profileId: routed[0].profile.id,
+        provider: routed[0].profile.provider || routed[0].cfg.baseUrl,
+        model: routed[0].cfg.model,
+        tool: tool || 'chat',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        username,
+      });
+      return res.end();
+    }
+
     // 故障转移：逐个尝试候选配置，首个成功即锁定
     let usedProfile: AiProfilePublic = routed[0].profile;
     let fallback = false;
@@ -696,6 +739,8 @@ router.post(
           full += chunk;
           send({ type: 'chunk', text: chunk });
         }
+        // 写入缓存
+        if (full) setCache(streamCacheMsg, usedProfile.model, full);
         send({ type: 'done' });
         const meta = aiProfileMeta(usedProfile);
         logOperation(username, 'AI 对话（流式）', 'ai', null,
@@ -771,6 +816,34 @@ router.delete(
   asyncHandler(async (_req: Request, res: Response) => {
     clearAiUsage();
     logOperation(res.locals.username, '清空 AI 用量', 'ai', null, '已清空全部 AI 用量统计');
+    res.json({ ok: true });
+  }),
+);
+
+// ============ 语义缓存 ============
+
+/**
+ * GET /api/ai/cache/stats
+ * 返回缓存统计信息
+ */
+router.get(
+  '/cache/stats',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(getCacheStats());
+  }),
+);
+
+/**
+ * DELETE /api/ai/cache
+ * 清空全部缓存（需管理员）
+ */
+router.delete(
+  '/cache',
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    clearCache();
+    logOperation(res.locals.username, '清空 AI 缓存', 'ai', null, '已清空全部 AI 语义缓存');
     res.json({ ok: true });
   }),
 );

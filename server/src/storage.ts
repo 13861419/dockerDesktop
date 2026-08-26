@@ -550,6 +550,18 @@ function createTables(): void {
       updated_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_template_user ON ai_prompt_templates(username, category);
+
+    CREATE TABLE IF NOT EXISTS ai_cache (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      prompt_hash TEXT NOT NULL UNIQUE,
+      prompt      TEXT NOT NULL,
+      response    TEXT NOT NULL,
+      model       TEXT NOT NULL DEFAULT '',
+      hit_count   INTEGER NOT NULL DEFAULT 0,
+      created_at  INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_cache_hash ON ai_cache(prompt_hash, expires_at);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
