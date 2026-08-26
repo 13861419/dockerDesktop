@@ -1137,3 +1137,27 @@ export interface AiTemplatesResponse {
 export interface AiTemplateCategoriesResponse {
   categories: string[];
 }
+
+// Action 审批
+export interface AiAction {
+  id: number;
+  username: string;
+  actionType: string;
+  params: Record<string, unknown>;
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  aiMessage: string;
+  result: string;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+export interface AiActionsResponse {
+  actions: AiAction[];
+  actionTypes: Record<string, string>;
+}
+export interface AiActionStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+  executed: number;
+  failed: number;
+}

@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -58,6 +58,23 @@ function renderMarkdown(text: string, showToast?: (msg: string, type?: any) => v
   });
 }
 
+const ACTION_LABELS: Record<string, string> = {
+  restart_container: '重启容器',
+  stop_container: '停止容器',
+  start_container: '启动容器',
+  remove_container: '删除容器',
+  remove_image: '删除镜像',
+  system_prune: '系统清理',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待审批',
+  approved: '已批准',
+  rejected: '已拒绝',
+  executed: '已执行',
+  failed: '执行失败',
+};
+
 /** Profile 表单初始值 */
 const EMPTY_FORM = {
   name: '',
@@ -106,6 +123,12 @@ export default function AiAssistantPage() {
   const [usage, setUsage] = useState<AiUsageResponse | null>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
 
+  const [showActions, setShowActions] = useState(false);
+  const [pendingActions, setPendingActions] = useState<AiAction[]>([]);
+  const [allActions, setAllActions] = useState<AiAction[]>([]);
+  const [actionView, setActionView] = useState<'pending' | 'all'>('pending');
+  const [loadingActions, setLoadingActions] = useState(false);
+
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
   const [templateCategory, setTemplateCategory] = useState('');
@@ -126,6 +149,45 @@ export default function AiAssistantPage() {
     setShowUsage(true);
     loadUsage();
   }, [loadUsage]);
+
+  const loadActions = useCallback(async (view: 'pending' | 'all' = actionView) => {
+    setLoadingActions(true);
+    try {
+      const q = view === 'all' ? '?status=all' : '';
+      const r = await get<AiActionsResponse>(`/api/ai/actions${q}`);
+      setPendingActions(r.actions.filter((a) => a.status === 'pending'));
+      setAllActions(r.actions);
+    } catch (e: any) {
+      showToast(e?.message || '加载操作列表失败', 'error');
+    } finally {
+      setLoadingActions(false);
+    }
+  }, [actionView, showToast]);
+
+  const openActions = useCallback(() => {
+    setShowActions(true);
+    loadActions();
+  }, [loadActions]);
+
+  const handleApproveAction = useCallback(async (id: number) => {
+    try {
+      await post(`/api/ai/actions/${id}/approve`, {});
+      showToast('已批准');
+      await loadActions();
+    } catch (e: any) {
+      showToast(e?.message || '操作失败', 'error');
+    }
+  }, [loadActions, showToast]);
+
+  const handleRejectAction = useCallback(async (id: number) => {
+    try {
+      await post(`/api/ai/actions/${id}/reject`, {});
+      showToast('已拒绝');
+      await loadActions();
+    } catch (e: any) {
+      showToast(e?.message || '操作失败', 'error');
+    }
+  }, [loadActions, showToast]);
 
   const handleClearUsage = useCallback(async () => {
     try {
@@ -512,6 +574,9 @@ export default function AiAssistantPage() {
             </span>
             <Button size="sm" variant="ghost" onClick={openUsage}>
               用量统计
+            </Button>
+            <Button size="sm" variant="ghost" onClick={openActions}>
+              待审批
             </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
@@ -1026,6 +1091,66 @@ export default function AiAssistantPage() {
                     <Empty title="暂无用量数据" description="使用一次 AI 对话后，这里会展示统计。" />
                   )}
                 </>
+              )}
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showActions && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowActions(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="AI 操作审批"
+              extra={
+                <div className="ai-assistant__usage-actions">
+                  <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'pending' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('pending'); loadActions('pending'); }}>待审批</span>
+                  <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'all' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('all'); loadActions('all'); }}>全部</span>
+                  <Button size="sm" onClick={() => setShowActions(false)}>✕</Button>
+                </div>
+              }
+            >
+              {loadingActions ? (
+                <div style={{ textAlign: 'center', padding: 16 }}><span style={{ opacity: 0.6 }}>加载中...</span></div>
+              ) : (actionView === 'pending' ? pendingActions : allActions).length > 0 ? (
+                <div className="ai-assistant__usage-body">
+                  <table className="ai-assistant__usage-table">
+                    <thead>
+                      <tr>
+                        <th>类型</th>
+                        <th>参数</th>
+                        <th>状态</th>
+                        <th>时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(actionView === 'pending' ? pendingActions : allActions).map((a) => (
+                        <tr key={a.id}>
+                          <td>{ACTION_LABELS[a.actionType] || a.actionType}</td>
+                          <td style={{ fontSize: 12, opacity: 0.7, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{JSON.stringify(a.params)}</td>
+                          <td>
+                            <span className={`ai-assistant__cap-tag is-${a.status === 'pending' ? 'local' : a.status === 'approved' || a.status === 'executed' ? 'cloud' : 'off'}`}>
+                              {STATUS_LABELS[a.status] || a.status}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: 12, opacity: 0.6 }}>{new Date(a.createdAt).toLocaleString('zh-CN')}</td>
+                          <td>
+                            {a.status === 'pending' && (
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <Button size="sm" variant="primary" onClick={() => handleApproveAction(a.id)}>批准</Button>
+                                <Button size="sm" variant="danger" onClick={() => handleRejectAction(a.id)}>拒绝</Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty title="暂无操作" description="AI 建议的运维操作会出现在这里。" />
               )}
             </Card>
           </div>
