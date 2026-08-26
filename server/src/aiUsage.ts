@@ -161,3 +161,17 @@ export function listAiUsageByDay(days: number): AiUsageByDay[] {
 export function clearAiUsage(): void {
   getDb().prepare('DELETE FROM ai_usage').run();
 }
+
+/** 获取指定 profile 当月 token 用量和费用（用于预算检查） */
+export function getMonthlyUsage(profileId: number): { tokens: number; cost: number } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(SUM(total_tokens), 0) AS tokens
+       FROM ai_usage
+       WHERE profile_id = ? AND created_at >= ? AND success = 1`,
+    )
+    .get(profileId, from) as { tokens: number } | undefined;
+  return { tokens: row?.tokens || 0, cost: 0 };
+}

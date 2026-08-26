@@ -1006,6 +1006,8 @@ export interface AiProfile {
   isDefault: boolean;
   timeoutMs: number;
   systemPrompt: string;
+  budgetMonthlyTokens: number;
+  budgetMonthlyCost: number;
 }
 export interface AiPreset {
   id: string;

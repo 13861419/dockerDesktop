@@ -41,7 +41,7 @@ import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
-import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage } from '../aiUsage';
+import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage } from '../aiUsage';
 import {
   listChatSessions,
   getChatSession,
@@ -118,6 +118,20 @@ function buildCandidateConfigs(): Array<{ cfg: AiConfig; profile: AiProfilePubli
     out.push({ cfg, profile: p });
   }
   return out;
+}
+
+/** 检查 profile 月度预算是否超限；超限返回错误信息，否则返回 null */
+function checkBudget(profile: AiProfilePublic): string | null {
+  const { budgetMonthlyTokens, budgetMonthlyCost } = profile;
+  if (!budgetMonthlyTokens && !budgetMonthlyCost) return null;
+  const usage = getMonthlyUsage(profile.id);
+  if (budgetMonthlyTokens > 0 && usage.tokens >= budgetMonthlyTokens) {
+    return `${profile.name} 月度 token 预算已用完（${usage.tokens.toLocaleString()} / ${budgetMonthlyTokens.toLocaleString()}）`;
+  }
+  if (budgetMonthlyCost > 0 && usage.cost >= budgetMonthlyCost) {
+    return `${profile.name} 月度费用预算已超限（¥${usage.cost.toFixed(2)} / ¥${budgetMonthlyCost.toFixed(2)}）`;
+  }
+  return null;
 }
 
 /** 工具能力清单（供前端快捷入口渲染） */
@@ -489,6 +503,16 @@ router.post(
     for (let i = 0; i < candidates.length; i++) {
       const { cfg, profile } = candidates[i];
       if (i > 0) fallback = true;
+      // 预算检查：跳过已超限的 profile
+      const budgetErr = checkBudget(profile);
+      if (budgetErr) {
+        if (i === candidates.length - 1) {
+          const e: any = new Error(budgetErr);
+          e.statusCode = 429;
+          throw e;
+        }
+        continue;
+      }
       const sysMsgs = buildSystemPrompt(cfg, '', '');
       const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
       try {
@@ -587,6 +611,15 @@ router.post(
     for (let i = 0; i < candidates.length; i++) {
       const { cfg, profile } = candidates[i];
       if (i > 0) fallback = true;
+      // 预算检查：跳过已超限的 profile
+      const budgetErr = checkBudget(profile);
+      if (budgetErr) {
+        if (i === candidates.length - 1) {
+          send({ type: 'error', message: budgetErr });
+          return res.end();
+        }
+        continue;
+      }
       const sysMsgs = buildSystemPrompt(cfg, '', '');
       const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
       try {
@@ -675,6 +708,21 @@ router.get(
       byModel: listAiUsageByModel(),
       byDay: listAiUsageByDay(30),
     });
+  }),
+);
+
+/**
+ * GET /api/ai/usage/monthly?profileId=xxx
+ * 返回指定 profile 当月 token 用量（用于预算进度条）
+ */
+router.get(
+  '/usage/monthly',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const profileId = Number(req.query.profileId);
+    if (!Number.isFinite(profileId)) return res.status(400).json({ error: '无效的 profileId' });
+    const usage = getMonthlyUsage(profileId);
+    res.json(usage);
   }),
 );
 

@@ -573,6 +573,15 @@ function createTables(): void {
     // 列已存在则忽略
   }
 
+  // 迁移：为 ai_profiles 表补充预算控制列（月度 token/费用上限，0=不限制）
+  for (const col of ['budget_monthly_tokens', 'budget_monthly_cost']) {
+    try {
+      d.exec(`ALTER TABLE ai_profiles ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // 列已存在则忽略
+    }
+  }
+
   // 迁移：为 sites 表补充反代高级配置列（逐列宽松迁移，兼容旧库）
   const siteMigrations: Array<{ col: string; ddl: string }> = [
     { col: 'enable_ws', ddl: 'ALTER TABLE sites ADD COLUMN enable_ws INTEGER NOT NULL DEFAULT 0' },

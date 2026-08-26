@@ -18,6 +18,8 @@ export interface AiProfileRow {
   system_prompt: string;
   timeout_ms: number;
   is_default: number;
+  budget_monthly_tokens: number;
+  budget_monthly_cost: number;
   created_at: number;
   updated_at: number;
 }
@@ -33,6 +35,8 @@ export interface AiProfilePublic {
   isDefault: boolean;
   timeoutMs: number;
   systemPrompt: string;
+  budgetMonthlyTokens: number;
+  budgetMonthlyCost: number;
 }
 
 export interface AiProfileInput {
@@ -44,6 +48,8 @@ export interface AiProfileInput {
   apiKey?: string;
   systemPrompt?: string;
   timeoutMs?: number;
+  budgetMonthlyTokens?: number;
+  budgetMonthlyCost?: number;
 }
 
 function mapRow(r: AiProfileRow): AiProfilePublic {
@@ -58,6 +64,8 @@ function mapRow(r: AiProfileRow): AiProfilePublic {
     isDefault: !!r.is_default,
     timeoutMs: r.timeout_ms,
     systemPrompt: r.system_prompt,
+    budgetMonthlyTokens: r.budget_monthly_tokens || 0,
+    budgetMonthlyCost: r.budget_monthly_cost || 0,
   };
 }
 
@@ -176,11 +184,13 @@ export function updateProfile(id: number, patch: AiProfileInput = {}): AiProfile
     api_key_enc: patch.apiKey !== undefined && String(patch.apiKey).trim() !== '' ? encryptSecret(String(patch.apiKey).trim()) : row.api_key_enc,
     system_prompt: patch.systemPrompt !== undefined ? String(patch.systemPrompt).trim() : row.system_prompt,
     timeout_ms: patch.timeoutMs !== undefined && Number(patch.timeoutMs) > 0 ? Math.min(Number(patch.timeoutMs), 300000) : row.timeout_ms,
+    budget_monthly_tokens: patch.budgetMonthlyTokens !== undefined ? Math.max(0, Number(patch.budgetMonthlyTokens) || 0) : row.budget_monthly_tokens,
+    budget_monthly_cost: patch.budgetMonthlyCost !== undefined ? Math.max(0, Number(patch.budgetMonthlyCost) || 0) : row.budget_monthly_cost,
     updated_at: Date.now(),
   };
   d.prepare(
-    `UPDATE ai_profiles SET name=?, kind=?, provider=?, base_url=?, model=?, api_key_enc=?, system_prompt=?, timeout_ms=?, updated_at=? WHERE id=?`,
-  ).run(next.name, next.kind, next.provider, next.base_url, next.model, next.api_key_enc, next.system_prompt, next.timeout_ms, next.updated_at, id);
+    `UPDATE ai_profiles SET name=?, kind=?, provider=?, base_url=?, model=?, api_key_enc=?, system_prompt=?, timeout_ms=?, budget_monthly_tokens=?, budget_monthly_cost=?, updated_at=? WHERE id=?`,
+  ).run(next.name, next.kind, next.provider, next.base_url, next.model, next.api_key_enc, next.system_prompt, next.timeout_ms, next.budget_monthly_tokens, next.budget_monthly_cost, next.updated_at, id);
   return mapRow(next);
 }
 
