@@ -134,6 +134,31 @@ function checkBudget(profile: AiProfilePublic): string | null {
   return null;
 }
 
+/** 智能路由：根据消息复杂度对候选 profile 排序，简单消息优先用轻量模型 */
+function smartRoute(candidates: Array<{ cfg: AiConfig; profile: AiProfilePublic }>, lastUserMsg: string, tool?: string): Array<{ cfg: AiConfig; profile: AiProfilePublic }> {
+  if (candidates.length <= 1) return candidates;
+  // 复杂度评估
+  const msg = lastUserMsg || '';
+  let complexity = 0;
+  // 长消息更复杂
+  if (msg.length > 500) complexity += 2;
+  else if (msg.length > 100) complexity += 1;
+  // 关键词触发
+  const complexKeywords = ['生成', '分析', '解释', '调试', '优化', '重构', '设计', '架构', '安全', '性能', '诊断', 'generate', 'analyze', 'debug', 'optimize', 'explain', 'design', 'security'];
+  for (const kw of complexKeywords) {
+    if (msg.toLowerCase().includes(kw)) { complexity += 1; break; }
+  }
+  // 使用工具时更复杂
+  if (tool === 'compose-infer' || tool === 'logs') complexity += 1;
+
+  if (complexity <= 0) {
+    // 简单消息：尝试按 id 升序（通常小 id = 轻量模型）排在前面
+    return [...candidates].sort((a, b) => a.profile.id - b.profile.id);
+  }
+  // 复杂消息：保持默认顺序（默认 profile 优先）
+  return candidates;
+}
+
 /** 工具能力清单（供前端快捷入口渲染） */
 const CAPABILITIES = [
   {
@@ -493,20 +518,25 @@ router.post(
     // 提前解析请求（上下文采集与 profile 无关，只做一次）
     const { finalMessages: baseMsgs, toolContext, tool, historyCount } = await resolveChatRequest(req, res, candidates[0].cfg);
 
+    // 智能路由：根据消息复杂度排序候选
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop()?.content || '';
+    const routed = smartRoute(candidates, lastUserMsg, tool);
+
     const username = res.locals.username;
     const promptChars = baseMsgs.reduce((n: number, m: any) => n + String(m.content || '').length, 0);
     const promptEst = estimateTokens(baseMsgs.map((m: any) => m.content).join('\n'));
     let reply = '';
-    let usedProfile: AiProfilePublic = candidates[0].profile;
+    let usedProfile: AiProfilePublic = routed[0].profile;
     let fallback = false;
 
-    for (let i = 0; i < candidates.length; i++) {
-      const { cfg, profile } = candidates[i];
+    for (let i = 0; i < routed.length; i++) {
+      const { cfg, profile } = routed[i];
       if (i > 0) fallback = true;
       // 预算检查：跳过已超限的 profile
       const budgetErr = checkBudget(profile);
       if (budgetErr) {
-        if (i === candidates.length - 1) {
+        if (i === routed.length - 1) {
           const e: any = new Error(budgetErr);
           e.statusCode = 429;
           throw e;
@@ -529,7 +559,7 @@ router.post(
           errorMessage: `[故障转移] ${err?.message || '未知错误'}`,
           username,
         });
-        if (i === candidates.length - 1) throw err;
+        if (i === routed.length - 1) throw err;
       }
     }
 
@@ -601,20 +631,25 @@ router.post(
       send({ type: 'context', toolContext });
     }
 
+    // 智能路由：根据消息复杂度排序候选
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop()?.content || '';
+    const routed = smartRoute(candidates, lastUserMsg, tool);
+
     // 故障转移：逐个尝试候选配置，首个成功即锁定
-    let usedProfile: AiProfilePublic = candidates[0].profile;
+    let usedProfile: AiProfilePublic = routed[0].profile;
     let fallback = false;
     let firstChunk: string | null = null;
     let streamGen: AsyncGenerator<string, void, unknown> | null = null;
     const capturedUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } = {};
 
-    for (let i = 0; i < candidates.length; i++) {
-      const { cfg, profile } = candidates[i];
+    for (let i = 0; i < routed.length; i++) {
+      const { cfg, profile } = routed[i];
       if (i > 0) fallback = true;
       // 预算检查：跳过已超限的 profile
       const budgetErr = checkBudget(profile);
       if (budgetErr) {
-        if (i === candidates.length - 1) {
+        if (i === routed.length - 1) {
           send({ type: 'error', message: budgetErr });
           return res.end();
         }
@@ -645,7 +680,7 @@ router.post(
           errorMessage: `[故障转移] ${err?.message || '未知错误'}`,
           username,
         });
-        if (i === candidates.length - 1) {
+        if (i === routed.length - 1) {
           send({ type: 'error', message: err?.message || '流式响应失败' });
           return res.end();
         }
