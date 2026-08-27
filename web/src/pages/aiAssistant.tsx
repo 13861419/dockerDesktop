@@ -1716,6 +1716,25 @@ export default function AiAssistantPage() {
                         ))}
                       </div>
                     )}
+                    {/* 性能指标 */}
+                    {dashboard.byModel.length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>性能指标</div>
+                        {dashboard.byModel.map((m) => {
+                          const successRate = m.calls > 0 ? Math.round((m.successCalls / m.calls) * 100) : 0;
+                          const avgTok = m.calls > 0 ? Math.round(m.totalTokens / m.calls) : 0;
+                          return (
+                            <div key={m.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
+                              <span style={{ flex: 1 }}>{m.model}</span>
+                              <span style={{ color: successRate >= 95 ? 'var(--color-success)' : successRate >= 80 ? 'var(--color-warning)' : 'var(--color-error)' }}>
+                                {successRate}% 成功
+                              </span>
+                              <span style={{ opacity: 0.5 }}>均 {avgTok} tok/次</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ textAlign: 'center', padding: 20 }}>

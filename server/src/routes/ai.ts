@@ -47,7 +47,7 @@ import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
-import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek } from '../aiUsage';
+import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek, getAiPerformanceMetrics } from '../aiUsage';
 import { getCache, setCache, getCacheStats, clearCache } from '../aiCache';
 import { createAction, listPendingActions, getAction, approveAction, rejectAction, markExecuted, getActionStats, ACTION_TYPE_LABELS } from '../aiActions';
 import {
@@ -931,6 +931,19 @@ router.get(
     const summary = summarizeAiUsage();
     const totalCost = byDayCost.reduce((sum, r) => sum + (r.cost || 0), 0);
     res.json({ summary, byDayCost, byWeek, byModel, totalCost });
+  }),
+);
+
+/**
+ * GET /api/ai/usage/performance
+ * 返回 AI 性能指标（按模型聚合：成功率、平均 token 等）
+ */
+router.get(
+  '/usage/performance',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const metrics = getAiPerformanceMetrics();
+    res.json({ metrics });
   }),
 );
 

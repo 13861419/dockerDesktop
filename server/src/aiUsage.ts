@@ -236,3 +236,34 @@ export function getMonthlyUsage(profileId: number): { tokens: number; cost: numb
     .get(profileId, from) as { tokens: number } | undefined;
   return { tokens: row?.tokens || 0, cost: 0 };
 }
+
+/** 性能指标（按模型聚合） */
+export interface AiPerformanceMetrics {
+  model: string;
+  provider: string;
+  totalCalls: number;
+  successRate: number;
+  avgPromptTokens: number;
+  avgCompletionTokens: number;
+  avgTotalTokens: number;
+  totalTokens: number;
+}
+
+export function getAiPerformanceMetrics(): AiPerformanceMetrics[] {
+  return getDb()
+    .prepare(
+      `SELECT model,
+              MAX(provider) AS provider,
+              COUNT(*) AS totalCalls,
+              ROUND(COALESCE(SUM(success), 0) * 100.0 / COUNT(*), 1) AS successRate,
+              ROUND(COALESCE(AVG(prompt_tokens), 0), 0) AS avgPromptTokens,
+              ROUND(COALESCE(AVG(completion_tokens), 0), 0) AS avgCompletionTokens,
+              ROUND(COALESCE(AVG(total_tokens), 0), 0) AS avgTotalTokens,
+              COALESCE(SUM(total_tokens), 0) AS totalTokens
+       FROM ai_usage
+       WHERE model != ''
+       GROUP BY model
+       ORDER BY totalCalls DESC`,
+    )
+    .all() as unknown as AiPerformanceMetrics[];
+}

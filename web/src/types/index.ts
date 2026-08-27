@@ -1242,3 +1242,14 @@ export interface AiUsageDashboard {
   byModel: Array<{ model: string; provider: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number; successCalls: number }>;
   totalCost: number;
 }
+
+export interface AiPerformanceMetric {
+  model: string;
+  provider: string;
+  totalCalls: number;
+  successRate: number;
+  avgPromptTokens: number;
+  avgCompletionTokens: number;
+  avgTotalTokens: number;
+  totalTokens: number;
+}
