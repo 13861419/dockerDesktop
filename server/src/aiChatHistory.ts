@@ -13,6 +13,7 @@ export interface AiChatSessionLite {
   messageCount: number;
   tool: string;
   target: string;
+  pinned: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -37,6 +38,7 @@ interface SessionRow {
   tool: string;
   target: string;
   username: string;
+  pinned: number;
   created_at: number;
   updated_at: number;
 }
@@ -62,18 +64,19 @@ function toLite(row: SessionRow, count: number): AiChatSessionLite {
     messageCount: count,
     tool: row.tool,
     target: row.target,
+    pinned: row.pinned === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-/** 列出某用户的会话（按更新时间倒序） */
+/** 列出某用户的会话（置顶优先，再按更新时间倒序） */
 export function listChatSessions(username: string, limit = 100): AiChatSessionLite[] {
   const rows = (getDb()
     .prepare(
-      `SELECT id, title, messages, tool, target, username, created_at, updated_at
+      `SELECT id, title, messages, tool, target, username, pinned, created_at, updated_at
        FROM ai_chat_sessions WHERE username = ?
-       ORDER BY updated_at DESC LIMIT ?`,
+       ORDER BY pinned DESC, updated_at DESC LIMIT ?`,
     )
     .all(username, limit) as unknown as SessionRow[]);
   return rows.map((r) => toLite(r, parseMessages(r.messages).length));
@@ -83,7 +86,7 @@ export function listChatSessions(username: string, limit = 100): AiChatSessionLi
 export function getChatSession(id: number, username: string): AiChatSessionFull | null {
   const row = getDb()
     .prepare(
-      `SELECT id, title, messages, tool, target, username, created_at, updated_at
+      `SELECT id, title, messages, tool, target, username, pinned, created_at, updated_at
        FROM ai_chat_sessions WHERE id = ?`,
     )
     .get(id) as unknown as SessionRow | undefined;
@@ -105,7 +108,20 @@ export function createChatSession(username: string, opts?: { title?: string; too
     )
     .run(title, '[]', tool, target, username, now, now);
   const id = Number(res.lastInsertRowid);
-  return { id, title, messageCount: 0, tool, target, createdAt: now, updatedAt: now, messages: [] };
+  return { id, title, messageCount: 0, tool, target, pinned: false, createdAt: now, updatedAt: now, messages: [] };
+}
+
+/** 切换会话收藏/置顶状态 */
+export function togglePinChatSession(id: number, username: string): boolean | null {
+  const d = getDb();
+  const row = d
+    .prepare('SELECT pinned, username FROM ai_chat_sessions WHERE id = ?')
+    .get(id) as { pinned: number; username: string } | undefined;
+  if (!row) return null;
+  if (row.username !== username) return null;
+  const newVal = row.pinned === 1 ? 0 : 1;
+  d.prepare('UPDATE ai_chat_sessions SET pinned = ?, updated_at = ? WHERE id = ? AND username = ?').run(newVal, Date.now(), id, username);
+  return newVal === 1;
 }
 
 /** 覆盖会话标题 */
@@ -146,20 +162,12 @@ export function searchChatSessions(username: string, keyword: string, limit = 20
   const kw = `%${keyword}%`;
   const rows = getDb()
     .prepare(
-      `SELECT id, title, messages, tool, target, created_at, updated_at
+      `SELECT id, title, messages, tool, target, username, pinned, created_at, updated_at
        FROM ai_chat_sessions
        WHERE username = ? AND (title LIKE ? OR messages LIKE ?)
-       ORDER BY updated_at DESC
+       ORDER BY pinned DESC, updated_at DESC
        LIMIT ?`,
     )
     .all(username, kw, kw, limit) as unknown as SessionRow[];
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    messageCount: parseMessages(r.messages).length,
-    tool: r.tool || '',
-    target: r.target || '',
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
+  return rows.map((r) => toLite(r, parseMessages(r.messages).length));
 }

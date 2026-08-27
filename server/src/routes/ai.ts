@@ -59,6 +59,7 @@ import {
   deleteChatSession,
   searchChatSessions,
   updateMessageFeedback,
+  togglePinChatSession,
 } from '../aiChatHistory';
 import {
   listTemplates,
@@ -1460,6 +1461,23 @@ router.delete(
     if (!ok) return res.status(404).json({ error: '会话不存在' });
     logOperation(res.locals.username, '删除 AI 对话', 'ai', null, `session#${id}`);
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * PUT /api/ai/sessions/:id/pin
+ * 切换会话收藏/置顶状态
+ */
+router.put(
+  '/sessions/:id/pin',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的会话 ID' });
+    const pinned = togglePinChatSession(id, res.locals.username);
+    if (pinned === null) return res.status(404).json({ error: '会话不存在' });
+    logOperation(res.locals.username, pinned ? '收藏 AI 对话' : '取消收藏 AI 对话', 'ai', null, `session#${id}`);
+    res.json({ ok: true, pinned });
   }),
 );
 

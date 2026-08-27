@@ -977,6 +977,7 @@ export interface AiChatSessionLite {
   messageCount: number;
   tool: string;
   target: string;
+  pinned: boolean;
   createdAt: number;
   updatedAt: number;
 }

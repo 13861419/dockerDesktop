@@ -535,6 +535,7 @@ function createTables(): void {
       tool        TEXT NOT NULL DEFAULT '',         -- 会话绑定的工具（chat/compose-infer/logs）
       target      TEXT NOT NULL DEFAULT '',         -- logs 工具的目标容器
       username    TEXT NOT NULL DEFAULT '',         -- 归属用户
+      pinned      INTEGER NOT NULL DEFAULT 0,       -- 是否置顶/收藏
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -605,6 +606,13 @@ function createTables(): void {
   }
   try {
     d.exec('ALTER TABLE ai_knowledge ADD COLUMN shared INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+
+  // 迁移：为 ai_chat_sessions 表补充 pinned 列（会话收藏/置顶）
+  try {
+    d.exec('ALTER TABLE ai_chat_sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
   } catch {
     // 列已存在则忽略
   }

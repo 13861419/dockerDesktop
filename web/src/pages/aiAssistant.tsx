@@ -447,7 +447,7 @@ export default function AiAssistantPage() {
       setMessages([]);
       messagesRef.current = [];
       setSessions((list) => [
-        { id: created.id, title: created.title, messageCount: 0, tool: created.tool, target: created.target, createdAt: created.createdAt, updatedAt: created.updatedAt },
+        { id: created.id, title: created.title, messageCount: 0, tool: created.tool, target: created.target, pinned: false, createdAt: created.createdAt, updatedAt: created.updatedAt },
         ...list,
       ]);
     } catch (e: any) {
@@ -485,6 +485,17 @@ export default function AiAssistantPage() {
       showToast(e?.message || '删除失败', 'error');
     }
   }, [currentSessionId, showToast, switchToNewSession]);
+
+  const togglePinCurrentSession = useCallback(async () => {
+    if (currentSessionId == null) { showToast('请先选择要收藏的会话', 'error'); return; }
+    try {
+      const r = await put<{ pinned: boolean }>(`/api/ai/sessions/${currentSessionId}/pin`);
+      showToast(r.pinned ? '已收藏该会话' : '已取消收藏');
+      refreshSessions(sessionSearch || undefined);
+    } catch (e: any) {
+      showToast(e?.message || '操作失败', 'error');
+    }
+  }, [currentSessionId, showToast, refreshSessions, sessionSearch]);
 
   const exportSession = useCallback(async () => {
     if (currentSessionId == null) return;
@@ -609,7 +620,7 @@ export default function AiAssistantPage() {
           sessionId = created.id;
           setCurrentSessionId(created.id);
           setSessions((list) => [
-            { id: created.id, title: created.title, messageCount: 0, tool: created.tool, target: created.target, createdAt: created.createdAt, updatedAt: created.updatedAt },
+            { id: created.id, title: created.title, messageCount: 0, tool: created.tool, target: created.target, pinned: false, createdAt: created.createdAt, updatedAt: created.updatedAt },
             ...list,
           ]);
         } catch {
@@ -978,6 +989,9 @@ export default function AiAssistantPage() {
                 <div className="ai-assistant__list-header-actions">
                   <Button size="sm" onClick={newSession}>
                     新建
+                  </Button>
+                  <Button size="sm" variant={sessions.find((s) => s.id === currentSessionId)?.pinned ? 'primary' : 'ghost'} onClick={togglePinCurrentSession}>
+                    {sessions.find((s) => s.id === currentSessionId)?.pinned ? '已收藏' : '收藏'}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={deleteCurrentSession}>
                     删除
