@@ -47,7 +47,7 @@ import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
-import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek, getAiPerformanceMetrics } from '../aiUsage';
+import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek, getAiPerformanceMetrics, getAiChatStats } from '../aiUsage';
 import { getCache, setCache, getCacheStats, clearCache } from '../aiCache';
 import { createAction, listPendingActions, getAction, approveAction, rejectAction, markExecuted, getActionStats, ACTION_TYPE_LABELS } from '../aiActions';
 import {
@@ -954,6 +954,19 @@ router.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const metrics = getAiPerformanceMetrics();
     res.json({ metrics });
+  }),
+);
+
+/**
+ * GET /api/ai/usage/chat-stats
+ * 返回聊天统计（按用户聚合：会话数、消息数、token 消耗、费用估算）
+ */
+router.get(
+  '/usage/chat-stats',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const stats = getAiChatStats();
+    res.json({ stats });
   }),
 );
 

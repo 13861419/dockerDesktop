@@ -271,3 +271,40 @@ export function getAiPerformanceMetrics(): AiPerformanceMetrics[] {
     )
     .all() as unknown as AiPerformanceMetrics[];
 }
+
+/** 聊天统计（按用户聚合） */
+export interface AiChatStats {
+  username: string;
+  totalSessions: number;
+  totalMessages: number;
+  totalTokens: number;
+  totalCost: number;
+  avgSessionLength: number;
+  lastActiveAt: number;
+}
+
+export function getAiChatStats(): AiChatStats[] {
+  return getDb()
+    .prepare(
+      `SELECT username,
+              COUNT(DISTINCT session_id) AS totalSessions,
+              COUNT(*) AS totalMessages,
+              COALESCE(SUM(total_tokens), 0) AS totalTokens,
+              COALESCE(SUM(total_tokens * CASE
+                WHEN model LIKE '%gpt-4o-mini%' THEN 0.00000015
+                WHEN model LIKE '%gpt-4o%' THEN 0.0000025
+                WHEN model LIKE '%deepseek-chat%' THEN 0.00000014
+                WHEN model LIKE '%deepseek-reasoner%' THEN 0.00000055
+                WHEN model LIKE '%claude-3-5-sonnet%' THEN 0.000003
+                WHEN model LIKE '%claude-3-5-haiku%' THEN 0.0000008
+                ELSE 0.000001
+              END), 0) AS totalCost,
+              ROUND(AVG(total_tokens), 0) AS avgSessionLength,
+              MAX(created_at) AS lastActiveAt
+       FROM ai_usage
+       WHERE username != ''
+       GROUP BY username
+       ORDER BY totalMessages DESC`,
+    )
+    .all() as unknown as AiChatStats[];
+}

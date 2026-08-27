@@ -156,6 +156,7 @@ export default function AiAssistantPage() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [dashboard, setDashboard] = useState<AiUsageDashboard | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [chatStats, setChatStats] = useState<Array<{ username: string; totalSessions: number; totalMessages: number; totalTokens: number; totalCost: number; avgSessionLength: number; lastActiveAt: number }>>([]);
   const [sessionSearch, setSessionSearch] = useState('');
 
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
@@ -306,6 +307,9 @@ export default function AiAssistantPage() {
     try {
       const d = await get<AiUsageDashboard>('/api/ai/usage/dashboard?days=30&weeks=12');
       setDashboard(d);
+      // 加载聊天统计
+      const cs = await get<{ stats: Array<{ username: string; totalSessions: number; totalMessages: number; totalTokens: number; totalCost: number; avgSessionLength: number; lastActiveAt: number }> }>('/api/ai/usage/chat-stats');
+      setChatStats(cs.stats || []);
     } catch (e: any) {
       showToast(e?.message || '加载仪表盘失败', 'error');
     } finally {
@@ -1830,6 +1834,21 @@ export default function AiAssistantPage() {
                             </span>
                             <span style={{ opacity: 0.5 }}>均 {m.avgTotalTokens} tok/次</span>
                             {m.avgDurationMs > 0 && <span style={{ opacity: 0.5 }}>均 {(m.avgDurationMs / 1000).toFixed(1)}s/次</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* 聊天统计 */}
+                    {chatStats.length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>聊天统计</div>
+                        {chatStats.map((s) => (
+                          <div key={s.username} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
+                            <span style={{ flex: 1 }}>{s.username || '匿名'}</span>
+                            <span style={{ opacity: 0.5 }}>{s.totalSessions} 会话</span>
+                            <span style={{ opacity: 0.5 }}>{s.totalMessages} 消息</span>
+                            <span style={{ opacity: 0.5 }}>{s.totalTokens} tok</span>
+                            <span style={{ opacity: 0.5 }}>${s.totalCost.toFixed(4)}</span>
                           </div>
                         ))}
                       </div>
