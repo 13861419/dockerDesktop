@@ -21,6 +21,7 @@ import {
   updateChatSessionTitle,
   updateChatSessionMessages,
   deleteChatSession,
+  togglePinChatSession,
 } from '../src/aiChatHistory';
 
 before(() => {
@@ -103,4 +104,15 @@ test('坏 messages JSON 返回空数组（容错）', () => {
     .run(createChatSession('erin').id);
   const got = listChatSessions('erin');
   assert.strictEqual(got[0].messageCount, 0);
+});
+
+test('togglePinChatSession 切换收藏/置顶状态', () => {
+  const s = createChatSession('pin_user');
+  assert.strictEqual(listChatSessions('pin_user').find((x) => x.id === s.id)!.pinned, false);
+  assert.strictEqual(togglePinChatSession(s.id, 'pin_user'), true);
+  assert.strictEqual(listChatSessions('pin_user').find((x) => x.id === s.id)!.pinned, true);
+  assert.strictEqual(togglePinChatSession(s.id, 'pin_user'), false);
+  assert.strictEqual(listChatSessions('pin_user').find((x) => x.id === s.id)!.pinned, false);
+  assert.strictEqual(togglePinChatSession(s.id, 'mallory'), null);
+  assert.strictEqual(togglePinChatSession(999999, 'pin_user'), null);
 });
