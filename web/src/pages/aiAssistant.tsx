@@ -203,6 +203,17 @@ export default function AiAssistantPage() {
     }
   }, [loadActions, showToast]);
 
+  const handleExecuteAction = useCallback(async (id: number) => {
+    if (!confirm('确定执行此操作？')) return;
+    try {
+      const r = await post<{ ok: boolean; message: string }>(`/api/ai/actions/${id}/execute`, {});
+      showToast(r.message, r.ok ? 'success' : 'error');
+      await loadActions();
+    } catch (e: any) {
+      showToast(e?.message || '执行失败', 'error');
+    }
+  }, [loadActions, showToast]);
+
   const checkLocalStatus = useCallback(async () => {
     const url = configForm.baseUrl.trim();
     if (!url) { showToast('请先填写 Base URL', 'error'); return; }
@@ -1253,6 +1264,7 @@ export default function AiAssistantPage() {
                     </thead>
                     <tbody>
                       {(actionView === 'pending' ? pendingActions : allActions).map((a) => (
+                        <>
                         <tr key={a.id}>
                           <td>{ACTION_LABELS[a.actionType] || a.actionType}</td>
                           <td style={{ fontSize: 12, opacity: 0.7, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{JSON.stringify(a.params)}</td>
@@ -1269,8 +1281,25 @@ export default function AiAssistantPage() {
                                 <Button size="sm" variant="danger" onClick={() => handleRejectAction(a.id)}>拒绝</Button>
                               </div>
                             )}
+                            {a.status === 'approved' && (
+                              <Button size="sm" variant="primary" onClick={() => handleExecuteAction(a.id)}>执行</Button>
+                            )}
+                            {a.status === 'executed' && (
+                              <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 11 }}>已执行</span>
+                            )}
+                            {a.status === 'failed' && (
+                              <span className="ai-assistant__cap-tag is-off" style={{ fontSize: 11 }}>失败</span>
+                            )}
                           </td>
                         </tr>
+                        {a.result && (a.status === 'executed' || a.status === 'failed') && (
+                          <tr key={`${a.id}-result`}>
+                            <td colSpan={5} style={{ padding: '4px 12px', fontSize: 12, opacity: 0.7, background: 'var(--bg-tertiary)' }}>
+                              执行结果：{a.result}
+                            </td>
+                          </tr>
+                        )}
+                        </>
                       ))}
                     </tbody>
                   </table>
