@@ -100,6 +100,8 @@ export default function VolumesPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   // 搜索关键字（按名称/挂载点本地过滤）
   const [keyword, setKeyword] = useState('');
+  // 按标签筛选：'' 表示不过滤，值如 'com.docker.compose.project=web'（key=value 完整对）
+  const [labelFilter, setLabelFilter] = useState('');
   /** 分页每页条数可选值 */
   const PAGE_SIZE_OPTIONS = [15, 30, 50];
   // 当前页码（从 1 开始）
@@ -322,13 +324,37 @@ export default function VolumesPage() {
   /** 根据关键字过滤后的卷列表（按名称或挂载点匹配） */
   const filteredVolumes = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    if (!kw) return volumes;
-    return volumes.filter(
-      (vol) =>
-        vol.Name.toLowerCase().includes(kw) ||
-        (vol.Mountpoint || '').toLowerCase().includes(kw)
-    );
-  }, [volumes, keyword]);
+    let list = volumes;
+    if (kw) {
+      list = list.filter(
+        (vol) =>
+          vol.Name.toLowerCase().includes(kw) ||
+          (vol.Mountpoint || '').toLowerCase().includes(kw)
+      );
+    }
+    if (labelFilter) {
+      const idx = labelFilter.indexOf('=');
+      const key = labelFilter.slice(0, idx);
+      const value = labelFilter.slice(idx + 1);
+      list = list.filter((vol) => (vol.Labels || {})[key] === value);
+    }
+    return list;
+  }, [volumes, keyword, labelFilter]);
+
+  /** 标签下拉选项：聚合卷列表中的全部 key=value 标签，按使用次数降序 */
+  const volumeLabelOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const vol of volumes) {
+      const labels = vol.Labels || {};
+      for (const [k, v] of Object.entries(labels)) {
+        const pair = `${k}=${v ?? ''}`;
+        counts.set(pair, (counts.get(pair) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([pair]) => pair);
+  }, [volumes]);
 
   /** 总页数（至少 1 页） */
   const totalPages = Math.max(1, Math.ceil(filteredVolumes.length / pageSize));
@@ -369,6 +395,21 @@ export default function VolumesPage() {
         title="数据卷"
         extra={
           <div className="toolbar">
+            <Select
+              className="volumes-label-filter"
+              value={labelFilter}
+              onChange={(e) => {
+                setLabelFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">全部标签</option>
+              {volumeLabelOptions.map((pair) => (
+                <option key={pair} value={pair}>
+                  {pair}
+                </option>
+              ))}
+            </Select>
             <input
               className="input volumes-search"
               placeholder="搜索卷名或挂载点"

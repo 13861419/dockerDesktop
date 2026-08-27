@@ -130,6 +130,8 @@ export default function ContainersPage() {
   const [search, setSearch] = useState('');
   // 按镜像筛选：'' 表示不过滤，值如 'nginx:latest'
   const [imageFilter, setImageFilter] = useState('');
+  // 按标签筛选：'' 表示不过滤，值如 'com.docker.compose.project=web'（key=value 完整对）
+  const [labelFilter, setLabelFilter] = useState('');
   const [page, setPage] = useState(1);
   // 每页条数（可在运行时切换）
   const [pageSize, setPageSize] = useState(10);
@@ -436,8 +438,33 @@ export default function ContainersPage() {
     ? stateFiltered.filter((c) => c.Image === imageFilter)
     : stateFiltered;
 
+  /** 标签下拉选项：聚合容器列表中的全部 key=value 标签，按使用次数降序 */
+  const labelOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of list || []) {
+      const labels = c.Labels || {};
+      for (const [k, v] of Object.entries(labels)) {
+        const pair = `${k}=${v ?? ''}`;
+        counts.set(pair, (counts.get(pair) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([pair]) => pair);
+  }, [list]);
+
+  /** 按标签过滤后的列表（标签值需精确匹配 key=value 对） */
+  const labelFiltered = labelFilter
+    ? imageFiltered.filter((c) => {
+        const idx = labelFilter.indexOf('=');
+        const key = labelFilter.slice(0, idx);
+        const value = labelFilter.slice(idx + 1);
+        return (c.Labels || {})[key] === value;
+      })
+    : imageFiltered;
+
   /** 搜索过滤后的列表 */
-  const filteredList = imageFiltered.filter(matchSearch);
+  const filteredList = labelFiltered.filter(matchSearch);
 
   /**
    * 排序比较函数：按当前 sortKey/sortDir 对容器排序。
@@ -1773,6 +1800,21 @@ export default function ContainersPage() {
             {imageOptions.map((img) => (
               <option key={img} value={img}>
                 {img}
+              </option>
+            ))}
+          </Select>
+          <Select
+            className="containers__label-filter"
+            value={labelFilter}
+            onChange={(e) => {
+              setLabelFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">全部标签</option>
+            {labelOptions.map((pair) => (
+              <option key={pair} value={pair}>
+                {pair}
               </option>
             ))}
           </Select>
