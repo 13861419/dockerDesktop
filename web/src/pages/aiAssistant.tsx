@@ -1654,6 +1654,17 @@ export default function AiAssistantPage() {
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input type="file" ref={knowledgeImportRef} style={{ display: 'none' }} accept=".md,.txt,.yml,.yaml,.log,.conf,.json,.ini,.toml,.dockerfile" multiple onChange={(e) => handleBatchImport(e.target.files)} />
                   <Button size="sm" onClick={() => knowledgeImportRef.current?.click()}>批量导入</Button>
+                  <Button size="sm" variant="ghost" onClick={async () => {
+                    try {
+                      const r = await post<{ initialized: number }>('/api/ai/knowledge/init', {});
+                      if (r.initialized > 0) {
+                        showToast(`初始化 ${r.initialized} 条预置知识`);
+                        loadKnowledge();
+                      } else {
+                        showToast('知识库已有内容，跳过初始化');
+                      }
+                    } catch (e: any) { showToast(e?.message || '初始化失败', 'error'); }
+                  }}>初始化预置知识</Button>
                   <Button size="sm" variant="primary" onClick={() => setShowKnowledgeForm(!showKnowledgeForm)}>+ 新建</Button>
                   <Button size="sm" onClick={() => setShowKnowledge(false)}>✕</Button>
                 </div>

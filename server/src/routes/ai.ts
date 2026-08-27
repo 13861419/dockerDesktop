@@ -29,7 +29,7 @@ import {
 import type { AiConfig } from '../aiClient';
 import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
 import { getOllamaStatus, getOllamaRunning, pullOllamaModel, deleteOllamaModel } from '../ollamaClient';
-import { createKnowledge, updateKnowledge, deleteKnowledge, getKnowledge, listKnowledge, getKnowledgeStats, searchKnowledge } from '../aiKnowledge';
+import { createKnowledge, updateKnowledge, deleteKnowledge, getKnowledge, listKnowledge, getKnowledgeStats, searchKnowledge, autoInitKnowledge } from '../aiKnowledge';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -1201,6 +1201,22 @@ router.post(
     const success = results.filter((r) => r.ok).length;
     logOperation(res.locals.username, '批量导入 AI 知识', 'ai', null, `成功 ${success}/${items.length}`);
     res.json({ total: items.length, success, results });
+  }),
+);
+
+/**
+ * POST /api/ai/knowledge/init
+ * 自动初始化预置知识库（仅当知识库为空时）
+ */
+router.post(
+  '/knowledge/init',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const count = autoInitKnowledge(res.locals.username);
+    if (count > 0) {
+      logOperation(res.locals.username, '初始化 AI 知识库', 'ai', null, `添加 ${count} 条预置知识`);
+    }
+    res.json({ initialized: count });
   }),
 );
 
