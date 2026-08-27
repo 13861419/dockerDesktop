@@ -105,7 +105,8 @@ export default function AiAssistantPage() {
   const [configForm, setConfigForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-
+  const [testingAll, setTestingAll] = useState(false);
+  const [healthResults, setHealthResults] = useState<Record<number, { ok: boolean; message: string }>>({});
   const [capabilities, setCapabilities] = useState<AiCapability[]>([]);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const messagesRef = useRef<ChatMsg[]>([]);
@@ -818,8 +819,10 @@ export default function AiAssistantPage() {
       setTesting(true);
       try {
         const res = await post<{ ok: boolean; message: string }>(`/api/ai/profiles/${p.id}/test`);
+        setHealthResults((r) => ({ ...r, [p.id]: { ok: res.ok, message: res.message } }));
         showToast(res.message || (res.ok ? '连接成功' : '连接失败'), res.ok ? 'success' : 'error');
       } catch (e: any) {
+        setHealthResults((r) => ({ ...r, [p.id]: { ok: false, message: e?.message || '测试失败' } }));
         showToast(e?.message || '测试失败', 'error');
       } finally {
         setTesting(false);
@@ -827,6 +830,23 @@ export default function AiAssistantPage() {
     },
     [showToast],
   );
+
+  const testAllProfiles = useCallback(async () => {
+    if (profiles.length === 0) return;
+    setTestingAll(true);
+    let okCount = 0;
+    for (const p of profiles) {
+      try {
+        const res = await post<{ ok: boolean; message: string }>(`/api/ai/profiles/${p.id}/test`);
+        setHealthResults((r) => ({ ...r, [p.id]: { ok: res.ok, message: res.message } }));
+        if (res.ok) okCount++;
+      } catch (e: any) {
+        setHealthResults((r) => ({ ...r, [p.id]: { ok: false, message: e?.message || '测试失败' } }));
+      }
+    }
+    setTestingAll(false);
+    showToast(`健康检查完成：${okCount}/${profiles.length} 可用`);
+  }, [profiles, showToast]);
 
   const openConfigNew = useCallback(() => {
     setEditing(null);
@@ -1317,6 +1337,21 @@ export default function AiAssistantPage() {
                               <span className={`ai-assistant__key-badge ${p.hasKey ? 'is-on' : 'is-off'}`}>
                                 {p.hasKey ? '已配置' : '无'}
                               </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              {healthResults[p.id] ? (
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    color: healthResults[p.id].ok ? 'var(--color-success)' : 'var(--color-error)',
+                                  }}
+                                  title={healthResults[p.id].message}
+                                >
+                                  {healthResults[p.id].ok ? '可用' : '异常'}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: 12, opacity: 0.35 }}>未测</span>
+                              )}
                             </td>
                             <td>
                               <div className="ai-assistant__row-actions">
