@@ -1169,3 +1169,17 @@ export interface AiLocalModelStatus {
   models: Array<{ id: string; name: string; size?: number }>;
   serviceInfo?: Record<string, unknown>;
 }
+
+// 文件分析
+export interface AiAnalysisIssue {
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  line?: number;
+}
+export interface AiAnalysisResult {
+  fileType: 'dockerfile' | 'compose' | 'log' | 'config' | 'text';
+  score: { security: number; performance: number; maintainability: number };
+  issues: AiAnalysisIssue[];
+  suggestions: string;
+  cfg?: { provider: string; model: string };
+}

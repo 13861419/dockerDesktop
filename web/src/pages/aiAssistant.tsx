@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -132,6 +132,11 @@ export default function AiAssistantPage() {
   const [localStatus, setLocalStatus] = useState<AiLocalModelStatus | null>(null);
   const [checkingLocal, setCheckingLocal] = useState(false);
 
+  const [showAnalyze, setShowAnalyze] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeResult, setAnalyzeResult] = useState<AiAnalysisResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
   const [templateCategory, setTemplateCategory] = useState('');
@@ -207,6 +212,25 @@ export default function AiAssistantPage() {
       setCheckingLocal(false);
     }
   }, [configForm.baseUrl, showToast]);
+
+  const handleFileAnalyze = useCallback(async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) { showToast('文件过大（最大 5MB）', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const content = String(reader.result || '');
+      setAnalyzing(true);
+      try {
+        const r = await post<AiAnalysisResult>('/api/ai/analyze', { filename: file.name, content });
+        setAnalyzeResult(r);
+        setShowAnalyze(true);
+      } catch (e: any) {
+        showToast(e?.message || '分析失败', 'error');
+      } finally {
+        setAnalyzing(false);
+      }
+    };
+    reader.readAsText(file);
+  }, [showToast]);
 
   const handleClearUsage = useCallback(async () => {
     try {
@@ -754,6 +778,10 @@ export default function AiAssistantPage() {
                     }
                   }}
                 />
+                <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".dockerfile,Dockerfile,*.yml,*.yaml,*.log,*.txt,*.conf,*.json,*.ini,*.toml" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileAnalyze(f); e.target.value = ''; }} />
+                <Button variant="ghost" loading={analyzing} onClick={() => fileInputRef.current?.click()}>
+                  上传分析
+                </Button>
                 <Button variant="primary" loading={sending} disabled={!input.trim()} onClick={() => send(input)}>
                   发送
                 </Button>
@@ -1190,6 +1218,54 @@ export default function AiAssistantPage() {
               ) : (
                 <Empty title="暂无操作" description="AI 建议的运维操作会出现在这里。" />
               )}
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showAnalyze && analyzeResult && (
+        <div className="ai-assistant__config-overlay" onClick={() => { setShowAnalyze(false); setAnalyzeResult(null); }}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="文件分析结果"
+              extra={
+                <Button size="sm" onClick={() => { setShowAnalyze(false); setAnalyzeResult(null); }}>✕</Button>
+              }
+            >
+              <div className="ai-assistant__usage-body">
+                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                  <div className="ai-assistant__usage-card">
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>安全</span>
+                    <span style={{ fontSize: 20, fontWeight: 600, color: analyzeResult.score.security >= 7 ? 'var(--color-success)' : analyzeResult.score.security >= 4 ? 'var(--color-warning)' : 'var(--color-danger)' }}>{analyzeResult.score.security}/10</span>
+                  </div>
+                  <div className="ai-assistant__usage-card">
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>性能</span>
+                    <span style={{ fontSize: 20, fontWeight: 600, color: analyzeResult.score.performance >= 7 ? 'var(--color-success)' : analyzeResult.score.performance >= 4 ? 'var(--color-warning)' : 'var(--color-danger)' }}>{analyzeResult.score.performance}/10</span>
+                  </div>
+                  <div className="ai-assistant__usage-card">
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>可维护性</span>
+                    <span style={{ fontSize: 20, fontWeight: 600, color: analyzeResult.score.maintainability >= 7 ? 'var(--color-success)' : analyzeResult.score.maintainability >= 4 ? 'var(--color-warning)' : 'var(--color-danger)' }}>{analyzeResult.score.maintainability}/10</span>
+                  </div>
+                </div>
+                {analyzeResult.issues.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 6 }}>问题列表</div>
+                    {analyzeResult.issues.map((it, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 13, marginBottom: 4 }}>
+                        <span className={`ai-assistant__cap-tag is-${it.severity === 'critical' ? 'off' : it.severity === 'warning' ? 'local' : 'cloud'}`} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{it.severity}</span>
+                        <span>{it.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {analyzeResult.suggestions && (
+                  <div>
+                    <div style={{ fontWeight: 500, marginBottom: 6 }}>AI 建议</div>
+                    <div className="ai-assistant__msg-content" style={{ background: 'var(--bg-tertiary)', borderRadius: 6, padding: 12, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{analyzeResult.suggestions}</div>
+                  </div>
+                )}
+              </div>
             </Card>
           </div>
         </div>

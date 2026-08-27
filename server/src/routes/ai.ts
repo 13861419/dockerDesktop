@@ -27,6 +27,7 @@ import {
   getLocalModelStatus,
 } from '../aiClient';
 import type { AiConfig } from '../aiClient';
+import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -502,6 +503,66 @@ async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
 }
 
 /**
+ * POST /api/ai/analyze
+ * body: { filename, type?, content }
+ * 分析上传的文件（Dockerfile/Compose/日志/配置）
+ */
+router.post(
+  '/analyze',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    ensureAiProfiles();
+    const candidates = buildCandidateConfigs();
+    if (candidates.length === 0) {
+      const e: any = new Error('AI 助手未配置（缺少可用的模型配置）');
+      e.statusCode = 503;
+      throw e;
+    }
+    const filename = String(req.body?.filename || '').trim();
+    const content = String(req.body?.content || '');
+    if (!filename) {
+      const e: any = new Error('缺少文件名');
+      e.statusCode = 400;
+      throw e;
+    }
+    if (!content) {
+      const e: any = new Error('文件内容为空');
+      e.statusCode = 400;
+      throw e;
+    }
+    if (content.length > MAX_FILE_CHARS * 2) {
+      const e: any = new Error('文件过大（最大 100KB 文本）');
+      e.statusCode = 400;
+      throw e;
+    }
+
+    const { cfg, profile } = candidates[0];
+    // 智能路由：复杂分析用默认模型
+    const routed = smartRoute(candidates, `分析文件 ${filename}`, 'analyze');
+    const useCfg = routed[0].cfg;
+    const useProfile = routed[0].profile;
+
+    const result = await analyzeFile(useCfg, { filename, content, type: String(req.body?.type || '') });
+
+    recordAiUsage({
+      profileId: useProfile.id,
+      provider: useProfile.provider || useCfg.baseUrl,
+      model: useCfg.model,
+      tool: 'analyze',
+      promptTokens: estimateTokens(filename + content),
+      completionTokens: estimateTokens(result.suggestions),
+      totalTokens: estimateTokens(filename + content) + estimateTokens(result.suggestions),
+      promptChars: content.length,
+      completionChars: result.suggestions.length,
+      success: true,
+      username: res.locals.username,
+    });
+    logOperation(res.locals.username, 'AI 文件分析', 'ai', null, `分析 ${filename}（${result.fileType}）`);
+    res.json({ ...result, cfg: { provider: useProfile.provider, model: useCfg.model } });
+  }),
+);
+
+/**
  * POST /api/ai/chat
  * body: { messages: [{role, content}], tool?: 'compose-infer' | 'logs' | string }
  *  - tool='compose-infer'：注入运行中容器上下文
@@ -519,8 +580,6 @@ router.post(
       e.statusCode = 503;
       throw e;
     }
-
-    // 提前解析请求（上下文采集与 profile 无关，只做一次）
     const { finalMessages: baseMsgs, toolContext, tool, historyCount } = await resolveChatRequest(req, res, candidates[0].cfg);
 
     // 智能路由：根据消息复杂度排序候选
