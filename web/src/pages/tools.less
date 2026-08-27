@@ -1,0 +1,125 @@
+/* 运维工具箱页面样式 */
+
+.tools-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tools-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+/* 卡片内通用布局 */
+.tools-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.tools-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tools-label {
+  color: var(--text-muted, #94a3b8);
+  font-family: monospace;
+}
+
+/* 输入框 */
+.tools-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+
+  &:focus {
+    border-color: #3b82f6;
+  }
+}
+
+.tools-input--grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.tools-input--flags {
+  width: 64px;
+}
+
+.tools-mono {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+/* 多行文本域 */
+.tools-ta {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  resize: vertical;
+  outline: none;
+
+  &:focus {
+    border-color: #3b82f6;
+  }
+}
+
+.tools-ta--mono {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+/* 结果输出区 */
+.tools-out {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border, #e5e7eb);
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.tools-out--err {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.tools-out__ph {
+  color: var(--text-muted, #94a3b8);
+}
+
+.tools-out__line {
+  white-space: pre-wrap;
+}
+
+/* 错误提示 */
+.tools-err {
+  margin: 4px 0;
+  color: #ef4444;
+  font-size: 12px;
+}
+
+/* 说明文字 */
+.tools-hint {
+  margin: 4px 0;
+  color: var(--text-muted, #94a3b8);
+  font-size: 12px;
+}

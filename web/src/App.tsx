@@ -50,6 +50,7 @@ const AiAssistantPage = lazy(() => import('./pages/aiAssistant'));
 const LogsPage = lazy(() => import('./pages/logs'));
 const GcPage = lazy(() => import('./pages/gc'));
 const TopologyPage = lazy(() => import('./pages/topology'));
+const ToolsPage = lazy(() => import('./pages/tools'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -369,6 +370,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <TopologyPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/tools"
+                element={
+                  <PageSuspense>
+                    <ToolsPage />
                   </PageSuspense>
                 }
               />

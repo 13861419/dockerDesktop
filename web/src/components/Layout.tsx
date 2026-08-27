@@ -387,6 +387,15 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/tools',
+    label: '工具箱',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2.3-2.3 2.7-2.7Z" />
+      </svg>
+    ),
+  },
 ];
 
 /**
