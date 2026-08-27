@@ -315,3 +315,44 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 层大小热力图：每格一层，颜色按层占比从蓝到红渐变 */
+.layer-heatmap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 8px 0 4px;
+}
+
+.layer-heatmap__cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  cursor: default;
+  transition: transform 0.1s ease;
+
+  &:hover {
+    transform: scale(1.35);
+    outline: 1px solid var(--text-muted, #94a3b8);
+  }
+}
+
+.layer-heatmap__legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-bottom: 6px;
+}
+
+.layer-heatmap__legend-bar {
+  width: 80px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, rgb(59, 130, 246), rgb(255, 48, 44));
+}
+
+.layer-heatmap__legend-note {
+  margin-left: 8px;
+}

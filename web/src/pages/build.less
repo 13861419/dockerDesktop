@@ -148,3 +148,53 @@
   align-items: center;
   gap: 6px;
 }
+
+/* 构建时长对比条形图（纯 CSS） */
+.build-duration {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.build-duration__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.build-duration__label {
+  flex: 0 0 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+.build-duration__track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.build-duration__bar {
+  height: 12px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #3b82f6, #6366f1);
+  min-width: 2px;
+  transition: width 0.2s ease;
+}
+
+.build-duration__bar--fail {
+  background: #ef4444;
+}
+
+.build-duration__value {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}

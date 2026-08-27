@@ -146,6 +146,19 @@ function truncate(str: string, len: number): string {
 }
 
 /**
+ * 层大小热力图颜色映射：按占比平方根插值，从蓝色（小）过渡到红色（大）。
+ * 使用平方根映射弱化极端占比差异，让中小层也能看出相对大小。
+ * @param ratio 该层占总空间的比例（0-1）
+ */
+function heatColor(ratio: number): string {
+  const t = Math.sqrt(Math.max(0, Math.min(1, ratio)));
+  const r = Math.round(59 + t * 196);
+  const g = Math.round(130 - t * 82);
+  const b = Math.round(246 - t * 202);
+  return `rgb(${r},${g},${b})`;
+}
+
+/**
  * 从 refs 中取首个安全的 http/https 链接（防 javascript: 等协议注入）
  * @param refs 漏洞参考链接数组
  * @returns 首个安全的 http/https 链接；无安全链接时返回 undefined
@@ -563,6 +576,24 @@ export default function ImageDetailPage() {
               <div className="desc-row">
                 <div className="desc-label">层占用合计</div>
                 <div className="desc-value">{formatSize(layerAnalysis.totalSize)}</div>
+              </div>
+
+              <h4 className="section-sub">层大小热力图</h4>
+              <div className="layer-heatmap">
+                {layerAnalysis.layers.map((l) => (
+                  <div
+                    key={l.index}
+                    className="layer-heatmap__cell"
+                    style={{ background: heatColor(l.ratio) }}
+                    title={`第 ${l.index + 1} 层 · ${formatSize(l.size)} · ${(l.ratio * 100).toFixed(1)}%\n${l.createdBy}`}
+                  />
+                ))}
+              </div>
+              <div className="layer-heatmap__legend">
+                <span>小</span>
+                <div className="layer-heatmap__legend-bar" />
+                <span>大</span>
+                <span className="layer-heatmap__legend-note">每格一层，悬停查看明细</span>
               </div>
 
               <h4 className="section-sub">占用最大的层</h4>

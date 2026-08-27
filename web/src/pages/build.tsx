@@ -353,6 +353,33 @@ export default function BuildPage() {
         </div>
       </Card>
 
+      {history.length > 1 && (
+        <Card title="构建时长对比（最近 15 次）">
+          {(() => {
+            const recent = history.slice(0, 15);
+            const maxMs = Math.max(...recent.map((h) => h.duration_ms || 0), 1);
+            return (
+              <div className="build-duration">
+                {recent.map((h) => (
+                  <div key={h.id} className="build-duration__row">
+                    <span className="build-duration__label" title={`${h.name} · ${h.context}`}>
+                      {formatTime(h.created_at).slice(5)} · {h.name}
+                    </span>
+                    <div className="build-duration__track">
+                      <div
+                        className={`build-duration__bar ${h.success === 1 ? '' : 'build-duration__bar--fail'}`}
+                        style={{ width: `${Math.max(2, ((h.duration_ms || 0) / maxMs) * 100)}%` }}
+                      />
+                      <span className="build-duration__value">{formatDuration(h.duration_ms)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </Card>
+      )}
+
       <Card
         title="构建历史"
         extra={
