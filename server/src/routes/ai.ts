@@ -628,6 +628,13 @@ router.post(
         continue;
       }
       const sysMsgs = buildSystemPrompt(cfg, '', '');
+      // RAG：检索相关知识条目注入上下文
+      const lastUserMsg = baseMsgs.filter((m) => m.role === 'user').pop()?.content || '';
+      const ragResults = searchKnowledge(lastUserMsg, 3);
+      if (ragResults.length > 0) {
+        const ragContext = ragResults.map((k) => `【${k.category}】${k.title}\n${k.content.slice(0, 500)}`).join('\n\n');
+        sysMsgs[0] = { role: 'system' as const, content: sysMsgs[0].content + `\n\n## 参考知识\n以下运维知识可能与用户问题相关，请结合参考回答：\n\n${ragContext}` };
+      }
       // 追加 action 建议指令（仅非流式）
       sysMsgs[0] = { role: 'system' as const, content: sysMsgs[0].content + ACTION_SUGGEST_INSTRUCTION };
       const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
@@ -779,6 +786,13 @@ router.post(
         continue;
       }
       const sysMsgs = buildSystemPrompt(cfg, '', '');
+      // RAG：检索相关知识条目注入上下文
+      const lastUserMsgStream = baseMsgs.filter((m) => m.role === 'user').pop()?.content || '';
+      const ragResultsStream = searchKnowledge(lastUserMsgStream, 3);
+      if (ragResultsStream.length > 0) {
+        const ragContext = ragResultsStream.map((k) => `【${k.category}】${k.title}\n${k.content.slice(0, 500)}`).join('\n\n');
+        sysMsgs[0] = { role: 'system' as const, content: sysMsgs[0].content + `\n\n## 参考知识\n以下运维知识可能与用户问题相关，请结合参考回答：\n\n${ragContext}` };
+      }
       const finalMessages = [...sysMsgs, ...baseMsgs.filter((m) => m.role !== 'system')];
       try {
         const gen = chatCompletionStream(cfg, finalMessages, (u) => {
