@@ -17,6 +17,7 @@ export interface AiUsageRecord {
   totalTokens?: number;
   promptChars?: number;
   completionChars?: number;
+  durationMs?: number;
   success?: boolean;
   errorMessage?: string;
   username?: string;
@@ -44,8 +45,8 @@ export function recordAiUsage(rec: AiUsageRecord): void {
       .prepare(
         `INSERT INTO ai_usage
          (profile_id, provider, model, tool, prompt_tokens, completion_tokens, total_tokens,
-          prompt_chars, completion_chars, success, error_message, username, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          prompt_chars, completion_chars, duration_ms, success, error_message, username, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         rec.profileId ?? null,
@@ -57,6 +58,7 @@ export function recordAiUsage(rec: AiUsageRecord): void {
         Math.max(0, rec.totalTokens ?? 0),
         Math.max(0, rec.promptChars ?? 0),
         Math.max(0, rec.completionChars ?? 0),
+        Math.max(0, rec.durationMs ?? 0),
         rec.success === false ? 0 : 1,
         rec.errorMessage || '',
         rec.username || '',
@@ -246,6 +248,7 @@ export interface AiPerformanceMetrics {
   avgPromptTokens: number;
   avgCompletionTokens: number;
   avgTotalTokens: number;
+  avgDurationMs: number;
   totalTokens: number;
 }
 
@@ -259,6 +262,7 @@ export function getAiPerformanceMetrics(): AiPerformanceMetrics[] {
               ROUND(COALESCE(AVG(prompt_tokens), 0), 0) AS avgPromptTokens,
               ROUND(COALESCE(AVG(completion_tokens), 0), 0) AS avgCompletionTokens,
               ROUND(COALESCE(AVG(total_tokens), 0), 0) AS avgTotalTokens,
+              ROUND(COALESCE(AVG(duration_ms), 0), 0) AS avgDurationMs,
               COALESCE(SUM(total_tokens), 0) AS totalTokens
        FROM ai_usage
        WHERE model != ''

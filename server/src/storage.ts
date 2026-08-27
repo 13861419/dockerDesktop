@@ -518,6 +518,7 @@ function createTables(): void {
       total_tokens       INTEGER NOT NULL DEFAULT 0,    -- 合计
       prompt_chars       INTEGER NOT NULL DEFAULT 0,    -- 估算输入字符（无法取到 usage 时用）
       completion_chars   INTEGER NOT NULL DEFAULT 0,    -- 估算输出字符
+      duration_ms        INTEGER NOT NULL DEFAULT 0,    -- 响应时间（毫秒）
       success            INTEGER NOT NULL DEFAULT 1,    -- 是否成功
       error_message      TEXT NOT NULL DEFAULT '',      -- 失败原因
       username           TEXT NOT NULL DEFAULT '',      -- 调用者
@@ -696,6 +697,12 @@ function createTables(): void {
   // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：为 ai_usage 补充响应时间列
+  try {
+    d.exec('ALTER TABLE ai_usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
   } catch {
     // 列已存在则忽略
   }

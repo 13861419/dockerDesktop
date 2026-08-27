@@ -597,6 +597,7 @@ router.post(
     let reply = '';
     let usedProfile: AiProfilePublic = routed[0].profile;
     let fallback = false;
+    const startTime = Date.now();
 
     // 语义缓存：检查最近一条用户消息是否命中
     const cacheKeyMsg = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
@@ -612,6 +613,7 @@ router.post(
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
+        durationMs: Date.now() - startTime,
         username,
       });
     } else {
@@ -652,6 +654,7 @@ router.post(
           tool: tool || 'chat',
           success: false,
           errorMessage: `[故障转移] ${err?.message || '未知错误'}`,
+          durationMs: Date.now() - startTime,
           username,
         });
         if (i === routed.length - 1) throw err;
@@ -689,6 +692,7 @@ router.post(
       totalTokens: promptEst + estimateTokens(reply),
       promptChars,
       completionChars: reply.length,
+      durationMs: Date.now() - startTime,
       success: true,
       username,
     });
@@ -763,6 +767,7 @@ router.post(
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
+        durationMs: 0,
         username,
       });
       return res.end();
@@ -774,6 +779,7 @@ router.post(
     let firstChunk: string | null = null;
     let streamGen: AsyncGenerator<string, void, unknown> | null = null;
     const capturedUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } = {};
+    const streamStartTime = Date.now();
 
     for (let i = 0; i < routed.length; i++) {
       const { cfg, profile } = routed[i];
@@ -851,6 +857,7 @@ router.post(
           totalTokens: capturedUsage.total_tokens ?? estimateTokens(full) + estimateTokens(full),
           promptChars: baseMsgs.reduce((n: number, m: any) => n + String(m.content || '').length, 0),
           completionChars: full.length,
+          durationMs: Date.now() - streamStartTime,
           success: true,
           username,
         });
@@ -862,6 +869,7 @@ router.post(
           tool: tool || 'chat',
           success: false,
           errorMessage: err?.message || '流式传输中断',
+          durationMs: Date.now() - streamStartTime,
           username,
         });
         send({ type: 'error', message: err?.message || '流式响应失败' });
@@ -929,9 +937,10 @@ router.get(
     const byDayCost = listAiUsageByDayWithCost(Math.min(days, 90));
     const byWeek = listAiUsageByWeek(Math.min(weeks, 52));
     const byModel = listAiUsageByModel();
+    const performance = getAiPerformanceMetrics();
     const summary = summarizeAiUsage();
     const totalCost = byDayCost.reduce((sum, r) => sum + (r.cost || 0), 0);
-    res.json({ summary, byDayCost, byWeek, byModel, totalCost });
+    res.json({ summary, byDayCost, byWeek, byModel, performance, totalCost });
   }),
 );
 

@@ -1240,6 +1240,7 @@ export interface AiUsageDashboard {
   byDayCost: Array<{ day: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number; cost: number }>;
   byWeek: Array<{ week: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number }>;
   byModel: Array<{ model: string; provider: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number; successCalls: number }>;
+  performance: AiPerformanceMetric[];
   totalCost: number;
 }
 
@@ -1251,5 +1252,6 @@ export interface AiPerformanceMetric {
   avgPromptTokens: number;
   avgCompletionTokens: number;
   avgTotalTokens: number;
+  avgDurationMs: number;
   totalTokens: number;
 }
