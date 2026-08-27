@@ -474,6 +474,27 @@ export default function AiAssistantPage() {
     }
   }, [currentSessionId, showToast, switchToNewSession]);
 
+  const exportSession = useCallback(async () => {
+    if (currentSessionId == null) return;
+    try {
+      const token = localStorage.getItem('token') || '';
+      const resp = await fetch(`/api/ai/sessions/${currentSessionId}/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error('导出失败');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ai-session-${currentSessionId}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('已导出为 Markdown');
+    } catch (e: any) {
+      showToast(e?.message || '导出失败', 'error');
+    }
+  }, [currentSessionId, showToast]);
+
   const loadAll = useCallback(async () => {
     try {
       const [s, p, pr, c] = await Promise.all([
@@ -896,6 +917,9 @@ export default function AiAssistantPage() {
                   </Button>
                   <Button size="sm" variant="ghost" onClick={deleteCurrentSession}>
                     删除
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={exportSession}>
+                    导出
                   </Button>
                 </div>
               </div>

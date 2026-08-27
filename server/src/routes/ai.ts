@@ -1382,6 +1382,47 @@ router.delete(
   }),
 );
 
+/**
+ * GET /api/ai/sessions/:id/export
+ * 导出会话为 Markdown 文件
+ */
+router.get(
+  '/sessions/:id/export',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的会话 ID' });
+    const session = getChatSession(id, res.locals.username);
+    if (!session) return res.status(404).json({ error: '会话不存在' });
+
+    const lines: string[] = [];
+    lines.push(`# ${session.title || 'AI 对话'}`);
+    lines.push('');
+    lines.push(`> 导出时间：${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
+    lines.push(`> 消息数：${session.messages.length}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+
+    for (const msg of session.messages) {
+      const role = msg.role === 'user' ? '**用户**' : '**AI 助手**';
+      lines.push(`### ${role}`);
+      lines.push('');
+      lines.push(msg.content);
+      lines.push('');
+      if (msg.error) {
+        lines.push('> ⚠️ 此消息包含错误');
+        lines.push('');
+      }
+    }
+
+    const md = lines.join('\n');
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ai-session-${id}.md"`);
+    res.send(md);
+  }),
+);
+
 // ============ Prompt 模板 ============
 
 /**
