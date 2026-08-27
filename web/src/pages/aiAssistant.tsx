@@ -155,6 +155,7 @@ export default function AiAssistantPage() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [dashboard, setDashboard] = useState<AiUsageDashboard | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [sessionSearch, setSessionSearch] = useState('');
 
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
@@ -397,9 +398,10 @@ export default function AiAssistantPage() {
     }
   }, [loadUsage, showToast]);
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (search?: string) => {
     try {
-      const r = await get<{ sessions: AiChatSessionLite[] }>('/api/ai/sessions');
+      const url = search ? `/api/ai/sessions?q=${encodeURIComponent(search)}` : '/api/ai/sessions';
+      const r = await get<{ sessions: AiChatSessionLite[] }>(url);
       setSessions(r.sessions || []);
     } catch {
       // 静默：历史加载失败不阻断页面
@@ -407,6 +409,10 @@ export default function AiAssistantPage() {
       setSessionsLoaded(true);
     }
   }, []);
+
+  const loadSessions = useCallback((search?: string) => {
+    refreshSessions(search);
+  }, [refreshSessions]);
 
   const switchToNewSession = useCallback(() => {
     setCurrentSessionId(null);
@@ -911,6 +917,15 @@ export default function AiAssistantPage() {
                     </option>
                   ))}
                 </Select>
+                <Input
+                  placeholder="搜索对话..."
+                  value={sessionSearch}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSessionSearch(e.target.value)}
+                  onKeyDown={(e: React.KeyboardEvent) => {
+                    if (e.key === 'Enter') loadSessions(sessionSearch || undefined);
+                  }}
+                  style={{ marginBottom: 8 }}
+                />
                 <div className="ai-assistant__list-header-actions">
                   <Button size="sm" onClick={newSession}>
                     新建

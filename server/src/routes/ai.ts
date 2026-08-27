@@ -57,6 +57,7 @@ import {
   updateChatSessionTitle,
   updateChatSessionMessages,
   deleteChatSession,
+  searchChatSessions,
 } from '../aiChatHistory';
 import {
   listTemplates,
@@ -1296,9 +1297,15 @@ router.post(
 router.get(
   '/sessions',
   requireAuth,
-  asyncHandler(async (_req: Request, res: Response) => {
-    const sessions = listChatSessions(res.locals.username);
-    res.json({ sessions });
+  asyncHandler(async (req: Request, res: Response) => {
+    const keyword = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (keyword) {
+      const sessions = searchChatSessions(res.locals.username, keyword);
+      res.json({ sessions });
+    } else {
+      const sessions = listChatSessions(res.locals.username);
+      res.json({ sessions });
+    }
   }),
 );
 

@@ -128,3 +128,27 @@ export function deleteChatSession(id: number, username: string): boolean {
   const res = getDb().prepare('DELETE FROM ai_chat_sessions WHERE id = ? AND username = ?').run(id, username);
   return res.changes > 0;
 }
+
+/** 搜索会话（按标题或消息内容关键词） */
+export function searchChatSessions(username: string, keyword: string, limit = 20): AiChatSessionLite[] {
+  if (!keyword.trim()) return [];
+  const kw = `%${keyword}%`;
+  const rows = getDb()
+    .prepare(
+      `SELECT id, title, messages, tool, target, created_at, updated_at
+       FROM ai_chat_sessions
+       WHERE username = ? AND (title LIKE ? OR messages LIKE ?)
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+    )
+    .all(username, kw, kw, limit) as unknown as SessionRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    messageCount: parseMessages(r.messages).length,
+    tool: r.tool || '',
+    target: r.target || '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
