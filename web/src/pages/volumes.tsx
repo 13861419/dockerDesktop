@@ -12,7 +12,7 @@ import Empty from '../components/Empty';
 import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, del } from '../api/client';
+import { get, post, del, download } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
 import { VolumeItem } from '../types';
 import VolumeFileExplorer from '../components/VolumeFileExplorer';
@@ -128,6 +128,12 @@ export default function VolumesPage() {
   const [backupName, setBackupName] = useState('');
   // 备份提交进行中
   const [backingUp, setBackingUp] = useState(false);
+  // 克隆弹窗状态
+  const [cloneTarget, setCloneTarget] = useState<VolumeItem | null>(null);
+  const [cloneName, setCloneName] = useState('');
+  const [cloning, setCloning] = useState(false);
+  // 正在导出 tar 的卷名（用于该行导出按钮独立 loading）
+  const [exportingName, setExportingName] = useState('');
 
   const fetchVolumes = useCallback(async () => {
     setLoading(true);
@@ -238,6 +244,58 @@ export default function VolumesPage() {
     setBackupTarget(vol);
     setBackupName(`卷-${vol.Name}-${new Date().toISOString()}`);
   }, []);
+
+  /**
+   * 打开克隆弹窗，默认目标卷名 "<源卷名>-clone"（若已存在则追加时间戳）
+   * @param vol 目标卷
+   */
+  const openClone = useCallback((vol: VolumeItem) => {
+    setCloneTarget(vol);
+    const base = `${vol.Name}-clone`;
+    setCloneName(volumes.some((v) => v.Name === base) ? `${base}-${Date.now()}` : base);
+  }, [volumes]);
+
+  /** 提交克隆：调用 /api/volumes/:name/clone，成功后刷新列表 */
+  const handleClone = useCallback(async () => {
+    if (!cloneTarget || cloning) return;
+    const target = cloneName.trim();
+    if (!target) {
+      showToast('请输入目标卷名', 'error');
+      return;
+    }
+    if (!canDelete || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可克隆数据卷', 'error');
+      setCloneTarget(null);
+      return;
+    }
+    setCloning(true);
+    try {
+      await post(`/api/volumes/${encodeURIComponent(cloneTarget.Name)}/clone`, { name: target });
+      showToast(`数据卷已克隆为 "${target}"`);
+      setCloneTarget(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || '克隆数据卷失败', 'error');
+    } finally {
+      setCloning(false);
+    }
+  }, [cloneTarget, cloneName, cloning, canDelete, checking, showToast]);
+
+  /**
+   * 导出数据卷为 tar 下载
+   * @param vol 目标卷
+   */
+  const handleExport = useCallback(async (vol: VolumeItem) => {
+    setExportingName(vol.Name);
+    try {
+      await download(`/api/volumes/${encodeURIComponent(vol.Name)}/export`, `${vol.Name}.tar`);
+      showToast('数据卷已导出');
+    } catch (e: any) {
+      showToast(e?.message || '导出数据卷失败', 'error');
+    } finally {
+      setExportingName('');
+    }
+  }, [showToast]);
 
   /**
    * 提交数据卷备份：调用 /api/backups 创建备份
@@ -458,6 +516,7 @@ export default function VolumesPage() {
                   <th>名称</th>
                   <th>驱动</th>
                   <th>状态</th>
+                  <th>大小</th>
                   <th>挂载点</th>
                   <th>创建时间</th>
                   <th className="col-actions">操作</th>
@@ -488,6 +547,7 @@ export default function VolumesPage() {
                         : '未使用'}
                     </span>
                   </td>
+                  <td>{vol.UsageData?.Size != null ? formatBytes(vol.UsageData.Size) : '-'}</td>
                   <td className="col-mono" title={vol.Mountpoint}>
                     {vol.Mountpoint}
                   </td>
@@ -499,6 +559,18 @@ export default function VolumesPage() {
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openBackup(vol)}>
                         备份
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openClone(vol)} disabled={!canDelete}>
+                        克隆
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleExport(vol)}
+                        loading={exportingName === vol.Name}
+                        disabled={canDelete ? false : true}
+                      >
+                        导出
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
                         详情
@@ -762,6 +834,40 @@ export default function VolumesPage() {
         </Field>
         <Field label="驱动" hint="默认 local">
           <Input value={driver} onChange={(e) => setDriver(e.target.value)} placeholder="local" />
+        </Field>
+      </Modal>
+
+      {/* 克隆数据卷弹窗 */}
+      <Modal
+        open={!!cloneTarget}
+        title="克隆数据卷"
+        onClose={() => !cloning && setCloneTarget(null)}
+        width={460}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCloneTarget(null)} disabled={cloning}>
+              取消
+            </Button>
+            <Button onClick={handleClone} loading={cloning}>
+              开始克隆
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label="源数据卷"
+          hint={cloneTarget ? `挂载点：${cloneTarget.Mountpoint}` : undefined}
+        >
+          <Input value={cloneTarget?.Name || ''} disabled />
+        </Field>
+        <Field label="目标卷名" required hint="将创建新卷并完整复制源卷数据，耗时取决于数据量">
+          <Input
+            value={cloneName}
+            onChange={(e) => setCloneName(e.target.value)}
+            placeholder="目标卷名"
+            autoFocus
+            disabled={cloning}
+          />
         </Field>
       </Modal>
 

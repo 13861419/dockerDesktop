@@ -138,6 +138,7 @@ export interface VolumeItem {
   Name: string;
   Options: Record<string, string> | null;
   Scope: string;
+  UsageData?: { Size?: number | null; RefCount?: number | null } | null;
   [key: string]: unknown;
 }
 
