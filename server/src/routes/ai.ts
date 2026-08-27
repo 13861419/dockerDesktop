@@ -1526,6 +1526,17 @@ router.put(
   }),
 );
 
+/** DELETE /api/ai/sessions/clear 清空当前用户全部会话（须置于 /sessions/:id 之前） */
+router.delete(
+  '/sessions/clear',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const count = clearAllChatSessions(res.locals.username);
+    logOperation(res.locals.username, '清空 AI 对话', 'ai', null, `清空 ${count} 个会话`);
+    res.json({ ok: true, deleted: count });
+  }),
+);
+
 /**
  * DELETE /api/ai/sessions/:id
  * 删除会话
@@ -1552,17 +1563,6 @@ router.post(
     if (!ids.length) return res.status(400).json({ error: '请提供待删除的会话 ID 数组' });
     const count = deleteChatSessions(ids, res.locals.username);
     logOperation(res.locals.username, '批量删除 AI 对话', 'ai', null, `删除 ${count} 个会话`);
-    res.json({ ok: true, deleted: count });
-  }),
-);
-
-/** DELETE /api/ai/sessions/clear 清空当前用户全部会话 */
-router.delete(
-  '/sessions/clear',
-  requireAuth,
-  asyncHandler(async (req: Request, res: Response) => {
-    const count = clearAllChatSessions(res.locals.username);
-    logOperation(res.locals.username, '清空 AI 对话', 'ai', null, `清空 ${count} 个会话`);
     res.json({ ok: true, deleted: count });
   }),
 );
