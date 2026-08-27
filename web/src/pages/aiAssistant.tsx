@@ -157,6 +157,11 @@ export default function AiAssistantPage() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [dashboard, setDashboard] = useState<AiUsageDashboard | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  const [showInspection, setShowInspection] = useState(false);
+  const [inspectionList, setInspectionList] = useState<Array<{ id: number; status: number; summary: string; snapshot: string; createdAt: number }>>([]);
+  const [inspectionLoading, setInspectionLoading] = useState(false);
+  const [inspectionRunning, setInspectionRunning] = useState(false);
   const [chatStats, setChatStats] = useState<Array<{ username: string; totalMessages: number; totalTokens: number; totalCost: number; avgTokensPerCall: number; lastActiveAt: number }>>([]);
   const [sessionSearch, setSessionSearch] = useState('');
 
@@ -317,6 +322,31 @@ export default function AiAssistantPage() {
       setDashboardLoading(false);
     }
   }, [showToast]);
+
+  const loadInspections = useCallback(async () => {
+    setInspectionLoading(true);
+    try {
+      const r = await get<{ items: Array<{ id: number; status: number; summary: string; snapshot: string; createdAt: number }> }>('/api/ai/inspection/list');
+      setInspectionList(r.items || []);
+    } catch (e: any) {
+      showToast(e?.message || '加载巡检记录失败', 'error');
+    } finally {
+      setInspectionLoading(false);
+    }
+  }, [showToast]);
+
+  const runInspectionNow = useCallback(async (notify: boolean) => {
+    setInspectionRunning(true);
+    try {
+      const r = await post<{ ok: boolean; summary: string }>('/api/ai/inspection/run', { notify });
+      showToast('巡检完成');
+      await loadInspections();
+    } catch (e: any) {
+      showToast(e?.message || '巡检失败', 'error');
+    } finally {
+      setInspectionRunning(false);
+    }
+  }, [showToast, loadInspections]);
 
   const loadKnowledge = useCallback(async (cat?: string, kw?: string) => {
     setKnowledgeLoading(true);
@@ -906,6 +936,9 @@ export default function AiAssistantPage() {
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowDashboard(!showDashboard); if (!showDashboard) loadDashboard(); }}>
               用量仪表盘
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowInspection(!showInspection); if (!showInspection) loadInspections(); }}>
+              AI 巡检
             </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
@@ -1922,6 +1955,48 @@ export default function AiAssistantPage() {
                     <div style={{ marginBottom: 8 }}>暂无用量数据</div>
                     <Button size="sm" onClick={loadDashboard}>重试</Button>
                   </div>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showInspection && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowInspection(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="AI 定时巡检"
+              extra={
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <Button size="sm" variant="primary" loading={inspectionRunning} onClick={() => runInspectionNow(false)}>立即巡检</Button>
+                  <Button size="sm" variant="ghost" loading={inspectionRunning} onClick={() => runInspectionNow(true)}>巡检并通知</Button>
+                  <Button size="sm" onClick={() => setShowInspection(false)}>✕</Button>
+                </div>
+              }
+            >
+              <div className="ai-assistant__usage-body">
+                <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 12 }}>
+                  巡检采集全部容器运行快照并由 AI 生成摘要。可在「计划任务」中新建 <b>aiInspection</b> 类型任务实现定时巡检。
+                </div>
+                {inspectionLoading ? (
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                ) : inspectionList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>暂无巡检记录，点击「立即巡检」开始</div>
+                ) : (
+                  inspectionList.map((r) => (
+                    <div key={r.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, borderRadius: 3, padding: '1px 6px', color: '#fff', background: r.status === 1 ? 'var(--color-error)' : 'var(--color-success)' }}>
+                          {r.status === 1 ? '存在异常' : '正常'}
+                        </span>
+                        <span style={{ fontSize: 11, opacity: 0.5 }}>{new Date(r.createdAt).toLocaleString('zh-CN')}</span>
+                        <Button size="sm" variant="ghost" onClick={async () => { await del(`/api/ai/inspection/${r.id}`); loadInspections(); }} style={{ marginLeft: 'auto', fontSize: 11 }}>删除</Button>
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: 240, overflow: 'auto' }}>{r.summary}</div>
+                    </div>
+                  ))
                 )}
               </div>
             </Card>

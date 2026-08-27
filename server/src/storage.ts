@@ -589,6 +589,16 @@ function createTables(): void {
       updated_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_knowledge_category ON ai_knowledge(category);
+
+    -- AI 定时巡检报告
+    CREATE TABLE IF NOT EXISTS ai_inspections (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      status      INTEGER NOT NULL DEFAULT 0,       -- 0=正常 1=存在异常
+      summary     TEXT NOT NULL DEFAULT '',         -- AI 摘要（Markdown）
+      snapshot    TEXT NOT NULL DEFAULT '',         -- 采集时的容器快照
+      created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_inspections_created ON ai_inspections(created_at);
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）

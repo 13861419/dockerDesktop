@@ -30,6 +30,7 @@ import type { AiConfig } from '../aiClient';
 import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
 import { getOllamaStatus, getOllamaRunning, pullOllamaModel, deleteOllamaModel } from '../ollamaClient';
 import { createKnowledge, updateKnowledge, deleteKnowledge, getKnowledge, listKnowledge, getKnowledgeStats, searchKnowledge, autoInitKnowledge } from '../aiKnowledge';
+import { runInspection, listInspections, deleteInspection } from '../aiInspection';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -1743,6 +1744,54 @@ router.post(
 
     logOperation(res.locals.username, '导入 AI 模板', 'ai', null, `导入 ${imported} 个模板`);
     res.json({ imported, errors });
+  }),
+);
+
+// ============ AI 定时巡检 ============
+
+/**
+ * POST /api/ai/inspection/run
+ * 立即执行一次 AI 巡检（采集容器快照 → AI 摘要 → 落库）
+ * body 可选：{ notify?: boolean }
+ */
+router.post(
+  '/inspection/run',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const notify = req.body?.notify === true;
+    const cfg = profileAiConfig();
+    const r = await runInspection({ notify, username: res.locals.username }, cfg || undefined);
+    logOperation(res.locals.username, 'AI 巡检', 'ai', null, notify ? '巡检完成（含通知推送）' : '巡检完成');
+    res.json(r);
+  }),
+);
+
+/**
+ * GET /api/ai/inspection/list
+ * 最近巡检记录（默认 20 条）
+ */
+router.get(
+  '/inspection/list',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    res.json({ items: listInspections(limit) });
+  }),
+);
+
+/**
+ * DELETE /api/ai/inspection/:id
+ * 删除单条巡检记录
+ */
+router.delete(
+  '/inspection/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的记录 ID' });
+    const ok = deleteInspection(id);
+    if (!ok) return res.status(404).json({ error: '记录不存在' });
+    res.json({ ok: true });
   }),
 );
 
