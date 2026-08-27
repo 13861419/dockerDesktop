@@ -32,6 +32,7 @@ import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
 import { getOllamaStatus, getOllamaRunning, pullOllamaModel, deleteOllamaModel } from '../ollamaClient';
 import { createKnowledge, updateKnowledge, deleteKnowledge, getKnowledge, listKnowledge, getKnowledgeStats, searchKnowledge, autoInitKnowledge } from '../aiKnowledge';
 import { runInspection, listInspections, deleteInspection } from '../aiInspection';
+import { sendWeeklyReport } from '../aiWeeklyReport';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -1867,6 +1868,20 @@ router.delete(
     const ok = deleteInspection(id);
     if (!ok) return res.status(404).json({ error: '记录不存在' });
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/ai/weekly-report/send
+ * 立即生成并推送 AI 使用周报（手动触发）
+ */
+router.post(
+  '/weekly-report/send',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const r = await sendWeeklyReport();
+    logOperation(res.locals.username, 'AI 使用周报', 'ai', null, `已推送 ${r.sent} 个渠道`);
+    res.json({ ok: true, report: r.report, sent: r.sent });
   }),
 );
 
