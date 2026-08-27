@@ -1,10 +1,12 @@
 /**
  * AI 运维知识库模块（ai_knowledge 表）
  *
- * 支持运维知识的增删改查，提供 TF-IDF 全文检索用于 RAG 增强回答。
- * 零第三方依赖：基于 SQLite LIKE + 简易 TF-IDF 算法。
+ * 双模式检索：
+ *  - 优先：Ollama embedding 向量 + 余弦相似度（需配置本地 Ollama）
+ *  - 回退：TF-IDF 关键词匹配（零依赖）
  */
 import { getDb } from './storage';
+import { ollamaEmbeddings } from './ollamaClient';
 
 export interface KnowledgeEntry {
   id: number;
@@ -17,6 +19,33 @@ export interface KnowledgeEntry {
 }
 
 const VALID_CATEGORIES = ['general', 'docker', 'compose', 'network', 'security', 'performance', 'troubleshoot', 'monitoring'];
+
+/** Ollama embedding 模型名（轻量通用模型） */
+const EMBEDDING_MODEL = 'nomic-embed-text';
+
+/** 将 Float32Array 编码为 Buffer 存入 SQLite */
+function embeddingToBuffer(vec: number[]): Buffer {
+  const buf = Buffer.alloc(vec.length * 4);
+  for (let i = 0; i < vec.length; i++) buf.writeFloatLE(vec[i], i * 4);
+  return buf;
+}
+
+/** 将 SQLite BLOB 解码为 Float32Array */
+function bufferToEmbedding(buf: Buffer | null): number[] | null {
+  if (!buf || buf.length === 0) return null;
+  const vec: number[] = [];
+  for (let i = 0; i + 3 < buf.length; i += 4) vec.push(buf.readFloatLE(i));
+  return vec;
+}
+
+/** 余弦相似度 */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i]; }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
 
 function mapRow(r: any): KnowledgeEntry {
   return {
@@ -31,22 +60,37 @@ function mapRow(r: any): KnowledgeEntry {
 }
 
 /**
- * 新增知识条目
+ * 尝试计算 Ollama embedding，失败返回 null（静默回退 TF-IDF）
  */
-export function createKnowledge(title: string, category: string, content: string, tags: string[] = []): KnowledgeEntry {
+async function tryEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const r = await ollamaEmbeddings(EMBEDDING_MODEL, text);
+    return r.ok && r.embedding ? r.embedding : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 新增知识条目（异步计算 embedding）
+ */
+export async function createKnowledge(title: string, category: string, content: string, tags: string[] = []): Promise<KnowledgeEntry> {
   const now = Date.now();
   const cat = VALID_CATEGORIES.includes(category) ? category : 'general';
   const d = getDb();
+  // 异步计算 embedding（不阻塞主流程）
+  const embedding = await tryEmbedding(`${title}\n${content}`);
+  const embBuf = embedding ? embeddingToBuffer(embedding) : null;
   const info = d
-    .prepare('INSERT INTO ai_knowledge (title, category, content, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(title, cat, content, JSON.stringify(tags), now, now);
+    .prepare('INSERT INTO ai_knowledge (title, category, content, tags, embedding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(title, cat, content, JSON.stringify(tags), embBuf, now, now);
   return mapRow(d.prepare('SELECT * FROM ai_knowledge WHERE id = ?').get(info.lastInsertRowid));
 }
 
 /**
- * 更新知识条目
+ * 更新知识条目（重新计算 embedding）
  */
-export function updateKnowledge(id: number, fields: { title?: string; category?: string; content?: string; tags?: string[] }): KnowledgeEntry | null {
+export async function updateKnowledge(id: number, fields: { title?: string; category?: string; content?: string; tags?: string[] }): Promise<KnowledgeEntry | null> {
   const d = getDb();
   const existing = d.prepare('SELECT * FROM ai_knowledge WHERE id = ?').get(id) as any;
   if (!existing) return null;
@@ -55,7 +99,18 @@ export function updateKnowledge(id: number, fields: { title?: string; category?:
   const content = fields.content ?? existing.content;
   const tags = fields.tags ? JSON.stringify(fields.tags) : existing.tags;
   const now = Date.now();
-  d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, now, id);
+  // 内容变更时重新计算 embedding
+  const needReEmbed = fields.content || fields.title;
+  let embBuf: Buffer | null = null;
+  if (needReEmbed) {
+    const embedding = await tryEmbedding(`${title}\n${content}`);
+    embBuf = embedding ? embeddingToBuffer(embedding) : null;
+  }
+  if (embBuf) {
+    d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, embedding = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, embBuf, now, id);
+  } else {
+    d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, now, id);
+  }
   return mapRow(d.prepare('SELECT * FROM ai_knowledge WHERE id = ?').get(id));
 }
 
@@ -101,36 +156,50 @@ export function getKnowledgeStats(): Array<{ category: string; count: number }> 
 }
 
 /**
- * TF-IDF 搜索（用于 RAG 检索）
- *
- * 简易实现：基于词频统计 + IDF 加权，返回最相关的知识条目。
- * 不依赖外部库，适合中小规模知识库（< 1000 条）。
+ * 搜索知识（优先 embedding 余弦相似度，回退 TF-IDF）
  */
-export function searchKnowledge(query: string, limit: number = 5): KnowledgeEntry[] {
+export async function searchKnowledge(query: string, limit: number = 5): Promise<KnowledgeEntry[]> {
   const d = getDb();
   const allRows = d.prepare('SELECT * FROM ai_knowledge').all() as any[];
   if (!allRows.length) return [];
 
-  // 分词（简易：按空格 + 标点分割，转小写）
+  // 1. 尝试 embedding 余弦相似度搜索
+  const queryEmbedding = await tryEmbedding(query);
+  if (queryEmbedding) {
+    const scored = allRows.map((r) => {
+      const emb = bufferToEmbedding(r.embedding);
+      const score = emb ? cosineSimilarity(queryEmbedding, emb) : 0;
+      return { row: r, score };
+    });
+    const results = scored.filter((s) => s.score > 0.1).sort((a, b) => b.score - a.score).slice(0, limit);
+    if (results.length > 0) return results.map((s) => mapRow(s.row));
+    // embedding 搜索无结果时回退 TF-IDF
+  }
+
+  // 2. TF-IDF 回退
+  return tfidfSearch(query, limit, allRows);
+}
+
+/**
+ * TF-IDF 搜索（同步，作为 embedding 的回退）
+ */
+function tfidfSearch(query: string, limit: number, allRows: any[]): KnowledgeEntry[] {
   const tokenize = (text: string): string[] =>
     text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, ' ').split(/\s+/).filter(Boolean);
 
   const queryTokens = tokenize(query);
   if (!queryTokens.length) return [];
 
-  // 计算 IDF
   const totalDocs = allRows.length;
   const docFreq = new Map<string, number>();
   const rowTokens = allRows.map((r) => {
     const tokens = tokenize(`${r.title} ${r.content} ${r.tags}`);
     const freq = new Map<string, number>();
     for (const t of tokens) { freq.set(t, (freq.get(t) || 0) + 1); }
-    const uniqueTokens = new Set(tokens);
-    for (const t of uniqueTokens) { docFreq.set(t, (docFreq.get(t) || 0) + 1); }
-    return { row: r, freq, tokens };
+    for (const t of new Set(tokens)) { docFreq.set(t, (docFreq.get(t) || 0) + 1); }
+    return { row: r, freq };
   });
 
-  // 计算 TF-IDF 得分
   const scored = rowTokens.map(({ row, freq }) => {
     let score = 0;
     for (const qt of queryTokens) {
@@ -142,10 +211,5 @@ export function searchKnowledge(query: string, limit: number = 5): KnowledgeEntr
     return { row, score };
   });
 
-  // 返回得分最高的 N 条
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((s) => mapRow(s.row));
+  return scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, limit).map((s) => mapRow(s.row));
 }

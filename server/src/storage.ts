@@ -589,6 +589,13 @@ function createTables(): void {
     CREATE INDEX IF NOT EXISTS idx_ai_knowledge_category ON ai_knowledge(category);
   `);
 
+  // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）
+  try {
+    d.exec('ALTER TABLE ai_knowledge ADD COLUMN embedding BLOB');
+  } catch {
+    // 列已存在则忽略
+  }
+
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
   try {
     d.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');

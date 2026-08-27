@@ -630,7 +630,7 @@ router.post(
       const sysMsgs = buildSystemPrompt(cfg, '', '');
       // RAG：检索相关知识条目注入上下文
       const lastUserMsg = baseMsgs.filter((m) => m.role === 'user').pop()?.content || '';
-      const ragResults = searchKnowledge(lastUserMsg, 3);
+      const ragResults = await searchKnowledge(lastUserMsg, 3);
       if (ragResults.length > 0) {
         const ragContext = ragResults.map((k) => `【${k.category}】${k.title}\n${k.content.slice(0, 500)}`).join('\n\n');
         sysMsgs[0] = { role: 'system' as const, content: sysMsgs[0].content + `\n\n## 参考知识\n以下运维知识可能与用户问题相关，请结合参考回答：\n\n${ragContext}` };
@@ -788,7 +788,7 @@ router.post(
       const sysMsgs = buildSystemPrompt(cfg, '', '');
       // RAG：检索相关知识条目注入上下文
       const lastUserMsgStream = baseMsgs.filter((m) => m.role === 'user').pop()?.content || '';
-      const ragResultsStream = searchKnowledge(lastUserMsgStream, 3);
+      const ragResultsStream = await searchKnowledge(lastUserMsgStream, 3);
       if (ragResultsStream.length > 0) {
         const ragContext = ragResultsStream.map((k) => `【${k.category}】${k.title}\n${k.content.slice(0, 500)}`).join('\n\n');
         sysMsgs[0] = { role: 'system' as const, content: sysMsgs[0].content + `\n\n## 参考知识\n以下运维知识可能与用户问题相关，请结合参考回答：\n\n${ragContext}` };
@@ -1064,7 +1064,7 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const { q, limit } = req.query as any;
     if (!q) return res.status(400).json({ error: '请提供搜索关键词' });
-    const results = searchKnowledge(q, limit ? Number(limit) : 5);
+    const results = await searchKnowledge(q, limit ? Number(limit) : 5);
     res.json(results);
   }),
 );
@@ -1094,7 +1094,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { title, category, content, tags } = req.body || {};
     if (!title || !content) return res.status(400).json({ error: '标题和内容必填' });
-    const entry = createKnowledge(title, category || 'general', content, tags || []);
+    const entry = await createKnowledge(title, category || 'general', content, tags || []);
     logOperation(res.locals.username, '创建 AI 知识', 'ai', null, `知识#${entry.id}: ${entry.title}`);
     res.json(entry);
   }),
@@ -1109,7 +1109,7 @@ router.put(
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const id = Number(req.params.id);
-    const updated = updateKnowledge(id, req.body || {});
+    const updated = await updateKnowledge(id, req.body || {});
     if (!updated) return res.status(404).json({ error: '知识条目不存在' });
     logOperation(res.locals.username, '更新 AI 知识', 'ai', null, `知识#${id}: ${updated.title}`);
     res.json(updated);
