@@ -1226,7 +1226,7 @@ router.post(
   '/knowledge/init',
   requireAuth,
   asyncHandler(async (_req: Request, res: Response) => {
-    const count = autoInitKnowledge(res.locals.username);
+    const count = await autoInitKnowledge(res.locals.username);
     if (count > 0) {
       logOperation(res.locals.username, '初始化 AI 知识库', 'ai', null, `添加 ${count} 条预置知识`);
     }

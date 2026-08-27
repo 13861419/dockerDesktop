@@ -416,13 +416,13 @@ docker events                    实时事件流`,
 /**
  * 自动初始化预置知识库（仅当知识库为空时执行）
  */
-export function autoInitKnowledge(username: string): number {
+export async function autoInitKnowledge(username: string): Promise<number> {
   const { total } = listKnowledge({ limit: 1 });
   if (total > 0) return 0;
   let count = 0;
   for (const item of PRESET_KNOWLEDGE) {
     try {
-      createKnowledge(item.title, item.category, item.content, item.tags);
+      await createKnowledge(item.title, item.category, item.content, item.tags, username, true);
       count++;
     } catch { /* 忽略写入失败 */ }
   }

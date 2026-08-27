@@ -49,7 +49,12 @@ function parseMessages(raw: string): ChatHistoryMessage[] {
     if (Array.isArray(arr)) {
       return arr
         .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-        .map((m) => ({ role: m.role, content: m.content, error: m.error ? true : undefined }));
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+          error: m.error ? true : undefined,
+          feedback: m.feedback === 'good' || m.feedback === 'bad' ? m.feedback : undefined,
+        }));
     }
   } catch {
     // 忽略坏数据

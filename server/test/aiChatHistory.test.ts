@@ -22,6 +22,7 @@ import {
   updateChatSessionMessages,
   deleteChatSession,
   togglePinChatSession,
+  updateMessageFeedback,
 } from '../src/aiChatHistory';
 
 before(() => {
@@ -115,4 +116,28 @@ test('togglePinChatSession 切换收藏/置顶状态', () => {
   assert.strictEqual(listChatSessions('pin_user').find((x) => x.id === s.id)!.pinned, false);
   assert.strictEqual(togglePinChatSession(s.id, 'mallory'), null);
   assert.strictEqual(togglePinChatSession(999999, 'pin_user'), null);
+});
+
+test('updateMessageFeedback 给 AI 回复点赞/点踩', () => {
+  const s = createChatSession('fb_user');
+  updateChatSessionMessages(s.id, 'fb_user', [
+    { role: 'user', content: '你好' },
+    { role: 'assistant', content: '你好！有什么可以帮你？' },
+    { role: 'user', content: '列出镜像' },
+  ]);
+  // 对第 1 条 AI 回复点赞
+  assert.strictEqual(updateMessageFeedback(s.id, 'fb_user', 1, 'good'), true);
+  const got = getChatSession(s.id, 'fb_user')!;
+  assert.strictEqual(got.messages[1].feedback, 'good');
+  // 改踩
+  assert.strictEqual(updateMessageFeedback(s.id, 'fb_user', 1, 'bad'), true);
+  assert.strictEqual(getChatSession(s.id, 'fb_user')!.messages[1].feedback, 'bad');
+  // 用户消息不能打分
+  assert.strictEqual(updateMessageFeedback(s.id, 'fb_user', 0, 'good'), false);
+  // 越界索引失败
+  assert.strictEqual(updateMessageFeedback(s.id, 'fb_user', 99, 'good'), false);
+  // 他人不能打分
+  assert.strictEqual(updateMessageFeedback(s.id, 'mallory', 1, 'good'), false);
+  // 不存在会话
+  assert.strictEqual(updateMessageFeedback(999999, 'fb_user', 0, 'good'), false);
 });
