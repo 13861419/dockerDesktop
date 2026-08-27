@@ -20,6 +20,8 @@ import {
   listAiUsageByModel,
   listAiUsageByDay,
   clearAiUsage,
+  getAiPerformanceMetrics,
+  getAiChatStats,
 } from '../src/aiUsage';
 
 before(() => {
@@ -85,4 +87,35 @@ test('recordAiUsage 异常输入不抛异常', () => {
   assert.doesNotThrow(() => recordAiUsage({ completionTokens: NaN } as any));
   // 负数被钳制为 0，仍写入成功记录
   assert.strictEqual(summarizeAiUsage().totalCalls, 2);
+});
+
+test('getAiPerformanceMetrics 聚合成功率/平均 duration', () => {
+  clearAiUsage();
+  recordAiUsage({ model: 'gpt-4o-mini', totalTokens: 150, durationMs: 200, success: true });
+  recordAiUsage({ model: 'gpt-4o-mini', totalTokens: 300, durationMs: 400, success: true });
+  recordAiUsage({ model: 'gpt-4o-mini', totalTokens: 50, durationMs: 100, success: false, errorMessage: 'timeout' });
+  const metrics = getAiPerformanceMetrics();
+  const gpt = metrics.find((m) => m.model === 'gpt-4o-mini');
+  assert.ok(gpt);
+  assert.strictEqual(gpt.totalCalls, 3);
+  assert.strictEqual(gpt.successRate, 66.7);
+  assert.strictEqual(gpt.avgTotalTokens, 167);
+  assert.strictEqual(gpt.avgDurationMs, 233);
+});
+
+test('getAiChatStats 按用户聚合消息/token/费用', () => {
+  clearAiUsage();
+  recordAiUsage({ model: 'gpt-4o-mini', totalTokens: 100, username: 'admin' });
+  recordAiUsage({ model: 'gpt-4o-mini', totalTokens: 200, username: 'admin' });
+  recordAiUsage({ model: 'deepseek', totalTokens: 300, username: 'guest' });
+  const stats = getAiChatStats();
+  const admin = stats.find((s) => s.username === 'admin');
+  const guest = stats.find((s) => s.username === 'guest');
+  assert.ok(admin);
+  assert.ok(guest);
+  assert.strictEqual(admin.totalMessages, 2);
+  assert.strictEqual(admin.totalTokens, 300);
+  assert.strictEqual(guest.totalMessages, 1);
+  assert.strictEqual(guest.totalTokens, 300);
+  assert.ok(admin.totalCost > 0);
 });

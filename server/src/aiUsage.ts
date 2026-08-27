@@ -275,11 +275,10 @@ export function getAiPerformanceMetrics(): AiPerformanceMetrics[] {
 /** 聊天统计（按用户聚合） */
 export interface AiChatStats {
   username: string;
-  totalSessions: number;
   totalMessages: number;
   totalTokens: number;
   totalCost: number;
-  avgSessionLength: number;
+  avgTokensPerCall: number;
   lastActiveAt: number;
 }
 
@@ -287,7 +286,6 @@ export function getAiChatStats(): AiChatStats[] {
   return getDb()
     .prepare(
       `SELECT username,
-              COUNT(DISTINCT session_id) AS totalSessions,
               COUNT(*) AS totalMessages,
               COALESCE(SUM(total_tokens), 0) AS totalTokens,
               COALESCE(SUM(total_tokens * CASE
@@ -299,7 +297,7 @@ export function getAiChatStats(): AiChatStats[] {
                 WHEN model LIKE '%claude-3-5-haiku%' THEN 0.0000008
                 ELSE 0.000001
               END), 0) AS totalCost,
-              ROUND(AVG(total_tokens), 0) AS avgSessionLength,
+              ROUND(AVG(total_tokens), 0) AS avgTokensPerCall,
               MAX(created_at) AS lastActiveAt
        FROM ai_usage
        WHERE username != ''
