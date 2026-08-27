@@ -236,6 +236,58 @@ async function fetchContainerLogContext(containerId: string): Promise<string> {
   return `容器 ${name} 最近日志${truncated ? '（已截断）' : ''}：\n${text.slice(-MAX)}`;
 }
 
+/** 容器全量上下文（inspect 关键字段 + 实时资源占用 + 最近日志），用于 chat 绑定容器 */
+async function fetchContainerFullContext(containerId: string): Promise<string> {
+  const docker = await getDockerClient();
+  const container = docker.getContainer(containerId);
+  const info = await container.inspect().catch(() => null);
+  if (!info) {
+    const e: any = new Error('容器不存在');
+    e.statusCode = 400;
+    throw e;
+  }
+  const name = (info.Name || '').replace(/^\//, '') || containerId.slice(0, 12);
+  const lines: string[] = [];
+  lines.push(`容器名: ${name}`);
+  lines.push(`镜像: ${info.Config?.Image || ''}`);
+  lines.push(`状态: ${info.State?.Status || ''}${info.State?.Running ? '（运行中）' : '（未运行）'}`);
+  if (info.State?.StartedAt) lines.push(`启动时间: ${info.State.StartedAt}`);
+  if (info.State?.FinishedAt && info.State.StartedAt !== info.State.FinishedAt) lines.push(`退出时间: ${info.State.FinishedAt}（退出码 ${info.State.ExitCode ?? '-'}）`);
+  const ports = Object.keys(info.NetworkSettings?.Ports || {}).map((k) => {
+    const binds = info.NetworkSettings.Ports[k];
+    const pub = Array.isArray(binds) && binds.length ? binds[0].HostPort : '';
+    return pub ? `${k} -> 宿主机 ${pub}` : k;
+  }).filter(Boolean);
+  if (ports.length) lines.push(`端口: ${ports.join(', ')}`);
+  const mounts = (info.Mounts || []).map((m: any) => `${m.Source || m.Name} -> ${m.Destination}`).filter(Boolean);
+  if (mounts.length) lines.push(`挂载: ${mounts.join('; ')}`);
+  if (info.HostConfig?.RestartPolicy?.Name && info.HostConfig.RestartPolicy.Name !== 'no') {
+    lines.push(`重启策略: ${info.HostConfig.RestartPolicy.Name}`);
+  }
+  const env = (info.Config?.Env || []).filter((v: string) => !/^(PATH|HOME|LANG)=/.test(v));
+  if (env.length) lines.push(`环境变量（前 20 条）:\n${env.slice(0, 30).map((v) => `  ${v}`).join('\n')}`);
+  // 实时资源占用
+  try {
+    const stats = await container.stats({ stream: false });
+    const cpuDelta = (stats as any).cpu_stats?.cpu_usage?.total_usage - (stats as any).precpu_stats?.cpu_usage?.total_usage;
+    const sysDelta = (stats as any).cpu_stats?.system_cpu_usage - (stats as any).precpu_stats?.system_cpu_usage;
+    const online = (stats as any).cpu_stats?.online_cpus || 1;
+    const cpuPct = sysDelta > 0 ? (cpuDelta / sysDelta) * online * 100 : 0;
+    const memUsage = (stats as any).memory_stats?.usage || 0;
+    const memLimit = (stats as any).memory_stats?.limit || 0;
+    lines.push(`资源占用: CPU ${cpuPct.toFixed(1)}%, 内存 ${(memUsage / 1024 / 1024).toFixed(1)}MB / ${memLimit ? (memLimit / 1024 / 1024).toFixed(0) + 'MB' : '不限'}`);
+  } catch {
+    // stats 失败（如容器未运行）忽略
+  }
+  // 最近日志（tail 100）
+  const tty = !!info.Config?.Tty;
+  const logs = await container.logs({ stdout: true, stderr: true, tail: 100, follow: false }).catch(() => Buffer.alloc(0));
+  const logText = logsBufferToText(logs, tty);
+  const MAX_LOG = 20000;
+  lines.push(`\n最近日志（tail 100${logText.length > MAX_LOG ? '，已截断' : ''}）：\n${logText.slice(-MAX_LOG)}`);
+  return lines.join('\n');
+}
+
 /** 收集运行中容器清单作为 AI 上下文（最多 100 个，防止上下文过大） */
 const MAX_COMPOSE_CONTAINERS = 100;
 
@@ -476,6 +528,15 @@ async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
   try {
     if (tool === 'compose-infer') {
       context = await fetchContainersContext();
+      toolContext = context;
+    } else if (tool === 'container') {
+      const target = body.target || body.containerId;
+      if (!target) {
+        const e: any = new Error('container 工具需要指定容器（target）');
+        e.statusCode = 400;
+        throw e;
+      }
+      context = await fetchContainerFullContext(String(target));
       toolContext = context;
     } else if (tool === 'logs') {
       const target = body.target || body.containerId;

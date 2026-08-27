@@ -162,6 +162,8 @@ export default function AiAssistantPage() {
   const [inspectionList, setInspectionList] = useState<Array<{ id: number; status: number; summary: string; snapshot: string; createdAt: number }>>([]);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionRunning, setInspectionRunning] = useState(false);
+
+  const [chatContainer, setChatContainer] = useState('');
   const [chatStats, setChatStats] = useState<Array<{ username: string; totalMessages: number; totalTokens: number; totalCost: number; avgTokensPerCall: number; lastActiveAt: number }>>([]);
   const [sessionSearch, setSessionSearch] = useState('');
 
@@ -1140,15 +1142,33 @@ export default function AiAssistantPage() {
                 )}
               </div>
               <div className="ai-assistant__composer">
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                  <select
+                    className="ai-assistant__select"
+                    value={chatContainer}
+                    onChange={(e) => setChatContainer(e.target.value)}
+                    style={{ flex: 1, fontSize: 12 }}
+                    title="选择容器后，AI 将自动携带该容器的配置、资源占用与日志上下文"
+                  >
+                    <option value="">🌐 通用对话（不绑定容器）</option>
+                    {containers.map((c) => {
+                      const name = (c.Names?.[0] || '').replace(/^\//, '');
+                      return <option key={c.Id} value={name}>📦 {name}（{c.State}）</option>;
+                    })}
+                  </select>
+                  {chatContainer && (
+                    <Button size="sm" variant="ghost" onClick={() => setChatContainer('')}>取消绑定</Button>
+                  )}
+                </div>
                 <TextArea
                   className="ai-assistant__input"
                   value={input}
-                  placeholder="输入你的 Docker 运维问题…"
+                  placeholder={chatContainer ? `正在就容器 ${chatContainer} 提问…` : '输入你的 Docker 运维问题…'}
                   onChange={(e: any) => setInput(e.target.value)}
                   onKeyDown={(e: any) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      send(input);
+                      send(input, chatContainer ? 'container' : undefined, chatContainer || undefined);
                     }
                   }}
                 />
@@ -1156,7 +1176,7 @@ export default function AiAssistantPage() {
                 <Button variant="ghost" loading={analyzing} onClick={() => fileInputRef.current?.click()}>
                   上传分析
                 </Button>
-                <Button variant="primary" loading={sending} disabled={!input.trim()} onClick={() => send(input)}>
+                <Button variant="primary" loading={sending} disabled={!input.trim()} onClick={() => send(input, chatContainer ? 'container' : undefined, chatContainer || undefined)}>
                   发送
                 </Button>
               </div>
