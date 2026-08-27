@@ -1215,6 +1215,8 @@ export interface KnowledgeEntry {
   category: string;
   content: string;
   tags: string[];
+  owner: string;
+  shared: boolean;
   createdAt: number;
   updatedAt: number;
 }

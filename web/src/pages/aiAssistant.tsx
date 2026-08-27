@@ -151,7 +151,7 @@ export default function AiAssistantPage() {
   const [knowledgeCategory, setKnowledgeCategory] = useState('');
   const [knowledgeKeyword, setKnowledgeKeyword] = useState('');
   const [showKnowledgeForm, setShowKnowledgeForm] = useState(false);
-  const [knowledgeForm, setKnowledgeForm] = useState({ title: '', category: 'general', content: '', tags: '' });
+  const [knowledgeForm, setKnowledgeForm] = useState({ title: '', category: 'general', content: '', tags: '', shared: false });
 
   const [showDashboard, setShowDashboard] = useState(false);
   const [dashboard, setDashboard] = useState<AiUsageDashboard | null>(null);
@@ -337,10 +337,11 @@ export default function AiAssistantPage() {
         category: knowledgeForm.category,
         content: knowledgeForm.content.trim(),
         tags: knowledgeForm.tags ? knowledgeForm.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : [],
+        shared: knowledgeForm.shared,
       });
       showToast('知识条目已创建');
       setShowKnowledgeForm(false);
-      setKnowledgeForm({ title: '', category: 'general', content: '', tags: '' });
+      setKnowledgeForm({ title: '', category: 'general', content: '', tags: '', shared: false });
       loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
     } catch (e: any) {
       showToast(e?.message || '创建失败', 'error');
@@ -1717,6 +1718,10 @@ export default function AiAssistantPage() {
                       style={{ marginBottom: 8, fontSize: 13 }}
                     />
                     <Input value={knowledgeForm.tags} placeholder="标签（逗号分隔）" onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, tags: e.target.value }))} style={{ marginBottom: 8 }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <input type="checkbox" id="shared" checked={knowledgeForm.shared} onChange={(e) => setKnowledgeForm((f) => ({ ...f, shared: e.target.checked }))} />
+                      <label htmlFor="shared" style={{ fontSize: 12 }}>共享给其他用户（协作知识库）</label>
+                    </div>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                       <Button size="sm" onClick={() => setShowKnowledgeForm(false)}>取消</Button>
                       <Button size="sm" variant="primary" onClick={handleCreateKnowledge}>保存</Button>
@@ -1734,6 +1739,8 @@ export default function AiAssistantPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                           <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{k.category}</span>
                           <span style={{ fontWeight: 500, fontSize: 13 }}>{k.title}</span>
+                          {k.shared && <span style={{ fontSize: 10, background: 'var(--color-primary)', color: '#fff', borderRadius: 3, padding: '1px 4px' }}>共享</span>}
+                          {k.owner && <span style={{ fontSize: 10, opacity: 0.5 }}>by {k.owner}</span>}
                           <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{new Date(k.updatedAt).toLocaleDateString('zh-CN')}</span>
                           <Button size="sm" variant="ghost" onClick={() => handleDeleteKnowledge(k.id)} style={{ fontSize: 11 }}>删除</Button>
                         </div>

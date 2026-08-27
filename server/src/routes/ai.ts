@@ -1135,9 +1135,9 @@ router.post(
   '/knowledge',
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    const { title, category, content, tags } = req.body || {};
+    const { title, category, content, tags, shared } = req.body || {};
     if (!title || !content) return res.status(400).json({ error: '标题和内容必填' });
-    const entry = await createKnowledge(title, category || 'general', content, tags || []);
+    const entry = await createKnowledge(title, category || 'general', content, tags || [], res.locals.username, shared || false);
     logOperation(res.locals.username, '创建 AI 知识', 'ai', null, `知识#${entry.id}: ${entry.title}`);
     res.json(entry);
   }),
@@ -1183,7 +1183,7 @@ router.post(
   '/knowledge/import',
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    const { items } = req.body || {};
+    const { items, shared } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: '请提供 items 数组' });
     if (items.length > 100) return res.status(400).json({ error: '单次最多导入 100 条' });
     const results: Array<{ ok: boolean; id?: number; title: string; error?: string }> = [];
@@ -1192,7 +1192,7 @@ router.post(
         const title = (item.title || '').trim();
         const content = (item.content || '').trim();
         if (!title || !content) { results.push({ ok: false, title: title || '(空)', error: '标题或内容为空' }); continue; }
-        const entry = await createKnowledge(title, item.category || 'general', content, item.tags || []);
+        const entry = await createKnowledge(title, item.category || 'general', content, item.tags || [], res.locals.username, shared || false);
         results.push({ ok: true, id: entry.id, title: entry.title });
       } catch (e: any) {
         results.push({ ok: false, title: item.title || '(未知)', error: e?.message || '导入失败' });

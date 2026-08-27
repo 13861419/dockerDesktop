@@ -14,6 +14,8 @@ export interface KnowledgeEntry {
   category: string;
   content: string;
   tags: string[];
+  owner: string;
+  shared: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -54,6 +56,8 @@ function mapRow(r: any): KnowledgeEntry {
     category: r.category,
     content: r.content,
     tags: JSON.parse(r.tags || '[]'),
+    owner: r.owner || '',
+    shared: r.shared === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -74,7 +78,7 @@ async function tryEmbedding(text: string): Promise<number[] | null> {
 /**
  * 新增知识条目（异步计算 embedding）
  */
-export async function createKnowledge(title: string, category: string, content: string, tags: string[] = []): Promise<KnowledgeEntry> {
+export async function createKnowledge(title: string, category: string, content: string, tags: string[] = [], owner: string = '', shared: boolean = false): Promise<KnowledgeEntry> {
   const now = Date.now();
   const cat = VALID_CATEGORIES.includes(category) ? category : 'general';
   const d = getDb();
@@ -82,15 +86,15 @@ export async function createKnowledge(title: string, category: string, content: 
   const embedding = await tryEmbedding(`${title}\n${content}`);
   const embBuf = embedding ? embeddingToBuffer(embedding) : null;
   const info = d
-    .prepare('INSERT INTO ai_knowledge (title, category, content, tags, embedding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(title, cat, content, JSON.stringify(tags), embBuf, now, now);
+    .prepare('INSERT INTO ai_knowledge (title, category, content, tags, embedding, owner, shared, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(title, cat, content, JSON.stringify(tags), embBuf, owner, shared ? 1 : 0, now, now);
   return mapRow(d.prepare('SELECT * FROM ai_knowledge WHERE id = ?').get(info.lastInsertRowid));
 }
 
 /**
  * 更新知识条目（重新计算 embedding）
  */
-export async function updateKnowledge(id: number, fields: { title?: string; category?: string; content?: string; tags?: string[] }): Promise<KnowledgeEntry | null> {
+export async function updateKnowledge(id: number, fields: { title?: string; category?: string; content?: string; tags?: string[]; shared?: boolean }): Promise<KnowledgeEntry | null> {
   const d = getDb();
   const existing = d.prepare('SELECT * FROM ai_knowledge WHERE id = ?').get(id) as any;
   if (!existing) return null;
@@ -98,6 +102,7 @@ export async function updateKnowledge(id: number, fields: { title?: string; cate
   const category = fields.category ? (VALID_CATEGORIES.includes(fields.category) ? fields.category : existing.category) : existing.category;
   const content = fields.content ?? existing.content;
   const tags = fields.tags ? JSON.stringify(fields.tags) : existing.tags;
+  const shared = fields.shared !== undefined ? (fields.shared ? 1 : 0) : existing.shared;
   const now = Date.now();
   // 内容变更时重新计算 embedding
   const needReEmbed = fields.content || fields.title;
@@ -107,9 +112,9 @@ export async function updateKnowledge(id: number, fields: { title?: string; cate
     embBuf = embedding ? embeddingToBuffer(embedding) : null;
   }
   if (embBuf) {
-    d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, embedding = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, embBuf, now, id);
+    d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, embedding = ?, shared = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, embBuf, shared, now, id);
   } else {
-    d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, now, id);
+    d.prepare('UPDATE ai_knowledge SET title = ?, category = ?, content = ?, tags = ?, shared = ?, updated_at = ? WHERE id = ?').run(title, category, content, tags, shared, now, id);
   }
   return mapRow(d.prepare('SELECT * FROM ai_knowledge WHERE id = ?').get(id));
 }
@@ -131,14 +136,16 @@ export function getKnowledge(id: number): KnowledgeEntry | null {
 }
 
 /**
- * 列表查询（支持分类过滤 + 关键词搜索）
+ * 列表查询（支持分类过滤 + 关键词搜索 + owner 过滤）
  */
-export function listKnowledge(opts: { category?: string; keyword?: string; limit?: number; offset?: number } = {}): { items: KnowledgeEntry[]; total: number } {
+export function listKnowledge(opts: { category?: string; keyword?: string; owner?: string; sharedOnly?: boolean; limit?: number; offset?: number } = {}): { items: KnowledgeEntry[]; total: number } {
   const d = getDb();
   const conditions: string[] = [];
   const params: any[] = [];
   if (opts.category) { conditions.push('category = ?'); params.push(opts.category); }
   if (opts.keyword) { conditions.push('(title LIKE ? OR content LIKE ?)'); params.push(`%${opts.keyword}%`, `%${opts.keyword}%`); }
+  if (opts.owner) { conditions.push('owner = ?'); params.push(opts.owner); }
+  if (opts.sharedOnly) { conditions.push('shared = 1'); }
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
   const total = (d.prepare(`SELECT COUNT(*) as c FROM ai_knowledge${where}`).get(...params) as any).c;
   const limit = opts.limit || 20;
@@ -157,10 +164,14 @@ export function getKnowledgeStats(): Array<{ category: string; count: number }> 
 
 /**
  * 搜索知识（优先 embedding 余弦相似度，回退 TF-IDF）
+ * owner 参数：优先返回自己的知识，然后是 shared 知识
  */
-export async function searchKnowledge(query: string, limit: number = 5): Promise<KnowledgeEntry[]> {
+export async function searchKnowledge(query: string, limit: number = 5, owner: string = ''): Promise<KnowledgeEntry[]> {
   const d = getDb();
-  const allRows = d.prepare('SELECT * FROM ai_knowledge').all() as any[];
+  // 优先搜索自己的知识，然后是共享知识
+  const allRows = owner
+    ? d.prepare('SELECT * FROM ai_knowledge WHERE owner = ? OR shared = 1').all(owner) as any[]
+    : d.prepare('SELECT * FROM ai_knowledge').all() as any[];
   if (!allRows.length) return [];
 
   // 1. 尝试 embedding 余弦相似度搜索

@@ -597,6 +597,18 @@ function createTables(): void {
     // 列已存在则忽略
   }
 
+  // 迁移：为 ai_knowledge 表补充 owner 和 shared 列（多用户知识库）
+  try {
+    d.exec("ALTER TABLE ai_knowledge ADD COLUMN owner TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE ai_knowledge ADD COLUMN shared INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
   try {
     d.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
