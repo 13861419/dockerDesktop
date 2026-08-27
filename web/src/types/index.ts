@@ -1183,3 +1183,27 @@ export interface AiAnalysisResult {
   suggestions: string;
   cfg?: { provider: string; model: string };
 }
+
+// Ollama 模型管理
+export interface OllamaModel {
+  name: string;
+  size: number;
+  digest: string;
+  modified_at: string;
+  details?: Record<string, unknown>;
+}
+export interface OllamaStatus {
+  ok: boolean;
+  message: string;
+  models: OllamaModel[];
+  version?: string;
+}
+export interface OllamaRunningModel {
+  name: string;
+  size: number;
+  size_vram: number;
+}
+export interface OllamaRunningStatus {
+  ok: boolean;
+  models: OllamaRunningModel[];
+}

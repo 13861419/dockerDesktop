@@ -28,6 +28,7 @@ import {
 } from '../aiClient';
 import type { AiConfig } from '../aiClient';
 import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
+import { getOllamaStatus, getOllamaRunning, pullOllamaModel, deleteOllamaModel } from '../ollamaClient';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -938,6 +939,70 @@ router.post(
     if (!baseUrl) return res.status(400).json({ error: '请提供 baseUrl' });
     const status = await getLocalModelStatus(baseUrl);
     res.json(status);
+  }),
+);
+
+// ============ Ollama 模型管理 ============
+
+/**
+ * GET /api/ai/ollama/status
+ * 获取 Ollama 服务状态 + 已安装模型列表
+ */
+router.get(
+  '/ollama/status',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const host = (req.query.host as string) || undefined;
+    const status = await getOllamaStatus(host);
+    res.json(status);
+  }),
+);
+
+/**
+ * GET /api/ai/ollama/running
+ * 获取运行中的模型
+ */
+router.get(
+  '/ollama/running',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const host = (req.query.host as string) || undefined;
+    const status = await getOllamaRunning(host);
+    res.json(status);
+  }),
+);
+
+/**
+ * POST /api/ai/ollama/pull
+ * 拉取模型
+ */
+router.post(
+  '/ollama/pull',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { model, host } = req.body || {};
+    if (!model) return res.status(400).json({ error: '请提供模型名称' });
+    const result = await pullOllamaModel(model, host);
+    logOperation(res.locals.username, 'ai.ollama.pull', `拉取模型 ${model}: ${result.message}`);
+    res.json(result);
+  }),
+);
+
+/**
+ * POST /api/ai/ollama/delete
+ * 删除模型
+ */
+router.post(
+  '/ollama/delete',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { model, host } = req.body || {};
+    if (!model) return res.status(400).json({ error: '请提供模型名称' });
+    const result = await deleteOllamaModel(model, host);
+    logOperation(res.locals.username, 'ai.ollama.delete', `删除模型 ${model}: ${result.message}`);
+    res.json(result);
   }),
 );
 

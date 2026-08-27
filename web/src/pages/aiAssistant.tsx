@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -137,6 +137,12 @@ export default function AiAssistantPage() {
   const [analyzeResult, setAnalyzeResult] = useState<AiAnalysisResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [showOllama, setShowOllama] = useState(false);
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [ollamaLoading, setOllamaLoading] = useState(false);
+  const [ollamaPullModel, setOllamaPullModel] = useState('');
+  const [ollamaPulling, setOllamaPulling] = useState(false);
+
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
   const [templateCategory, setTemplateCategory] = useState('');
@@ -231,6 +237,43 @@ export default function AiAssistantPage() {
     };
     reader.readAsText(file);
   }, [showToast]);
+
+  const loadOllamaStatus = useCallback(async () => {
+    setOllamaLoading(true);
+    try {
+      const s = await get<OllamaStatus>('/api/ai/ollama/status');
+      setOllamaStatus(s);
+    } catch (e: any) {
+      showToast(e?.message || '获取 Ollama 状态失败', 'error');
+    } finally {
+      setOllamaLoading(false);
+    }
+  }, [showToast]);
+
+  const handlePullModel = useCallback(async () => {
+    if (!ollamaPullModel.trim()) return;
+    setOllamaPulling(true);
+    try {
+      const r = await post<{ ok: boolean; message: string }>('/api/ai/ollama/pull', { model: ollamaPullModel.trim() });
+      showToast(r.message, r.ok ? 'success' : 'error');
+      if (r.ok) { setOllamaPullModel(''); loadOllamaStatus(); }
+    } catch (e: any) {
+      showToast(e?.message || '拉取失败', 'error');
+    } finally {
+      setOllamaPulling(false);
+    }
+  }, [ollamaPullModel, showToast, loadOllamaStatus]);
+
+  const handleDeleteModel = useCallback(async (model: string) => {
+    if (!confirm(`确定删除模型 ${model}？`)) return;
+    try {
+      const r = await post<{ ok: boolean; message: string }>('/api/ai/ollama/delete', { model });
+      showToast(r.message, r.ok ? 'success' : 'error');
+      if (r.ok) loadOllamaStatus();
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    }
+  }, [showToast, loadOllamaStatus]);
 
   const handleClearUsage = useCallback(async () => {
     try {
@@ -621,6 +664,9 @@ export default function AiAssistantPage() {
             <Button size="sm" variant="ghost" onClick={openActions}>
               待审批
             </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowOllama(!showOllama); if (!showOllama) loadOllamaStatus(); }}>
+              本地模型
+            </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
                 配置模型
@@ -918,6 +964,20 @@ export default function AiAssistantPage() {
                           </span>
                         )}
                         {!localStatus.ok && <span style={{ marginLeft: 8, opacity: 0.6 }}>{localStatus.message}</span>}
+                      </div>
+                    )}
+                    {localStatus?.ok && localStatus.models.length > 0 && (
+                      <div style={{ padding: '6px 0', borderTop: '1px solid var(--border-light)', marginTop: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>本地模型管理</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {localStatus.models.map((m) => (
+                            <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-tertiary)', borderRadius: 6, padding: '4px 8px', fontSize: 12 }}>
+                              <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>本地</span>
+                              <span>{m.name}</span>
+                              <span style={{ opacity: 0.5 }}>{((m.size || 0) / 1024 / 1024 / 1024).toFixed(1)}G</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                     <Field label="模型" required>
@@ -1218,6 +1278,72 @@ export default function AiAssistantPage() {
               ) : (
                 <Empty title="暂无操作" description="AI 建议的运维操作会出现在这里。" />
               )}
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showOllama && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowOllama(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="本地模型管理（Ollama）"
+              extra={<Button size="sm" onClick={() => setShowOllama(false)}>✕</Button>}
+            >
+              <div className="ai-assistant__usage-body">
+                {ollamaLoading ? (
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                ) : ollamaStatus ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <span className={`ai-assistant__cap-tag is-${ollamaStatus.ok ? 'cloud' : 'off'}`}>
+                        {ollamaStatus.ok ? '服务正常' : '未连接'}
+                      </span>
+                      {ollamaStatus.version && <span style={{ fontSize: 12, opacity: 0.6 }}>v{ollamaStatus.version}</span>}
+                      <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 'auto' }}>{ollamaStatus.message}</span>
+                    </div>
+                    {ollamaStatus.ok && ollamaStatus.models.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontWeight: 500, marginBottom: 6 }}>已安装模型</div>
+                        {ollamaStatus.models.map((m) => (
+                          <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-light)', fontSize: 13 }}>
+                            <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>本地</span>
+                            <span style={{ flex: 1 }}>{m.name}</span>
+                            <span style={{ opacity: 0.5, fontSize: 12 }}>{(m.size / 1024 / 1024 / 1024).toFixed(1)}G</span>
+                            <Button size="sm" variant="ghost" onClick={() => {
+                              setConfigForm(f => ({ ...f, model: m.name, baseUrl: f.baseUrl || 'http://localhost:11434/v1' }));
+                              setShowOllama(false);
+                              showToast(`已选择模型 ${m.name}`, 'success');
+                            }}>使用</Button>
+                            <Button size="sm" variant="ghost" onClick={() => handleDeleteModel(m.name)}>删除</Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div>
+                      <div style={{ fontWeight: 500, marginBottom: 6 }}>拉取新模型</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Input
+                          value={ollamaPullModel}
+                          placeholder="如 llama3.2, qwen2.5:7b"
+                          onChange={(e: any) => setOllamaPullModel(e.target.value)}
+                          onKeyDown={(e: any) => { if (e.key === 'Enter') handlePullModel(); }}
+                          style={{ flex: 1 }}
+                        />
+                        <Button variant="primary" loading={ollamaPulling} onClick={handlePullModel} disabled={!ollamaPullModel.trim()}>
+                          拉取
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 20 }}>
+                    <div style={{ marginBottom: 8 }}>无法连接 Ollama 服务</div>
+                    <Button size="sm" onClick={loadOllamaStatus}>重试</Button>
+                  </div>
+                )}
+              </div>
             </Card>
           </div>
         </div>
