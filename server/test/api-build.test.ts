@@ -90,6 +90,20 @@ test('POST /api/build/image: 不存在的构建上下文返回 400', async () =>
   assert.ok(res.status >= 400 && res.status < 500, `应返回 4xx，实际 ${res.status}`);
 });
 
+// ---------- POST /api/build/image/stream（SSE） ----------
+
+test('POST /api/build/image/stream: 缺少参数时返回 done(失败) 帧并结束', async () => {
+  const res = await req('POST', '/api/build/image/stream', { context: 'C:\\' }, { Authorization: `Bearer ${adminToken}` });
+  assert.strictEqual(res.status, 200);
+  assert.ok(String(res.data).includes('"type":"done"'), '应包含 done 帧');
+  assert.ok(String(res.data).includes('"success":false'), 'done 帧应为失败');
+});
+
+test('POST /api/build/image/stream: 未登录返回 401', async () => {
+  const res = await req('POST', '/api/build/image/stream', { name: 'x', context: 'C:\\' });
+  assert.strictEqual(res.status, 401);
+});
+
 // ---------- 未登录测试 ----------
 
 test('GET /api/build/history: 未登录返回 401', async () => {

@@ -2,11 +2,11 @@
  * Dockerfile 镜像构建页面
  *
  * 提供从宿主机构建上下文目录构建镜像的表单与实时日志展示。
- * 调用后端 POST /api/build/image，阻塞式返回完整构建日志。
+ * 调用后端 POST /api/build/image/stream（SSE），构建日志逐行实时推送。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { get, post, del } from '../api/client';
+import { get, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
@@ -19,14 +19,6 @@ import './build.less';
 interface BuildArg {
   key: string;
   value: string;
-}
-
-/** 构建接口响应 */
-interface BuildResponse {
-  success: boolean;
-  name: string;
-  logs: string[];
-  error?: string;
 }
 
 /** 构建历史记录项 */
@@ -72,6 +64,15 @@ export default function BuildPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   // 待清空历史的确认目标
   const [clearTarget, setClearTarget] = useState(false);
+  // 日志区域引用（流式构建时自动滚动到底部）
+  const logPreRef = useRef<HTMLPreElement>(null);
+
+  // 构建进行中：日志追加时自动滚动到底部
+  useEffect(() => {
+    if (status === 'running' && logPreRef.current) {
+      logPreRef.current.scrollTop = logPreRef.current.scrollHeight;
+    }
+  }, [logs, status]);
 
   /**
    * 拉取构建历史列表（倒序）
@@ -190,7 +191,7 @@ export default function BuildPage() {
   }, []);
 
   /**
-   * 开始构建
+   * 开始构建（SSE 流式：日志逐行实时推送）
    */
   const handleBuild = useCallback(async () => {
     if (!canManage) {
@@ -215,28 +216,40 @@ export default function BuildPage() {
     setLogs([]);
     setStatus('running');
     try {
-      const resp = await post<BuildResponse>('/api/build/image', {
-        name: name.trim(),
-        context: context.trim(),
-        dockerfile: dockerfile.trim() || 'Dockerfile',
-        noCache,
-        args: validArgs,
-      });
-      const list = resp?.logs || [];
-      setLogs(list);
-      if (resp?.success) {
-        setStatus('success');
-        showToast(`镜像构建成功：${resp.name}`);
-        loadHistory();
-      } else {
-        setStatus('error');
-        showToast(resp?.error || '镜像构建失败', 'error');
-        loadHistory();
-      }
+      await postStream(
+        '/api/build/image/stream',
+        {
+          name: name.trim(),
+          context: context.trim(),
+          dockerfile: dockerfile.trim() || 'Dockerfile',
+          noCache,
+          args: validArgs,
+        },
+        {
+          onData: (data: any) => {
+            if (data?.type === 'log' && typeof data.text === 'string') {
+              setLogs((prev) => [...prev.slice(-2000), data.text]);
+            } else if (data?.type === 'done') {
+              if (data.success) {
+                setStatus('success');
+                showToast(`镜像构建成功：${data.name}`);
+              } else {
+                setStatus('error');
+                showToast(data.error || '镜像构建失败', 'error');
+                if (data.error) {
+                  setLogs((prev) => [...prev, `[错误] ${data.error}`]);
+                }
+              }
+              loadHistory();
+            }
+          },
+        },
+      );
     } catch (e: any) {
       setStatus('error');
       setLogs((prev) => [...prev, `[错误] ${e?.message || '构建失败'}`]);
       showToast(e?.message || '构建请求失败', 'error');
+      loadHistory();
     }
   }, [canManage, name, context, dockerfile, noCache, args, showToast, loadHistory]);
 
@@ -334,7 +347,7 @@ export default function BuildPage() {
               {status === 'running' ? '构建中...' : status === 'success' ? '构建成功' : status === 'error' ? '构建失败' : '等待构建'}
             </span>
           </div>
-          <pre className={`build-logs__pre ${logs.length === 0 ? 'build-logs__pre--empty' : ''}`}>
+          <pre ref={logPreRef} className={`build-logs__pre ${logs.length === 0 ? 'build-logs__pre--empty' : ''}`}>
             {logs.length === 0 ? '暂无日志，点击「开始构建」以启动。' : logs.join('\n')}
           </pre>
         </div>
