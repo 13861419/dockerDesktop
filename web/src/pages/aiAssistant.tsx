@@ -521,6 +521,29 @@ export default function AiAssistantPage() {
     }
   }, [showToast]);
 
+  const importSessions = useCallback(async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const sessions = data.sessions || data;
+        if (!Array.isArray(sessions)) throw new Error('格式错误');
+        const r = await post<{ imported: number; errors: string[] }>('/api/ai/sessions/import', { sessions });
+        showToast(`导入 ${r.imported} 个会话`);
+        if (r.errors.length) showToast(`${r.errors.length} 条跳过`, 'error');
+        refreshSessions();
+      } catch (e: any) {
+        showToast(e?.message || '导入失败', 'error');
+      }
+    };
+    input.click();
+  }, [showToast, refreshSessions]);
+
   const loadAll = useCallback(async () => {
     try {
       const [s, p, pr, c] = await Promise.all([
@@ -958,6 +981,9 @@ export default function AiAssistantPage() {
                   </Button>
                   <Button size="sm" variant="ghost" onClick={backupAllSessions}>
                     备份全部
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={importSessions}>
+                    导入
                   </Button>
                 </div>
               </div>

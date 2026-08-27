@@ -1465,6 +1465,42 @@ router.get(
   }),
 );
 
+/**
+ * POST /api/ai/sessions/import
+ * body: { sessions: [{ title, messages }] } — 导入会话（最多 50 条）
+ */
+router.post(
+  '/sessions/import',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body || {};
+    const arr = Array.isArray(body.sessions) ? body.sessions : [];
+    if (arr.length === 0) return res.status(400).json({ error: '请提供会话数组' });
+    if (arr.length > 50) return res.status(400).json({ error: '单次最多导入 50 条会话' });
+
+    let imported = 0;
+    const errors: string[] = [];
+    for (const item of arr) {
+      const title = typeof item.title === 'string' ? item.title.trim() : '导入的对话';
+      const messages = Array.isArray(item.messages)
+        ? item.messages
+            .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+            .map((m: any) => ({ role: m.role, content: m.content, error: m.error ? true : undefined }))
+        : [];
+      if (messages.length === 0) {
+        errors.push(`跳过: "${title}" 无有效消息`);
+        continue;
+      }
+      const session = createChatSession(res.locals.username, { title });
+      updateChatSessionMessages(session.id, res.locals.username, messages);
+      imported++;
+    }
+
+    logOperation(res.locals.username, '导入 AI 对话', 'ai', null, `导入 ${imported} 个会话`);
+    res.json({ imported, errors });
+  }),
+);
+
 // ============ Prompt 模板 ============
 
 /**
