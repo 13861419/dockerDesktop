@@ -144,6 +144,8 @@ export default function AiAssistantPage() {
   const [ollamaLoading, setOllamaLoading] = useState(false);
   const [ollamaPullModel, setOllamaPullModel] = useState('');
   const [ollamaPulling, setOllamaPulling] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [detectedServices, setDetectedServices] = useState<Array<{ service: string; label: string; baseUrl: string; ok: boolean; models: string[] }>>([]);
 
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeEntry[]>([]);
@@ -282,6 +284,20 @@ export default function AiAssistantPage() {
       showToast(e?.message || '获取 Ollama 状态失败', 'error');
     } finally {
       setOllamaLoading(false);
+    }
+  }, [showToast]);
+
+  const detectLocalServices = useCallback(async () => {
+    setDetecting(true);
+    try {
+      const r = await post<{ services: Array<{ service: string; label: string; baseUrl: string; ok: boolean; models: string[] }> }>('/api/ai/local/detect', {});
+      setDetectedServices(r.services || []);
+      const found = (r.services || []).filter((s) => s.ok);
+      showToast(found.length ? `发现 ${found.length} 个本地服务` : '未发现可用的本地 AI 服务', found.length ? 'success' : 'error');
+    } catch (e: any) {
+      showToast(e?.message || '探测失败', 'error');
+    } finally {
+      setDetecting(false);
     }
   }, [showToast]);
 
@@ -1709,6 +1725,25 @@ export default function AiAssistantPage() {
               extra={<Button size="sm" onClick={() => setShowOllama(false)}>✕</Button>}
             >
               <div className="ai-assistant__usage-body">
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>本地服务探测</div>
+                    <Button size="sm" variant="ghost" loading={detecting} onClick={detectLocalServices} style={{ marginLeft: 'auto' }}>
+                      自动探测（Ollama/DMR/vLLM/LM Studio）
+                    </Button>
+                  </div>
+                  {detectedServices.length > 0 && (
+                    <div>
+                      {detectedServices.map((s) => (
+                        <div key={s.service} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
+                          <span className={`ai-assistant__cap-tag ${s.ok ? 'is-cloud' : 'is-off'}`}>{s.ok ? '在线' : '离线'}</span>
+                          <span style={{ flex: 1 }}>{s.label} <span style={{ opacity: 0.5 }}>{s.baseUrl}</span></span>
+                          {s.ok && s.models.length > 0 && <span style={{ opacity: 0.5 }}>{s.models.length} 个模型</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {ollamaLoading ? (
                   <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
                 ) : ollamaStatus ? (

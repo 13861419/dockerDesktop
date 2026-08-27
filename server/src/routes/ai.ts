@@ -25,6 +25,7 @@ import {
   parseActionsFromResponse,
   ACTION_SUGGEST_INSTRUCTION,
   getLocalModelStatus,
+  detectLocalServices,
 } from '../aiClient';
 import type { AiConfig } from '../aiClient';
 import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
@@ -1075,6 +1076,19 @@ router.post(
     if (!baseUrl) return res.status(400).json({ error: '请提供 baseUrl' });
     const status = await getLocalModelStatus(baseUrl);
     res.json(status);
+  }),
+);
+
+/**
+ * POST /api/ai/local/detect
+ * 自动探测常见本地 AI 服务（Ollama / Docker Model Runner / LM Studio / vLLM）
+ */
+router.post(
+  '/local/detect',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const services = await detectLocalServices();
+    res.json({ services });
   }),
 );
 

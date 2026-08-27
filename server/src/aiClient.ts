@@ -540,6 +540,62 @@ export function hasConfiguredCredentials(): boolean {
   return hasConfigured(getAiConfig());
 }
 
+/** 本地 AI 服务探测结果 */
+export interface LocalServiceProbe {
+  service: 'ollama' | 'docker-model-runner' | 'lm-studio' | 'vllm' | 'openai-compatible';
+  label: string;
+  baseUrl: string;
+  ok: boolean;
+  models: string[];
+}
+
+/** 快速探测一个 URL（超时即失败） */
+async function probeUrl(url: string, timeoutMs = 2000): Promise<{ ok: boolean; data?: any }> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const resp = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return { ok: false };
+    const data = await resp.json().catch(() => null);
+    return { ok: true, data };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * 自动探测常见本地 AI 服务（Ollama / Docker Model Runner / LM Studio / vLLM）
+ * 逐个尝试默认端口的服务端点，返回全部可达服务及其模型列表。
+ */
+export async function detectLocalServices(): Promise<LocalServiceProbe[]> {
+  const probes: Array<{ service: LocalServiceProbe['service']; label: string; baseUrl: string; check: () => Promise<{ ok: boolean; data?: any }> }> = [
+    { service: 'ollama', label: 'Ollama', baseUrl: 'http://localhost:11434', check: () => probeUrl('http://localhost:11434/api/version') },
+    { service: 'docker-model-runner', label: 'Docker Model Runner', baseUrl: 'http://localhost:12434', check: () => probeUrl('http://localhost:12434/models') },
+    { service: 'lm-studio', label: 'LM Studio', baseUrl: 'http://localhost:1234', check: () => probeUrl('http://localhost:1234/v1/models') },
+    { service: 'vllm', label: 'vLLM', baseUrl: 'http://localhost:8000', check: () => probeUrl('http://localhost:8000/v1/models') },
+  ];
+  const results = await Promise.all(
+    probes.map(async (p) => {
+      const r = await p.check();
+      const models: string[] = r.data?.data
+        ? (r.data.data as any[]).map((m) => String(m.id || '')).filter(Boolean)
+        : r.data?.models
+          ? (r.data.models as any[]).map((m) => String(m.name || m.id || '')).filter(Boolean)
+          : [];
+      const probe: LocalServiceProbe = {
+        service: p.service,
+        label: p.label,
+        baseUrl: p.baseUrl,
+        ok: r.ok,
+        models,
+      };
+      return probe;
+    }),
+  );
+  return results;
+}
+
 /** 把配置文件(profile)映射为 chatCompletion 所需 AiConfig */
 export function profileToAiConfig(p: AiProfilePublic): AiConfig {
   return {
