@@ -1521,4 +1521,53 @@ router.delete(
   }),
 );
 
+/**
+ * GET /api/ai/templates/export
+ * 导出所有自定义模板为 JSON
+ */
+router.get(
+  '/templates/export',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const templates = listTemplates(undefined, res.locals.username);
+    const custom = templates.filter((t) => !t.isSystem);
+    const data = custom.map((t) => ({ name: t.name, category: t.category, prompt: t.prompt }));
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="ai-templates.json"');
+    res.json(data);
+  }),
+);
+
+/**
+ * POST /api/ai/templates/import
+ * body: { templates: [{ name, category?, prompt }] } — 批量导入模板（最多 50 条）
+ */
+router.post(
+  '/templates/import',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body || {};
+    const arr = Array.isArray(body.templates) ? body.templates : [];
+    if (arr.length === 0) return res.status(400).json({ error: '请提供模板数组' });
+    if (arr.length > 50) return res.status(400).json({ error: '单次最多导入 50 条模板' });
+
+    let imported = 0;
+    const errors: string[] = [];
+    for (const item of arr) {
+      const name = typeof item.name === 'string' ? item.name.trim() : '';
+      const prompt = typeof item.prompt === 'string' ? item.prompt.trim() : '';
+      if (!name || !prompt) {
+        errors.push(`跳过: 名称或内容为空`);
+        continue;
+      }
+      const category = typeof item.category === 'string' ? item.category.trim() : '导入';
+      createTemplate({ name, category, prompt, username: res.locals.username });
+      imported++;
+    }
+
+    logOperation(res.locals.username, '导入 AI 模板', 'ai', null, `导入 ${imported} 个模板`);
+    res.json({ imported, errors });
+  }),
+);
+
 export default router;

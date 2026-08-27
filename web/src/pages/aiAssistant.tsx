@@ -1246,6 +1246,42 @@ export default function AiAssistantPage() {
                           </tr>
               ))}
               <div className="ai-assistant__side-title" style={{ marginTop: 16 }}>Prompt 模板</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <Button size="sm" onClick={async () => {
+                  try {
+                    const token = localStorage.getItem('token') || '';
+                    const resp = await fetch('/api/ai/templates/export', { headers: { Authorization: `Bearer ${token}` } });
+                    if (!resp.ok) throw new Error('导出失败');
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'ai-templates.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showToast('已导出模板');
+                  } catch (e: any) { showToast(e?.message || '导出失败', 'error'); }
+                }}>导出</Button>
+                <Button size="sm" variant="ghost" onClick={async () => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.json';
+                  input.onchange = async (e: any) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const text = await file.text();
+                      const templates = JSON.parse(text);
+                      if (!Array.isArray(templates)) throw new Error('格式错误');
+                      const r = await post<{ imported: number; errors: string[] }>('/api/ai/templates/import', { templates });
+                      showToast(`导入 ${r.imported} 个模板`);
+                      if (r.errors.length) showToast(`${r.errors.length} 条跳过`, 'error');
+                      loadAll();
+                    } catch (e: any) { showToast(e?.message || '导入失败', 'error'); }
+                  };
+                  input.click();
+                }}>导入</Button>
+              </div>
               {templateCategories.length > 0 && (
                 <Select
                   className="ai-assistant__cap-input"
