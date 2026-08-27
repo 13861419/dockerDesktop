@@ -12,7 +12,7 @@ import { Field, Input, TextArea, Select } from '../components/Form';
 import { useToast } from '../components/Toast';
 import { useTheme } from '../hooks/useTheme';
 import { useCanManage } from '../hooks/useCanManage';
-import { get, post, del, download } from '../api/client';
+import { get, post, put, del, download } from '../api/client';
 import { getToken, setRole, type UserRole } from '../api/auth';
 import type {
   ConfigImportConflict,
@@ -59,6 +59,30 @@ interface CurrentUserInfo {
   username: string;
   role?: UserRole;
 }
+
+/** 配置中心条目（GET /api/settings 返回） */
+interface SettingItem {
+  key: string;
+  label: string;
+  hint?: string;
+  type: 'number' | 'string' | 'bool' | 'secret';
+  env?: string;
+  def?: any;
+  group: 'general' | 'runtime' | 'security' | 'retention' | 'notification';
+  readonly?: boolean;
+  value?: any;
+  source?: 'db' | 'env' | 'default';
+  configured?: boolean;
+}
+
+/** 配置分组显示名 */
+const KV_GROUP_LABELS: Record<SettingItem['group'], string> = {
+  general: '通用',
+  runtime: '运行',
+  security: '安全',
+  retention: '数据保留',
+  notification: '通知默认',
+};
 
 /** 字节转可读文本 */
 function formatBytes(n?: number): string {
@@ -110,6 +134,12 @@ export default function SettingsPage() {
   const [chgPassword, setChgPassword] = useState('');
   const [changing, setChanging] = useState(false);
 
+  // 配置中心（KV 系统参数）
+  const [kvItems, setKvItems] = useState<SettingItem[]>([]);
+  // 待保存的编辑值（key -> 字符串；仅管理员可编辑）
+  const [kvEdits, setKvEdits] = useState<Record<string, string>>({});
+  const [kvSaving, setKvSaving] = useState(false);
+
   /**
    * 加载设置页数据
    */
@@ -136,6 +166,57 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /** 加载配置中心条目（系统参数） */
+  const loadKvSettings = useCallback(async () => {
+    try {
+      const resp = await get<{ items: SettingItem[] }>('/api/settings');
+      setKvItems(resp?.items || []);
+      setKvEdits({});
+    } catch {
+      // 非管理员或后端异常时静默，不影响设置页其余区块
+    }
+  }, []);
+
+  useEffect(() => {
+    loadKvSettings();
+  }, [loadKvSettings]);
+
+  /** 保存配置中心编辑项（仅提交有改动的键） */
+  async function handleSaveKv() {
+    const payload: Record<string, string> = {};
+    for (const item of kvItems) {
+      if (item.readonly) continue;
+      const edited = kvEdits[item.key];
+      if (edited === undefined) continue;
+      payload[item.key] = edited;
+    }
+    if (!Object.keys(payload).length) {
+      showToast('没有需要保存的修改', 'error');
+      return;
+    }
+    setKvSaving(true);
+    try {
+      await put('/api/settings', payload);
+      showToast('系统参数已保存');
+      loadKvSettings();
+    } catch (e: any) {
+      showToast(e?.message || '保存失败', 'error');
+    } finally {
+      setKvSaving(false);
+    }
+  }
+
+  /** 恢复某项设置为默认（清除落库值，回退 env/default） */
+  async function handleResetKv(item: SettingItem) {
+    try {
+      await del(`/api/settings/${encodeURIComponent(item.key)}`);
+      showToast(`${item.label} 已恢复默认`);
+      loadKvSettings();
+    } catch (e: any) {
+      showToast(e?.message || '恢复默认失败', 'error');
+    }
+  }
 
   /**
    * 检查 GitHub Releases 获取最新版本
@@ -687,6 +768,59 @@ export default function SettingsPage() {
           </Button>
         </div>
       </Card>
+
+      {/* 系统参数（配置中心） */}
+      {kvItems.length > 0 && (
+        <Card title="系统参数">
+          {(['runtime', 'security', 'retention', 'notification', 'general'] as SettingItem['group'][])
+            .map((group) => ({ group, items: kvItems.filter((s) => s.group === group) }))
+            .filter((g) => g.items.length > 0)
+            .map(({ group, items }) => (
+              <div className="settings-section" key={group}>
+                <div className="settings-section__title">{KV_GROUP_LABELS[group]}</div>
+                {items.map((item) => (
+                  <div className="settings-kv" key={item.key}>
+                    <div className="settings-kv__info">
+                      <div className="settings-kv__label">
+                        {item.label}
+                        {item.source === 'db' && <span className="settings-kv__badge">自定义</span>}
+                        {item.readonly && <span className="settings-kv__badge settings-kv__badge--muted">只读</span>}
+                      </div>
+                      {item.hint && <div className="settings-kv__hint">{item.hint}</div>}
+                    </div>
+                    <div className="settings-kv__control">
+                      {item.type === 'secret' ? (
+                        <span className="settings-kv__value">{item.configured ? '已配置' : '未配置'}</span>
+                      ) : (
+                        <Input
+                          className="settings-kv__input"
+                          value={
+                            kvEdits[item.key] ??
+                            (item.value === undefined || item.value === null ? '' : String(item.value))
+                          }
+                          disabled={item.readonly || currentRole !== 'admin'}
+                          onChange={(e) => setKvEdits((prev) => ({ ...prev, [item.key]: e.target.value }))}
+                        />
+                      )}
+                      {currentRole === 'admin' && !item.readonly && (
+                        <Button variant="ghost" size="sm" onClick={() => handleResetKv(item)}>
+                          恢复默认
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          {currentRole === 'admin' && (
+            <div className="settings-backup__actions">
+              <Button variant="primary" size="sm" onClick={handleSaveKv} loading={kvSaving}>
+                保存修改
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* 关于 / 引擎信息 */}
       <Card title="关于">

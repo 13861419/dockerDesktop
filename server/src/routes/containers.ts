@@ -12,6 +12,7 @@ import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireOperator } from '../auth';
+import { getSetting } from '../settings';
 
 const router = Router();
 
@@ -764,8 +765,8 @@ router.get(
     const docker = await getDockerClient();
     const container = docker.getContainer(req.params.id);
     const tailRaw = req.query.tail;
-    // tail 缺省 200；显式传 0 表示全部
-    const tail = tailRaw === undefined ? 200 : Number(tailRaw);
+    // tail 缺省取配置中心 logs.defaultTail（默认 200）；显式传 0 表示全部
+    const tail = tailRaw === undefined ? getSetting<number>('logs.defaultTail') ?? 200 : Number(tailRaw);
     const logsOpts: any = {
       stdout: true,
       stderr: true,

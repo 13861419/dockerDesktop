@@ -9,9 +9,13 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { verifyCredentials as usersVerifyCredentials, getUserRole } from './users';
+import { getSetting } from './settings';
 
-/** 会话过期时间（毫秒），默认 24 小时 */
-const SESSION_TTL = Number(process.env.AUTH_TTL_HOURS || 24) * 3600 * 1000;
+/** 会话过期时间（毫秒）：配置中心 auth.ttlHours（db > env > 默认 24h） */
+function sessionTtlMs(): number {
+  const hours = getSetting<number>('auth.ttlHours') ?? 24;
+  return hours * 3600 * 1000;
+}
 
 /** 是否启用滑动续期：活跃用户每次访问自动刷新到期时间，避免活跃用户中途掉线（默认开启，AUTH_SLIDING=false 关闭） */
 const SLIDING = process.env.AUTH_SLIDING !== 'false';
@@ -62,7 +66,7 @@ export function createSession(username: string): string {
     token,
     username,
     createdAt: now,
-    expiresAt: now + SESSION_TTL,
+    expiresAt: now + sessionTtlMs(),
   });
   return token;
 }
@@ -80,7 +84,7 @@ export function isValidToken(token: string): boolean {
   }
   // 滑动续期：活跃用户每次访问刷新到期时间
   if (SLIDING) {
-    s.expiresAt = Date.now() + SESSION_TTL;
+    s.expiresAt = Date.now() + sessionTtlMs();
   }
   return true;
 }

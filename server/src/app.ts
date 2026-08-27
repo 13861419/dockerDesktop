@@ -51,6 +51,7 @@ import logsRouter from './routes/logs';
 import gcRouter from './routes/gc';
 import topologyRouter from './routes/topology';
 import labelsRouter from './routes/labels';
+import settingsRouter from './routes/settings';
 import { requireAuth } from './auth';
 
 const app = express();
@@ -117,6 +118,7 @@ app.use('/api/logs', requireAuth, logsRouter);
 app.use('/api/gc', gcRouter);
 app.use('/api/topology', requireAuth, topologyRouter);
 app.use('/api/labels', requireAuth, labelsRouter);
+app.use('/api/settings', settingsRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）

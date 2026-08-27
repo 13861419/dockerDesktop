@@ -42,6 +42,65 @@
   border-top: 1px solid var(--border-color);
 }
 
+/* 配置中心条目行 */
+.settings-kv {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__label {
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__badge {
+    font-size: 11px;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    padding: 0 6px;
+    font-weight: 400;
+
+    &--muted {
+      color: var(--text-muted);
+      border-color: var(--border-color);
+    }
+  }
+
+  &__hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  &__control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &__input {
+    width: 140px;
+    text-align: right;
+  }
+
+  &__value {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+}
+
 .settings-section__title {
   font-size: 13px;
   font-weight: 600;
