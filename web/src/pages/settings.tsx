@@ -23,8 +23,8 @@ import './settings.less';
 
 interface UserItem {
   username: string;
-  // 支持管理员 / 运维人员 / 普通用户三种角色
-  role: 'admin' | 'operator' | 'user';
+  // 支持管理员 / 运维人员 / 普通用户 / 审计员（只读）四种角色
+  role: 'admin' | 'operator' | 'user' | 'auditor';
   createdAt: number;
 }
 
@@ -126,7 +126,7 @@ export default function SettingsPage() {
   // 新增用户表单
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'admin' | 'operator' | 'user'>('user');
+  const [newRole, setNewRole] = useState<'admin' | 'operator' | 'user' | 'auditor'>('user');
   const [creating, setCreating] = useState(false);
 
   // 修改密码表单
@@ -616,8 +616,16 @@ export default function SettingsPage() {
                     <span className="settings-current">当前</span>
                   ) : null}
                 </td>
-                {/* 角色列：三态展示，operator 显示为运维人员 */}
-                <td>{u.role === 'admin' ? '管理员' : u.role === 'operator' ? '运维人员' : '普通用户'}</td>
+                {/* 角色列：四态展示，operator 显示为运维人员，auditor 显示为审计员（只读） */}
+                <td>
+                  {u.role === 'admin'
+                    ? '管理员'
+                    : u.role === 'operator'
+                      ? '运维人员'
+                      : u.role === 'auditor'
+                        ? '审计员（只读）'
+                        : '普通用户'}
+                </td>
                 <td>{formatDate(u.createdAt)}</td>
                 <td>
                   <Button
@@ -655,9 +663,10 @@ export default function SettingsPage() {
               />
             </Field>
             <Field label="角色">
-              <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value as 'admin' | 'operator' | 'user')} disabled={currentRole !== 'admin'}>
+              <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value as 'admin' | 'operator' | 'user' | 'auditor')} disabled={currentRole !== 'admin'}>
                 <option value="user">普通用户</option>
                 <option value="operator">运维人员</option>
+                <option value="auditor">审计员（只读）</option>
                 <option value="admin">管理员</option>
               </select>
             </Field>

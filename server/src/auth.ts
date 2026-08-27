@@ -129,9 +129,14 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: '未登录或会话已过期，请重新登录' });
   }
   const username = getSessionUsername(token) as string;
+  const role = getUserRole(username);
+  // 审计员为只读角色：仅放行幂等读方法，其余一律 403
+  if (role === 'auditor' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return res.status(403).json({ error: '审计员为只读角色，不可执行写操作' });
+  }
   res.locals.user = {
     username,
-    role: getUserRole(username),
+    role,
   };
   // 兼容旧代码：保留 res.locals.username
   res.locals.username = username;

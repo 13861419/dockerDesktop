@@ -11,7 +11,7 @@ const TOKEN_KEY = 'docker_manager_token';
 const ROLE_KEY = 'docker_manager_role';
 
 /** 前端识别的用户角色 */
-export type UserRole = 'admin' | 'operator' | 'user';
+export type UserRole = 'admin' | 'operator' | 'user' | 'auditor';
 
 /**
  * 读取本地存储的 token
@@ -35,8 +35,8 @@ export function setToken(token: string): void {
  */
 export function getRole(): UserRole {
   const role = localStorage.getItem(ROLE_KEY);
-  // 支持 admin / operator / user 三种角色的还原
-  if (role === 'admin' || role === 'operator') return role;
+  // 支持 admin / operator / auditor / user 四种角色的还原
+  if (role === 'admin' || role === 'operator' || role === 'auditor') return role;
   return 'user';
 }
 
