@@ -1226,3 +1226,19 @@ export interface KnowledgeStats {
   category: string;
   count: number;
 }
+
+// AI 用量仪表盘
+export interface AiUsageDashboard {
+  summary: {
+    totalPrompt: number;
+    totalCompletion: number;
+    total: number;
+    totalCalls: number;
+    successCalls: number;
+    failedCalls: number;
+  };
+  byDayCost: Array<{ day: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number; cost: number }>;
+  byWeek: Array<{ week: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number }>;
+  byModel: Array<{ model: string; provider: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number; successCalls: number }>;
+  totalCost: number;
+}

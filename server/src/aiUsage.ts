@@ -157,6 +157,67 @@ export function listAiUsageByDay(days: number): AiUsageByDay[] {
     .all(from) as unknown as AiUsageByDay[];
 }
 
+/** 按周聚合（最近 N 周） */
+export function listAiUsageByWeek(weeks: number): Array<{ week: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number }> {
+  const from = Date.now() - weeks * 7 * 24 * 3600 * 1000;
+  return getDb()
+    .prepare(
+      `SELECT strftime('%Y-W%W', created_at / 1000, 'unixepoch', '+8 hours') AS week,
+              COUNT(*) AS calls,
+              COALESCE(SUM(prompt_tokens),0)     AS promptTokens,
+              COALESCE(SUM(completion_tokens),0) AS completionTokens,
+              COALESCE(SUM(total_tokens),0)      AS totalTokens
+       FROM ai_usage
+       WHERE created_at >= ?
+       GROUP BY week
+       ORDER BY week ASC`,
+    )
+    .all(from) as any[];
+}
+
+/** 成本估算（按模型定价） */
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'gpt-4o': { input: 2.5 / 1e6, output: 10 / 1e6 },
+  'gpt-4o-mini': { input: 0.15 / 1e6, output: 0.6 / 1e6 },
+  'gpt-4-turbo': { input: 10 / 1e6, output: 30 / 1e6 },
+  'claude-3-5-sonnet': { input: 3 / 1e6, output: 15 / 1e6 },
+  'claude-3-5-haiku': { input: 0.8 / 1e6, output: 4 / 1e6 },
+  'deepseek-chat': { input: 0.14 / 1e6, output: 0.28 / 1e6 },
+  'deepseek-reasoner': { input: 0.55 / 1e6, output: 2.19 / 1e6 },
+};
+
+export function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return 0;
+  return promptTokens * pricing.input + completionTokens * pricing.output;
+}
+
+/** 按天聚合 + 成本估算（用于仪表盘） */
+export function listAiUsageByDayWithCost(days: number): Array<{ day: string; calls: number; promptTokens: number; completionTokens: number; totalTokens: number; cost: number }> {
+  const from = Date.now() - days * 24 * 3600 * 1000;
+  const rows = getDb()
+    .prepare(
+      `SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', '+8 hours') AS day,
+              COUNT(*) AS calls,
+              COALESCE(SUM(prompt_tokens),0)     AS promptTokens,
+              COALESCE(SUM(completion_tokens),0) AS completionTokens,
+              COALESCE(SUM(total_tokens),0)      AS totalTokens,
+              COALESCE(SUM(CASE WHEN model='gpt-4o' THEN prompt_tokens * 0.0000025 + completion_tokens * 0.00001
+                                WHEN model='gpt-4o-mini' THEN prompt_tokens * 0.00000015 + completion_tokens * 0.0000006
+                                WHEN model='deepseek-chat' THEN prompt_tokens * 0.00000014 + completion_tokens * 0.00000028
+                                WHEN model='deepseek-reasoner' THEN prompt_tokens * 0.00000055 + completion_tokens * 0.00000219
+                                WHEN model LIKE '%claude-3-5-sonnet%' THEN prompt_tokens * 0.000003 + completion_tokens * 0.000015
+                                WHEN model LIKE '%claude-3-5-haiku%' THEN prompt_tokens * 0.0000008 + completion_tokens * 0.000004
+                                ELSE 0 END), 0) AS cost
+       FROM ai_usage
+       WHERE created_at >= ?
+       GROUP BY day
+       ORDER BY day ASC`,
+    )
+    .all(from) as any[];
+  return rows;
+}
+
 /** 清空全部用量（管理员） */
 export function clearAiUsage(): void {
   getDb().prepare('DELETE FROM ai_usage').run();

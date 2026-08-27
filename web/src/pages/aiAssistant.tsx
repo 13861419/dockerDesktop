@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus, KnowledgeEntry, KnowledgeListResponse } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus, KnowledgeEntry, KnowledgeListResponse, AiUsageDashboard } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -152,6 +152,10 @@ export default function AiAssistantPage() {
   const [showKnowledgeForm, setShowKnowledgeForm] = useState(false);
   const [knowledgeForm, setKnowledgeForm] = useState({ title: '', category: 'general', content: '', tags: '' });
 
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [dashboard, setDashboard] = useState<AiUsageDashboard | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
   const [templateCategory, setTemplateCategory] = useState('');
@@ -294,6 +298,18 @@ export default function AiAssistantPage() {
       showToast(e?.message || '删除失败', 'error');
     }
   }, [showToast, loadOllamaStatus]);
+
+  const loadDashboard = useCallback(async () => {
+    setDashboardLoading(true);
+    try {
+      const d = await get<AiUsageDashboard>('/api/ai/usage/dashboard?days=30&weeks=12');
+      setDashboard(d);
+    } catch (e: any) {
+      showToast(e?.message || '加载仪表盘失败', 'error');
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [showToast]);
 
   const loadKnowledge = useCallback(async (cat?: string, kw?: string) => {
     setKnowledgeLoading(true);
@@ -765,6 +781,9 @@ export default function AiAssistantPage() {
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowKnowledge(!showKnowledge); if (!showKnowledge) loadKnowledge(); }}>
               知识库
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowDashboard(!showDashboard); if (!showDashboard) loadDashboard(); }}>
+              用量仪表盘
             </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
@@ -1561,6 +1580,73 @@ export default function AiAssistantPage() {
                   </div>
                 ) : (
                   <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>暂无知识条目</div>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showDashboard && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowDashboard(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="AI 用量仪表盘"
+              extra={<Button size="sm" onClick={() => setShowDashboard(false)}>✕</Button>}
+            >
+              <div className="ai-assistant__usage-body">
+                {dashboardLoading ? (
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                ) : dashboard ? (
+                  <>
+                    {/* 总览卡片 */}
+                    <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                      <div className="ai-assistant__usage-card">
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>总调用</span>
+                        <span style={{ fontSize: 20, fontWeight: 600 }}>{dashboard.summary.totalCalls}</span>
+                      </div>
+                      <div className="ai-assistant__usage-card">
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>总 Token</span>
+                        <span style={{ fontSize: 20, fontWeight: 600 }}>{(dashboard.summary.total / 1000).toFixed(1)}K</span>
+                      </div>
+                      <div className="ai-assistant__usage-card">
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>估算成本</span>
+                        <span style={{ fontSize: 20, fontWeight: 600, color: dashboard.totalCost > 10 ? 'var(--color-warning)' : 'var(--color-success)' }}>${dashboard.totalCost.toFixed(4)}</span>
+                      </div>
+                    </div>
+                    {/* 按天趋势（简易文本图表） */}
+                    {dashboard.byDayCost.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>每日趋势（最近 {dashboard.byDayCost.length} 天）</div>
+                        <div style={{ fontSize: 11, fontFamily: 'monospace', lineHeight: 1.6 }}>
+                          {dashboard.byDayCost.slice(-14).map((d) => {
+                            const bar = '█'.repeat(Math.min(20, Math.round((d.totalTokens / Math.max(...dashboard.byDayCost.map((x) => x.totalTokens), 1)) * 20)));
+                            return <div key={d.day} style={{ display: 'flex', gap: 8 }}><span style={{ width: 80, opacity: 0.6 }}>{d.day.slice(5)}</span><span style={{ color: 'var(--color-primary)' }}>{bar}</span><span style={{ opacity: 0.5 }}>{d.totalTokens}</span></div>;
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {/* 按模型分布 */}
+                    {dashboard.byModel.length > 0 && (
+                      <div>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>模型分布</div>
+                        {dashboard.byModel.map((m) => (
+                          <div key={m.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
+                            <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{m.provider || 'api'}</span>
+                            <span style={{ flex: 1 }}>{m.model}</span>
+                            <span style={{ opacity: 0.5 }}>{m.calls} 次</span>
+                            <span style={{ opacity: 0.5 }}>{(m.totalTokens / 1000).toFixed(1)}K tok</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 20 }}>
+                    <div style={{ marginBottom: 8 }}>暂无用量数据</div>
+                    <Button size="sm" onClick={loadDashboard}>重试</Button>
+                  </div>
                 )}
               </div>
             </Card>

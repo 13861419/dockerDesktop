@@ -47,7 +47,7 @@ import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
-import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage } from '../aiUsage';
+import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek } from '../aiUsage';
 import { getCache, setCache, getCacheStats, clearCache } from '../aiCache';
 import { createAction, listPendingActions, getAction, approveAction, rejectAction, markExecuted, getActionStats, ACTION_TYPE_LABELS } from '../aiActions';
 import {
@@ -911,6 +911,25 @@ router.delete(
     clearAiUsage();
     logOperation(res.locals.username, '清空 AI 用量', 'ai', null, '已清空全部 AI 用量统计');
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * GET /api/ai/usage/dashboard
+ * 返回仪表盘数据：按天成本趋势 + 按周汇总 + 按模型分布
+ */
+router.get(
+  '/usage/dashboard',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const days = Number(req.query.days) || 30;
+    const weeks = Number(req.query.weeks) || 12;
+    const byDayCost = listAiUsageByDayWithCost(Math.min(days, 90));
+    const byWeek = listAiUsageByWeek(Math.min(weeks, 52));
+    const byModel = listAiUsageByModel();
+    const summary = summarizeAiUsage();
+    const totalCost = byDayCost.reduce((sum, r) => sum + (r.cost || 0), 0);
+    res.json({ summary, byDayCost, byWeek, byModel, totalCost });
   }),
 );
 
