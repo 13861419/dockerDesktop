@@ -241,10 +241,13 @@ export const ACTION_SUGGEST_INSTRUCTION =
   '- restart_container: {"containerId":"容器ID或名称"}\n' +
   '- stop_container: {"containerId":"容器ID或名称"}\n' +
   '- start_container: {"containerId":"容器ID或名称"}\n' +
-  '- remove_container: {"containerId":"容器ID或名称"}\n' +
+  '- remove_container: {"containerId":"容器ID或名称","force":false}\n' +
   '- remove_image: {"imageId":"镜像ID或名称"}\n' +
-  '- system_prune: {}\n\n' +
-  '只有在用户明确要求执行操作，且操作安全可行时才输出。不要凭空建议删除或重启。';
+  '- system_prune: {}\n' +
+  '- restart_network: {"networkId":"网络ID或名称"}\n' +
+  '- prune_volumes: {}\n' +
+  '- exec_command: {"containerId":"容器ID或名称","command":"要执行的shell命令"}\n\n' +
+  '只有在用户明确要求执行操作，且操作安全可行时才输出。不要凭空建议删除或重启。危险操作（删除容器/镜像/数据卷）需特别提醒用户确认。';
 
 /**
  * 构造 OpenAI 兼容 /chat/completions 的请求体（纯函数，便于单测）

@@ -27,6 +27,9 @@ export const ACTION_TYPE_LABELS: Record<string, string> = {
   remove_container: '删除容器',
   remove_image: '删除镜像',
   system_prune: '系统清理',
+  restart_network: '重启网络',
+  prune_volumes: '清理数据卷',
+  exec_command: '容器执行命令',
 };
 
 function mapRow(r: any): AiAction {

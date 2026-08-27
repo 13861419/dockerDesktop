@@ -101,6 +101,54 @@ async function runAction(docker: Dockerode, action: AiAction): Promise<{ ok: boo
       };
     }
 
+    case 'restart_network': {
+      const networkId = params.networkId as string;
+      if (!networkId) return { ok: false, message: '缺少 networkId 参数' };
+      // Docker API 不支持直接 restart network，通过 disconnect + reconnect 实现
+      const network = docker.getNetwork(networkId);
+      // 获取网络信息
+      const info = await network.inspect();
+      const containers = info.Containers || {};
+      const containerIds = Object.keys(containers);
+      if (containerIds.length === 0) return { ok: true, message: `网络 ${info.Name} 无连接容器` };
+      // 逐个断开再重连
+      for (const cid of containerIds) {
+        const net = docker.getNetwork(networkId);
+        await net.disconnect({ Container: cid, Force: true });
+        await net.connect({ Container: cid });
+      }
+      return { ok: true, message: `网络 ${info.Name} 已重启（${containerIds.length} 个容器重新连接）` };
+    }
+
+    case 'prune_volumes': {
+      const result = await docker.pruneVolumes();
+      const count = result.VolumesDeleted?.length || 0;
+      return { ok: true, message: `已清理 ${count} 个数据卷，释放 ${(result.SpaceReclaimed || 0) / 1024 / 1024}MB`, details: { volumes: count, spaceReclaimed: result.SpaceReclaimed } };
+    }
+
+    case 'exec_command': {
+      const containerId = params.containerId as string;
+      const cmd = params.command as string;
+      if (!containerId) return { ok: false, message: '缺少 containerId 参数' };
+      if (!cmd) return { ok: false, message: '缺少 command 参数' };
+      const container = docker.getContainer(containerId);
+      // 在容器内执行命令
+      const exec = await container.exec({ Cmd: ['sh', '-c', cmd], AttachStdout: true, AttachStderr: true });
+      const stream = await exec.start({ Detach: false, Tty: false });
+      // 读取输出（最多 10KB）
+      const chunks: Buffer[] = [];
+      let totalLen = 0;
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+        totalLen += chunk.length;
+        if (totalLen > 10240) break;
+      }
+      const output = Buffer.concat(chunks).toString('utf-8').slice(0, 2000);
+      const inspect = await exec.inspect();
+      const exitCode = inspect.ExitCode ?? 0;
+      return { ok: exitCode === 0, message: exitCode === 0 ? `命令执行成功` : `命令执行失败（退出码 ${exitCode}）`, details: { exitCode, output } };
+    }
+
     default:
       return { ok: false, message: `不支持的操作类型: ${actionType}` };
   }
