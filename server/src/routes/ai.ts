@@ -1132,6 +1132,35 @@ router.delete(
   }),
 );
 
+/**
+ * POST /api/ai/knowledge/import
+ * 批量导入知识条目（JSON 数组）
+ */
+router.post(
+  '/knowledge/import',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: '请提供 items 数组' });
+    if (items.length > 100) return res.status(400).json({ error: '单次最多导入 100 条' });
+    const results: Array<{ ok: boolean; id?: number; title: string; error?: string }> = [];
+    for (const item of items) {
+      try {
+        const title = (item.title || '').trim();
+        const content = (item.content || '').trim();
+        if (!title || !content) { results.push({ ok: false, title: title || '(空)', error: '标题或内容为空' }); continue; }
+        const entry = await createKnowledge(title, item.category || 'general', content, item.tags || []);
+        results.push({ ok: true, id: entry.id, title: entry.title });
+      } catch (e: any) {
+        results.push({ ok: false, title: item.title || '(未知)', error: e?.message || '导入失败' });
+      }
+    }
+    const success = results.filter((r) => r.ok).length;
+    logOperation(res.locals.username, '批量导入 AI 知识', 'ai', null, `成功 ${success}/${items.length}`);
+    res.json({ total: items.length, success, results });
+  }),
+);
+
 // ============ Action 审批 ============
 
 /**

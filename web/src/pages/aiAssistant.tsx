@@ -340,6 +340,37 @@ export default function AiAssistantPage() {
     }
   }, [showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
 
+  const knowledgeImportRef = useRef<HTMLInputElement>(null);
+  const handleBatchImport = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const fileArr = Array.from(files);
+    if (fileArr.length > 100) { showToast('单次最多导入 100 个文件', 'error'); return; }
+    showToast(`正在导入 ${fileArr.length} 个文件...`, 'info');
+    const items: Array<{ title: string; category: string; content: string; tags: string[] }> = [];
+    for (const f of fileArr) {
+      try {
+        const content = await f.text();
+        const ext = f.name.split('.').pop()?.toLowerCase() || '';
+        let category = 'general';
+        if (ext === 'md' || ext === 'markdown') category = 'general';
+        else if (ext === 'yml' || ext === 'yaml' || ext === 'compose') category = 'compose';
+        else if (ext === 'dockerfile' || ext === 'dockerfile.*') category = 'docker';
+        else if (ext === 'log' || ext === 'txt') category = 'troubleshoot';
+        else if (ext === 'conf' || ext === 'json' || ext === 'ini' || ext === 'toml') category = 'security';
+        items.push({ title: f.name, category, content, tags: [ext] });
+      } catch { /* 跳过无法读取的文件 */ }
+    }
+    if (items.length === 0) { showToast('无可导入的文件', 'error'); return; }
+    try {
+      const r = await post<{ total: number; success: number; results: Array<{ ok: boolean; title: string; error?: string }> }>('/api/ai/knowledge/import', { items });
+      showToast(`导入完成：${r.success}/${r.total} 成功`);
+      loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
+    } catch (e: any) {
+      showToast(e?.message || '批量导入失败', 'error');
+    }
+    if (knowledgeImportRef.current) knowledgeImportRef.current.value = '';
+  }, [showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
+
   const handleClearUsage = useCallback(async () => {
     try {
       await del('/api/ai/usage');
@@ -1443,6 +1474,8 @@ export default function AiAssistantPage() {
               title="运维知识库"
               extra={
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input type="file" ref={knowledgeImportRef} style={{ display: 'none' }} accept=".md,.txt,.yml,.yaml,.log,.conf,.json,.ini,.toml,.dockerfile" multiple onChange={(e) => handleBatchImport(e.target.files)} />
+                  <Button size="sm" onClick={() => knowledgeImportRef.current?.click()}>批量导入</Button>
                   <Button size="sm" variant="primary" onClick={() => setShowKnowledgeForm(!showKnowledgeForm)}>+ 新建</Button>
                   <Button size="sm" onClick={() => setShowKnowledge(false)}>✕</Button>
                 </div>
