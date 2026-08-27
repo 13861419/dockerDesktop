@@ -1,0 +1,201 @@
+/* 全局端口占用地图页面样式 */
+
+.ports-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ports-page__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ports-page__search {
+  flex: 1;
+  max-width: 320px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+
+  &:focus {
+    border-color: #3b82f6;
+  }
+}
+
+/* 摘要卡片行 */
+.ports-page__summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ports-summary-card {
+  flex: 1;
+  min-width: 140px;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--bg-card, transparent);
+}
+
+.ports-summary-card__value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ports-summary-card__label {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ports-summary-card--bad {
+  border-color: #ef4444;
+
+  .ports-summary-card__value {
+    color: #ef4444;
+  }
+}
+
+.ports-summary-card--warn {
+  border-color: #f59e0b;
+
+  .ports-summary-card__value {
+    color: #f59e0b;
+  }
+}
+
+/* 端口分布条形图 */
+.ports-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 96px;
+}
+
+.ports-chart__col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.ports-chart__bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, #3b82f6, #6366f1);
+}
+
+/* 冲突区 */
+.ports-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ports-conflict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.06);
+  font-size: 13px;
+}
+
+.ports-conflict__port {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.ports-conflict__item {
+  color: var(--text-muted);
+}
+
+/* 明细表 */
+.ports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ports-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.ports-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.ports-table tbody tr {
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.05);
+  }
+}
+
+.ports-table__row--conflict {
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.ports-table__port {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 600;
+}
+
+.ports-table__detail {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 2px solid #3b82f6;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.8;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+.ports-table__ops {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* 状态徽标 */
+.ports-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.ports-badge--ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.ports-badge--conflict {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.ports-badge--cross {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}

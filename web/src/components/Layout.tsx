@@ -396,6 +396,16 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/ports',
+    label: '端口地图',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="M2 9h20M7 14h.01M11 14h6" />
+      </svg>
+    ),
+  },
 ];
 
 /**
