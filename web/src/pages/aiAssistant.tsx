@@ -501,6 +501,26 @@ export default function AiAssistantPage() {
     }
   }, [currentSessionId, showToast]);
 
+  const backupAllSessions = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const resp = await fetch('/api/ai/sessions/backup', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error('备份失败');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ai-sessions-backup-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('已备份所有会话');
+    } catch (e: any) {
+      showToast(e?.message || '备份失败', 'error');
+    }
+  }, [showToast]);
+
   const loadAll = useCallback(async () => {
     try {
       const [s, p, pr, c] = await Promise.all([
@@ -935,6 +955,9 @@ export default function AiAssistantPage() {
                   </Button>
                   <Button size="sm" variant="ghost" onClick={exportSession}>
                     导出
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={backupAllSessions}>
+                    备份全部
                   </Button>
                 </div>
               </div>

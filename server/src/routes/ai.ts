@@ -1443,6 +1443,28 @@ router.get(
   }),
 );
 
+/**
+ * GET /api/ai/sessions/backup
+ * 备份当前用户所有会话为 JSON 文件
+ */
+router.get(
+  '/sessions/backup',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const sessions = listChatSessions(res.locals.username);
+    const fullSessions = sessions.map((s) => getChatSession(s.id, res.locals.username)).filter(Boolean);
+    const backup = {
+      version: 1,
+      username: res.locals.username,
+      exportedAt: new Date().toISOString(),
+      sessions: fullSessions,
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ai-sessions-backup-${Date.now()}.json"`);
+    res.json(backup);
+  }),
+);
+
 // ============ Prompt 模板 ============
 
 /**
