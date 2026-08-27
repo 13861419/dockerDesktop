@@ -161,6 +161,22 @@ export function deleteChatSession(id: number, username: string): boolean {
   return res.changes > 0;
 }
 
+/** 批量删除会话（仅删除属于自己的）；返回删除数量 */
+export function deleteChatSessions(ids: number[], username: string): number {
+  if (!ids.length) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const res = getDb()
+    .prepare(`DELETE FROM ai_chat_sessions WHERE username = ? AND id IN (${placeholders})`)
+    .run(username, ...ids);
+  return Number(res.changes);
+}
+
+/** 清空某用户的全部会话；返回删除数量 */
+export function clearAllChatSessions(username: string): number {
+  const res = getDb().prepare('DELETE FROM ai_chat_sessions WHERE username = ?').run(username);
+  return Number(res.changes);
+}
+
 /** 搜索会话（按标题或消息内容关键词） */
 export function searchChatSessions(username: string, keyword: string, limit = 20): AiChatSessionLite[] {
   if (!keyword.trim()) return [];

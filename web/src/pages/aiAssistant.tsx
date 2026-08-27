@@ -562,6 +562,21 @@ export default function AiAssistantPage() {
     input.click();
   }, [showToast, refreshSessions]);
 
+  const clearAllSessions = useCallback(async () => {
+    if (!sessions.length) { showToast('当前没有会话', 'error'); return; }
+    if (!confirm(`确定清空全部 ${sessions.length} 个会话？此操作不可恢复。`)) return;
+    try {
+      const r = await del<{ deleted: number }>('/api/ai/sessions/clear');
+      setCurrentSessionId(null);
+      setMessages([]);
+      messagesRef.current = [];
+      setSessions([]);
+      showToast(`已清空 ${r.deleted} 个会话`);
+    } catch (e: any) {
+      showToast(e?.message || '清空失败', 'error');
+    }
+  }, [sessions.length, showToast]);
+
   const loadAll = useCallback(async () => {
     try {
       const [s, p, pr, c] = await Promise.all([

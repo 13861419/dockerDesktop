@@ -57,6 +57,8 @@ import {
   updateChatSessionTitle,
   updateChatSessionMessages,
   deleteChatSession,
+  deleteChatSessions,
+  clearAllChatSessions,
   searchChatSessions,
   updateMessageFeedback,
   togglePinChatSession,
@@ -1461,6 +1463,30 @@ router.delete(
     if (!ok) return res.status(404).json({ error: '会话不存在' });
     logOperation(res.locals.username, '删除 AI 对话', 'ai', null, `session#${id}`);
     res.json({ ok: true });
+  }),
+);
+
+/** POST /api/ai/sessions/batch-delete 批量删除会话（ids 数组） */
+router.post(
+  '/sessions/batch-delete',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0) : [];
+    if (!ids.length) return res.status(400).json({ error: '请提供待删除的会话 ID 数组' });
+    const count = deleteChatSessions(ids, res.locals.username);
+    logOperation(res.locals.username, '批量删除 AI 对话', 'ai', null, `删除 ${count} 个会话`);
+    res.json({ ok: true, deleted: count });
+  }),
+);
+
+/** DELETE /api/ai/sessions/clear 清空当前用户全部会话 */
+router.delete(
+  '/sessions/clear',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const count = clearAllChatSessions(res.locals.username);
+    logOperation(res.locals.username, '清空 AI 对话', 'ai', null, `清空 ${count} 个会话`);
+    res.json({ ok: true, deleted: count });
   }),
 );
 

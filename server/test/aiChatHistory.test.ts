@@ -23,6 +23,8 @@ import {
   deleteChatSession,
   togglePinChatSession,
   updateMessageFeedback,
+  deleteChatSessions,
+  clearAllChatSessions,
 } from '../src/aiChatHistory';
 
 before(() => {
@@ -140,4 +142,30 @@ test('updateMessageFeedback 给 AI 回复点赞/点踩', () => {
   assert.strictEqual(updateMessageFeedback(s.id, 'mallory', 1, 'good'), false);
   // 不存在会话
   assert.strictEqual(updateMessageFeedback(999999, 'fb_user', 0, 'good'), false);
+});
+
+test('deleteChatSessions 批量删除（用户隔离）', () => {
+  const a1 = createChatSession('batch_a');
+  const a2 = createChatSession('batch_a');
+  const b1 = createChatSession('batch_b');
+  // 只删自己的，跨用户不受影响
+  const deleted = deleteChatSessions([a1.id, a2.id, b1.id], 'batch_a');
+  assert.strictEqual(deleted, 2);
+  assert.strictEqual(getChatSession(a1.id, 'batch_a'), null);
+  assert.strictEqual(getChatSession(a2.id, 'batch_a'), null);
+  // bob 的会话仍在
+  assert.ok(getChatSession(b1.id, 'batch_b'));
+  // 空数组返回 0
+  assert.strictEqual(deleteChatSessions([], 'batch_a'), 0);
+});
+
+test('clearAllChatSessions 清空指定用户全部会话', () => {
+  createChatSession('clear_user');
+  createChatSession('clear_user');
+  createChatSession('clear_other');
+  const count = clearAllChatSessions('clear_user');
+  assert.strictEqual(count, 2);
+  assert.strictEqual(listChatSessions('clear_user').length, 0);
+  // 其他用户不受影响
+  assert.strictEqual(listChatSessions('clear_other').length, 1);
 });
