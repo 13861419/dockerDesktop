@@ -257,6 +257,12 @@ async function emitAlert(type: AlertType, level: AlertLevel, message: string, va
       const res = await sendAlert(channelId, message);
       if (res.ok) {
         pushStatus = 'ok';
+        // danger 级别告警：异步追加 AI 诊断（不阻塞告警主链路，AI 不可用则静默）
+        if (level === 'danger') {
+          import('./aiDiagnose')
+            .then((m) => m.pushAiDiagnosis(channelId, { type, level, message, value }))
+            .catch(() => {});
+        }
       } else {
         pushStatus = 'failed';
         pushDetail = res.detail;
