@@ -58,6 +58,7 @@ import {
   updateChatSessionMessages,
   deleteChatSession,
   searchChatSessions,
+  updateMessageFeedback,
 } from '../aiChatHistory';
 import {
   listTemplates,
@@ -1381,6 +1382,28 @@ router.put(
       ok = updateChatSessionTitle(id, username, body.title);
     }
     if (!ok) return res.status(404).json({ error: '会话不存在或无权修改' });
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * PUT /api/ai/sessions/:id/feedback
+ * body: { messageIndex: number, feedback: 'good' | 'bad' }
+ * 更新单条 AI 消息的反馈
+ */
+router.put(
+  '/sessions/:id/feedback',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: '无效的会话 ID' });
+    const body = req.body || {};
+    const messageIndex = Number(body.messageIndex);
+    const feedback = body.feedback;
+    if (!Number.isFinite(messageIndex) || messageIndex < 0) return res.status(400).json({ error: '无效的消息索引' });
+    if (feedback !== 'good' && feedback !== 'bad') return res.status(400).json({ error: 'feedback 必须是 good 或 bad' });
+    const ok = updateMessageFeedback(id, res.locals.username, messageIndex, feedback);
+    if (!ok) return res.status(404).json({ error: '会话不存在、消息索引无效或非 AI 消息' });
     res.json({ ok: true });
   }),
 );

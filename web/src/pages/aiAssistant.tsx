@@ -14,6 +14,7 @@ interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
   error?: boolean;
+  feedback?: 'good' | 'bad';
 }
 
 /** 千分位格式化 */
@@ -999,16 +1000,50 @@ export default function AiAssistantPage() {
                       {m.role === 'assistant' ? (
                         <>
                           {renderMarkdown(m.content, showToast)}
-                          <button
-                            className="ai-assistant__copy"
-                            title="复制"
-                            onClick={() => {
-                              navigator.clipboard.writeText(m.content);
-                              showToast('已复制', 'success');
-                            }}
-                          >
-                            复制
-                          </button>
+                          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                            <button
+                              className="ai-assistant__copy"
+                              title="复制"
+                              onClick={() => {
+                                navigator.clipboard.writeText(m.content);
+                                showToast('已复制', 'success');
+                              }}
+                            >
+                              复制
+                            </button>
+                            {currentSessionId && (
+                              <>
+                                <button
+                                  className="ai-assistant__copy"
+                                  title="有用"
+                                  style={{ color: m.feedback === 'good' ? 'var(--color-success)' : undefined }}
+                                  onClick={async () => {
+                                    try {
+                                      await put(`/api/ai/sessions/${currentSessionId}/feedback`, { messageIndex: i, feedback: 'good' });
+                                      setMessages((prev) => prev.map((msg, idx) => idx === i ? { ...msg, feedback: 'good' } : msg));
+                                      showToast('已标记为有用');
+                                    } catch (e: any) { showToast(e?.message || '操作失败', 'error'); }
+                                  }}
+                                >
+                                  👍
+                                </button>
+                                <button
+                                  className="ai-assistant__copy"
+                                  title="无用"
+                                  style={{ color: m.feedback === 'bad' ? 'var(--color-error)' : undefined }}
+                                  onClick={async () => {
+                                    try {
+                                      await put(`/api/ai/sessions/${currentSessionId}/feedback`, { messageIndex: i, feedback: 'bad' });
+                                      setMessages((prev) => prev.map((msg, idx) => idx === i ? { ...msg, feedback: 'bad' } : msg));
+                                      showToast('已标记为无用');
+                                    } catch (e: any) { showToast(e?.message || '操作失败', 'error'); }
+                                  }}
+                                >
+                                  👎
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </>
                       ) : (
                         <div className="ai-assistant__text">{m.content}</div>

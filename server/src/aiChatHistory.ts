@@ -27,6 +27,7 @@ export interface ChatHistoryMessage {
   role: 'user' | 'assistant';
   content: string;
   error?: boolean;
+  feedback?: 'good' | 'bad';
 }
 
 interface SessionRow {
@@ -121,6 +122,16 @@ export function updateChatSessionMessages(id: number, username: string, messages
     .prepare('UPDATE ai_chat_sessions SET messages = ?, updated_at = ? WHERE id = ? AND username = ?')
     .run(JSON.stringify(messages), Date.now(), id, username);
   return res.changes > 0;
+}
+
+/** 更新单条消息的反馈（good/bad） */
+export function updateMessageFeedback(id: number, username: string, messageIndex: number, feedback: 'good' | 'bad'): boolean {
+  const session = getChatSession(id, username);
+  if (!session || messageIndex < 0 || messageIndex >= session.messages.length) return false;
+  const msg = session.messages[messageIndex];
+  if (msg.role !== 'assistant') return false;
+  msg.feedback = feedback;
+  return updateChatSessionMessages(id, username, session.messages);
 }
 
 /** 删除会话；返回是否删除成功 */
