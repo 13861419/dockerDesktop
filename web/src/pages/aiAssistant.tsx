@@ -7,7 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
-import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus } from '../types';
+import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus, KnowledgeEntry, KnowledgeListResponse } from '../types';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -142,6 +142,15 @@ export default function AiAssistantPage() {
   const [ollamaLoading, setOllamaLoading] = useState(false);
   const [ollamaPullModel, setOllamaPullModel] = useState('');
   const [ollamaPulling, setOllamaPulling] = useState(false);
+
+  const [showKnowledge, setShowKnowledge] = useState(false);
+  const [knowledgeList, setKnowledgeList] = useState<KnowledgeEntry[]>([]);
+  const [knowledgeTotal, setKnowledgeTotal] = useState(0);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeCategory, setKnowledgeCategory] = useState('');
+  const [knowledgeKeyword, setKnowledgeKeyword] = useState('');
+  const [showKnowledgeForm, setShowKnowledgeForm] = useState(false);
+  const [knowledgeForm, setKnowledgeForm] = useState({ title: '', category: 'general', content: '', tags: '' });
 
   const [templates, setTemplates] = useState<AiPromptTemplate[]>([]);
   const [templateCategories, setTemplateCategories] = useState<string[]>([]);
@@ -285,6 +294,51 @@ export default function AiAssistantPage() {
       showToast(e?.message || '删除失败', 'error');
     }
   }, [showToast, loadOllamaStatus]);
+
+  const loadKnowledge = useCallback(async (cat?: string, kw?: string) => {
+    setKnowledgeLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (cat) params.set('category', cat);
+      if (kw) params.set('keyword', kw);
+      const r = await get<KnowledgeListResponse>(`/api/ai/knowledge?${params.toString()}`);
+      setKnowledgeList(r.items);
+      setKnowledgeTotal(r.total);
+    } catch (e: any) {
+      showToast(e?.message || '加载知识库失败', 'error');
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }, [showToast]);
+
+  const handleCreateKnowledge = useCallback(async () => {
+    if (!knowledgeForm.title.trim() || !knowledgeForm.content.trim()) { showToast('标题和内容必填', 'error'); return; }
+    try {
+      await post('/api/ai/knowledge', {
+        title: knowledgeForm.title.trim(),
+        category: knowledgeForm.category,
+        content: knowledgeForm.content.trim(),
+        tags: knowledgeForm.tags ? knowledgeForm.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : [],
+      });
+      showToast('知识条目已创建');
+      setShowKnowledgeForm(false);
+      setKnowledgeForm({ title: '', category: 'general', content: '', tags: '' });
+      loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
+    } catch (e: any) {
+      showToast(e?.message || '创建失败', 'error');
+    }
+  }, [knowledgeForm, showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
+
+  const handleDeleteKnowledge = useCallback(async (id: number) => {
+    if (!confirm('确定删除此知识条目？')) return;
+    try {
+      await del(`/api/ai/knowledge/${id}`);
+      showToast('已删除');
+      loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    }
+  }, [showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
 
   const handleClearUsage = useCallback(async () => {
     try {
@@ -677,6 +731,9 @@ export default function AiAssistantPage() {
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowOllama(!showOllama); if (!showOllama) loadOllamaStatus(); }}>
               本地模型
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowKnowledge(!showKnowledge); if (!showKnowledge) loadKnowledge(); }}>
+              知识库
             </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
@@ -1371,6 +1428,106 @@ export default function AiAssistantPage() {
                     <div style={{ marginBottom: 8 }}>无法连接 Ollama 服务</div>
                     <Button size="sm" onClick={loadOllamaStatus}>重试</Button>
                   </div>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showKnowledge && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowKnowledge(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className="ai-assistant__usage"
+              title="运维知识库"
+              extra={
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <Button size="sm" variant="primary" onClick={() => setShowKnowledgeForm(!showKnowledgeForm)}>+ 新建</Button>
+                  <Button size="sm" onClick={() => setShowKnowledge(false)}>✕</Button>
+                </div>
+              }
+            >
+              <div className="ai-assistant__usage-body">
+                {/* 搜索/过滤 */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                  <select
+                    className="ai-assistant__select"
+                    value={knowledgeCategory}
+                    onChange={(e) => { setKnowledgeCategory(e.target.value); loadKnowledge(e.target.value || undefined, knowledgeKeyword || undefined); }}
+                    style={{ width: 120 }}
+                  >
+                    <option value="">全部分类</option>
+                    <option value="general">通用</option>
+                    <option value="docker">Docker</option>
+                    <option value="compose">Compose</option>
+                    <option value="network">网络</option>
+                    <option value="security">安全</option>
+                    <option value="performance">性能</option>
+                    <option value="troubleshoot">故障排查</option>
+                    <option value="monitoring">监控</option>
+                  </select>
+                  <Input
+                    value={knowledgeKeyword}
+                    placeholder="搜索知识..."
+                    onChange={(e: any) => setKnowledgeKeyword(e.target.value)}
+                    onKeyDown={(e: any) => { if (e.key === 'Enter') loadKnowledge(knowledgeCategory || undefined, e.target.value || undefined); }}
+                    style={{ flex: 1 }}
+                  />
+                </div>
+                {/* 新建表单 */}
+                {showKnowledgeForm && (
+                  <div style={{ background: 'var(--bg-tertiary)', borderRadius: 6, padding: 12, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                      <Input value={knowledgeForm.title} placeholder="标题" onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, title: e.target.value }))} style={{ flex: 1 }} />
+                      <select className="ai-assistant__select" value={knowledgeForm.category} onChange={(e) => setKnowledgeForm((f) => ({ ...f, category: e.target.value }))}>
+                        <option value="general">通用</option><option value="docker">Docker</option><option value="compose">Compose</option>
+                        <option value="network">网络</option><option value="security">安全</option><option value="performance">性能</option>
+                        <option value="troubleshoot">故障排查</option><option value="monitoring">监控</option>
+                      </select>
+                    </div>
+                    <textarea
+                      className="ai-assistant__textarea"
+                      value={knowledgeForm.content}
+                      placeholder="知识内容（支持 Markdown）"
+                      rows={4}
+                      onChange={(e) => setKnowledgeForm((f) => ({ ...f, content: e.target.value }))}
+                      style={{ marginBottom: 8, fontSize: 13 }}
+                    />
+                    <Input value={knowledgeForm.tags} placeholder="标签（逗号分隔）" onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, tags: e.target.value }))} style={{ marginBottom: 8 }} />
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <Button size="sm" onClick={() => setShowKnowledgeForm(false)}>取消</Button>
+                      <Button size="sm" variant="primary" onClick={handleCreateKnowledge}>保存</Button>
+                    </div>
+                  </div>
+                )}
+                {/* 知识列表 */}
+                {knowledgeLoading ? (
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                ) : knowledgeList.length > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8 }}>共 {knowledgeTotal} 条</div>
+                    {knowledgeList.map((k) => (
+                      <div key={k.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-light)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{k.category}</span>
+                          <span style={{ fontWeight: 500, fontSize: 13 }}>{k.title}</span>
+                          <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{new Date(k.updatedAt).toLocaleDateString('zh-CN')}</span>
+                          <Button size="sm" variant="ghost" onClick={() => handleDeleteKnowledge(k.id)} style={{ fontSize: 11 }}>删除</Button>
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>{k.content.slice(0, 200)}{k.content.length > 200 ? '...' : ''}</div>
+                        {k.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                            {k.tags.map((t, i) => (
+                              <span key={i} style={{ fontSize: 10, background: 'var(--bg-tertiary)', borderRadius: 3, padding: '1px 4px', opacity: 0.7 }}>{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>暂无知识条目</div>
                 )}
               </div>
             </Card>

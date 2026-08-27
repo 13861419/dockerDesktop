@@ -1207,3 +1207,22 @@ export interface OllamaRunningStatus {
   ok: boolean;
   models: OllamaRunningModel[];
 }
+
+// 知识库
+export interface KnowledgeEntry {
+  id: number;
+  title: string;
+  category: string;
+  content: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+export interface KnowledgeListResponse {
+  items: KnowledgeEntry[];
+  total: number;
+}
+export interface KnowledgeStats {
+  category: string;
+  count: number;
+}

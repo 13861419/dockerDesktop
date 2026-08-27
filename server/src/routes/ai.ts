@@ -29,6 +29,7 @@ import {
 import type { AiConfig } from '../aiClient';
 import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
 import { getOllamaStatus, getOllamaRunning, pullOllamaModel, deleteOllamaModel } from '../ollamaClient';
+import { createKnowledge, updateKnowledge, deleteKnowledge, getKnowledge, listKnowledge, getKnowledgeStats, searchKnowledge } from '../aiKnowledge';
 import {
   ensureAiProfiles,
   listProfiles,
@@ -1003,6 +1004,117 @@ router.post(
     const result = await deleteOllamaModel(model, host);
     logOperation(res.locals.username, 'ai.ollama.delete', `删除模型 ${model}: ${result.message}`);
     res.json(result);
+  }),
+);
+
+// ============ 运维知识库 ============
+
+/**
+ * GET /api/ai/knowledge
+ * 查询知识列表
+ */
+router.get(
+  '/knowledge',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { category, keyword, limit, offset } = req.query as any;
+    const result = listKnowledge({
+      category: category || undefined,
+      keyword: keyword || undefined,
+      limit: limit ? Number(limit) : 20,
+      offset: offset ? Number(offset) : 0,
+    });
+    res.json(result);
+  }),
+);
+
+/**
+ * GET /api/ai/knowledge/stats
+ * 知识分类统计
+ */
+router.get(
+  '/knowledge/stats',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(getKnowledgeStats());
+  }),
+);
+
+/**
+ * GET /api/ai/knowledge/search
+ * 全文检索知识（TF-IDF）
+ */
+router.get(
+  '/knowledge/search',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { q, limit } = req.query as any;
+    if (!q) return res.status(400).json({ error: '请提供搜索关键词' });
+    const results = searchKnowledge(q, limit ? Number(limit) : 5);
+    res.json(results);
+  }),
+);
+
+/**
+ * GET /api/ai/knowledge/:id
+ * 获取单条知识
+ */
+router.get(
+  '/knowledge/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const entry = getKnowledge(id);
+    if (!entry) return res.status(404).json({ error: '知识条目不存在' });
+    res.json(entry);
+  }),
+);
+
+/**
+ * POST /api/ai/knowledge
+ * 新增知识条目
+ */
+router.post(
+  '/knowledge',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { title, category, content, tags } = req.body || {};
+    if (!title || !content) return res.status(400).json({ error: '标题和内容必填' });
+    const entry = createKnowledge(title, category || 'general', content, tags || []);
+    logOperation(res.locals.username, '创建 AI 知识', 'ai', null, `知识#${entry.id}: ${entry.title}`);
+    res.json(entry);
+  }),
+);
+
+/**
+ * PUT /api/ai/knowledge/:id
+ * 更新知识条目
+ */
+router.put(
+  '/knowledge/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const updated = updateKnowledge(id, req.body || {});
+    if (!updated) return res.status(404).json({ error: '知识条目不存在' });
+    logOperation(res.locals.username, '更新 AI 知识', 'ai', null, `知识#${id}: ${updated.title}`);
+    res.json(updated);
+  }),
+);
+
+/**
+ * DELETE /api/ai/knowledge/:id
+ * 删除知识条目
+ */
+router.delete(
+  '/knowledge/:id',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const ok = deleteKnowledge(id);
+    if (!ok) return res.status(404).json({ error: '知识条目不存在' });
+    logOperation(res.locals.username, '删除 AI 知识', 'ai', null, `知识#${id}`);
+    res.json({ ok: true });
   }),
 );
 

@@ -575,6 +575,18 @@ function createTables(): void {
       resolved_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_ai_actions_user_status ON ai_actions(username, status);
+
+    -- AI 运维知识库（RAG）
+    CREATE TABLE IF NOT EXISTS ai_knowledge (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT NOT NULL,
+      category    TEXT NOT NULL DEFAULT 'general',
+      content     TEXT NOT NULL,
+      tags        TEXT NOT NULL DEFAULT '[]',
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_knowledge_category ON ai_knowledge(category);
   `);
 
   // 迁移：为旧版本已存在的 users 表补充 must_change_password 列（新列默认 0，不强制）
