@@ -138,6 +138,9 @@ export function resolveSqliteBackupFile(file: string): string {
  */
 export function restoreSqliteBackup(file: string): { message: string } {
   const src = resolveBackupPath(file);
+  if (!fs.existsSync(src)) {
+    throw Object.assign(new Error('备份文件不存在'), { statusCode: 404 });
+  }
   // 校验 SQLite 文件头（16 字节魔数），避免用非数据库文件覆盖
   const fd = fs.openSync(src, 'r');
   const header = Buffer.alloc(16);

@@ -5,8 +5,11 @@
  *  1. 列表接口返回 items 数组
  *  2. 创建备份 → 出现在列表且文件非空
  *  3. 文件名路径穿越 → 400
- *  4. 恢复备份 → ok（内容与当前一致，恢复后接口可用）
+ *  4. 下载备份 → 200
  *  5. 删除备份 → 从列表消失
+ *
+ * 恢复（restore）不做集成测试 —— 会把共享 dev 库整库回滚，抹掉其他并行
+ * 测试文件期间新建的行；恢复逻辑由隔离单测 sqlite-backup-restore.test.ts 覆盖。
  *
  * 依赖：后端服务运行在 localhost:9528
  */
@@ -66,16 +69,6 @@ test('创建备份：201 且出现在列表中', async () => {
 test('路径穿越的文件名返回 400', async () => {
   const r = await req('DELETE', `/api/sqlite-backups/${encodeURIComponent('../secrets.db')}`);
   assert.strictEqual(r.status, 400);
-});
-
-test('恢复备份：ok 且面板数据可用', async () => {
-  const r = await req('POST', `/api/sqlite-backups/${encodeURIComponent(createdFile)}/restore`, {});
-  assert.strictEqual(r.status, 200);
-  assert.strictEqual(r.data.ok, true);
-  // 恢复后数据库可用性回归：再次创建应成功
-  const again = await req('POST', '/api/sqlite-backups', { reason: 'apitest-verify' });
-  assert.strictEqual(again.status, 201);
-  await req('DELETE', `/api/sqlite-backups/${encodeURIComponent(again.data.file)}`);
 });
 
 test('下载备份返回 200', async () => {
