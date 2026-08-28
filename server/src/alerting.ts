@@ -17,6 +17,7 @@ import { getSetting } from './settings';
 import { getCurrentMonitor } from './docker/monitor';
 import { getDockerClient } from './docker/client';
 import { listChannels, sendAlert } from './notify';
+import { createPushAggregator } from './pushAggregator';
 
 /** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
 export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net';
@@ -84,6 +85,15 @@ let timer: NodeJS.Timeout | null = null;
 const lastAlertAt = new Map<string, number>();
 /** 资源当前活跃告警级别：type -> 当前级别，用于恢复通知状态机 */
 const activeAlerts = new Map<string, AlertLevel>();
+
+/**
+ * 告警推送聚合器：窗口（alerts.pushAggWindowSec，默认 60s，0=关闭）内
+ * 多条 warn/danger 推送合并为一条摘要防消息风暴；recovery 即时推送
+ */
+const pushAgg = createPushAggregator(
+  (text) => sendAlert(pickEnabledChannel() || '', text),
+  () => Math.max(0, Math.floor(Number(getSetting<number>('alerts.pushAggWindowSec')) || 0)) * 1000,
+);
 
 /**
  * 读取告警规则表，缺省行自动补默认值
@@ -254,23 +264,20 @@ async function emitAlert(type: AlertType, level: AlertLevel, message: string, va
   let pushDetail: string | null = null;
 
   if (channelId) {
-    try {
-      const res = await sendAlert(channelId, message);
-      if (res.ok) {
-        pushStatus = 'ok';
-        // danger 级别告警：异步追加 AI 诊断（不阻塞告警主链路，可在设置中关闭，AI 不可用则静默）
-        if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
-          import('./aiDiagnose')
-            .then((m) => m.pushAiDiagnosis(channelId, { type, level, message, value }))
-            .catch(() => {});
-        }
-      } else {
-        pushStatus = 'failed';
-        pushDetail = res.detail;
+    const res = await pushAgg.queue(level, message);
+    if (res.status === 'ok') {
+      pushStatus = 'ok';
+      // danger 级别告警：异步追加 AI 诊断（不阻塞告警主链路，可在设置中关闭，AI 不可用则静默）
+      if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
+        import('./aiDiagnose')
+          .then((m) => m.pushAiDiagnosis(channelId, { type, level, message, value }))
+          .catch(() => {});
       }
-    } catch (err: any) {
+    } else if (res.status === 'failed') {
       pushStatus = 'failed';
-      pushDetail = String(err?.message || err);
+      pushDetail = res.detail ?? null;
+    } else {
+      pushStatus = 'aggregated';
     }
   }
 
@@ -412,6 +419,8 @@ export function stopAlerting(): void {
     timer = null;
   }
   started = false;
+  // 停止前把缓冲中的聚合推送立即发出，避免丢消息
+  void pushAgg.flush();
 }
 
 /**
@@ -862,23 +871,20 @@ async function emitContainerAlert(
   let pushStatus = 'none';
   let pushDetail: string | null = null;
   if (channelId) {
-    try {
-      const res = await sendAlert(channelId, message);
-      if (res.ok) {
-        pushStatus = 'ok';
-        // danger 级别告警：异步追加 AI 诊断（与宿主级告警一致，可在设置中关闭）
-        if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
-          import('./aiDiagnose')
-            .then((m) => m.pushAiDiagnosis(channelId, { type: rule.watchType, level, message, value }))
-            .catch(() => {});
-        }
-      } else {
-        pushStatus = 'failed';
-        pushDetail = res.detail;
+    const res = await pushAgg.queue(level, message);
+    if (res.status === 'ok') {
+      pushStatus = 'ok';
+      // danger 级别告警：异步追加 AI 诊断（与宿主级告警一致，可在设置中关闭）
+      if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
+        import('./aiDiagnose')
+          .then((m) => m.pushAiDiagnosis(channelId, { type: rule.watchType, level, message, value }))
+          .catch(() => {});
       }
-    } catch (err: any) {
+    } else if (res.status === 'failed') {
       pushStatus = 'failed';
-      pushDetail = String(err?.message || err);
+      pushDetail = res.detail ?? null;
+    } else {
+      pushStatus = 'aggregated';
     }
   }
   d.prepare(

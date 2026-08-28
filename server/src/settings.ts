@@ -278,4 +278,12 @@ registerSettings([
     def: true,
     group: 'notification',
   },
+  {
+    key: 'alerts.pushAggWindowSec',
+    label: '告警推送聚合窗口（秒）',
+    hint: '窗口内多条 warn/danger 推送合并为一条摘要防止消息风暴，0 = 关闭聚合逐条推送；恢复通知始终即时推送；聚合推送不触发 AI 诊断',
+    type: 'number',
+    def: 60,
+    group: 'notification',
+  },
 ]);
