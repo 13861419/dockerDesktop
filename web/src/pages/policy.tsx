@@ -12,7 +12,7 @@ import Button from '../components/Button';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get } from '../api/client';
+import { get, post } from '../api/client';
 import './policy.less';
 
 /** 违规严重度 */
@@ -25,6 +25,8 @@ interface PolicyRule {
   severity: Severity;
   description: string;
   advice: string;
+  /** 是否支持在线自动修复 */
+  fixable?: boolean;
 }
 
 /** 扫描报告 */
@@ -73,13 +75,42 @@ export default function Policy() {
   /** 仅显示违规的容器行 */
   const violatingRows = useMemo(() => (report?.rows || []).filter((r) => r.violations.length > 0), [report]);
 
+  /** 修复中的违规项（`${containerId}:${ruleId}`），用于按钮禁用 */
+  const [fixing, setFixing] = useState<Set<string>>(new Set());
+
+  /** 在线修复单条违规（审批流开启且非管理员时后端返回 202 转审批） */
+  async function fix(row: { containerId: string; containerName: string }, ruleId: string) {
+    const key = `${row.containerId}:${ruleId}`;
+    setFixing((prev) => new Set(prev).add(key));
+    try {
+      const r = await post<{ ok: boolean; message: string; approvalPending?: boolean; approvalId?: number }>(
+        '/api/policy/fix',
+        { containerId: row.containerId, ruleId },
+      );
+      if (r.approvalPending) {
+        showToast('已提交修复审批，批准后自动执行', 'info');
+      } else {
+        showToast(r.message, r.ok ? 'success' : 'error');
+      }
+      await load();
+    } catch (e: any) {
+      showToast(e?.message || '修复失败', 'error');
+    } finally {
+      setFixing((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   return (
     <div className="policy-page">
       <div className="policy-page__toolbar">
         <Button variant="secondary" size="sm" onClick={load} loading={loading}>
           重新扫描
         </Button>
-        <span className="policy-page__hint">一期为只读基线扫描，不会修改任何容器</span>
+        <span className="policy-page__hint">内存 / CPU / 重启策略违规支持在线一键修复，其余需重建容器</span>
       </div>
 
       {loading && !report ? (
@@ -140,6 +171,7 @@ export default function Policy() {
                         <div className="policy-violations">
                           {row.violations.map((v, i) => {
                             const rule = ruleMap.get(v.ruleId);
+                            const fixKey = `${row.containerId}:${v.ruleId}`;
                             return (
                               <div key={i} className={`policy-violation policy-violation--${v.ruleId === 'no-privileged' || v.ruleId === 'no-sensitive-mount' ? 'danger' : rule?.severity || 'info'}`}>
                                 <span className="policy-violation__badge">{SEVERITY_LABEL[rule?.severity || 'info']}</span>
@@ -148,6 +180,16 @@ export default function Policy() {
                                   {v.detail}
                                   {rule?.advice ? ` · 建议：${rule.advice}` : ''}
                                 </span>
+                                {rule?.fixable && (
+                                  <Button
+                                    size="sm"
+                                    variant="primary"
+                                    loading={fixing.has(fixKey)}
+                                    onClick={() => fix(row, v.ruleId)}
+                                  >
+                                    一键修复
+                                  </Button>
+                                )}
                               </div>
                             );
                           })}

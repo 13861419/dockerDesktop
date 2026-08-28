@@ -32,6 +32,8 @@ export interface PolicyRule {
   description: string;
   /** 加固建议 */
   advice: string;
+  /** 是否支持在线自动修复（container.update 可达；需重建容器的规则不支持） */
+  fixable?: boolean;
 }
 
 /** 单条违规记录 */
@@ -66,6 +68,7 @@ export const POLICY_RULES: PolicyRule[] = [
     severity: 'warn',
     description: '未设置内存限制的容器可能耗尽宿主机内存',
     advice: '创建时通过 --memory 设置内存上限',
+    fixable: true,
   },
   {
     id: 'cpu-limit',
@@ -73,6 +76,7 @@ export const POLICY_RULES: PolicyRule[] = [
     severity: 'warn',
     description: '未设置 CPU 限制的容器可能挤占宿主机算力',
     advice: '创建时通过 --cpus 或 --cpu-quota 限制 CPU',
+    fixable: true,
   },
   {
     id: 'restart-policy',
@@ -80,6 +84,7 @@ export const POLICY_RULES: PolicyRule[] = [
     severity: 'info',
     description: '未定义重启策略的容器在宿主机重启后不会自动拉起',
     advice: '按需设置 unless-stopped / always 重启策略',
+    fixable: true,
   },
   {
     id: 'owner-label',
@@ -337,4 +342,89 @@ async function runBaselineScanHandler(_task: CronTaskRow, config: Record<string,
 }
 
 // 注册到调度器（模块加载即注册）
+
+// ==================== 违规在线修复（三期） ====================
+
+/** 修复结果 */
+export interface PolicyFixResult {
+  ok: boolean;
+  message: string;
+}
+
+/** 各可修复规则的默认修复参数 */
+export const POLICY_FIX_DEFAULTS: Record<string, Record<string, unknown>> = {
+  'mem-limit': { memoryBytes: 536870912 },
+  'cpu-limit': { cpus: 1 },
+  'restart-policy': { policy: 'unless-stopped' },
+};
+
+/** 规则是否支持在线自动修复 */
+export function isFixableRule(ruleId: string): boolean {
+  return ruleId in POLICY_FIX_DEFAULTS;
+}
+
+/**
+ * 对单个容器执行基线违规在线修复（仅 fixable 规则）
+ *
+ * 通过 Docker Container Update API 在线生效（无需重建容器）：
+ * - mem-limit：设置内存上限（默认 512MB，Docker 引擎最小 6MB）
+ * - cpu-limit：设置 CPU 上限（默认 1 核，NanoCpus）
+ * - restart-policy：设置重启策略（默认 unless-stopped）
+ *
+ * 修复后自动复检（重新 inspect + checkContainer），违规仍在则返回 ok=false。
+ * 非管理员调用时由路由层走审批门禁（GATE_ACTIONS 'container.fix'）。
+ *
+ * @throws 规则不可修复(400) / 容器不存在(404) / 参数非法(400)
+ */
+export async function applyPolicyFix(
+  containerId: string,
+  ruleId: string,
+  params: Record<string, unknown> = {},
+): Promise<PolicyFixResult> {
+  if (!isFixableRule(ruleId)) {
+    throw Object.assign(new Error(`规则 ${ruleId} 不支持自动修复（需重建容器）`), { statusCode: 400 });
+  }
+  const docker = await getDockerClient();
+  const container = docker.getContainer(containerId);
+  let inspected: any;
+  try {
+    inspected = await container.inspect();
+  } catch {
+    throw Object.assign(new Error('容器不存在或无法访问'), { statusCode: 404 });
+  }
+
+  let update: Record<string, unknown> = {};
+  let describe = '';
+  if (ruleId === 'mem-limit') {
+    // Docker 引擎要求内存下限 6MB；未提供参数时默认 512MB。
+    // 必须同时设置 MemorySwap（= 2×Memory，与 docker run --memory 的默认语义一致），
+    // 否则已设置 memoryswap 的容器会报 409（Memory limit should be smaller than memoryswap）。
+    const bytes = Math.max(Number(params.memoryBytes) || 536870912, 6 * 1024 * 1024);
+    update = { Memory: Math.round(bytes), MemorySwap: Math.round(bytes) * 2 };
+    describe = `已设置内存上限 ${(bytes / 1024 / 1024).toFixed(0)}MB`;
+  } else if (ruleId === 'cpu-limit') {
+    const cpus = Number(params.cpus) || 1;
+    if (cpus <= 0) throw Object.assign(new Error('CPU 上限需为正数'), { statusCode: 400 });
+    update = { NanoCpus: Math.round(cpus * 1e9) };
+    describe = `已设置 CPU 上限 ${cpus} 核`;
+  } else if (ruleId === 'restart-policy') {
+    const policy = String(params.policy || 'unless-stopped');
+    if (!['no', 'on-failure', 'always', 'unless-stopped'].includes(policy)) {
+      throw Object.assign(new Error('不支持的重启策略'), { statusCode: 400 });
+    }
+    const retry = policy === 'on-failure' ? Math.max(Number(params.maximumRetryCount) || 0, 0) : 0;
+    update = { RestartPolicy: { Name: policy, MaximumRetryCount: retry } };
+    describe = `重启策略已设置为 ${policy}`;
+  }
+
+  await container.update(update);
+
+  // 复检：违规仍在视为修复未生效
+  const reInspected = await container.inspect();
+  const still = checkContainer(reInspected).find((v) => v.ruleId === ruleId);
+  if (still) {
+    return { ok: false, message: `修复命令已执行，但复检仍存在违规：${still.detail}` };
+  }
+  return { ok: true, message: `${describe}，复检通过` };
+}
 registerTaskHandler('baselineScan', runBaselineScanHandler);

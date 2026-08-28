@@ -1152,20 +1152,20 @@ journalctl -u docker-manager -f
 | --- | --- |
 | 路径 | `/policy` |
 | 权限 | 管理员 🔒 |
-| 接口 | `GET /api/policy/scan`（只读，不修改任何容器） |
+| 接口 | `GET /api/policy/scan`（只读扫描）；`POST /api/policy/fix`（在线修复） |
 
 内置 6 条基线规则，对全部运行容器做只读检查：
 
-| 规则 | 级别 |
-| --- | --- |
-| 特权容器（--privileged） | 危险 |
-| 敏感挂载（docker.sock 等） | 危险 |
-| 未配置内存限制 | 建议 |
-| 未配置 CPU 限制 | 建议 |
-| 重启策略为 no / none | 建议 |
-| 缺少属主标签 | 提示 |
+| 规则 | 级别 | 在线修复 |
+| --- | --- | --- |
+| 特权容器（--privileged） | 危险 | ❌ 需重建容器 |
+| 敏感挂载（docker.sock 等） | 危险 | ❌ 需重建容器 |
+| 未配置内存限制 | 建议 | ✅ 默认 512MB（可传 params.memoryBytes） |
+| 未配置 CPU 限制 | 建议 | ✅ 默认 1 核（可传 params.cpus） |
+| 重启策略为 no / none | 建议 | ✅ 默认 unless-stopped（可传 params.policy） |
+| 缺少属主标签 | 提示 | ❌ 需重建容器 |
 
-扫描结果按违规级别分级展示，点击条目可跳转对应容器处理。
+**一键修复**：内存 / CPU / 重启策略三类违规支持在线修复（Docker Container Update API，修复后自动复检并在报告中确认违规消除）；特权模式、敏感挂载、属主标签需重建容器，页面展示加固建议。修复动作走审批门禁（`container.fix`）：开启审批流后非管理员提交修复会转入审批中心，批准后自动执行。
 
 ---
 

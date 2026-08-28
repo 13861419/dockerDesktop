@@ -27,6 +27,7 @@ export const GATE_ACTIONS: Record<string, { label: string; targetType: string }>
   'image.delete': { label: '删除镜像', targetType: 'image' },
   'volume.delete': { label: '删除卷', targetType: 'volume' },
   'network.prune': { label: '清理网络', targetType: 'network' },
+  'container.fix': { label: '修复容器配置', targetType: 'container' },
 };
 
 /** 审批记录行 */
@@ -355,6 +356,13 @@ const executors: Record<string, Executor> = {
     const r = await docker.pruneNetworks();
     const n = Array.isArray(r?.NetworksDeleted) ? r.NetworksDeleted.length : 0;
     return `已清理 ${n} 个未使用网络`;
+  },
+  'container.fix': async (target, payload) => {
+    // 动态导入避免模块加载环（policy → scheduler / approvals → policy）
+    const { applyPolicyFix } = await import('./policy');
+    const r = await applyPolicyFix(String(payload.containerId || target), String(payload.ruleId || ''), payload.params || {});
+    if (!r.ok) throw new Error(r.message);
+    return r.message;
   },
 };
 

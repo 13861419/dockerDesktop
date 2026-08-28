@@ -40,6 +40,7 @@ const ACTION_LABELS: Record<string, string> = {
   'image.delete': '删除镜像',
   'volume.delete': '删除卷',
   'network.prune': '清理网络',
+  'container.fix': '修复容器配置',
 };
 
 /** 状态中文名与样式 */
