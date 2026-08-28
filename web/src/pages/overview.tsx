@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { get } from '../api/client';
+import { get, download } from '../api/client';
 import { Overview } from '../types';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -474,7 +474,19 @@ export default function OverviewPage() {
 
       {/* 资源监控区 */}
       <div className="overview__monitor">
-        <Card title="资源监控">
+        <Card
+          title="资源监控"
+          extra={
+            <button
+              type="button"
+              onClick={() => download('/api/system/grafana-dashboard', 'dockermanager-grafana-dashboard.json')}
+              style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
+              title="导出可导入 Grafana 的 Dashboard JSON（引用 /metrics 暴露的 dm_* 指标）"
+            >
+              导出 Grafana
+            </button>
+          }
+        >
           {/* 时间范围切换：10 分钟实时轮询 / 1h·24h·7d 历史趋势 */}
           <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
             {RANGE_OPTIONS.map((opt) => {

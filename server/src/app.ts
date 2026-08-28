@@ -52,6 +52,8 @@ import gcRouter from './routes/gc';
 import topologyRouter from './routes/topology';
 import labelsRouter from './routes/labels';
 import settingsRouter from './routes/settings';
+import portsRouter from './routes/ports';
+import metricsRouter from './routes/metrics';
 import { requireAuth } from './auth';
 
 const app = express();
@@ -71,6 +73,9 @@ if (process.env.NODE_ENV !== 'production') {
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
+
+// Prometheus 抓取端点（顶层 /metrics，内置可选 token 鉴权，见 routes/metrics.ts）
+app.use('/metrics', metricsRouter);
 
 // 登录鉴权路由（/login 匿名访问，/logout /me 内部校验会话）
 app.use('/api/auth', authRouter);
@@ -119,6 +124,7 @@ app.use('/api/gc', gcRouter);
 app.use('/api/topology', requireAuth, topologyRouter);
 app.use('/api/labels', requireAuth, labelsRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/ports', requireAuth, portsRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）

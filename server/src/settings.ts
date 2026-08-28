@@ -215,4 +215,11 @@ registerSettings([
     def: 200,
     group: 'retention',
   },
+  {
+    key: 'metrics.token',
+    label: 'Prometheus 抓取 Token',
+    hint: '配置后 /metrics 端点要求携带 ?token= 或 Authorization: Bearer；留空表示开放访问',
+    type: 'secret',
+    group: 'security',
+  },
 ]);

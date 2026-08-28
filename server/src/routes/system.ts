@@ -451,4 +451,45 @@ router.post(
   ),
 );
 
+/**
+ * GET /api/system/grafana-dashboard
+ * 导出可直接导入 Grafana 的 Dashboard JSON（引用 /metrics 暴露的 dm_* 指标族）
+ */
+router.get(
+  '/grafana-dashboard',
+  asyncHandler(async (_req: Request, res: Response) => {
+    // 面板通用配置工厂
+    const panel = (id: number, title: string, unit: string, expr: string, y = 0) => ({
+      id,
+      type: 'timeseries',
+      title,
+      datasource: { type: 'prometheus', uid: '${DS_PROMETHEUS}' },
+      gridPos: { h: 8, w: 12, x: (id - 1) % 2 === 0 ? 0 : 12, y: Math.floor((id - 1) / 2) * 8 },
+      fieldConfig: { defaults: { unit }, overrides: [] },
+      targets: [{ refId: 'A', expr, legendFormat: '{{container}}' }],
+    });
+
+    const dashboard = {
+      title: 'Docker Manager',
+      uid: 'dockermanager',
+      schemaVersion: 39,
+      version: 1,
+      refresh: '30s',
+      time: { from: 'now-3h', to: 'now' },
+      templating: { list: [] },
+      panels: [
+        panel(1, '容器 CPU 使用率', 'percent', 'dm_container_cpu_percent'),
+        panel(2, '容器内存使用', 'bytes', 'dm_container_mem_usage_bytes'),
+        panel(3, '容器内存使用率', 'percent', 'dm_container_mem_percent'),
+        panel(4, '容器进程数', 'short', 'dm_container_pids'),
+        panel(5, '容器网络接收', 'Bps', 'rate(dm_container_network_rx_bytes_total[1m])'),
+        panel(6, '容器网络发送', 'Bps', 'rate(dm_container_network_tx_bytes_total[1m])'),
+      ],
+    };
+
+    res.setHeader('Content-Disposition', 'attachment; filename="dockermanager-grafana-dashboard.json"');
+    res.json(dashboard);
+  }),
+);
+
 export default router;
