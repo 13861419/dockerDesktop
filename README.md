@@ -252,7 +252,7 @@ npm run package
 npm run package:installer
 ```
 
-生成 `DockerManager-setup-0.1.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
+生成 `DockerManager-setup-0.2.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
 
 #### Linux（Ubuntu 24 / CentOS 7+）
 
