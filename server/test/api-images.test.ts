@@ -149,6 +149,22 @@ test('POST /api/images/pull: 缺少 ref 返回 400', async () => {
 });
 
 test('POST /api/images/search: 搜索镜像', async () => {
+  // Docker Hub 可达性探测：离线/网络受限环境下跳过，避免网络抖动造成假失败
+  let reachable = false;
+  for (let i = 0; i < 3 && !reachable; i++) {
+    try {
+      const probe = await fetch('https://hub.docker.com/v2/search/?q=nginx&page=1', { signal: AbortSignal.timeout(8000) });
+      reachable = probe.status < 500;
+    } catch {
+      reachable = false;
+    }
+    if (!reachable) await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (!reachable) {
+    console.log('Docker Hub 不可达，跳过搜索断言');
+    return;
+  }
+
   const res = await req('POST', '/api/images/search', { term: 'nginx' }, { Authorization: `Bearer ${adminToken}` });
   assert.ok(res.status < 500, `不应返回服务器错误，实际 ${res.status}`);
   if (res.status === 200) {
