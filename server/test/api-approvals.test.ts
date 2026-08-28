@@ -57,10 +57,38 @@ before(async () => {
   assert.ok(operatorToken, 'operator 登录失败');
 });
 
+// 直连 DB 写操作：并行测试下 dev server 持有连接，偶发瞬时锁冲突 —— 带重试
+async function openTestDb() {
+  const { DatabaseSync } = await import('node:sqlite');
+  const path = await import('node:path');
+  const db = new DatabaseSync(path.default.join(__dirname, '../../data/docker-manager.db'));
+  db.exec('PRAGMA busy_timeout = 30000;');
+  return db;
+}
+
+async function retryDb<T>(fn: () => T, tries = 5): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      last = e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  throw last;
+}
+
 after(async () => {
   // 恢复设置默认值并清理测试账号
   await req('DELETE', '/api/settings/approvals.enabled');
   await req('DELETE', `/api/system/users/${OP_USER}`);
+  // 清理本文件（含从 api-policy-fix 并入的门禁用例）产生的审批记录
+  const db = await openTestDb();
+  await retryDb(() => {
+    db.prepare("DELETE FROM approvals WHERE target LIKE 'approval-test-%' OR target LIKE 'ttl-test-%' OR target LIKE 'policy-fix-%' OR target LIKE 'dup-target' OR target LIKE 'no-such-%' OR target LIKE 'batch-gate-%' OR target LIKE 'cancel-target' OR target LIKE 'admin-target' OR target LIKE 'reject-reason-%'").run();
+  });
+  db.close();
 });
 
 test('开启审批流后 operator 删除容器转为 202 待审批', async () => {
@@ -158,22 +186,18 @@ test('审批流开启时批量删除转为待审批，不直接执行', async ()
 
 test('待审批超过 TTL 自动过期（approvals.ttlHours）', async () => {
   // 清理历史运行残留的同目标记录，避免去重逻辑干扰本用例
-  const { DatabaseSync } = await import('node:sqlite');
-  const path = await import('node:path');
-  const db = new DatabaseSync(path.default.join(__dirname, '../../data/docker-manager.db'));
-  // busy_timeout 默认 0，并行测试多连接写入会瞬时锁冲突 —— 显式放宽
-  db.exec('PRAGMA busy_timeout = 30000;');
-  db.prepare("DELETE FROM approvals WHERE target = 'ttl-test-target'").run();
+  const db = await openTestDb();
+  await retryDb(() => db.prepare("DELETE FROM approvals WHERE target = 'ttl-test-target'").run());
 
   await req('PUT', '/api/settings/approvals.enabled', { value: true });
   const r = await req('DELETE', '/api/containers/ttl-test-target', undefined, operatorToken);
   assert.strictEqual(r.status, 202);
 
   // 直接回填 created_at 到 4 天前（默认 TTL 72 小时），再查列表触发惰性过期
-  db.prepare('UPDATE approvals SET created_at = ? WHERE id = ?').run(
+  await retryDb(() => db.prepare('UPDATE approvals SET created_at = ? WHERE id = ?').run(
     Date.now() - 4 * 86400_000,
     r.data.approvalId,
-  );
+  ));
   db.close();
 
   const list = await req('GET', '/api/approvals', undefined, adminToken);
@@ -208,6 +232,26 @@ test('拒绝理由必填：无理由拒绝返回 400', async () => {
   const row = list.data.items.find((x: any) => x.id === submit.data.id);
   assert.strictEqual(row.status, 'rejected');
   assert.ok(String(row.result).includes('理由必填测试'));
+});
+
+test('安全基线修复转审批：operator 提交修复 → 202 + container.fix 审批单', async () => {
+  await req('PUT', '/api/settings/approvals.enabled', { value: true });
+  const r = await req('POST', '/api/policy/fix', { containerId: 'policy-fix-gate-target', ruleId: 'restart-policy' }, operatorToken);
+  assert.strictEqual(r.status, 202);
+  assert.strictEqual(r.data.approvalPending, true);
+  assert.ok(r.data.approvalId > 0);
+
+  const list = await req('GET', '/api/approvals?status=pending', undefined, adminToken);
+  const row = list.data.items.find((x: any) => x.id === r.data.approvalId);
+  assert.ok(row, '审批记录应存在');
+  assert.strictEqual(row.action_type, 'container.fix');
+  assert.strictEqual(row.username, OP_USER);
+});
+
+test('安全基线修复直修：审批流关闭时 operator 直接修复（容器不存在 → 404）', async () => {
+  await req('DELETE', '/api/settings/approvals.enabled');
+  const r = await req('POST', '/api/policy/fix', { containerId: 'policy-fix-missing', ruleId: 'mem-limit' }, operatorToken);
+  assert.strictEqual(r.status, 404);
 });
 
 test('批量批准：多条审批逐条处理并返回成功/失败计数', async () => {
