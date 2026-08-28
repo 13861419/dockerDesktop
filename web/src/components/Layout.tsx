@@ -417,6 +417,17 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/approvals',
+    label: '审批中心',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M9 11.5 11 13.5 15 9.5" />
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 7h8M8 11h8M8 15h5" />
+      </svg>
+    ),
+  },
 ];
 
 /**

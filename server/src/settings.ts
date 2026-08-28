@@ -222,4 +222,12 @@ registerSettings([
     type: 'secret',
     group: 'security',
   },
+  {
+    key: 'approvals.enabled',
+    label: '高危操作审批流',
+    hint: '开启后非管理员的删除容器/镜像/卷与网络清理操作需管理员审批后执行',
+    type: 'bool',
+    def: false,
+    group: 'security',
+  },
 ]);

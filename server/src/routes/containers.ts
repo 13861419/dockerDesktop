@@ -13,6 +13,7 @@ import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireOperator } from '../auth';
 import { getSetting } from '../settings';
+import { maybeGate } from '../approvals';
 
 const router = Router();
 
@@ -725,10 +726,12 @@ router.delete(
   requireOperator,
   asyncHandler(
     async (req: Request, res: Response) => {
-      const docker = await getDockerClient();
       const force = req.query.force === 'true';
       const v = req.query.v === 'true';
       const id = req.params.id;
+      // 审批门禁：开启审批流且非管理员时，转为待审批请求
+      if (maybeGate(req, res, 'container.delete', id, { force, v })) return;
+      const docker = await getDockerClient();
       await docker.getContainer(id).remove({ force, v });
       logOperation(res.locals.username, '删除容器', 'container', id, force ? '强制删除' : '');
       res.json({ ok: true });

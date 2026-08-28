@@ -787,7 +787,13 @@ export default function ContainerDetailPage() {
     if (!id) return;
     setDeleting(true);
     try {
-      await del(`/api/containers/${id}`, { force: true, v: deleteVolumes });
+      const resp = await del<any>(`/api/containers/${id}`, { force: true, v: deleteVolumes });
+      // 审批门禁：后端返回 202 表示操作已转为待审批
+      if (resp?.approvalPending) {
+        showToast('该操作已提交审批，待管理员批准后执行', 'info');
+        navigate('/approvals');
+        return;
+      }
       showToast('已删除容器');
       navigate('/containers');
     } catch (e: any) {

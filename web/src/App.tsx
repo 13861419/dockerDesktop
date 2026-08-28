@@ -53,6 +53,7 @@ const TopologyPage = lazy(() => import('./pages/topology'));
 const ToolsPage = lazy(() => import('./pages/tools'));
 const PortsPage = lazy(() => import('./pages/ports'));
 const PolicyPage = lazy(() => import('./pages/policy'));
+const ApprovalsPage = lazy(() => import('./pages/approvals'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -398,6 +399,14 @@ export default function App() {
                     <RequireAdmin>
                       <PolicyPage />
                     </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/approvals"
+                element={
+                  <PageSuspense>
+                    <ApprovalsPage />
                   </PageSuspense>
                 }
               />

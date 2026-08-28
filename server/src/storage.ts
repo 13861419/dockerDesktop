@@ -599,6 +599,22 @@ function createTables(): void {
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_inspections_created ON ai_inspections(created_at);
+
+    -- 高危操作审批流（二期）
+    CREATE TABLE IF NOT EXISTS approvals (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      username    TEXT NOT NULL,                    -- 提交人
+      action_type TEXT NOT NULL,                    -- 动作类型（container.delete 等）
+      target      TEXT NOT NULL,                    -- 目标标识（容器 ID / 镜像名 / 卷名 / all）
+      payload     TEXT NOT NULL DEFAULT '{}',       -- 执行参数 JSON
+      status      TEXT NOT NULL DEFAULT 'pending',  -- pending/approved/rejected/cancelled
+      reason      TEXT NOT NULL DEFAULT '',         -- 提交说明
+      result      TEXT,                             -- 执行结果或拒绝理由
+      created_at  INTEGER NOT NULL,
+      decided_at  INTEGER,
+      decided_by  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at);
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）

@@ -927,8 +927,13 @@ export default function ContainersPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await del(`/api/containers/${deleteTarget.id}`, { force: true });
-      showToast(`已删除 ${deleteTarget.name}`);
+      const resp = await del<any>(`/api/containers/${deleteTarget.id}`, { force: true });
+      // 审批门禁：后端返回 202 表示操作已转为待审批
+      if (resp?.approvalPending) {
+        showToast('该操作已提交审批，待管理员批准后执行', 'info');
+      } else {
+        showToast(`已删除 ${deleteTarget.name}`);
+      }
       setDeleteTarget(null);
       load();
     } catch (e: any) {
