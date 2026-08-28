@@ -315,8 +315,11 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
     return !!d.prepare(sql).get(...params);
   };
 
-  // 使用事务保证要么全部生效、要么回滚
-  d.exec('BEGIN');
+  // 使用事务保证要么全部生效、要么回滚。
+  // BEGIN IMMEDIATE：进事务即取写锁。WAL 模式下普通 BEGIN（DEFERRED）在
+  // 写入时才升级写锁，若其它连接在快照后已提交写入会得到不可重试的
+  // BUSY_SNAPSHOT 错误；IMMEDIATE 让锁等待走 busy_timeout，避免偶发失败。
+  d.exec('BEGIN IMMEDIATE');
   try {
     // 1. 用户（安全默认：始终 skip，避免把当前机账号改乱 / 误锁）
     if (Array.isArray(payload.users)) {

@@ -160,7 +160,9 @@ test('待审批超过 TTL 自动过期（approvals.ttlHours）', async () => {
   // 清理历史运行残留的同目标记录，避免去重逻辑干扰本用例
   const { DatabaseSync } = await import('node:sqlite');
   const path = await import('node:path');
-  const db = new DatabaseSync(path.default.join(__dirname, '../../data/docker-manager.db'), {}, { timeout: 10000 });
+  const db = new DatabaseSync(path.default.join(__dirname, '../../data/docker-manager.db'));
+  // busy_timeout 默认 0，并行测试多连接写入会瞬时锁冲突 —— 显式放宽
+  db.exec('PRAGMA busy_timeout = 30000;');
   db.prepare("DELETE FROM approvals WHERE target = 'ttl-test-target'").run();
 
   await req('PUT', '/api/settings/approvals.enabled', { value: true });

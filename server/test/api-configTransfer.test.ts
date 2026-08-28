@@ -65,13 +65,22 @@ test('GET /api/system/config/export?includeSecrets=1: 含敏感字段导出', as
 
 // ---------- POST /api/system/config/import ----------
 
+/**
+ * 剥离导出配置中的 settings 并注入最小集合：
+ * 套件并行运行时，把导出瞬间的全部 setting 行原样写回会与其它测试文件
+ * 的中间态互踩（如 settings 删除测试的行被复活）。
+ */
+function sanitizeForImport(config: any): any {
+  return { ...config, data: { ...(config.data || {}), settings: [{ key: 'logs.retentionDays', value: '90' }] } };
+}
+
 test('POST /api/system/config/import: 导出后导入（skip 策略）', async () => {
   // 先导出
   const exp = await req('GET', '/api/system/config/export', undefined, { Authorization: `Bearer ${adminToken}` });
   assert.strictEqual(exp.status, 200);
   // 用 skip 策略导入
   const res = await req('POST', '/api/system/config/import', {
-    config: exp.data,
+    config: sanitizeForImport(exp.data),
     conflict: 'skip',
   }, { Authorization: `Bearer ${adminToken}` });
   // Accept 200 or 413 (payload too large for full config export)
@@ -86,7 +95,7 @@ test('POST /api/system/config/import: 导出后导入（skip 策略）', async (
 test('POST /api/system/config/import: overwrite 策略', async () => {
   const exp = await req('GET', '/api/system/config/export', undefined, { Authorization: `Bearer ${adminToken}` });
   const res = await req('POST', '/api/system/config/import', {
-    config: exp.data,
+    config: sanitizeForImport(exp.data),
     conflict: 'overwrite',
   }, { Authorization: `Bearer ${adminToken}` });
   // Accept 200 or 413 (payload too large for full config export)

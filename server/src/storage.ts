@@ -111,7 +111,7 @@ export function getDb(): DatabaseSync {
   // 设置为 5000ms 以等待短暂写锁（多进程/多连接并发时避免偶发锁冲突）。
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
-  db.exec('PRAGMA busy_timeout = 5000;');
+  db.exec('PRAGMA busy_timeout = 15000;');
   createTables();
   return db;
 }

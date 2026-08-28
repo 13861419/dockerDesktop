@@ -5,6 +5,7 @@
  * 零依赖，全部通过 getDb() 访问 SQLite，兼容存量数据库（表由 storage.initSchema 创建）。
  */
 import { getDb } from './storage';
+import { purgeExpiredTable } from './retention';
 
 /** 单次用量记录入参 */
 export interface AiUsageRecord {
@@ -101,6 +102,7 @@ export interface AiUsageByDay {
 
 /** 汇总全部用量 */
 export function summarizeAiUsage(): AiUsageSummary {
+  purgeExpiredTable('ai.usage.retentionDays', 'ai.usage.lastPurgeAt', 'ai_usage');
   const d = getDb();
   const row = d
     .prepare(

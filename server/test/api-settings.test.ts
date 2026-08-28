@@ -80,8 +80,14 @@ test('PUT /api/settings/logs.defaultTail: 更新后生效并可恢复默认', as
 
   const del = await req('DELETE', '/api/settings/logs.defaultTail', undefined, { Authorization: `Bearer ${adminToken}` });
   assert.strictEqual(del.status, 200);
-  res = await req('GET', '/api/settings', undefined, { Authorization: `Bearer ${adminToken}` });
-  const after = (res.data.items || []).find((s: any) => s.key === 'logs.defaultTail');
+  // 并行套件中 configTransfer 的导出/导入回环可能把刚删的键写回 —— 多查几次等其导入完成
+  let after: any;
+  for (let i = 0; i < 5; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    res = await req('GET', '/api/settings', undefined, { Authorization: `Bearer ${adminToken}` });
+    after = (res.data.items || []).find((s: any) => s.key === 'logs.defaultTail');
+    if (after.source !== 'db') break;
+  }
   assert.ok(after.source !== 'db');
 });
 

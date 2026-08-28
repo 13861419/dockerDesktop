@@ -8,6 +8,7 @@
  * 零依赖：dockerode + 已有 aiClient / notify / storage。
  */
 import { getDb } from './storage';
+import { purgeExpiredTable } from './retention';
 import { getDockerClient } from './docker/client';
 import { chatCompletion, AiConfig } from './aiClient';
 import { listChannels, sendAlert } from './notify';
@@ -66,6 +67,7 @@ export function saveInspection(status: number, summary: string, snapshot: string
 
 /** 最近巡检记录列表（倒序） */
 export function listInspections(limit = 20): AiInspection[] {
+  purgeExpiredTable('ai.inspection.retentionDays', 'ai.inspection.lastPurgeAt', 'ai_inspections');
   const rows = getDb()
     .prepare('SELECT id, status, summary, snapshot, created_at FROM ai_inspections ORDER BY created_at DESC LIMIT ?')
     .all(limit) as any[];

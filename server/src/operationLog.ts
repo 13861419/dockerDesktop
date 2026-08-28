@@ -8,6 +8,7 @@
  * 用于审计与排障，而非 Docker 引擎自动派发的运行事件。
  */
 import { getDb } from './storage';
+import { purgeExpiredTable } from './retention';
 
 export interface OperationLogRecord {
   id: number;
@@ -144,6 +145,7 @@ export function logOperation(
  * @param query 查询条件
  */
 export function listOperationLogs(query: LogQuery = {}): LogPageResult {
+  purgeExpiredTable('logs.retentionDays', 'logs.lastPurgeAt', 'operation_logs');
   const d = getDb();
   const page = Math.max(1, query.page || 1);
   const pageSize = Math.min(100, Math.max(1, query.pageSize || 20));
