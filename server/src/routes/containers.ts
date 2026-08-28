@@ -13,7 +13,7 @@ import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireOperator } from '../auth';
 import { getSetting } from '../settings';
-import { maybeGate } from '../approvals';
+import { maybeGate, shouldGate, submitApproval } from '../approvals';
 
 const router = Router();
 
@@ -537,6 +537,7 @@ router.post(
  * POST /api/containers/batch/delete
  * 批量删除容器，body: { ids: string[], force?: boolean, v?: boolean }
  * 仅 operator 及以上可调用（与单容器删除权限一致）。并发执行 remove，逐项容错。
+ * 审批流开启时非管理员的批量删除转为逐容器审批（202），不直接执行。
  */
 router.post(
   '/batch/delete',
@@ -544,9 +545,22 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
     if (ids.length === 0) return res.status(400).json({ error: '未指定容器' });
-    const docker = await getDockerClient();
     const force = req.body?.force === true;
     const v = req.body?.v === true;
+    // 审批门禁：为每个目标生成待审批记录（同人同目标自动去重），整批不执行
+    if (shouldGate(res.locals.user?.role, 'container.delete')) {
+      const approvalIds = ids.map((id) =>
+        submitApproval({
+          username: res.locals.username,
+          actionType: 'container.delete',
+          target: id,
+          payload: { force, v },
+          reason: '批量删除容器',
+        }).id,
+      );
+      return res.status(202).json({ approvalPending: true, approvalIds });
+    }
+    const docker = await getDockerClient();
     const r = await runBatch(ids, (id) => docker.getContainer(id).remove({ force, v }));
     res.json({ ok: r.fail === 0, ...r });
   }),

@@ -1053,10 +1053,21 @@ export default function ContainersPage() {
     let fail = 0;
     try {
       if (batchAction === 'delete') {
-        const r = await post<{ success: number; fail: number }>('/api/containers/batch/delete', {
-          ids: selectedIds,
-          force: true,
-        });
+        const r = await post<{ success: number; fail: number; approvalPending?: boolean; approvalIds?: number[] }>(
+          '/api/containers/batch/delete',
+          {
+            ids: selectedIds,
+            force: true,
+          },
+        );
+        // 审批流开启时返回 202 转待审批，整批不执行
+        if (r?.approvalPending) {
+          setBatchAction(null);
+          setSelectedIds([]);
+          setBatchLoading(false);
+          showToast(`已提交 ${r.approvalIds?.length ?? 0} 条删除审批，待管理员批准后执行`, 'info');
+          return;
+        }
         success = r?.success ?? 0;
         fail = r?.fail ?? 0;
       } else if (batchAction === 'stop') {

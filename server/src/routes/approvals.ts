@@ -10,7 +10,7 @@
 import { Router, Request, Response } from 'express';
 import {
   GATE_ACTIONS,
-  listApprovals,
+  listApprovalsView,
   submitApproval,
   decideApproval,
   cancelApproval,
@@ -43,7 +43,7 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const role = res.locals.user?.role;
     const isAdmin = role === 'admin';
-    const rows = listApprovals(isAdmin ? undefined : res.locals.username, String(req.query.status || '') || undefined);
+    const rows = await listApprovalsView(isAdmin ? undefined : res.locals.username, String(req.query.status || '') || undefined);
     res.json({ items: rows, isAdmin });
   }),
 );

@@ -24,6 +24,8 @@ interface ApprovalItem {
   username: string;
   action_type: string;
   target: string;
+  /** 展示用目标标签（容器名等人类可读标识，后端解析） */
+  target_label?: string;
   payload: string;
   status: ApprovalStatus;
   reason: string;
@@ -61,6 +63,15 @@ const STATUS_FILTERS: Array<{ value: ApprovalStatus | ''; label: string }> = [
 function formatTime(ts: number | null): string {
   if (!ts) return '-';
   return new Date(ts).toLocaleString();
+}
+
+/** 解析 payload JSON */
+function parsePayload(raw: string): Record<string, any> {
+  try {
+    return JSON.parse(raw) || {};
+  } catch {
+    return {};
+  }
 }
 
 /** 审批中心页面入口 */
@@ -199,7 +210,22 @@ export default function Approvals() {
                     <td>{it.username}</td>
                     <td>{ACTION_LABELS[it.action_type] || it.action_type}</td>
                     <td className="approvals-table__target" title={it.target}>
-                      {it.target}
+                      <div className="approvals-table__target-main">{it.target_label || it.target}</div>
+                      {/* 目标为 ID（与展示名不同）时，附加短 ID 便于核对 */}
+                      {it.target_label && it.target_label !== it.target && (
+                        <div className="approvals-table__target-sub">{it.target.slice(0, 12)}</div>
+                      )}
+                      {/* 待审批时展示执行参数，便于审批人判断 */}
+                      {it.status === 'pending' &&
+                        (() => {
+                          const p = parsePayload(it.payload);
+                          const flags: string[] = [];
+                          if (p.force) flags.push('强制删除');
+                          if (p.v) flags.push('同时删除卷');
+                          return flags.length > 0 ? (
+                            <div className="approvals-table__payload">{flags.join(' / ')}</div>
+                          ) : null;
+                        })()}
                     </td>
                     <td>
                       <span className={`approvals-badge approvals-badge--${it.status}`}>
@@ -244,7 +270,7 @@ export default function Approvals() {
       <ConfirmDialog
         open={!!rejectTarget}
         title="拒绝审批"
-        message={`确定拒绝「${rejectTarget ? ACTION_LABELS[rejectTarget.action_type] || rejectTarget.action_type : ''} ${rejectTarget?.target || ''}」的申请吗？`}
+        message={`确定拒绝「${rejectTarget ? ACTION_LABELS[rejectTarget.action_type] || rejectTarget.action_type : ''} ${rejectTarget?.target_label || rejectTarget?.target || ''}」的申请吗？`}
         confirmText="拒绝"
         danger
         onConfirm={reject}

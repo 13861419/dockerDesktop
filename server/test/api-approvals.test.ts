@@ -136,6 +136,26 @@ test('撤销路径：提交人可撤销自己的待审批，不能撤销他人',
   assert.strictEqual(opCancel.status, 403);
 });
 
+test('审批流开启时批量删除转为待审批，不直接执行', async () => {
+  const r = await req('POST', '/api/containers/batch/delete', { ids: ['batch-gate-a', 'batch-gate-b'], force: true }, operatorToken);
+  assert.strictEqual(r.status, 202);
+  assert.strictEqual(r.data.approvalPending, true);
+  assert.ok(Array.isArray(r.data.approvalIds) && r.data.approvalIds.length === 2);
+
+  // 同一批重复提交：同人同目标去重，复用已有记录
+  const again = await req('POST', '/api/containers/batch/delete', { ids: ['batch-gate-a'] }, operatorToken);
+  assert.strictEqual(again.status, 202);
+  assert.strictEqual(again.data.approvalIds.length, 1);
+  assert.strictEqual(again.data.approvalIds[0], r.data.approvalIds[0]);
+
+  // 列表项应带展示用目标标签（目标不存在时回退短 ID / 原名）
+  const list = await req('GET', '/api/approvals', undefined, adminToken);
+  const row = list.data.items.find((x: any) => x.id === r.data.approvalIds[0]);
+  assert.ok(row, '审批记录应存在');
+  assert.strictEqual(typeof row.target_label, 'string');
+  assert.ok(row.target_label.length > 0);
+});
+
 test('关闭审批流后恢复直接执行（不再 202）', async () => {
   await req('DELETE', '/api/settings/approvals.enabled');
   const r = await req('DELETE', '/api/containers/approval-test-no-such-container', undefined, operatorToken);

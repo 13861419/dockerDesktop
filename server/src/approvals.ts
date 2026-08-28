@@ -121,6 +121,44 @@ export function listApprovals(username?: string, status?: string): ApprovalRow[]
     .all(...params) as unknown as ApprovalRow[];
 }
 
+/** 审批记录视图行（附展示用目标标签） */
+export interface ApprovalRowView extends ApprovalRow {
+  /** 人类可读的目标标识（容器名 / 镜像名等），解析失败时为短 ID */
+  target_label: string;
+}
+
+/**
+ * 解析展示用目标标签：容器 ID 解析为容器名（容器已删除或引擎不可达时回退短 ID）
+ */
+async function resolveTargetLabel(actionType: string, target: string): Promise<string> {
+  if (!target || target === 'all') return target;
+  if (actionType === 'container.delete') {
+    try {
+      const docker = await getDockerClient();
+      const info = await docker.getContainer(target).inspect();
+      const name = (info.Name || '').replace(/^\//, '');
+      if (name) return name;
+    } catch {
+      // 容器不存在（已删除）或引擎不可达：回退短 ID 展示
+    }
+    return target.length > 24 ? target.slice(0, 12) : target;
+  }
+  return target;
+}
+
+/**
+ * 查询审批列表并解析展示标签（目标列显示容器名等人类可读标识，而非原始 ID）
+ */
+export async function listApprovalsView(username?: string, status?: string): Promise<ApprovalRowView[]> {
+  const rows = listApprovals(username, status);
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      target_label: await resolveTargetLabel(row.action_type, row.target),
+    })),
+  );
+}
+
 /**
  * 审批决定：批准则立即执行目标操作，拒绝仅留档
  * @returns 执行结果（批准时）
