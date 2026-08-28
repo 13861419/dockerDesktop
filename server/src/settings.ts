@@ -230,4 +230,12 @@ registerSettings([
     def: false,
     group: 'security',
   },
+  {
+    key: 'approvals.ttlHours',
+    label: '审批超时时间（小时）',
+    hint: '待审批超过该时长未处理将自动作废并留痕；0 表示不过期',
+    type: 'number',
+    def: 72,
+    group: 'security',
+  },
 ]);

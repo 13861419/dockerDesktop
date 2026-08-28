@@ -15,6 +15,7 @@ import { Request, Response } from 'express';
 import { getDb } from './storage';
 import { getDockerClient } from './docker/client';
 import { getSetting } from './settings';
+import { listChannels, sendAlert } from './notify';
 
 /** 审批状态 */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -50,6 +51,35 @@ export function isApprovalGateEnabled(): boolean {
 }
 
 /**
+ * 推送审批事件到所有启用的通知渠道（尽力而为，失败静默，不影响审批主流程）。
+ * 并行推送避免多渠道时串行拖长（每渠道 10s 超时）。
+ */
+async function notifyApprovalEvent(text: string): Promise<void> {
+  try {
+    const channels = listChannels().filter((ch) => ch.enabled);
+    await Promise.allSettled(channels.map((ch) => sendAlert(ch.id, text)));
+  } catch {
+    // 通知失败静默
+  }
+}
+
+/**
+ * 过期未处理的待审批自动作废（留痕为 cancelled + 超时说明）。
+ * 在查询列表与提交门禁前惰性调用，避免待审批无限堆积。
+ * 超时阈值取自设置 approvals.ttlHours（小时，0 表示不过期）。
+ */
+export function expireStaleApprovals(): void {
+  const ttl = Number(getSetting<number>('approvals.ttlHours'));
+  if (!Number.isFinite(ttl) || ttl <= 0) return;
+  const cutoff = Date.now() - ttl * 3600_000;
+  getDb()
+    .prepare(
+      "UPDATE approvals SET status = 'cancelled', decided_at = ?, decided_by = '系统', result = ? WHERE status = 'pending' AND created_at < ?",
+    )
+    .run(Date.now(), `待审批超时（超过 ${ttl} 小时未处理），已自动过期`, cutoff);
+}
+
+/**
  * 判断当前请求是否应被审批门禁拦截
  * @param role 请求用户角色（管理员直接放行）
  * @param actionType 动作类型（须在 GATE_ACTIONS 中）
@@ -79,6 +109,7 @@ export function submitApproval(input: {
     .get(input.username, input.actionType, input.target) as { id: number } | undefined;
   if (existing) return { id: existing.id, reused: true };
 
+  const label = GATE_ACTIONS[input.actionType]?.label || input.actionType;
   const r = d
     .prepare(
       'INSERT INTO approvals (username, action_type, target, payload, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -89,10 +120,18 @@ export function submitApproval(input: {
       input.target,
       JSON.stringify(input.payload || {}),
       'pending',
-      input.reason || GATE_ACTIONS[input.actionType]?.label || '',
+      input.reason || label,
       Date.now(),
     );
-  return { id: Number(r.lastInsertRowid), reused: false };
+  const id = Number(r.lastInsertRowid);
+  // 通知所有启用渠道：有新审批待处理（目标解析为容器名等可读标识）
+  void (async () => {
+    const shown = await resolveTargetLabel(input.actionType, input.target).catch(() => input.target);
+    await notifyApprovalEvent(
+      `【审批提醒】用户 ${input.username} 申请「${label}」，目标：${shown || input.target}，请到面板「审批中心」处理`,
+    );
+  })();
+  return { id, reused: false };
 }
 
 /**
@@ -102,6 +141,7 @@ export function submitApproval(input: {
  */
 export function listApprovals(username?: string, status?: string): ApprovalRow[] {
   const d = getDb();
+  expireStaleApprovals();
   const conditions: string[] = [];
   const params: any[] = [];
   if (username) {
@@ -185,6 +225,9 @@ export async function decideApproval(
       reason || '已拒绝',
       id,
     );
+    void notifyApprovalEvent(
+      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已被 ${decidedBy} 拒绝${reason ? `：${reason}` : ''}`,
+    );
     return { executed: false };
   }
 
@@ -203,10 +246,16 @@ export async function decideApproval(
       `执行成功${output ? `：${output}` : ''}`,
       id,
     );
+    void notifyApprovalEvent(
+      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已由 ${decidedBy} 批准并执行成功`,
+    );
     return { executed: true, error: undefined };
   } catch (err: any) {
     const msg = err?.json?.message || err?.message || String(err);
     d.prepare('UPDATE approvals SET result = ? WHERE id = ?').run(`执行失败：${msg}`, id);
+    void notifyApprovalEvent(
+      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已由 ${decidedBy} 批准，但执行失败：${msg}`,
+    );
     return { executed: false, error: msg };
   }
 }
@@ -319,6 +368,7 @@ export function maybeGate(
   payload: Record<string, unknown> = {},
 ): boolean {
   if (!shouldGate(res.locals.user?.role, actionType)) return false;
+  expireStaleApprovals();
   const { id, reused } = submitApproval({
     username: res.locals.username,
     actionType,

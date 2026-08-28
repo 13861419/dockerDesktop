@@ -156,6 +156,39 @@ test('审批流开启时批量删除转为待审批，不直接执行', async ()
   assert.ok(row.target_label.length > 0);
 });
 
+test('待审批超过 TTL 自动过期（approvals.ttlHours）', async () => {
+  // 清理历史运行残留的同目标记录，避免去重逻辑干扰本用例
+  const { DatabaseSync } = await import('node:sqlite');
+  const path = await import('node:path');
+  const db = new DatabaseSync(path.default.join(__dirname, '../../data/docker-manager.db'), {}, { timeout: 10000 });
+  db.prepare("DELETE FROM approvals WHERE target = 'ttl-test-target'").run();
+
+  await req('PUT', '/api/settings/approvals.enabled', { value: true });
+  const r = await req('DELETE', '/api/containers/ttl-test-target', undefined, operatorToken);
+  assert.strictEqual(r.status, 202);
+
+  // 直接回填 created_at 到 4 天前（默认 TTL 72 小时），再查列表触发惰性过期
+  db.prepare('UPDATE approvals SET created_at = ? WHERE id = ?').run(
+    Date.now() - 4 * 86400_000,
+    r.data.approvalId,
+  );
+  db.close();
+
+  const list = await req('GET', '/api/approvals', undefined, adminToken);
+  const row = list.data.items.find((x: any) => x.id === r.data.approvalId);
+  assert.ok(row, '审批记录应存在');
+  assert.strictEqual(row.status, 'cancelled');
+  assert.ok(String(row.result).includes('超时'));
+
+  // 过期后重新提交同目标：应生成新记录而非复用已过期记录
+  const again = await req('DELETE', '/api/containers/ttl-test-target', undefined, operatorToken);
+  assert.strictEqual(again.status, 202);
+  assert.notStrictEqual(again.data.approvalId, r.data.approvalId);
+  assert.strictEqual(again.data.reused, false);
+
+  await req('DELETE', '/api/settings/approvals.enabled', undefined, adminToken);
+});
+
 test('关闭审批流后恢复直接执行（不再 202）', async () => {
   await req('DELETE', '/api/settings/approvals.enabled');
   const r = await req('DELETE', '/api/containers/approval-test-no-such-container', undefined, operatorToken);

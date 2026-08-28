@@ -3,10 +3,10 @@
  *
  * 浅色侧边栏 + 顶栏 + 内容区，使用 React Router 的 NavLink 实现导航。
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
-import { post } from '../api/client';
+import { post, get } from '../api/client';
 import { clearToken, isAdmin } from '../api/auth';
 import GlobalSearch from './GlobalSearch';
 import './Layout.less';
@@ -448,6 +448,23 @@ export default function Layout() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // 待审批数量角标（审批中心菜单项；接口按角色过滤：管理员见全部，其他用户见自己）
+  const [approvalPending, setApprovalPending] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const r = await get<{ items: unknown[] }>('/api/approvals?status=pending');
+        setApprovalPending(r.items?.length || 0);
+      } catch {
+        // 静默：角标轮询失败不打扰用户
+      }
+    }
+    poll();
+    const t = setInterval(poll, 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
   const admin = isAdmin();
@@ -511,6 +528,11 @@ export default function Layout() {
             >
               <span className="nav-item__icon">{item.icon}</span>
               <span className="nav-item__label">{item.label}</span>
+              {item.to === '/approvals' && approvalPending > 0 && (
+                <span className="nav-item__badge" title={`${approvalPending} 条待审批`}>
+                  {approvalPending > 99 ? '99+' : approvalPending}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
