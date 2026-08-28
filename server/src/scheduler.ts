@@ -66,6 +66,15 @@ export function registerTaskHandler(type: string, fn: TaskHandler): void {
 }
 
 /**
+ * 查询某任务类型的已注册 handler（供 routes/tasks.dispatchTask 手动执行时回退使用：
+ * aiInspection / aiWeeklyReport / baselineScan 等由业务模块注册的类型不在 tasks 本地注册表内）
+ * @param type 任务类型
+ */
+export function getRegisteredHandler(type: string): TaskHandler | undefined {
+  return handlers.get(type);
+}
+
+/**
  * 注册执行历史回调（供 tasks.ts 在每次执行后写 cron_task_logs）
  * @param cb 回调
  */

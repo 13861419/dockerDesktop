@@ -41,6 +41,7 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'command', label: '自定义命令', badge: 'teal' },
   { value: 'healthcheck', label: '容器健康检查', badge: 'slate' },
   { value: 'git-pull-build', label: 'Git 自动部署', badge: 'indigo' },
+  { value: 'baselineScan', label: '安全基线扫描', badge: 'red' },
 ];
 
 /** cron 表达式快捷预设：说明 + 表达式 */
@@ -1357,6 +1358,26 @@ function ConfigEditor({
   // healthcheck：定时检查容器运行/健康状态，异常经告警中心通知
   if (type === 'healthcheck') {
     return renderContainerPicker('定时检查容器是否运行/健康，异常会经告警中心通知');
+  }
+  // baselineScan：定时执行安全基线扫描，违规变化经通知渠道推送
+  if (type === 'baselineScan') {
+    return (
+      <>
+        <Field label="告警严重度下限" hint="达到该级别的违规才纳入告警统计">
+          <Select value={config.severityMin || 'warn'} onChange={(e) => setKey('severityMin', e.target.value)}>
+            <option value="danger">仅危险（danger）</option>
+            <option value="warn">警告及以上（warn）</option>
+            <option value="info">全部（info）</option>
+          </Select>
+        </Field>
+        <Field label="仅新增违规时告警" hint="与上次扫描对比，仅推送新出现的违规；关闭后每次扫描发现违规即推送">
+          <label className="tasks__check">
+            <input type="checkbox" checked={config.onlyOnNew !== false} onChange={(e) => setKey('onlyOnNew', e.target.checked)} />{' '}
+            仅告警新增违规（默认开启）
+          </label>
+        </Field>
+      </>
+    );
   }
   // composeUp / composeDown：选择 Compose 项目
   return (

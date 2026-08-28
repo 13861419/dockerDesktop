@@ -107,3 +107,36 @@ test('GET /api/tasks: 未登录返回 401', async () => {
   const res = await req('GET', '/api/tasks');
   assert.strictEqual(res.status, 401);
 });
+
+test('baselineScan: 创建并手动执行安全基线扫描任务', async () => {
+  // 清掉上次运行可能残留的快照，让本用例从首扫状态开始
+  await req('DELETE', '/api/settings/baseline.lastScan', undefined, { Authorization: `Bearer ${adminToken}` });
+
+  const create = await req('POST', '/api/tasks', {
+    name: `test-baseline-scan-${Date.now()}`,
+    type: 'baselineScan',
+    cron: '0 4 * * *',
+    enabled: false,
+    config: { severityMin: 'warn', onlyOnNew: true, notify: false },
+  }, { Authorization: `Bearer ${adminToken}` });
+  assert.ok(create.status === 200 || create.status === 201);
+  const id = create.data?.id;
+  if (!id) return;
+
+  try {
+    // 首扫：快照为空，所有关注级违规都算"新增"
+    const run = await req('POST', `/api/tasks/${id}/run`, undefined, { Authorization: `Bearer ${adminToken}` });
+    assert.ok(run.status === 200, `手动执行应返回 200，实际 ${run.status}`);
+    assert.strictEqual(run.data?.ok, true);
+    assert.ok(String(run.data?.detail || '').includes('扫描'), '执行详情应包含扫描摘要');
+
+    // 第二次执行：容器状态未变，快照对比后新增应为 0
+    const run2 = await req('POST', `/api/tasks/${id}/run`, undefined, { Authorization: `Bearer ${adminToken}` });
+    assert.ok(run2.status === 200);
+    assert.ok(String(run2.data?.detail || '').includes('新增 0 项'), '第二次扫描不应有新增违规');
+  } finally {
+    await req('DELETE', `/api/tasks/${id}`, undefined, { Authorization: `Bearer ${adminToken}` });
+    // 还原快照键，避免影响其它用例
+    await req('DELETE', '/api/settings/baseline.lastScan', undefined, { Authorization: `Bearer ${adminToken}` });
+  }
+});

@@ -1,5 +1,5 @@
 /**
- * 安全基线策略引擎（一期：只读扫描）
+ * 安全基线策略引擎
  *
  * 对存量容器执行一组安全基线规则检查，输出违规清单（容器 + 规则 + 严重度）。
  * 规则参考 CIS Docker Benchmark 与常见加固实践：
@@ -9,9 +9,13 @@
  * - 建议定义重启策略
  * - 建议携带 owner 标签便于责任归属
  *
- * 二期规划（本期未实现）：高危操作写入 approvals 表走审批流后执行。
+ * 高危操作写入 approvals 表走审批流后执行（二期已实现）。
+ * 定时扫描（三期）：baselineScan 任务类型 + 违规变更告警推送通知渠道。
  */
 import { getDockerClient } from './docker/client';
+import { getDb } from './storage';
+import { listChannels, sendAlert } from './notify';
+import { registerTaskHandler, type CronTaskRow, type TaskRunResult } from './scheduler';
 
 /** 违规严重度 */
 export type ViolationSeverity = 'danger' | 'warn' | 'info';
@@ -219,3 +223,118 @@ function summaryCount(rows: PolicyScanRow[]): Record<ViolationSeverity, number> 
   }
   return out;
 }
+
+// ==================== 定时扫描任务（baselineScan） ====================
+
+/** 上次扫描快照在 setting 表中的隐藏键（不进设置注册中心，不暴露到设置接口） */
+const SNAPSHOT_KEY = 'baseline.lastScan';
+
+/** 违规快照：用于跨次扫描的"新增违规"对比 */
+interface BaselineSnapshot {
+  scannedAt: number;
+  /** 违规键列表，格式 `${containerId}:${ruleId}` */
+  keys: string[];
+  summary: Record<ViolationSeverity, number>;
+}
+
+/** 严重度排序：info < warn < danger */
+const SEVERITY_ORDER: Record<ViolationSeverity, number> = { info: 0, warn: 1, danger: 2 };
+
+function readSnapshot(): BaselineSnapshot | null {
+  try {
+    const row = getDb()
+      .prepare('SELECT value FROM setting WHERE key = ?')
+      .get(SNAPSHOT_KEY) as { value: string } | undefined;
+    if (!row?.value) return null;
+    return JSON.parse(row.value) as BaselineSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function saveSnapshot(s: BaselineSnapshot): void {
+  getDb()
+    .prepare('INSERT OR REPLACE INTO setting (key, value) VALUES (?, ?)')
+    .run(SNAPSHOT_KEY, JSON.stringify(s));
+}
+
+/** 推送文本到所有启用的通知渠道（单渠道失败不影响整体，与巡检推送同风格） */
+async function notifyAllChannels(text: string): Promise<void> {
+  for (const ch of listChannels()) {
+    if (!ch.enabled) continue;
+    try {
+      await sendAlert(ch.id, text);
+    } catch {
+      // 单渠道失败不影响整体
+    }
+  }
+}
+
+/**
+ * 执行一次基线扫描，按配置决定是否推送违规告警。
+ *
+ * 每次扫描都会更新违规快照；告警规则：
+ *  - onlyOnNew=true（默认）：仅当出现上次快照中不存在的违规键时推送（首扫视为全部新增）
+ *  - severityMin（默认 warn）：仅统计达到该级别的违规
+ *
+ * @returns 供任务历史记录的摘要文本
+ */
+export async function runBaselineScan(
+  config: { severityMin?: string; onlyOnNew?: boolean; notify?: boolean } = {},
+): Promise<string> {
+  const report = await scanPolicy();
+  const ruleMap = new Map(POLICY_RULES.map((r) => [r.id, r]));
+  const min = SEVERITY_ORDER[(config.severityMin as ViolationSeverity)] ?? SEVERITY_ORDER.warn;
+
+  // 汇总违规键（containerId:ruleId），并按 severityMin 过滤出"关注级"违规
+  const allKeys: string[] = [];
+  const relevantKeys: string[] = [];
+  const keyLabel = new Map<string, string>();
+  for (const row of report.rows) {
+    for (const v of row.violations) {
+      const key = `${row.containerId}:${v.ruleId}`;
+      allKeys.push(key);
+      if ((SEVERITY_ORDER[ruleMap.get(v.ruleId)?.severity || 'info'] ?? 0) >= min) {
+        relevantKeys.push(key);
+        keyLabel.set(key, `${row.containerName}（${ruleMap.get(v.ruleId)?.name || v.ruleId}）`);
+      }
+    }
+  }
+
+  const prev = readSnapshot();
+  const prevSet = new Set(prev?.keys || []);
+  const onlyOnNew = config.onlyOnNew !== false;
+  const newRelevant = relevantKeys.filter((k) => !prevSet.has(k));
+
+  saveSnapshot({ scannedAt: report.scannedAt, keys: allKeys, summary: report.summary });
+
+  const shouldAlert = config.notify !== false && (onlyOnNew ? newRelevant.length > 0 : relevantKeys.length > 0);
+  if (shouldAlert) {
+    const listKeys = onlyOnNew ? newRelevant : relevantKeys;
+    const list = listKeys
+      .slice(0, 8)
+      .map((k) => `- ${keyLabel.get(k) || k}`)
+      .join('\n');
+    const head = onlyOnNew
+      ? `较上次新增 ${newRelevant.length} 项违规`
+      : `关注级违规共 ${relevantKeys.length} 项`;
+    const more = listKeys.length > 8 ? `\n- …等共 ${listKeys.length} 项` : '';
+    await notifyAllChannels(
+      `【安全基线扫描告警】\n扫描容器 ${report.containerCount} 个：danger ${report.summary.danger} / warn ${report.summary.warn} / info ${report.summary.info}\n${head}${listKeys.length ? `：\n${list}${more}` : ''}`,
+    );
+  }
+
+  return (
+    `扫描 ${report.containerCount} 个容器，违规 danger ${report.summary.danger} / warn ${report.summary.warn} / info ${report.summary.info}` +
+    (onlyOnNew ? `，新增 ${newRelevant.length} 项` : '')
+  );
+}
+
+/** 调度器 handler：安全基线定时扫描（config: { severityMin?, onlyOnNew?, notify? }） */
+async function runBaselineScanHandler(_task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const detail = await runBaselineScan(config || {});
+  return { ok: true, detail };
+}
+
+// 注册到调度器（模块加载即注册）
+registerTaskHandler('baselineScan', runBaselineScanHandler);

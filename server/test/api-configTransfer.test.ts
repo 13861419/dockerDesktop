@@ -71,7 +71,7 @@ test('GET /api/system/config/export?includeSecrets=1: 含敏感字段导出', as
  * 的中间态互踩（如 settings 删除测试的行被复活）。
  */
 function sanitizeForImport(config: any): any {
-  return { ...config, data: { ...(config.data || {}), settings: [{ key: 'logs.retentionDays', value: '90' }] } };
+  return { ...config, data: { ...(config.data || {}), settings: [{ key: 'metrics.token', value: '' }] } };
 }
 
 test('POST /api/system/config/import: 导出后导入（skip 策略）', async () => {

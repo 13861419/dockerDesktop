@@ -363,7 +363,8 @@ export type TaskType =
   | 'command'
   | 'healthcheck'
   | 'git-pull-build'
-  | 'imageGc';
+  | 'imageGc'
+  | 'baselineScan';
 
 /** 计划任务（/api/tasks 返回） */
 export interface CronTask {

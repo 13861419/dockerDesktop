@@ -27,6 +27,7 @@ import {
 } from '../storage';
 import {
   registerTaskHandler,
+  getRegisteredHandler,
   setTaskRunCallback,
   nextRunTime,
   CronTaskRow,
@@ -694,7 +695,7 @@ export async function dispatchTask(id: string): Promise<TaskRunResult> {
   } catch {
     config = {};
   }
-  const handler = taskHandlers[row.type];
+  const handler = taskHandlers[row.type] || getRegisteredHandler(row.type);
   let result: TaskRunResult;
   if (!handler) {
     result = { ok: false, detail: `任务类型 ${row.type} 未注册处理器` };
