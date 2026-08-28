@@ -145,6 +145,14 @@ export function updateChatSessionMessages(id: number, username: string, messages
   return res.changes > 0;
 }
 
+/** 更新会话绑定的工具与目标（如 tool='container' + target=容器名）；tool 为 null 表示解绑 */
+export function updateChatSessionBinding(id: number, username: string, tool: string | null, target: string | null): boolean {
+  const res = getDb()
+    .prepare('UPDATE ai_chat_sessions SET tool = ?, target = ?, updated_at = ? WHERE id = ? AND username = ?')
+    .run(tool, target, Date.now(), id, username);
+  return res.changes > 0;
+}
+
 /** 更新单条消息的反馈（good/bad） */
 export function updateMessageFeedback(id: number, username: string, messageIndex: number, feedback: 'good' | 'bad'): boolean {
   const session = getChatSession(id, username);

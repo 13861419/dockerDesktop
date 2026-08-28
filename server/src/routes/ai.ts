@@ -27,7 +27,7 @@ import {
   getLocalModelStatus,
   detectLocalServices,
 } from '../aiClient';
-import type { AiConfig } from '../aiClient';
+import type { AiConfig, AiMessage } from '../aiClient';
 import { analyzeFile, MAX_FILE_CHARS } from '../aiFileAnalyzer';
 import { getOllamaStatus, getOllamaRunning, pullOllamaModel, deleteOllamaModel } from '../ollamaClient';
 import { createKnowledge, updateKnowledge, deleteKnowledge, getKnowledge, listKnowledge, getKnowledgeStats, searchKnowledge, autoInitKnowledge } from '../aiKnowledge';
@@ -59,6 +59,7 @@ import {
   createChatSession,
   updateChatSessionTitle,
   updateChatSessionMessages,
+  updateChatSessionBinding,
   deleteChatSession,
   deleteChatSessions,
   clearAllChatSessions,
@@ -512,7 +513,7 @@ router.get(
 
 /**
  * 解析对话请求：校验 + 采集 tool 上下文 + 构造最终消息（chat / chat/stream 共用）
- * @returns { finalMessages, toolContext, tool }
+ * @returns { finalMessages, systemMsgs, toolContext, tool, target }
  */
 async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
   const body = req.body || {};
@@ -524,6 +525,7 @@ async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
   }
 
   const tool = typeof body.tool === 'string' ? body.tool : '';
+  const boundTarget = typeof (body.target || body.containerId) === 'string' ? String(body.target || body.containerId) : '';
   let context = '';
   let toolContext: string | undefined;
 
@@ -556,7 +558,7 @@ async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
     context = `（采集环境上下文失败：${err?.message || err}）`;
   }
 
-  // 构造完整消息：system prompt + 对话历史
+  // 构造完整消息：system prompt（含 tool 上下文）+ 对话历史
   const systemMsgs = buildSystemPrompt(cfg, context, '');
   // 对话历史：过滤掉前端可能带的 error 标记，保留 user/assistant 交替
   const history = messages
@@ -570,7 +572,7 @@ async function resolveChatRequest(req: Request, res: Response, cfg: AiConfig) {
     finalMessages.push({ role: 'user', content: lastUser?.content || '请继续。' });
   }
 
-  return { finalMessages, toolContext, tool, historyCount: history.length };
+  return { finalMessages, systemMsgs, toolContext, tool, target: boundTarget, historyCount: history.length };
 }
 
 /**
@@ -651,7 +653,7 @@ router.post(
       e.statusCode = 503;
       throw e;
     }
-    const { finalMessages: baseMsgs, toolContext, tool, historyCount } = await resolveChatRequest(req, res, candidates[0].cfg);
+    const { finalMessages: baseMsgs, systemMsgs: ctxSystemMsgs, toolContext, tool, target: boundTarget, historyCount } = await resolveChatRequest(req, res, candidates[0].cfg);
 
     // 智能路由：根据消息复杂度排序候选
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
@@ -666,8 +668,9 @@ router.post(
     let fallback = false;
     const startTime = Date.now();
 
-    // 语义缓存：检查最近一条用户消息是否命中
-    const cacheKeyMsg = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
+    // 语义缓存：检查最近一条用户消息是否命中（绑定容器时缓存 key 需区分目标，避免串答）
+    const rawCacheKey = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
+    const cacheKeyMsg = boundTarget ? `${rawCacheKey}\n[container:${boundTarget}]` : rawCacheKey;
     const cachedReply = getCache(cacheKeyMsg, routed[0].cfg.model);
     if (cachedReply) {
       reply = cachedReply;
@@ -698,7 +701,8 @@ router.post(
         }
         continue;
       }
-      const sysMsgs = buildSystemPrompt(cfg, '', '');
+      // 复用 resolveChatRequest 构造的 system 消息（已含绑定容器等 tool 上下文）
+      const sysMsgs = [...ctxSystemMsgs];
       // RAG：检索相关知识条目注入上下文
       const lastUserMsg = baseMsgs.filter((m) => m.role === 'user').pop()?.content || '';
       const ragResults = await searchKnowledge(lastUserMsg, 3);
@@ -797,14 +801,18 @@ router.post(
     // 提前解析请求（上下文采集与 profile 无关）
     let toolContext: string | undefined;
     let tool = '';
+    let boundTarget = '';
+    let ctxSystemMsgs: AiMessage[];
     let historyCount = 0;
     let baseMsgs;
     const username = res.locals.username;
     try {
       const r = await resolveChatRequest(req, res, candidates[0].cfg);
       baseMsgs = r.finalMessages;
+      ctxSystemMsgs = r.systemMsgs;
       toolContext = r.toolContext;
       tool = r.tool;
+      boundTarget = r.target;
       historyCount = r.historyCount;
     } catch (err: any) {
       send({ type: 'error', message: err?.message || '请求错误' });
@@ -820,8 +828,9 @@ router.post(
     const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop()?.content || '';
     const routed = smartRoute(candidates, lastUserMsg, tool);
 
-    // 语义缓存：检查最近一条用户消息是否命中
-    const streamCacheMsg = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
+    // 语义缓存：检查最近一条用户消息是否命中（绑定容器时缓存 key 需区分目标，避免串答）
+    const streamRawKey = baseMsgs.filter((m: any) => m.role === 'user').pop()?.content || '';
+    const streamCacheMsg = boundTarget ? `${streamRawKey}\n[container:${boundTarget}]` : streamRawKey;
     const streamCached = getCache(streamCacheMsg, routed[0].cfg.model);
     if (streamCached) {
       send({ type: 'delta', content: streamCached });
@@ -860,7 +869,8 @@ router.post(
         }
         continue;
       }
-      const sysMsgs = buildSystemPrompt(cfg, '', '');
+      // 复用 resolveChatRequest 构造的 system 消息（已含绑定容器等 tool 上下文）
+      const sysMsgs = [...ctxSystemMsgs];
       // RAG：检索相关知识条目注入上下文
       const lastUserMsgStream = baseMsgs.filter((m) => m.role === 'user').pop()?.content || '';
       const ragResultsStream = await searchKnowledge(lastUserMsgStream, 3);
@@ -1479,8 +1489,8 @@ router.get(
 
 /**
  * PUT /api/ai/sessions/:id
- * body: { title? } 或 { messages: [{role,content,error?}] }
- * 更新标题或消息
+ * body: { title? } 或 { messages: [{role,content,error?}] } 或 { tool?, target? }（更新绑定）
+ * 更新标题、消息或绑定容器
  */
 router.put(
   '/sessions/:id',
@@ -1496,6 +1506,14 @@ router.put(
         .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
         .map((m: any) => ({ role: m.role, content: m.content, error: m.error ? true : undefined }));
       ok = updateChatSessionMessages(id, username, cleaned);
+      // 会话内绑定容器（可选，随消息一起保存）
+      if (body.tool !== undefined || body.target !== undefined) {
+        const bound = body.tool === 'container' && body.target;
+        ok = updateChatSessionBinding(id, username, bound ? 'container' : null, bound ? String(body.target) : null) || ok;
+      }
+    } else if (body.tool !== undefined || body.target !== undefined) {
+      const bound = body.tool === 'container' && body.target;
+      ok = updateChatSessionBinding(id, username, bound ? 'container' : null, bound ? String(body.target) : null);
     } else if (typeof body.title === 'string') {
       ok = updateChatSessionTitle(id, username, body.title);
     }

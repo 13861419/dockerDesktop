@@ -473,6 +473,7 @@ export default function AiAssistantPage() {
     setCurrentSessionId(null);
     setMessages([]);
     messagesRef.current = [];
+    setChatContainer('');
   }, []);
 
   const openSession = useCallback(
@@ -482,6 +483,8 @@ export default function AiAssistantPage() {
         setCurrentSessionId(s.id);
         setMessages(s.messages || []);
         messagesRef.current = s.messages || [];
+        // 恢复会话绑定的容器（与保存时一致）
+        setChatContainer(s.tool === 'container' ? s.target || '' : '');
       } catch (e: any) {
         showToast(e?.message || '加载会话失败', 'error');
       }
@@ -507,15 +510,20 @@ export default function AiAssistantPage() {
   const saveSession = useCallback(
     async (id: number, msgs: ChatMsg[]) => {
       try {
-        await put(`/api/ai/sessions/${id}`, { messages: msgs });
+        // 消息与绑定容器一起保存，便于下次打开会话时恢复联动
+        await put(`/api/ai/sessions/${id}`, {
+          messages: msgs,
+          tool: chatContainer ? 'container' : null,
+          target: chatContainer || null,
+        });
         setSessions((list) =>
-          list.map((s) => (s.id === id ? { ...s, messageCount: msgs.length, updatedAt: Date.now() } : s)),
+          list.map((s) => (s.id === id ? { ...s, messageCount: msgs.length, updatedAt: Date.now(), tool: chatContainer ? 'container' : '', target: chatContainer || '' } : s)),
         );
       } catch {
         // 静默：保存失败不打扰用户
       }
     },
-    [],
+    [chatContainer],
   );
 
   const deleteCurrentSession = useCallback(async () => {
