@@ -1,0 +1,11 @@
+{
+  "name": "docker-manager-e2e",
+  "private": true,
+  "description": "Docker 管理面板 E2E 冒烟测试（Playwright）",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  }
+}

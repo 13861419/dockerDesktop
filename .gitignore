@@ -42,3 +42,8 @@ packaging/tray/TrayApp.exe
 # 运行时数据（含敏感：用户密码哈希、镜像源配置）与 SQLite 数据库
 data/
 !data/.gitkeep
+
+# Playwright E2E
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
