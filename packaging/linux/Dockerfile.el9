@@ -1,0 +1,48 @@
+# ============================================================
+#  Docker Manager - AlmaLinux 9 构建环境（生成 .rpm）
+#  说明：原 CentOS 7 方案不可行 —— Node 22 官方二进制要求
+#        glibc >= 2.28，而 CentOS 7 为 2.17，容器内无法构建。
+#  用法: docker build --build-arg TARGETARCH=x86_64 -f Dockerfile.el9 .
+# ============================================================
+FROM almalinux:9
+
+ARG TARGETARCH=x86_64
+ARG NODE_VERSION=22
+
+ENV TARGETARCH=${TARGETARCH}
+
+# 系统依赖（基础镜像自带 curl-minimal，勿装 curl 以免冲突）
+RUN dnf install -y --setopt=tsflags=nodocs \
+    ca-certificates \
+    git \
+    gcc \
+    gcc-c++ \
+    make \
+    rpm-build \
+    tar \
+    jq \
+    && dnf clean all
+
+# 安装 Node.js（nodesource EL9 源）
+RUN curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VERSION}.x" | bash - \
+    && dnf install -y nodejs \
+    && dnf clean all
+
+# 验证
+RUN node -v && npm -v
+
+WORKDIR /build
+
+# 复制项目源码（由 build-rpm.sh 在 Docker context 中提供）
+COPY . /build/
+
+# 安装依赖 & 构建
+# server 需保留 devDependencies（@types/*），否则 npx tsc 因 TS7016 失败
+RUN npm install --ignore-scripts
+RUN cd server && npm install
+RUN cd web && npm install
+RUN cd web && npm run build
+RUN cd server && npx tsc
+
+# 默认入口：由 build-rpm.sh 调用打包
+CMD ["bash", "-c", "echo '使用 build-rpm.sh 调用此容器完成 .rpm 打包'"]

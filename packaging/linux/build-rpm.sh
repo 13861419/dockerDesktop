@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================
 #  Docker Manager - 构建 .rpm 包
-#  在 Docker 容器内执行，确保与 CentOS 7 兼容
+#  在 Docker 容器内执行，构建环境 AlmaLinux 9
+#  （原 CentOS 7 不可行：Node 22 官方二进制要求 glibc >= 2.28）
 #  用法: bash build-rpm.sh [x86_64|aarch64]
 # ============================================================
 set -euo pipefail
@@ -9,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ARCH="${1:-x86_64}"
-DISTRO="centos7"
+DISTRO="el9"
 VERSION=$(node -p "require('$ROOT_DIR/package.json').version")
 IMAGE_NAME="dm-build-rpm-${ARCH}"
 CONTAINER_NAME="dm-build-rpm-${ARCH}-$$"
@@ -22,11 +23,11 @@ info() { echo -e "${GREEN}[BUILD-RPM]${NC} $*"; }
 error() { echo -e "${RED}[BUILD-RPM]${NC} $*" >&2; }
 
 # 1. 构建 Docker 镜像
-info "构建 Docker 镜像 (CentOS 7, ${ARCH}) ..."
+info "构建 Docker 镜像 (AlmaLinux 9, ${ARCH}) ..."
 docker buildx build \
   --platform "linux/${ARCH}" \
   --load \
-  -f "$SCRIPT_DIR/Dockerfile.centos7" \
+  -f "$SCRIPT_DIR/Dockerfile.el9" \
   -t "$IMAGE_NAME" \
   "$ROOT_DIR"
 
@@ -169,7 +170,7 @@ SPECEOF
     # 构建 RPM
     rpmbuild -bb \"\$RPM_DIR/SPECS/\${PKG_NAME}.spec\" \
       --define \"_topdir \$RPM_DIR\" \
-      --buildarch \"\${PKG_ARCH}\"
+      --target \"\${PKG_ARCH}\"
 
     # 复制到输出目录
     RPM_FILE=\$(find \"\$RPM_DIR/RPMS\" -name \"\${PKG_NAME}-\${PKG_VERSION}*.rpm\" | head -1)
