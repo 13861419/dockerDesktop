@@ -140,6 +140,71 @@ export default function SettingsPage() {
   const [kvEdits, setKvEdits] = useState<Record<string, string>>({});
   const [kvSaving, setKvSaving] = useState(false);
 
+  // 面板数据库备份（SQLite 服务端快照管理）
+  interface SqliteBackupInfo {
+    file: string;
+    size: number;
+    createdAt: number;
+  }
+  const [dbBackups, setDbBackups] = useState<SqliteBackupInfo[]>([]);
+  const [dbBackupBusy, setDbBackupBusy] = useState(false);
+
+  const loadDbBackups = useCallback(async () => {
+    try {
+      const r = await get<{ items: SqliteBackupInfo[] }>('/api/sqlite-backups');
+      setDbBackups(r.items || []);
+    } catch {
+      // 非管理员或接口不可用时静默（列表区块不展示）
+      setDbBackups([]);
+    }
+  }, []);
+
+  /** 立即备份 / 恢复 / 删除（均仅管理员） */
+  async function handleSqliteBackup() {
+    setDbBackupBusy(true);
+    try {
+      await post('/api/sqlite-backups', { reason: 'manual' });
+      showToast('备份已创建', 'success');
+      await loadDbBackups();
+    } catch (e: any) {
+      showToast(e?.message || '备份失败', 'error');
+    } finally {
+      setDbBackupBusy(false);
+    }
+  }
+
+  async function handleSqliteRestore(file: string) {
+    if (!confirm(`确定用该备份恢复面板数据库吗？当前数据将被覆盖，建议恢复后重启面板。`)) return;
+    setDbBackupBusy(true);
+    try {
+      const r = await post<{ ok: boolean; message: string }>(`/api/sqlite-backups/${encodeURIComponent(file)}/restore`, {});
+      showToast(r.message || '恢复完成', 'success');
+      await load();
+    } catch (e: any) {
+      showToast(e?.message || '恢复失败', 'error');
+    } finally {
+      setDbBackupBusy(false);
+    }
+  }
+
+  async function handleSqliteDelete(file: string) {
+    if (!confirm(`确定删除备份 ${file} 吗？`)) return;
+    setDbBackupBusy(true);
+    try {
+      await del(`/api/sqlite-backups/${encodeURIComponent(file)}`);
+      showToast('已删除', 'info');
+      await loadDbBackups();
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    } finally {
+      setDbBackupBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    loadDbBackups();
+  }, [loadDbBackups]);
+
   /**
    * 加载设置页数据
    */
@@ -751,6 +816,61 @@ export default function SettingsPage() {
           </div>
         </div>
       </Card>
+
+      {/* 面板数据库备份管理（服务端快照） */}
+      {currentRole === 'admin' && (
+        <Card title="面板数据库备份管理">
+          <p className="settings-backup__desc">
+            对面板自身数据库做一致性快照（保存在数据目录 db-backups/ 下），支持一键恢复；保留份数由系统参数「面板数据库备份保留份数」控制，
+            也可在计划任务中新建「数据库备份」类型实现定时自动备份。
+          </p>
+          <div className="settings-backup__actions" style={{ marginBottom: 12 }}>
+            <Button variant="primary" size="sm" onClick={handleSqliteBackup} loading={dbBackupBusy}>
+              立即备份
+            </Button>
+          </div>
+          {dbBackups.length > 0 ? (
+            <table className="settings-table">
+              <thead>
+                <tr>
+                  <th>备份文件</th>
+                  <th style={{ width: '14%' }}>大小</th>
+                  <th style={{ width: '22%' }}>时间</th>
+                  <th style={{ width: '26%' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dbBackups.map((b) => (
+                  <tr key={b.file}>
+                    <td style={{ wordBreak: 'break-all' }}>{b.file}</td>
+                    <td>{(b.size / 1024).toFixed(0)} KB</td>
+                    <td>{formatDate(b.createdAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <Button variant="primary" size="sm" disabled={dbBackupBusy} onClick={() => handleSqliteRestore(b.file)}>
+                          恢复
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => download(`/api/sqlite-backups/${encodeURIComponent(b.file)}/download`, b.file)}
+                        >
+                          下载
+                        </Button>
+                        <Button variant="danger" size="sm" disabled={dbBackupBusy} onClick={() => handleSqliteDelete(b.file)}>
+                          删除
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="settings-backup__desc">暂无备份文件。</p>
+          )}
+        </Card>
+      )}
 
       {/* 配置导入/导出 */}
       <Card title="配置导入导出">

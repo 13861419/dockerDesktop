@@ -240,6 +240,14 @@ registerSettings([
     group: 'retention',
   },
   {
+    key: 'db.backup.retentionCount',
+    label: '面板数据库备份保留份数',
+    hint: '面板自身 SQLite 数据库备份（<数据目录>/db-backups/）超过该份数时自动清理最旧的；0 表示不自动清理',
+    type: 'number',
+    def: 7,
+    group: 'retention',
+  },
+  {
     key: 'metrics.token',
     label: 'Prometheus 抓取 Token',
     hint: '配置后 /metrics 端点要求携带 ?token= 或 Authorization: Bearer；留空表示开放访问',

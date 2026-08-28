@@ -56,6 +56,7 @@ import portsRouter from './routes/ports';
 import metricsRouter from './routes/metrics';
 import policyRouter from './routes/policy';
 import approvalsRouter from './routes/approvals';
+import sqliteBackupRouter from './routes/sqliteBackup';
 import { requireAuth } from './auth';
 
 const app = express();
@@ -129,6 +130,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/ports', requireAuth, portsRouter);
 app.use('/api/policy', requireAuth, policyRouter);
 app.use('/api/approvals', requireAuth, approvalsRouter);
+app.use('/api/sqlite-backups', requireAuth, sqliteBackupRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）

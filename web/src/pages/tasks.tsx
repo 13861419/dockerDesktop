@@ -42,6 +42,8 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'healthcheck', label: '容器健康检查', badge: 'slate' },
   { value: 'git-pull-build', label: 'Git 自动部署', badge: 'indigo' },
   { value: 'baselineScan', label: '安全基线扫描', badge: 'red' },
+  { value: 'imageGc', label: '镜像清理', badge: 'orange' },
+  { value: 'sqliteBackup', label: '数据库备份', badge: 'blue' },
 ];
 
 /** cron 表达式快捷预设：说明 + 表达式 */
@@ -1377,6 +1379,14 @@ function ConfigEditor({
           </label>
         </Field>
       </>
+    );
+  }
+  // sqliteBackup：定时备份面板自身数据库，无需额外参数
+  if (type === 'sqliteBackup') {
+    return (
+      <Field label="备份参数" hint="备份保存在数据目录 db-backups/ 下，保留份数由设置中心「面板数据库备份保留份数」控制">
+        <div />
+      </Field>
     );
   }
   // composeUp / composeDown：选择 Compose 项目
