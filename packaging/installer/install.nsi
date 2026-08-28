@@ -9,7 +9,10 @@ Unicode true
 RequestExecutionLevel admin
 
 !define APP_NAME "DockerManager"
+; 版本号默认值；build-installer.js 会通过 /DAPP_VERSION= 注入 package.json 的版本
+!ifndef APP_VERSION
 !define APP_VERSION "0.1.0"
+!endif
 !define APP_PUBLISHER "JackOS"
 !define REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
 

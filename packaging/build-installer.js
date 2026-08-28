@@ -66,8 +66,11 @@ function main() {
     process.exit(1);
   }
   ensureUtf8Bom(NSI);
+  // 版本号取自根 package.json（单一来源），通过 /D 覆盖 install.nsi 中的默认值
+  const version = require(path.join(ROOT, 'package.json')).version || '';
+  const versionDefine = version ? ` /DAPP_VERSION=${version}` : '';
   execSync(
-    `"${makensis}" /DRELEASE_DIR=${RELEASE_DIR} "${NSI}"`,
+    `"${makensis}" /DRELEASE_DIR=${RELEASE_DIR}${versionDefine} "${NSI}"`,
     { cwd: INSTALLER_DIR, stdio: 'inherit', shell: 'cmd.exe' },
   );
 

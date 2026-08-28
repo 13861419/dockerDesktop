@@ -1,7 +1,6 @@
 {
   "name": "@13861419/docker-manager",
-  "version": "0.1.8",
-
+  "version": "0.2.0",
   "description": "Docker 管理面板（支持 Windows / Ubuntu 24 / CentOS 7+，类似 1Panel）",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
