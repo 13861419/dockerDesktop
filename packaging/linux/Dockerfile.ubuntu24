@@ -38,7 +38,8 @@ COPY . /build/
 
 # 安装依赖 & 构建
 RUN npm install --ignore-scripts
-RUN cd server && npm install --omit=dev
+# server 需保留 devDependencies（@types/*），否则 npx tsc 因 TS7016 失败
+RUN cd server && npm install
 RUN cd web && npm install
 RUN cd web && npm run build
 RUN cd server && npx tsc
