@@ -262,4 +262,12 @@ registerSettings([
     def: 72,
     group: 'security',
   },
+  {
+    key: 'alerts.aiDiagnosis',
+    label: '告警自动 AI 诊断',
+    hint: 'danger 级别告警推送成功后，自动调用 AI 分析根因并把诊断作为后续消息推送到同一渠道',
+    type: 'bool',
+    def: true,
+    group: 'notification',
+  },
 ]);

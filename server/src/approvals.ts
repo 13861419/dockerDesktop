@@ -16,6 +16,7 @@ import { getDb } from './storage';
 import { getDockerClient } from './docker/client';
 import { getSetting } from './settings';
 import { listChannels, sendAlert } from './notify';
+import { markExecuted } from './aiActions';
 
 /** 审批状态 */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -246,6 +247,14 @@ export async function decideApproval(
       `执行成功${output ? `：${output}` : ''}`,
       id,
     );
+    // 来源为 AI 操作建议时，回写对应 ai_action 的最终状态（闭环）
+    if (payload.aiActionId) {
+      try {
+        markExecuted(Number(payload.aiActionId), `审批单 #${id} 已由 ${decidedBy} 批准并执行成功${output ? `：${output}` : ''}`, true);
+      } catch {
+        // 回写失败不影响审批结果
+      }
+    }
     void notifyApprovalEvent(
       `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已由 ${decidedBy} 批准并执行成功`,
     );
@@ -253,6 +262,14 @@ export async function decideApproval(
   } catch (err: any) {
     const msg = err?.json?.message || err?.message || String(err);
     d.prepare('UPDATE approvals SET result = ? WHERE id = ?').run(`执行失败：${msg}`, id);
+    // 来源为 AI 操作建议时，同样回写失败状态
+    if (safeParse(row.payload).aiActionId) {
+      try {
+        markExecuted(Number(safeParse(row.payload).aiActionId), `审批单 #${id} 执行失败：${msg}`, false);
+      } catch {
+        // 回写失败不影响审批结果
+      }
+    }
     void notifyApprovalEvent(
       `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已由 ${decidedBy} 批准，但执行失败：${msg}`,
     );

@@ -149,3 +149,48 @@
   background: rgba(148, 163, 184, 0.15);
   color: #94a3b8;
 }
+
+/* 拒绝理由弹窗 */
+.approvals-page__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.approvals-page__dialog {
+  background: var(--bg-secondary, #fff);
+  border-radius: 10px;
+  padding: 16px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+.approvals-page__dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.approvals-page__dialog-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.approvals-page__textarea {
+  width: 100%;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.approvals-page__dialog-ops {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

@@ -12,7 +12,7 @@ export interface AiAction {
   username: string;
   actionType: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  status: 'pending' | 'approved' | 'rejected' | 'gated' | 'executed' | 'failed';
   aiMessage: string;
   result: string;
   createdAt: number;
@@ -100,6 +100,15 @@ export function rejectAction(id: number): AiAction | null {
   d.prepare('UPDATE ai_actions SET status = ?, resolved_at = ? WHERE id = ? AND status = ?').run('rejected', now, id, 'pending');
   const row = d.prepare('SELECT * FROM ai_actions WHERE id = ?').get(id) as any;
   return row ? mapRow(row) : null;
+}
+
+/**
+ * 标记为已转管理员审批（审批门禁拦截，等待管理员批准后自动执行）
+ */
+export function markGated(id: number, approvalId: number): void {
+  getDb()
+    .prepare('UPDATE ai_actions SET status = ?, result = ?, resolved_at = ? WHERE id = ?')
+    .run('gated', `已转管理员审批单 #${approvalId}，批准后自动执行`, Date.now(), id);
 }
 
 /**

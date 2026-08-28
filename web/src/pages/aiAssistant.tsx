@@ -72,6 +72,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending: '待审批',
   approved: '已批准',
   rejected: '已拒绝',
+  gated: '待管理员审批',
   executed: '已执行',
   failed: '执行失败',
 };
@@ -232,8 +233,12 @@ export default function AiAssistantPage() {
   const handleExecuteAction = useCallback(async (id: number) => {
     if (!confirm('确定执行此操作？')) return;
     try {
-      const r = await post<{ ok: boolean; message: string }>(`/api/ai/actions/${id}/execute`, {});
-      showToast(r.message, r.ok ? 'success' : 'error');
+      const r = await post<{ ok: boolean; message: string; approvalPending?: boolean; approvalId?: number }>(`/api/ai/actions/${id}/execute`, {});
+      if (r.approvalPending) {
+        showToast('高危操作已转管理员审批，批准后自动执行', 'info');
+      } else {
+        showToast(r.message, r.ok ? 'success' : 'error');
+      }
       await loadActions();
     } catch (e: any) {
       showToast(e?.message || '执行失败', 'error');
@@ -1681,7 +1686,7 @@ export default function AiAssistantPage() {
                           <td>{ACTION_LABELS[a.actionType] || a.actionType}</td>
                           <td style={{ fontSize: 12, opacity: 0.7, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{JSON.stringify(a.params)}</td>
                           <td>
-                            <span className={`ai-assistant__cap-tag is-${a.status === 'pending' ? 'local' : a.status === 'approved' || a.status === 'executed' ? 'cloud' : 'off'}`}>
+                            <span className={`ai-assistant__cap-tag is-${a.status === 'pending' ? 'local' : a.status === 'approved' || a.status === 'executed' || a.status === 'gated' ? 'cloud' : 'off'}`}>
                               {STATUS_LABELS[a.status] || a.status}
                             </span>
                           </td>
@@ -1704,7 +1709,7 @@ export default function AiAssistantPage() {
                             )}
                           </td>
                         </tr>
-                        {a.result && (a.status === 'executed' || a.status === 'failed') && (
+                        {a.result && (a.status === 'executed' || a.status === 'failed' || a.status === 'gated') && (
                           <tr key={`${a.id}-result`}>
                             <td colSpan={5} style={{ padding: '4px 12px', fontSize: 12, opacity: 0.7, background: 'var(--bg-tertiary)' }}>
                               执行结果：{a.result}

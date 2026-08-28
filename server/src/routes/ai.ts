@@ -52,7 +52,8 @@ import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
 import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek, getAiPerformanceMetrics, getAiChatStats } from '../aiUsage';
 import { getCache, setCache, getCacheStats, clearCache } from '../aiCache';
-import { createAction, listPendingActions, getAction, approveAction, rejectAction, markExecuted, getActionStats, ACTION_TYPE_LABELS } from '../aiActions';
+import { createAction, listPendingActions, getAction, approveAction, rejectAction, markExecuted, markGated, getActionStats, ACTION_TYPE_LABELS } from '../aiActions';
+import { shouldGate, submitApproval, expireStaleApprovals } from '../approvals';
 import {
   listChatSessions,
   getChatSession,
@@ -1411,7 +1412,9 @@ router.post(
 
 /**
  * POST /api/ai/actions/:id/execute
- * 执行已批准的 AI 操作
+ * 执行已批准的 AI 操作。
+ * 审批流开启且非管理员时，危险操作（删除容器/镜像）自动转管理员审批单，
+ * AI 操作进入 gated 状态；管理员批准执行后回写本操作结果（payload.aiActionId）。
  */
 router.post(
   '/actions/:id/execute',
@@ -1423,6 +1426,35 @@ router.post(
     if (!action) return res.status(404).json({ error: '操作不存在' });
     if (action.username !== res.locals.username) return res.status(403).json({ error: '无权操作' });
     if (action.status !== 'approved') return res.status(400).json({ error: `操作状态为 ${action.status}，需先批准` });
+
+    // 危险操作映射到审批门禁（与容器/镜像路由同一套 GATE_ACTIONS）
+    const GATE_MAP: Record<string, { gate: string; target: string; payload: Record<string, unknown> }> = {
+      remove_container: {
+        gate: 'container.delete',
+        target: String(action.params.containerId || ''),
+        payload: { force: action.params.force === true, v: action.params.removeVolumes === true },
+      },
+      remove_image: {
+        gate: 'image.delete',
+        target: String(action.params.imageId || ''),
+        payload: {},
+      },
+    };
+    const mapped = GATE_MAP[action.actionType];
+    if (mapped && mapped.target && shouldGate(res.locals.user?.role, mapped.gate)) {
+      expireStaleApprovals();
+      const { id: approvalId, reused } = submitApproval({
+        username: res.locals.username,
+        actionType: mapped.gate,
+        target: mapped.target,
+        payload: { ...mapped.payload, aiActionId: action.id },
+        reason: `AI 建议操作：${ACTION_TYPE_LABELS[action.actionType] || action.actionType}`,
+      });
+      markGated(id, approvalId);
+      logOperation(res.locals.username, 'AI 操作转审批', 'ai', null, `操作 #${id} 已转管理员审批单 #${approvalId}${reused ? '（复用已有待审批）' : ''}`);
+      return res.status(202).json({ approvalPending: true, approvalId, reused });
+    }
+
     const { executeAction } = await import('../aiActionExecutor');
     const result = await executeAction(id);
     logOperation(res.locals.username, result.ok ? '执行 AI 操作' : '执行 AI 操作（失败）', 'ai', null, `操作 #${id}: ${result.message}`);

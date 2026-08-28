@@ -1,10 +1,10 @@
-/**
- * 后端 API 数据类型定义
+﻿/**
+ * 鍚庣 API 鏁版嵁绫诲瀷瀹氫箟
  *
- * 与 server 端各路由返回的 JSON 结构保持一致。
+ * 涓?server 绔悇璺敱杩斿洖鐨?JSON 缁撴瀯淇濇寔涓€鑷淬€?
  */
 
-/** Docker 引擎总览信息 */
+/** Docker 寮曟搸鎬昏淇℃伅 */
 export interface Overview {
   serverVersion: string;
   name?: string;
@@ -24,7 +24,7 @@ export interface Overview {
   swarm: string;
 }
 
-/** Docker 系统信息（/api/system/info） */
+/** Docker 绯荤粺淇℃伅锛?api/system/info锛?*/
 export interface SystemInfo {
   ServerVersion: string;
   OperatingSystem: string;
@@ -41,7 +41,7 @@ export interface SystemInfo {
   [key: string]: unknown;
 }
 
-/** Docker 版本信息 */
+/** Docker 鐗堟湰淇℃伅 */
 export interface DockerVersion {
   ApiVersion: string;
   Os: string;
@@ -54,7 +54,7 @@ export interface DockerVersion {
   [key: string]: unknown;
 }
 
-/** 容器列表项（/api/containers 返回的原生 dockerode 结构） */
+/** 瀹瑰櫒鍒楄〃椤癸紙/api/containers 杩斿洖鐨勫師鐢?dockerode 缁撴瀯锛?*/
 export interface ContainerListItem {
   Id: string;
   Names: string[];
@@ -71,17 +71,17 @@ export interface ContainerListItem {
   Labels: Record<string, string>;
   State: string;
   Status: string;
-  /** 健康检查状态（none 表示未配置健康检查或 inspect 失败） */
+  /** 鍋ュ悍妫€鏌ョ姸鎬侊紙none 琛ㄧず鏈厤缃仴搴锋鏌ユ垨 inspect 澶辫触锛?*/
   health?: 'starting' | 'healthy' | 'unhealthy' | 'none';
-  /** CPU 限制（NanoCpus 纳核，0 表示不限制） */
+  /** CPU 闄愬埗锛圢anoCpus 绾虫牳锛? 琛ㄧず涓嶉檺鍒讹級 */
   cpuLimit?: number;
-  /** 内存限制（字节，0 表示不限制） */
+  /** 鍐呭瓨闄愬埗锛堝瓧鑺傦紝0 琛ㄧず涓嶉檺鍒讹級 */
   memLimit?: number;
   SizeRw?: number;
   SizeRootFs?: number;
 }
 
-/** 容器详情/格式化后的精简结构 */
+/** 瀹瑰櫒璇︽儏/鏍煎紡鍖栧悗鐨勭簿绠€缁撴瀯 */
 export interface ContainerDetail {
   id: string;
   idShort: string;
@@ -103,7 +103,7 @@ export interface ContainerDetail {
   command: string;
 }
 
-/** 容器资源统计 */
+/** 瀹瑰櫒璧勬簮缁熻 */
 export interface ContainerStats {
   cpuPercent: number;
   memory: { usage: number; limit: number; percent: number };
@@ -113,7 +113,7 @@ export interface ContainerStats {
   pids: number;
 }
 
-/** 镜像列表项 */
+/** 闀滃儚鍒楄〃椤?*/
 export interface ImageItem {
   Id: string;
   RepoTags: string[] | null;
@@ -123,13 +123,13 @@ export interface ImageItem {
   VirtualSize?: number;
   SharedSize: number;
   Created: number;
-  /** 本地拉取时间（秒），无记录时省略 */
+  /** 鏈湴鎷夊彇鏃堕棿锛堢锛夛紝鏃犺褰曟椂鐪佺暐 */
   pullTime?: number;
   Containers: number;
   Labels: Record<string, string>;
 }
 
-/** 数据卷 */
+/** 鏁版嵁鍗?*/
 export interface VolumeItem {
   CreatedAt: string;
   Driver: string;
@@ -142,7 +142,7 @@ export interface VolumeItem {
   [key: string]: unknown;
 }
 
-/** 网络 */
+/** 缃戠粶 */
 export interface NetworkItem {
   Name: string;
   Id: string;
@@ -161,7 +161,7 @@ export interface NetworkItem {
   Labels: Record<string, string>;
 }
 
-/** Compose 项目 */
+/** Compose 椤圭洰 */
 export interface ComposeProject {
   name: string;
   path: string;
@@ -169,7 +169,7 @@ export interface ComposeProject {
   hasCompose: boolean;
 }
 
-/** Compose 服务状态 */
+/** Compose 鏈嶅姟鐘舵€?*/
 export interface ComposeService {
   ID: string;
   Name: string;
@@ -184,29 +184,29 @@ export interface ComposeService {
   Ports: number[];
 }
 
-/** Compose 模板（/api/compose-templates 返回，存用户保存的常用 YAML 配置） */
+/** Compose 妯℃澘锛?api/compose-templates 杩斿洖锛屽瓨鐢ㄦ埛淇濆瓨鐨勫父鐢?YAML 閰嶇疆锛?*/
 export interface ComposeTemplate {
-  /** 模板唯一标识 */
+  /** 妯℃澘鍞竴鏍囪瘑 */
   id: string;
-  /** 模板名称（唯一） */
+  /** 妯℃澘鍚嶇О锛堝敮涓€锛?*/
   name: string;
-  /** 模板描述（可选） */
+  /** 妯℃澘鎻忚堪锛堝彲閫夛級 */
   description: string;
-  /** 完整的 docker-compose.yml 文本 */
+  /** 瀹屾暣鐨?docker-compose.yml 鏂囨湰 */
   content: string;
-  /** 创建时间（秒） */
+  /** 鍒涘缓鏃堕棿锛堢锛?*/
   createdAt: number;
-  /** 更新时间（秒） */
+  /** 鏇存柊鏃堕棿锛堢锛?*/
   updatedAt: number;
 }
 
-/** 容器端口映射（/api/containers/:id/detail 返回结构） */
+/** 瀹瑰櫒绔彛鏄犲皠锛?api/containers/:id/detail 杩斿洖缁撴瀯锛?*/
 export interface ContainerDetailPort {
   internal: string;
   published: Array<{ hostIp: string; hostPort: string }>;
 }
 
-/** 容器挂载卷（/api/containers/:id/detail 返回结构） */
+/** 瀹瑰櫒鎸傝浇鍗凤紙/api/containers/:id/detail 杩斿洖缁撴瀯锛?*/
 export interface ContainerDetailMount {
   type: string;
   source: string;
@@ -215,7 +215,7 @@ export interface ContainerDetailMount {
   rw: boolean;
 }
 
-/** 容器网络（/api/containers/:id/detail 返回结构） */
+/** 瀹瑰櫒缃戠粶锛?api/containers/:id/detail 杩斿洖缁撴瀯锛?*/
 export interface ContainerDetailNetwork {
   name: string;
   ipAddress: string;
@@ -224,27 +224,27 @@ export interface ContainerDetailNetwork {
   macAddress: string;
 }
 
-/** 容器健康检查日志条目（/api/containers/:id/detail 返回结构） */
+/** 瀹瑰櫒鍋ュ悍妫€鏌ユ棩蹇楁潯鐩紙/api/containers/:id/detail 杩斿洖缁撴瀯锛?*/
 export interface ContainerHealthLog {
   start: string;
   exit: number;
   output: string;
 }
 
-/** 容器健康检查状态（/api/containers/:id/detail 返回结构，null 表示未配置） */
+/** 瀹瑰櫒鍋ュ悍妫€鏌ョ姸鎬侊紙/api/containers/:id/detail 杩斿洖缁撴瀯锛宯ull 琛ㄧず鏈厤缃級 */
 export interface ContainerHealth {
   status: string;
   failingStreak: number;
   log: ContainerHealthLog[];
 }
 
-/** 宿主机端口占用冲突映射（/api/containers/ports 返回结构，key 为 HostPort） */
+/** 瀹夸富鏈虹鍙ｅ崰鐢ㄥ啿绐佹槧灏勶紙/api/containers/ports 杩斿洖缁撴瀯锛宬ey 涓?HostPort锛?*/
 export type ContainerPortConflicts = Record<
   string,
   Array<{ containerId: string; containerName: string }>
 >;
 
-/** 容器完整详情（/api/containers/:id/detail 返回结构） */
+/** 瀹瑰櫒瀹屾暣璇︽儏锛?api/containers/:id/detail 杩斿洖缁撴瀯锛?*/
 export interface ContainerDetailInfo {
   id: string;
   idShort: string;
@@ -256,7 +256,7 @@ export interface ContainerDetailInfo {
   startedAt: string;
   finishedAt: string;
   exitCode: number | null;
-  /** 容器重启次数 */
+  /** 瀹瑰櫒閲嶅惎娆℃暟 */
   restartCount: number;
   command: string;
   entrypoint: string;
@@ -265,9 +265,9 @@ export interface ContainerDetailInfo {
   restartPolicy: string;
   autoRemove: boolean;
   privileged: boolean;
-  /** CPU 限制（NanoCpus 纳核，0 表示不限制） */
+  /** CPU 闄愬埗锛圢anoCpus 绾虫牳锛? 琛ㄧず涓嶉檺鍒讹級 */
   cpuLimit: number;
-  /** 内存限制（字节，0 表示不限制） */
+  /** 鍐呭瓨闄愬埗锛堝瓧鑺傦紝0 琛ㄧず涓嶉檺鍒讹級 */
   memLimit: number;
   env: Record<string, string>;
   labels: Record<string, string>;
@@ -276,83 +276,83 @@ export interface ContainerDetailInfo {
   ports: ContainerDetailPort[];
   hostname: string;
   health: ContainerHealth | null;
-  /** 健康检查配置（test 数组 / interval / timeout / retries，单位 ms；test=['NONE'] 表示禁用） */
+  /** 鍋ュ悍妫€鏌ラ厤缃紙test 鏁扮粍 / interval / timeout / retries锛屽崟浣?ms锛泃est=['NONE'] 琛ㄧず绂佺敤锛?*/
   healthcheck: ContainerHealthcheckConfig | null;
 }
 
-/** 容器健康检查配置 */
+/** 瀹瑰櫒鍋ュ悍妫€鏌ラ厤缃?*/
 export interface ContainerHealthcheckConfig {
-  /** 检测命令数组，如 ['CMD','curl','-f','http://localhost']；['NONE'] 表示禁用 */
+  /** 妫€娴嬪懡浠ゆ暟缁勶紝濡?['CMD','curl','-f','http://localhost']锛沎'NONE'] 琛ㄧず绂佺敤 */
   test: string[];
-  /** 检测间隔（毫秒） */
+  /** 妫€娴嬮棿闅旓紙姣锛?*/
   interval: number;
-  /** 超时（毫秒） */
+  /** 瓒呮椂锛堟绉掞級 */
   timeout: number;
-  /** 失败重试次数 */
+  /** 澶辫触閲嶈瘯娆℃暟 */
   retries: number;
 }
 
-/** 应用商店应用定义（/api/appstore 返回的应用目录字段） */
+/** 搴旂敤鍟嗗簵搴旂敤瀹氫箟锛?api/appstore 杩斿洖鐨勫簲鐢ㄧ洰褰曞瓧娈碉級 */
 export interface AppStoreApp {
-  /** 应用唯一 id */
+  /** 搴旂敤鍞竴 id */
   id: string;
-  /** 应用名称，如 'Nginx' */
+  /** 搴旂敤鍚嶇О锛屽 'Nginx' */
   name: string;
-  /** 应用描述（中文） */
+  /** 搴旂敤鎻忚堪锛堜腑鏂囷級 */
   description: string;
-  /** 应用分类，如 '数据库' */
+  /** 搴旂敤鍒嗙被锛屽 '鏁版嵁搴? */
   category: string;
-  /** 镜像名称，如 'nginx:latest' */
+  /** 闀滃儚鍚嶇О锛屽 'nginx:latest' */
   image: string;
-  /** 图标的 emoji */
+  /** 鍥炬爣鐨?emoji */
   icon: string;
-  /** 端口映射列表 */
+  /** 绔彛鏄犲皠鍒楄〃 */
   ports?: Array<{ container: number; host?: number }>;
-  /** 环境变量列表 */
+  /** 鐜鍙橀噺鍒楄〃 */
   env?: Array<{ key: string; value?: string; desc?: string }>;
-  /** 挂载卷列表 */
+  /** 鎸傝浇鍗峰垪琛?*/
   volumes?: Array<{ container: string; host?: string }>;
-  /** 标签 */
+  /** 鏍囩 */
   tags?: string[];
-  /** 是否为用户自定义应用（id 以 custom- 前缀的为自定义，true 时前端显示编辑/删除入口） */
+  /** 鏄惁涓虹敤鎴疯嚜瀹氫箟搴旂敤锛坕d 浠?custom- 鍓嶇紑鐨勪负鑷畾涔夛紝true 鏃跺墠绔樉绀虹紪杈?鍒犻櫎鍏ュ彛锛?*/
   isCustom?: boolean;
 }
 
-/** 应用商店应用及其实时安装状态（/api/appstore 返回的单个应用项） */
+/** 搴旂敤鍟嗗簵搴旂敤鍙婂叾瀹炴椂瀹夎鐘舵€侊紙/api/appstore 杩斿洖鐨勫崟涓簲鐢ㄩ」锛?*/
 export interface AppStoreItem extends AppStoreApp {
-  /** 是否已安装（存在对应容器） */
+  /** 鏄惁宸插畨瑁咃紙瀛樺湪瀵瑰簲瀹瑰櫒锛?*/
   installed: boolean;
-  /** 对应容器 id */
+  /** 瀵瑰簲瀹瑰櫒 id */
   containerId?: string;
-  /** 容器是否运行中 */
+  /** 瀹瑰櫒鏄惁杩愯涓?*/
   running?: boolean;
-  /** 主端口映射，形如 "host:container"，无映射时为 null */
+  /** 涓荤鍙ｆ槧灏勶紝褰㈠ "host:container"锛屾棤鏄犲皠鏃朵负 null */
   port?: string | null;
-  /** 安装模式：single=单容器，compose=多容器 Compose 套件 */
+  /** 瀹夎妯″紡锛歴ingle=鍗曞鍣紝compose=澶氬鍣?Compose 濂椾欢 */
   mode?: 'single' | 'compose';
-  /** Compose 套件的服务名列表（mode=compose 时存在） */
+  /** Compose 濂椾欢鐨勬湇鍔″悕鍒楄〃锛坢ode=compose 鏃跺瓨鍦級 */
   services?: string[];
-  /** 已安装应用的版本号（Compose 套件，来源于安装/升级记录或默认版本） */
+  /** 宸插畨瑁呭簲鐢ㄧ殑鐗堟湰鍙凤紙Compose 濂椾欢锛屾潵婧愪簬瀹夎/鍗囩骇璁板綍鎴栭粯璁ょ増鏈級 */
   version?: string;
 }
 
-/** 应用安装状态信息（/api/appstore/status 返回的单条目结构） */
+/** 搴旂敤瀹夎鐘舵€佷俊鎭紙/api/appstore/status 杩斿洖鐨勫崟鏉＄洰缁撴瀯锛?*/
 export interface AppStoreStatusInfo {
-  /** 是否已安装 */
+  /** 鏄惁宸插畨瑁?*/
   installed: boolean;
-  /** 对应容器 id */
+  /** 瀵瑰簲瀹瑰櫒 id */
   containerId?: string;
-  /** 对应容器名称 */
+  /** 瀵瑰簲瀹瑰櫒鍚嶇О */
   containerName?: string;
-  /** 容器是否运行中 */
+  /** 瀹瑰櫒鏄惁杩愯涓?*/
   running?: boolean;
-  /** 主端口映射，无映射时为 null */
+  /** 涓荤鍙ｆ槧灏勶紝鏃犳槧灏勬椂涓?null */
   port?: string | null;
 }
 
-/** ===================== 计划任务 ===================== */
+/** ===================== 璁″垝浠诲姟 ===================== */
 
-/** 计划任务类型 */
+/** 璁″垝浠诲姟绫诲瀷 */
 export type TaskType =
   | 'prune'
   | 'backup'
@@ -366,14 +366,14 @@ export type TaskType =
   | 'imageGc'
   | 'baselineScan';
 
-/** 计划任务（/api/tasks 返回） */
+/** 璁″垝浠诲姟锛?api/tasks 杩斿洖锛?*/
 export interface CronTask {
   id: string;
   name: string;
   type: TaskType;
   cron: string;
   enabled: boolean;
-  /** 任务参数对象（类型不同字段不同） */
+  /** 浠诲姟鍙傛暟瀵硅薄锛堢被鍨嬩笉鍚屽瓧娈典笉鍚岋級 */
   config: Record<string, any>;
   lastRunAt: number | null;
   lastStatus: number | null;
@@ -381,19 +381,19 @@ export interface CronTask {
   nextRunAt: number;
   createdAt: number;
   updatedAt: number;
-  /** Webhook 触发 token（仅 admin 可见明文） */
+  /** Webhook 瑙﹀彂 token锛堜粎 admin 鍙鏄庢枃锛?*/
   webhookToken?: string | null;
-  /** Git 凭证描述（不含明文） */
+  /** Git 鍑瘉鎻忚堪锛堜笉鍚槑鏂囷級 */
   gitCred?: { type?: 'token' | 'ssh'; hasCred: boolean };
 }
 
-/** 任务列表响应（/api/tasks） */
+/** 浠诲姟鍒楄〃鍝嶅簲锛?api/tasks锛?*/
 export interface CronTaskListResponse {
   tasks: CronTask[];
   projects: string[];
 }
 
-/** 任务执行历史条目（/api/tasks/logs） */
+/** 浠诲姟鎵ц鍘嗗彶鏉＄洰锛?api/tasks/logs锛?*/
 export interface CronTaskLogItem {
   id: number;
   taskId: string;
@@ -404,7 +404,7 @@ export interface CronTaskLogItem {
   detail: string | null;
 }
 
-/** 任务执行历史分页响应 */
+/** 浠诲姟鎵ц鍘嗗彶鍒嗛〉鍝嶅簲 */
 export interface CronTaskLogPage {
   items: CronTaskLogItem[];
   total: number;
@@ -413,17 +413,17 @@ export interface CronTaskLogPage {
   totalPages: number;
 }
 
-/** cron 表达式下次执行时间预览（GET /api/tasks/cron-preview 返回） */
+/** cron 琛ㄨ揪寮忎笅娆℃墽琛屾椂闂撮瑙堬紙GET /api/tasks/cron-preview 杩斿洖锛?*/
 export interface CronPreviewResponse {
-  /** 输入的 cron 表达式 */
+  /** 杈撳叆鐨?cron 琛ㄨ揪寮?*/
   cron: string;
-  /** 下次执行毫秒时间戳；null 表示非法/无法计算 */
+  /** 涓嬫鎵ц姣鏃堕棿鎴筹紱null 琛ㄧず闈炴硶/鏃犳硶璁＄畻 */
   nextRun: number | null;
 }
 
-/** ===================== 容器内文件管理 ===================== */
+/** ===================== 瀹瑰櫒鍐呮枃浠剁鐞?===================== */
 
-/** 容器内文件条目（/api/files/:id/ls 返回） */
+/** 瀹瑰櫒鍐呮枃浠舵潯鐩紙/api/files/:id/ls 杩斿洖锛?*/
 export interface ContainerFileItem {
   name: string;
   type: 'dir' | 'file';
@@ -431,12 +431,12 @@ export interface ContainerFileItem {
   mtime: number;
 }
 
-/** ===================== 数据库管理 ===================== */
+/** ===================== 鏁版嵁搴撶鐞?===================== */
 
-/** 数据库类型 */
+/** 鏁版嵁搴撶被鍨?*/
 export type DatabaseType = 'mysql' | 'postgres' | 'mariadb' | 'redis';
 
-/** 已登记的数据库实例（/api/databases 返回） */
+/** 宸茬櫥璁扮殑鏁版嵁搴撳疄渚嬶紙/api/databases 杩斿洖锛?*/
 export interface DatabaseInstance {
   id: number;
   name: string;
@@ -445,13 +445,13 @@ export interface DatabaseInstance {
   host: string;
   port: number;
   user: string | null;
-  /** 是否已设置口令（不返回明文） */
+  /** 鏄惁宸茶缃彛浠わ紙涓嶈繑鍥炴槑鏂囷級 */
   hasPassword: boolean;
   createdAt: number;
   updatedAt: number;
 }
 
-/** 数据库实例列表响应（含自动识别结果） */
+/** 鏁版嵁搴撳疄渚嬪垪琛ㄥ搷搴旓紙鍚嚜鍔ㄨ瘑鍒粨鏋滐級 */
 export interface DatabaseListResponse {
   instances: DatabaseInstance[];
   recognizedInstances: Array<{
@@ -462,7 +462,7 @@ export interface DatabaseListResponse {
   }>;
 }
 
-/** 数据库实例列表响应（/api/databases 的 instances 项） */
+/** 鏁版嵁搴撳疄渚嬪垪琛ㄥ搷搴旓紙/api/databases 鐨?instances 椤癸級 */
 export interface DatabaseInstanceRow {
   id: number;
   name: string;
@@ -476,21 +476,21 @@ export interface DatabaseInstanceRow {
   updatedAt: number;
 }
 
-/** SQL 查询结果（/api/databases/:id/query 返回） */
+/** SQL 鏌ヨ缁撴灉锛?api/databases/:id/query 杩斿洖锛?*/
 export interface SqlQueryResult {
   columns: string[];
   rows: any[][];
   rowCount: number;
 }
 
-/** Redis 键信息（/api/databases/:id/redis/keys 返回） */
+/** Redis 閿俊鎭紙/api/databases/:id/redis/keys 杩斿洖锛?*/
 export interface RedisKeyItem {
   key: string;
   type?: string;
   size?: number;
 }
 
-/** Redis 指标（/api/databases/:id/redis/info 返回） */
+/** Redis 鎸囨爣锛?api/databases/:id/redis/info 杩斿洖锛?*/
 export interface RedisInfo {
   usedMemory?: string;
   usedMemoryHuman?: string;
@@ -501,391 +501,391 @@ export interface RedisInfo {
   [key: string]: any;
 }
 
-/** ===================== 健康体检 ===================== */
+/** ===================== 鍋ュ悍浣撴 ===================== */
 
-/** 健康级别：healthy 健康 / warning 警告 / danger 危险 */
+/** 鍋ュ悍绾у埆锛歨ealthy 鍋ュ悍 / warning 璀﹀憡 / danger 鍗遍櫓 */
 export type HealthLevel = 'healthy' | 'warning' | 'danger';
 
-/** 体检条目（/api/health-check 返回的 items 项） */
+/** 浣撴鏉＄洰锛?api/health-check 杩斿洖鐨?items 椤癸級 */
 export interface HealthItem {
-  /** 条目唯一标识（如 engine / cpu / disk / danglingImages 等） */
+  /** 鏉＄洰鍞竴鏍囪瘑锛堝 engine / cpu / disk / danglingImages 绛夛級 */
   key: string;
-  /** 条目标题 */
+  /** 鏉＄洰鏍囬 */
   title: string;
-  /** 健康级别 */
+  /** 鍋ュ悍绾у埆 */
   level: HealthLevel;
-  /** 概要描述 */
+  /** 姒傝鎻忚堪 */
   message: string;
-  /** 更详细的说明（可选） */
+  /** 鏇磋缁嗙殑璇存槑锛堝彲閫夛級 */
   detail?: string;
 }
 
-/** 健康体检汇总统计（/api/health-check 返回的 summary） */
+/** 鍋ュ悍浣撴姹囨€荤粺璁★紙/api/health-check 杩斿洖鐨?summary锛?*/
 export interface HealthCheckSummary {
-  /** 容器总数 */
+  /** 瀹瑰櫒鎬绘暟 */
   containers: number;
-  /** 镜像总数 */
+  /** 闀滃儚鎬绘暟 */
   images: number;
-  /** 数据卷总数 */
+  /** 鏁版嵁鍗锋€绘暟 */
   volumes: number;
-  /** 网络总数 */
+  /** 缃戠粶鎬绘暟 */
   networks: number;
-  /** 可回收空间（字节） */
+  /** 鍙洖鏀剁┖闂达紙瀛楄妭锛?*/
   reclaimable: number;
 }
 
-/** 健康体检结果（/api/health-check 返回） */
+/** 鍋ュ悍浣撴缁撴灉锛?api/health-check 杩斿洖锛?*/
 export interface HealthCheck {
-  /** 健康评分（0-100） */
+  /** 鍋ュ悍璇勫垎锛?-100锛?*/
   score: number;
-  /** 总体健康级别 */
+  /** 鎬讳綋鍋ュ悍绾у埆 */
   level: HealthLevel;
-  /** 汇总统计 */
+  /** 姹囨€荤粺璁?*/
   summary: HealthCheckSummary;
-  /** 逐项体检结果 */
+  /** 閫愰」浣撴缁撴灉 */
   items: HealthItem[];
 }
 
-/** Swarm 集群状态（/api/swarm/status） */
+/** Swarm 闆嗙兢鐘舵€侊紙/api/swarm/status锛?*/
 export interface SwarmStatus {
-  /** 是否已启用 swarm（LocalNodeState === 'active'） */
+  /** 鏄惁宸插惎鐢?swarm锛圠ocalNodeState === 'active'锛?*/
   enabled: boolean;
-  /** 节点本地状态：inactive/pending/active/error/locked */
+  /** 鑺傜偣鏈湴鐘舵€侊細inactive/pending/active/error/locked */
   localNodeState: string;
-  /** 本节点是否为 swarm 管理器 */
+  /** 鏈妭鐐规槸鍚︿负 swarm 绠＄悊鍣?*/
   controlAvailable: boolean;
-  /** 集群节点数 */
+  /** 闆嗙兢鑺傜偣鏁?*/
   nodes?: number;
-  /** 管理器数量 */
+  /** 绠＄悊鍣ㄦ暟閲?*/
   managers?: number;
-  /** 本节点 ID */
+  /** 鏈妭鐐?ID */
   nodeID?: string;
 }
 
-/** Swarm 服务列项（/api/swarm/services） */
+/** Swarm 鏈嶅姟鍒楅」锛?api/swarm/services锛?*/
 export interface SwarmServiceItem {
-  /** 服务 id */
+  /** 鏈嶅姟 id */
   id: string;
-  /** 服务名 */
+  /** 鏈嶅姟鍚?*/
   name: string;
-  /** 镜像 */
+  /** 闀滃儚 */
   image: string;
-  /** 模式：global/replicated */
+  /** 妯″紡锛歡lobal/replicated */
   mode: string;
-  /** 当前运行副本数 */
+  /** 褰撳墠杩愯鍓湰鏁?*/
   runningTasks: number;
-  /** 期望副本数（replicated 模式） */
+  /** 鏈熸湜鍓湰鏁帮紙replicated 妯″紡锛?*/
   desired: number;
-  /** 更新时间（毫秒） */
+  /** 鏇存柊鏃堕棿锛堟绉掞級 */
   updatedAt: number;
 }
 
-/** 镜像跨引擎迁移请求（POST /api/transfer/images） */
+/** 闀滃儚璺ㄥ紩鎿庤縼绉昏姹傦紙POST /api/transfer/images锛?*/
 export interface TransferImageRequest {
-  /** 源镜像引用 */
+  /** 婧愰暅鍍忓紩鐢?*/
   image: string;
-  /** 源引擎 id */
+  /** 婧愬紩鎿?id */
   sourceEngineId: string;
-  /** 目标引擎 id */
+  /** 鐩爣寮曟搸 id */
   targetEngineId: string;
-  /** 目标 tag（可选，默认沿用源） */
+  /** 鐩爣 tag锛堝彲閫夛紝榛樿娌跨敤婧愶級 */
   tag?: string;
 }
 
-/** 镜像跨引擎迁移结果 */
+/** 闀滃儚璺ㄥ紩鎿庤縼绉荤粨鏋?*/
 export interface TransferImageResult {
   ok: boolean;
-  /** 目标引擎中加载的镜像信息 */
+  /** 鐩爣寮曟搸涓姞杞界殑闀滃儚淇℃伅 */
   loaded?: string;
   error?: string;
 }
 
-/** ===================== 跨引擎聚合总览 ===================== */
+/** ===================== 璺ㄥ紩鎿庤仛鍚堟€昏 ===================== */
 
-/** 单个引擎的资源统计 */
+/** 鍗曚釜寮曟搸鐨勮祫婧愮粺璁?*/
 export interface EngineResources {
-  /** CPU 核数 */
+  /** CPU 鏍告暟 */
   nCPU: number;
-  /** 内存总量（字节） */
+  /** 鍐呭瓨鎬婚噺锛堝瓧鑺傦級 */
   memTotal: number;
-  /** 已用内存（字节） */
+  /** 宸茬敤鍐呭瓨锛堝瓧鑺傦級 */
   memUsed: number;
-  /** CPU 使用率（百分比） */
+  /** CPU 浣跨敤鐜囷紙鐧惧垎姣旓級 */
   cpuPercent: number;
 }
 
-/** 单个引擎的对象计数 */
+/** 鍗曚釜寮曟搸鐨勫璞¤鏁?*/
 export interface EngineCounts {
-  /** 容器总数 */
+  /** 瀹瑰櫒鎬绘暟 */
   containers: number;
-  /** 运行中容器数 */
+  /** 杩愯涓鍣ㄦ暟 */
   running: number;
-  /** 镜像数 */
+  /** 闀滃儚鏁?*/
   images: number;
-  /** 数据卷数 */
+  /** 鏁版嵁鍗锋暟 */
   volumes: number;
-  /** 网络数 */
+  /** 缃戠粶鏁?*/
   networks: number;
 }
 
-/** 单个引擎的版本信息 */
+/** 鍗曚釜寮曟搸鐨勭増鏈俊鎭?*/
 export interface EngineVersion {
-  /** Docker 版本号 */
+  /** Docker 鐗堟湰鍙?*/
   version?: string;
-  /** API 版本号 */
+  /** API 鐗堟湰鍙?*/
   apiVersion?: string;
-  /** 操作系统 */
+  /** 鎿嶄綔绯荤粺 */
   os?: string;
-  /** 架构 */
+  /** 鏋舵瀯 */
   arch?: string;
-  /** 内核版本 */
+  /** 鍐呮牳鐗堟湰 */
   kernel?: string;
 }
 
-/** 聚合总览中的单个引擎 */
+/** 鑱氬悎鎬昏涓殑鍗曚釜寮曟搸 */
 export interface EngineAggregate {
-  /** 引擎 id */
+  /** 寮曟搸 id */
   id: string;
-  /** 引擎名称 */
+  /** 寮曟搸鍚嶇О */
   name: string;
-  /** 引擎端点 */
+  /** 寮曟搸绔偣 */
   endpoint: string;
-  /** 是否为当前引擎 */
+  /** 鏄惁涓哄綋鍓嶅紩鎿?*/
   isCurrent: boolean;
-  /** 是否在线 */
+  /** 鏄惁鍦ㄧ嚎 */
   online: boolean;
-  /** 离线或探测失败时的错误信息 */
+  /** 绂荤嚎鎴栨帰娴嬪け璐ユ椂鐨勯敊璇俊鎭?*/
   error?: string;
-  /** 版本信息 */
+  /** 鐗堟湰淇℃伅 */
   version?: EngineVersion;
-  /** 资源统计 */
+  /** 璧勬簮缁熻 */
   resources?: EngineResources;
-  /** 对象计数 */
+  /** 瀵硅薄璁℃暟 */
   counts?: EngineCounts;
 }
 
-/** 全部引擎聚合后的汇总统计 */
+/** 鍏ㄩ儴寮曟搸鑱氬悎鍚庣殑姹囨€荤粺璁?*/
 export interface EngineAggregateSummary {
-  /** 容器总数 */
+  /** 瀹瑰櫒鎬绘暟 */
   containers: number;
-  /** 运行中容器数 */
+  /** 杩愯涓鍣ㄦ暟 */
   running: number;
-  /** 镜像数 */
+  /** 闀滃儚鏁?*/
   images: number;
-  /** 数据卷数 */
+  /** 鏁版嵁鍗锋暟 */
   volumes: number;
-  /** 网络数 */
+  /** 缃戠粶鏁?*/
   networks: number;
-  /** CPU 总核数 */
+  /** CPU 鎬绘牳鏁?*/
   nCPU: number;
-  /** 内存总量（字节） */
+  /** 鍐呭瓨鎬婚噺锛堝瓧鑺傦級 */
   memTotal: number;
 }
 
-/** GET /api/aggregate/engines 返回 */
+/** GET /api/aggregate/engines 杩斿洖 */
 export interface EngineAggregateResponse {
-  /** 各引擎聚合信息 */
+  /** 鍚勫紩鎿庤仛鍚堜俊鎭?*/
   engines: EngineAggregate[];
-  /** 汇总统计 */
+  /** 姹囨€荤粺璁?*/
   totals: EngineAggregateSummary;
-  /** 引擎总数 */
+  /** 寮曟搸鎬绘暟 */
   engineCount: number;
-  /** 在线引擎数 */
+  /** 鍦ㄧ嚎寮曟搸鏁?*/
   onlineCount: number;
 }
 
-/** ===================== 批量镜像分发 ===================== */
+/** ===================== 鎵归噺闀滃儚鍒嗗彂 ===================== */
 
-/** ===================== 跨引擎容器迁移 ===================== */
+/** ===================== 璺ㄥ紩鎿庡鍣ㄨ縼绉?===================== */
 
-/** 引擎列表项（GET /api/engines 返回） */
+/** 寮曟搸鍒楄〃椤癸紙GET /api/engines 杩斿洖锛?*/
 export interface EngineListItem {
-  /** 引擎 id */
+  /** 寮曟搸 id */
   id: string;
-  /** 引擎名称 */
+  /** 寮曟搸鍚嶇О */
   name: string;
-  /** 引擎端点 */
+  /** 寮曟搸绔偣 */
   endpoint: string;
-  /** 是否为当前引擎 */
+  /** 鏄惁涓哄綋鍓嶅紩鎿?*/
   isCurrent: boolean;
 }
 
-/** 引擎列表响应（GET /api/engines） */
+/** 寮曟搸鍒楄〃鍝嶅簲锛圙ET /api/engines锛?*/
 export interface EngineListResponse {
   engines: EngineListItem[];
 }
 
-/** 容器跨引擎迁移结果（POST /api/transfer/container 返回） */
+/** 瀹瑰櫒璺ㄥ紩鎿庤縼绉荤粨鏋滐紙POST /api/transfer/container 杩斿洖锛?*/
 export interface ContainerTransferResult {
-  /** 是否整体成功 */
+  /** 鏄惁鏁翠綋鎴愬姛 */
   ok: boolean;
-  /** 失败时返回的错误信息 */
+  /** 澶辫触鏃惰繑鍥炵殑閿欒淇℃伅 */
   error?: string;
-  /** 目标容器 id */
+  /** 鐩爣瀹瑰櫒 id */
   id?: string;
-  /** 目标容器名 */
+  /** 鐩爣瀹瑰櫒鍚?*/
   name?: string;
-  /** 镜像是否已传输到位（false 表示目标未创建成功时被跳过，或源镜像不存在） */
+  /** 闀滃儚鏄惁宸蹭紶杈撳埌浣嶏紙false 琛ㄧず鐩爣鏈垱寤烘垚鍔熸椂琚烦杩囷紝鎴栨簮闀滃儚涓嶅瓨鍦級 */
   imageTransferred?: boolean;
-  /** 是否已启动目标容器 */
+  /** 鏄惁宸插惎鍔ㄧ洰鏍囧鍣?*/
   started?: boolean;
-  /** 目标容器启动失败的错误信息 */
+  /** 鐩爣瀹瑰櫒鍚姩澶辫触鐨勯敊璇俊鎭?*/
   startError?: string;
-  /** 迁移过程中的警告信息（如命名卷为空卷提示） */
+  /** 杩佺Щ杩囩▼涓殑璀﹀憡淇℃伅锛堝鍛藉悕鍗蜂负绌哄嵎鎻愮ず锛?*/
   warning?: string;
-  /** 迁移注意事项（如 networkWarning 等） */
+  /** 杩佺Щ娉ㄦ剰浜嬮」锛堝 networkWarning 绛夛級 */
   note?: string;
 }
 
-/** ===================== 批量镜像分发 ===================== */
+/** ===================== 鎵归噺闀滃儚鍒嗗彂 ===================== */
 
-/** 批量分发中单个目标引擎的结果 */
+/** 鎵归噺鍒嗗彂涓崟涓洰鏍囧紩鎿庣殑缁撴灉 */
 export interface TransferBatchResult {
-  /** 目标引擎 id */
+  /** 鐩爣寮曟搸 id */
   engineId: string;
-  /** 目标引擎名称 */
+  /** 鐩爣寮曟搸鍚嶇О */
   name: string;
-  /** 是否成功 */
+  /** 鏄惁鎴愬姛 */
   ok: boolean;
-  /** 成功时加载的镜像信息 */
+  /** 鎴愬姛鏃跺姞杞界殑闀滃儚淇℃伅 */
   loaded?: string;
-  /** 失败原因 */
+  /** 澶辫触鍘熷洜 */
   error?: string;
 }
 
-/** POST /api/transfer/batch 返回 */
+/** POST /api/transfer/batch 杩斿洖 */
 export interface TransferBatchResponse {
-  /** 是否整体成功 */
+  /** 鏄惁鏁翠綋鎴愬姛 */
   ok: boolean;
-  /** 目标引擎总数 */
+  /** 鐩爣寮曟搸鎬绘暟 */
   total: number;
-  /** 成功数 */
+  /** 鎴愬姛鏁?*/
   okCount: number;
-  /** 失败数 */
+  /** 澶辫触鏁?*/
   failedCount: number;
-  /** 逐目标结果 */
+  /** 閫愮洰鏍囩粨鏋?*/
   results: TransferBatchResult[];
 }
 
-/** ===================== Compose 结构视图 ===================== */
+/** ===================== Compose 缁撴瀯瑙嗗浘 ===================== */
 
-/** Compose 端口映射（/api/compose/:name/structure 返回） */
+/** Compose 绔彛鏄犲皠锛?api/compose/:name/structure 杩斿洖锛?*/
 export interface ComposePort {
-  /** 宿主机端口（未映射时省略） */
+  /** 瀹夸富鏈虹鍙ｏ紙鏈槧灏勬椂鐪佺暐锛?*/
   published?: string;
-  /** 容器内端口 */
+  /** 瀹瑰櫒鍐呯鍙?*/
   target: string;
-  /** 协议（默认 tcp） */
+  /** 鍗忚锛堥粯璁?tcp锛?*/
   protocol: string;
 }
 
-/** Compose 卷挂载（/api/compose/:name/structure 返回） */
+/** Compose 鍗锋寕杞斤紙/api/compose/:name/structure 杩斿洖锛?*/
 export interface ComposeVolumeMount {
-  /** 挂载类型：bind / volume */
+  /** 鎸傝浇绫诲瀷锛歜ind / volume */
   type: string;
-  /** 源（named volume 或宿主路径） */
+  /** 婧愶紙named volume 鎴栧涓昏矾寰勶級 */
   source?: string;
-  /** 容器内挂载目标 */
+  /** 瀹瑰櫒鍐呮寕杞界洰鏍?*/
   target: string;
-  /** 是否只读 */
+  /** 鏄惁鍙 */
   readOnly: boolean;
 }
 
-/** Compose 服务节点（/api/compose/:name/structure 返回的 services 项） */
+/** Compose 鏈嶅姟鑺傜偣锛?api/compose/:name/structure 杩斿洖鐨?services 椤癸級 */
 export interface ComposeServiceNode {
-  /** 服务名 */
+  /** 鏈嶅姟鍚?*/
   name: string;
-  /** 镜像名（build 服务可能缺失） */
+  /** 闀滃儚鍚嶏紙build 鏈嶅姟鍙兘缂哄け锛?*/
   image?: string;
-  /** 端口映射列表 */
+  /** 绔彛鏄犲皠鍒楄〃 */
   ports: ComposePort[];
-  /** 卷挂载列表 */
+  /** 鍗锋寕杞藉垪琛?*/
   volumes: ComposeVolumeMount[];
-  /** 依赖的服务名列表 */
+  /** 渚濊禆鐨勬湇鍔″悕鍒楄〃 */
   depends_on: string[];
-  /** 环境变量（["K=V"] 形式） */
+  /** 鐜鍙橀噺锛圼"K=V"] 褰㈠紡锛?*/
   environment: string[];
 }
 
-/** Compose 结构视图（GET /api/compose/:name/structure 返回） */
+/** Compose 缁撴瀯瑙嗗浘锛圙ET /api/compose/:name/structure 杩斿洖锛?*/
 export interface ComposeStructure {
-  /** 项目名 */
+  /** 椤圭洰鍚?*/
   name: string;
-  /** 服务列表 */
+  /** 鏈嶅姟鍒楄〃 */
   services: ComposeServiceNode[];
-  /** 命名卷名列表 */
+  /** 鍛藉悕鍗峰悕鍒楄〃 */
   volumes: string[];
-  /** 网络名列表 */
+  /** 缃戠粶鍚嶅垪琛?*/
   networks: string[];
 }
 
-/** ===================== 告警中心 ===================== */
+/** ===================== 鍛婅涓績 ===================== */
 
-/** 容器级告警监控类型 */
+/** 瀹瑰櫒绾у憡璀︾洃鎺х被鍨?*/
 export type ContainerRuleWatchType = 'exited' | 'health' | 'port' | 'cpu' | 'mem';
 
-/** 容器级告警规则（/api/notifications/container-rules 返回的单条规则） */
+/** 瀹瑰櫒绾у憡璀﹁鍒欙紙/api/notifications/container-rules 杩斿洖鐨勫崟鏉¤鍒欙級 */
 export interface ContainerRule {
-  /** 规则 id */
+  /** 瑙勫垯 id */
   id: number;
-  /** 目标容器 id */
+  /** 鐩爣瀹瑰櫒 id */
   containerId: string;
-  /** 目标容器名（后端补充，可能缺失） */
+  /** 鐩爣瀹瑰櫒鍚嶏紙鍚庣琛ュ厖锛屽彲鑳界己澶憋級 */
   containerName?: string;
-  /** 监控类型：exited=容器退出 / health=健康检查失败 / port=端口不可达 / cpu=CPU 使用率 / mem=内存使用率 */
+  /** 鐩戞帶绫诲瀷锛歟xited=瀹瑰櫒閫€鍑?/ health=鍋ュ悍妫€鏌ュけ璐?/ port=绔彛涓嶅彲杈?/ cpu=CPU 浣跨敤鐜?/ mem=鍐呭瓨浣跨敤鐜?*/
   watchType: ContainerRuleWatchType;
-  /** 是否启用 */
+  /** 鏄惁鍚敤 */
   enabled: boolean;
-  /** CPU/内存阈值（watchType=cpu/mem 时使用）：警告阈值（0-100） */
+  /** CPU/鍐呭瓨闃堝€硷紙watchType=cpu/mem 鏃朵娇鐢級锛氳鍛婇槇鍊硷紙0-100锛?*/
   warnThreshold: number;
-  /** CPU/内存阈值（watchType=cpu/mem 时使用）：危险阈值（0-100） */
+  /** CPU/鍐呭瓨闃堝€硷紙watchType=cpu/mem 鏃朵娇鐢級锛氬嵄闄╅槇鍊硷紙0-100锛?*/
   dangerThreshold: number;
-  /** 当前使用率（后端为 cpu/mem 行补充，可选） */
+  /** 褰撳墠浣跨敤鐜囷紙鍚庣涓?cpu/mem 琛岃ˉ鍏咃紝鍙€夛級 */
   currentValue?: number | null;
-  /** 探测端口（watchType=port 时使用，其余为 null） */
+  /** 鎺㈡祴绔彛锛坵atchType=port 鏃朵娇鐢紝鍏朵綑涓?null锛?*/
   port: number | null;
-  /** 静默时段开始（HH:mm） */
+  /** 闈欓粯鏃舵寮€濮嬶紙HH:mm锛?*/
   silentStart: string | null;
-  /** 静默时段结束（HH:mm） */
+  /** 闈欓粯鏃舵缁撴潫锛圚H:mm锛?*/
   silentEnd: string | null;
-  /** 是否仅工作日告警 */
+  /** 鏄惁浠呭伐浣滄棩鍛婅 */
   workdaysOnly: boolean;
-  /** 工作时段开始（HH:mm） */
+  /** 宸ヤ綔鏃舵寮€濮嬶紙HH:mm锛?*/
   workStart: string | null;
-  /** 工作时段结束（HH:mm） */
+  /** 宸ヤ綔鏃舵缁撴潫锛圚H:mm锛?*/
   workEnd: string | null;
 }
 
-/** 容器级告警规则列表响应（GET /api/notifications/container-rules） */
+/** 瀹瑰櫒绾у憡璀﹁鍒欏垪琛ㄥ搷搴旓紙GET /api/notifications/container-rules锛?*/
 export interface ContainerRuleListResponse {
   rules: ContainerRule[];
 }
 
-/** 容器级告警规则新增/编辑响应（POST/PUT /api/notifications/container-rules） */
+/** 瀹瑰櫒绾у憡璀﹁鍒欐柊澧?缂栬緫鍝嶅簲锛圥OST/PUT /api/notifications/container-rules锛?*/
 export interface ContainerRuleSaveResponse {
   ok: boolean;
   rule: ContainerRule;
 }
 
-/** ===================== 面板配置导入/导出 ===================== */
+/** ===================== 闈㈡澘閰嶇疆瀵煎叆/瀵煎嚭 ===================== */
 
-/** 冲突处理策略：skip=跳过已存在 / overwrite=覆盖 / error=出错即回滚 */
+/** 鍐茬獊澶勭悊绛栫暐锛歴kip=璺宠繃宸插瓨鍦?/ overwrite=瑕嗙洊 / error=鍑洪敊鍗冲洖婊?*/
 export type ConfigImportConflict = 'skip' | 'overwrite' | 'error';
 
-/** 配置导出中 data 子对象的单个元素（通用宽松结构，字段均为 camelCase） */
+/** 閰嶇疆瀵煎嚭涓?data 瀛愬璞＄殑鍗曚釜鍏冪礌锛堥€氱敤瀹芥澗缁撴瀯锛屽瓧娈靛潎涓?camelCase锛?*/
 export interface ConfigDataItem {
   [key: string]: any;
 }
 
-/** 面板配置导出（GET /api/system/config/export 返回的 JSON 对象） */
+/** 闈㈡澘閰嶇疆瀵煎嚭锛圙ET /api/system/config/export 杩斿洖鐨?JSON 瀵硅薄锛?*/
 export interface SystemConfigExport {
-  /** 导出格式版本 */
+  /** 瀵煎嚭鏍煎紡鐗堟湰 */
   version: number;
-  /** 导出时间（ISO 字符串） */
+  /** 瀵煎嚭鏃堕棿锛圛SO 瀛楃涓诧級 */
   exportedAt: string;
-  /** 是否包含敏感字段（通知渠道 / 云端 / 数据库口令明文） */
+  /** 鏄惁鍖呭惈鏁忔劅瀛楁锛堥€氱煡娓犻亾 / 浜戠 / 鏁版嵁搴撳彛浠ゆ槑鏂囷級 */
   includeSecrets: boolean;
-  /** 各实体数据 */
+  /** 鍚勫疄浣撴暟鎹?*/
   data: {
     users: ConfigDataItem[];
     hubSources: ConfigDataItem[];
@@ -903,22 +903,22 @@ export interface SystemConfigExport {
   };
 }
 
-/** 配置导入响应（POST /api/system/config/import 返回） */
+/** 閰嶇疆瀵煎叆鍝嶅簲锛圥OST /api/system/config/import 杩斿洖锛?*/
 export interface SystemConfigImportResponse {
   ok: boolean;
-  /** 实际采用的冲突策略 */
+  /** 瀹為檯閲囩敤鐨勫啿绐佺瓥鐣?*/
   conflict: ConfigImportConflict;
-  /** 各实体导入数量 */
+  /** 鍚勫疄浣撳鍏ユ暟閲?*/
   imported: Record<string, number>;
   note?: string;
 }
 
-// ---- AI 助手（/api/ai） ----
+// ---- AI 鍔╂墜锛?api/ai锛?----
 export interface AiSettings {
   enabled: boolean;
-  /** 是否已配置且可用 */
+  /** 鏄惁宸查厤缃笖鍙敤 */
   available: boolean;
-  /** 当前默认 profile（null 表示未设置） */
+  /** 褰撳墠榛樿 profile锛坣ull 琛ㄧず鏈缃級 */
   defaultProfile: AiProfile | null;
 }
 export interface AiCapability {
@@ -1021,7 +1021,7 @@ export interface AiPreset {
   keyHint?: string;
 }
 
-// ---- Compose 逆向（/api/compose/infer） ----
+// ---- Compose 閫嗗悜锛?api/compose/infer锛?----
 export interface ComposeInferCandidate {
   id: string;
   name: string;
@@ -1045,7 +1045,7 @@ export interface ComposeInferResult {
   validateError?: string;
 }
 
-// ---- 日志聚合（/api/logs） ----
+// ---- 鏃ュ織鑱氬悎锛?api/logs锛?----
 export interface LogSourceContainer {
   id: string;
   name: string;
@@ -1065,7 +1065,7 @@ export interface LogsQueryResponse {
   matched: boolean;
 }
 
-// ---- 镜像 GC 策略（/api/gc） ----
+// ---- 闀滃儚 GC 绛栫暐锛?api/gc锛?----
 export interface GcImageInfo {
   id: string;
   repoTags: string[];
@@ -1097,7 +1097,7 @@ export interface GcRunResult {
   policy: GcPolicy;
 }
 
-// ---- 网络拓扑（/api/topology） ----
+// ---- 缃戠粶鎷撴墤锛?api/topology锛?----
 export interface TopoNode {
   id: string;
   kind: 'container' | 'network';
@@ -1123,7 +1123,7 @@ export interface TopologyResponse {
   truncated?: boolean;
 }
 
-/** AI Prompt 模板 */
+/** AI Prompt 妯℃澘 */
 export interface AiPromptTemplate {
   id: number;
   name: string;
@@ -1141,13 +1141,13 @@ export interface AiTemplateCategoriesResponse {
   categories: string[];
 }
 
-// Action 审批
+// Action 瀹℃壒
 export interface AiAction {
   id: number;
   username: string;
   actionType: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  status: 'pending' | 'approved' | 'rejected' | 'gated' | 'executed' | 'failed';
   aiMessage: string;
   result: string;
   createdAt: number;
@@ -1165,7 +1165,7 @@ export interface AiActionStats {
   failed: number;
 }
 
-// 本地模型状态
+// 鏈湴妯″瀷鐘舵€?
 export interface AiLocalModelStatus {
   ok: boolean;
   message: string;
@@ -1173,7 +1173,7 @@ export interface AiLocalModelStatus {
   serviceInfo?: Record<string, unknown>;
 }
 
-// 文件分析
+// 鏂囦欢鍒嗘瀽
 export interface AiAnalysisIssue {
   severity: 'critical' | 'warning' | 'info';
   message: string;
@@ -1187,7 +1187,7 @@ export interface AiAnalysisResult {
   cfg?: { provider: string; model: string };
 }
 
-// Ollama 模型管理
+// Ollama 妯″瀷绠＄悊
 export interface OllamaModel {
   name: string;
   size: number;
@@ -1211,7 +1211,7 @@ export interface OllamaRunningStatus {
   models: OllamaRunningModel[];
 }
 
-// 知识库
+// 鐭ヨ瘑搴?
 export interface KnowledgeEntry {
   id: number;
   title: string;
@@ -1232,7 +1232,7 @@ export interface KnowledgeStats {
   count: number;
 }
 
-// AI 用量仪表盘
+// AI 鐢ㄩ噺浠〃鐩?
 export interface AiUsageDashboard {
   summary: {
     totalPrompt: number;

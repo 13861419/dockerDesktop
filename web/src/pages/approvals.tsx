@@ -9,7 +9,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Empty from '../components/Empty';
-import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
@@ -82,7 +81,12 @@ export default function Approvals() {
   const [admin, setAdmin] = useState(false);
   const [status, setStatus] = useState<ApprovalStatus | ''>('');
   const [me, setMe] = useState('');
-  const [rejectTarget, setRejectTarget] = useState<ApprovalItem | null>(null);
+  /** 批量选择（仅 pending 可选） */
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  /** 拒绝理由弹窗：单条或批量 */
+  const [rejectInput, setRejectInput] = useState<{ ids: number[]; label: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,17 +130,64 @@ export default function Approvals() {
     }
   }
 
-  /** 拒绝（管理员） */
-  async function reject() {
-    if (!rejectTarget) return;
+  /** 批量批准/拒绝（管理员） */
+  async function batchDecide(decision: 'approved' | 'rejected') {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBatchBusy(true);
     try {
-      await post(`/api/approvals/${rejectTarget.id}/reject`, { reason: '管理员拒绝' });
-      showToast('已拒绝该审批', 'info');
-      setRejectTarget(null);
+      const r = await post<{ ok: number; fail: number }>('/api/approvals/batch', { ids, decision });
+      showToast(`批量处理完成：成功 ${r.ok} 条${r.fail ? `，失败 ${r.fail} 条` : ''}`, r.fail ? 'info' : 'success');
+      setSelected(new Set());
       load();
     } catch (e: any) {
-      showToast(e?.message || '拒绝失败', 'error');
+      showToast(e?.message || '批量处理失败', 'error');
+    } finally {
+      setBatchBusy(false);
     }
+  }
+
+  /** 勾选/取消单个待审批记录 */
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** 全选/清空当前列表中的待审批项 */
+  const pendingIds = items.filter((it) => it.status === 'pending').map((it) => it.id);
+  const allSelected = pendingIds.length > 0 && pendingIds.every((id) => selected.has(id));
+  function toggleAll() {
+    setSelected((prev) => (allSelected ? new Set() : new Set(pendingIds)));
+  }
+
+  /** 状态筛选变化时清空选择 */
+  useEffect(() => {
+    setSelected(new Set());
+  }, [status]);
+
+  /** 提交拒绝理由弹窗（单条或批量共用） */
+  function submitReject() {
+    if (!rejectInput) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      showToast('请填写拒绝理由', 'error');
+      return;
+    }
+    setBatchBusy(true);
+    post<{ ok: number; fail: number }>('/api/approvals/batch', { ids: rejectInput.ids, decision: 'rejected', reason })
+      .then((r) => {
+        showToast(`已拒绝 ${r.ok} 条审批${r.fail ? `，失败 ${r.fail} 条` : ''}`, r.fail ? 'info' : 'success');
+        setSelected(new Set());
+        setRejectInput(null);
+        setRejectReason('');
+        load();
+      })
+      .catch((e: any) => showToast(e?.message || '拒绝失败', 'error'))
+      .finally(() => setBatchBusy(false));
   }
 
   /** 撤销（提交人或管理员） */
@@ -167,6 +218,30 @@ export default function Approvals() {
         <Button variant="secondary" size="sm" onClick={load} loading={loading}>
           刷新
         </Button>
+        {admin && pendingIds.length > 0 && (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={selected.size === 0 || batchBusy}
+              loading={batchBusy}
+              onClick={() => batchDecide('approved')}
+            >
+              批量批准{selected.size ? `（${selected.size}）` : ''}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={selected.size === 0}
+              onClick={() => {
+                setRejectReason('');
+                setRejectInput({ ids: [...selected], label: `选中的 ${selected.size} 条待审批记录` });
+              }}
+            >
+              批量拒绝{selected.size ? `（${selected.size}）` : ''}
+            </Button>
+          </>
+        )}
         <span className="approvals-page__hint">
           开启设置中心「高危操作审批流」后，非管理员的容器删除将自动转入此处待审批
         </span>
@@ -191,6 +266,11 @@ export default function Approvals() {
           <table className="approvals-table">
             <thead>
               <tr>
+                {admin && pendingIds.length > 0 && (
+                  <th style={{ width: '4%' }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} title="全选待审批" />
+                  </th>
+                )}
                 <th style={{ width: '5%' }}>#</th>
                 <th style={{ width: '10%' }}>提交人</th>
                 <th style={{ width: '12%' }}>动作</th>
@@ -206,6 +286,16 @@ export default function Approvals() {
                 const own = it.username === me;
                 return (
                   <tr key={it.id}>
+                    {admin && pendingIds.length > 0 && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          disabled={it.status !== 'pending'}
+                          checked={it.status === 'pending' && selected.has(it.id)}
+                          onChange={() => toggle(it.id)}
+                        />
+                      </td>
+                    )}
                     <td>{it.id}</td>
                     <td>{it.username}</td>
                     <td>{ACTION_LABELS[it.action_type] || it.action_type}</td>
@@ -246,7 +336,17 @@ export default function Approvals() {
                             <Button variant="primary" size="sm" onClick={() => approve(it)}>
                               批准
                             </Button>
-                            <Button variant="danger" size="sm" onClick={() => setRejectTarget(it)}>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => {
+                                setRejectReason('');
+                                setRejectInput({
+                                  ids: [it.id],
+                                  label: `「${ACTION_LABELS[it.action_type] || it.action_type} ${it.target_label || it.target}」的申请`,
+                                });
+                              }}
+                            >
                               拒绝
                             </Button>
                           </>
@@ -267,15 +367,31 @@ export default function Approvals() {
         )}
       </Card>
 
-      <ConfirmDialog
-        open={!!rejectTarget}
-        title="拒绝审批"
-        message={`确定拒绝「${rejectTarget ? ACTION_LABELS[rejectTarget.action_type] || rejectTarget.action_type : ''} ${rejectTarget?.target_label || rejectTarget?.target || ''}」的申请吗？`}
-        confirmText="拒绝"
-        danger
-        onConfirm={reject}
-        onCancel={() => setRejectTarget(null)}
-      />
+      {/* 拒绝理由弹窗（单条与批量共用，理由必填） */}
+      {rejectInput && (
+        <div className="approvals-page__overlay" onClick={() => setRejectInput(null)}>
+          <div className="approvals-page__dialog" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <div className="approvals-page__dialog-title">拒绝审批</div>
+            <div className="approvals-page__dialog-text">确定拒绝 {rejectInput.label} 吗？</div>
+            <textarea
+              className="approvals-page__textarea"
+              placeholder="请填写拒绝理由（必填，将随审批留痕并通知提交人）"
+              value={rejectReason}
+              rows={3}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectReason(e.target.value)}
+              autoFocus
+            />
+            <div className="approvals-page__dialog-ops">
+              <Button variant="ghost" size="sm" onClick={() => setRejectInput(null)}>
+                取消
+              </Button>
+              <Button variant="danger" size="sm" loading={batchBusy} onClick={submitReject}>
+                确认拒绝
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

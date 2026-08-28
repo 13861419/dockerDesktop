@@ -35,6 +35,8 @@ const TYPE_OPTIONS = [
   { value: 'network', label: '网络' },
   { value: 'compose', label: 'Compose' },
   { value: 'app', label: '应用' },
+  { value: 'approval', label: '审批' },
+  { value: 'ai', label: 'AI 操作' },
 ];
 
 /** 目标类型徽标颜色 */
@@ -45,6 +47,8 @@ const TYPE_COLOR: Record<string, string> = {
   network: 'green',
   compose: 'orange',
   app: 'pink',
+  approval: 'red',
+  ai: 'cyan',
 };
 
 /**

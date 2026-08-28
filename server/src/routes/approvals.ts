@@ -93,15 +93,55 @@ router.post(
 
 /**
  * POST /api/approvals/:id/reject
- * 拒绝（仅管理员）。body: { reason? }
+ * 拒绝（仅管理员）。body: { reason } —— 理由必填，随审批留痕并通知提交人
  */
 router.post(
   '/:id/reject',
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    await decideApproval(Number(req.params.id), 'rejected', res.locals.username, req.body?.reason);
-    logOperation(res.locals.username, '拒绝审批', 'approval', String(req.params.id), req.body?.reason || '');
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: '拒绝时必须填写理由' });
+    await decideApproval(Number(req.params.id), 'rejected', res.locals.username, reason);
+    logOperation(res.locals.username, '拒绝审批', 'approval', String(req.params.id), reason);
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/approvals/batch
+ * 批量批准/拒绝（仅管理员）。body: { ids: number[], decision: 'approved'|'rejected', reason? }
+ * 逐条顺序处理（避免并发执行多个 Docker 操作），单条失败不影响其余条目。
+ */
+router.post(
+  '/batch',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const rawIds: unknown[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const ids = rawIds.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (ids.length === 0) return res.status(400).json({ error: '缺少审批 ID 列表' });
+    if (ids.length > 50) return res.status(400).json({ error: '单批最多处理 50 条审批' });
+    const decision = req.body?.decision === 'rejected' ? 'rejected' : 'approved';
+    const reason = String(req.body?.reason || '').trim();
+    if (decision === 'rejected' && !reason) return res.status(400).json({ error: '拒绝时必须填写理由' });
+
+    const results: Array<{ id: number; ok: boolean; executed?: boolean; error?: string }> = [];
+    for (const id of ids) {
+      try {
+        const r = await decideApproval(id, decision, res.locals.username, reason || undefined);
+        logOperation(
+          res.locals.username,
+          decision === 'approved' ? '批准审批' : '拒绝审批',
+          'approval',
+          String(id),
+          r.executed ? '已执行' : r.error ? `执行失败：${r.error}` : reason,
+        );
+        results.push({ id, ok: true, executed: r.executed, error: r.error });
+      } catch (err: any) {
+        results.push({ id, ok: false, error: err?.message || '处理失败' });
+      }
+    }
+    const ok = results.filter((r) => r.ok).length;
+    res.json({ ok, fail: results.length - ok, results });
   }),
 );
 

@@ -13,6 +13,7 @@ import net from 'net';
 import fs from 'fs';
 import path from 'path';
 import { getDb, getDataDir } from './storage';
+import { getSetting } from './settings';
 import { getCurrentMonitor } from './docker/monitor';
 import { getDockerClient } from './docker/client';
 import { listChannels, sendAlert } from './notify';
@@ -257,8 +258,8 @@ async function emitAlert(type: AlertType, level: AlertLevel, message: string, va
       const res = await sendAlert(channelId, message);
       if (res.ok) {
         pushStatus = 'ok';
-        // danger 级别告警：异步追加 AI 诊断（不阻塞告警主链路，AI 不可用则静默）
-        if (level === 'danger') {
+        // danger 级别告警：异步追加 AI 诊断（不阻塞告警主链路，可在设置中关闭，AI 不可用则静默）
+        if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
           import('./aiDiagnose')
             .then((m) => m.pushAiDiagnosis(channelId, { type, level, message, value }))
             .catch(() => {});
@@ -863,8 +864,15 @@ async function emitContainerAlert(
   if (channelId) {
     try {
       const res = await sendAlert(channelId, message);
-      if (res.ok) pushStatus = 'ok';
-      else {
+      if (res.ok) {
+        pushStatus = 'ok';
+        // danger 级别告警：异步追加 AI 诊断（与宿主级告警一致，可在设置中关闭）
+        if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
+          import('./aiDiagnose')
+            .then((m) => m.pushAiDiagnosis(channelId, { type: rule.watchType, level, message, value }))
+            .catch(() => {});
+        }
+      } else {
         pushStatus = 'failed';
         pushDetail = res.detail;
       }
