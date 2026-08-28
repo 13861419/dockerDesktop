@@ -1,0 +1,174 @@
+/* 安全基线页面样式 */
+
+.policy-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.policy-page__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.policy-page__hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* 摘要统计行 */
+.policy-page__summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.policy-stat {
+  flex: 1;
+  min-width: 120px;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.policy-stat__value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.policy-stat__label {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.policy-stat--ok .policy-stat__value {
+  color: #10b981;
+}
+
+.policy-stat--bad {
+  border-color: #ef4444;
+
+  .policy-stat__value {
+    color: #ef4444;
+  }
+}
+
+/* 违规明细表 */
+.policy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.policy-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.policy-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  vertical-align: top;
+}
+
+.policy-table__name {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 600;
+}
+
+.policy-table__img {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.policy-table__desc {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* 单条违规 */
+.policy-violations {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.policy-violation {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.policy-violation__badge {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.policy-violation--danger {
+  .policy-violation__badge {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+  }
+}
+
+.policy-violation--warn {
+  .policy-violation__badge {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+  }
+}
+
+.policy-violation--info .policy-violation__badge {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+
+.policy-violation__name {
+  font-weight: 600;
+}
+
+.policy-violation__detail {
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* 严重度徽标（规则清单） */
+.policy-sev {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.policy-sev--danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.policy-sev--warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.policy-sev--info {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}

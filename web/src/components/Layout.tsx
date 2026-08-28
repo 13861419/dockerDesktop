@@ -406,6 +406,17 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/policy',
+    label: '安全基线',
+    adminOnly: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    ),
+  },
 ];
 
 /**

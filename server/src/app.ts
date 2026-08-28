@@ -54,6 +54,7 @@ import labelsRouter from './routes/labels';
 import settingsRouter from './routes/settings';
 import portsRouter from './routes/ports';
 import metricsRouter from './routes/metrics';
+import policyRouter from './routes/policy';
 import { requireAuth } from './auth';
 
 const app = express();
@@ -125,6 +126,7 @@ app.use('/api/topology', requireAuth, topologyRouter);
 app.use('/api/labels', requireAuth, labelsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/ports', requireAuth, portsRouter);
+app.use('/api/policy', requireAuth, policyRouter);
 
 
 // 生产模式：托管前端静态文件（单进程部署）
