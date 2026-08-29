@@ -62,6 +62,8 @@
 - 单测 206/206、API 集成测试 628/628（含可达性探测后实际全绿）
 - E2E 冒烟 5/5（Playwright，浏览器建议经 npmmirror 镜像安装）
 - 全量回归与互踩对连跑验证：3×18/18、3×63/63
+- 新增 GitHub Actions 测试工作流（Test CI）：单元测试 / API 集成 / 文档图片死链校验三并行 job
+- 新增 `npm run docs:check` 跨平台文档图片校验脚本（`scripts/check-doc-images.js`）
 
 ## [0.1.0] - 初始版本
 

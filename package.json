@@ -1,7 +1,7 @@
 {
   "name": "@13861419/docker-manager",
   "version": "0.2.0",
-  "description": "Docker 管理面板（支持 Windows / Ubuntu 24 / CentOS 7+，类似 1Panel）",
+  "description": "Docker 管理面板（支持 Windows / Ubuntu 24 / RHEL 9 系，类似 1Panel）",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
@@ -51,6 +51,7 @@
     "test:e2e:deep": "node scripts/e2e-functional-test.js",
     "test:e2e:functional": "node scripts/e2e-functional-test.js",
     "mock:hub-search": "node scripts/mock-hub-search.js",
+    "docs:check": "node scripts/check-doc-images.js",
     "package": "node packaging/build-release.js",
     "package:installer": "node packaging/build-installer.js",
     "package:deb": "bash packaging/linux/build-deb.sh",

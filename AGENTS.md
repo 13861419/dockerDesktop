@@ -18,10 +18,7 @@
 快速校验命令：
 
 ```powershell
-# 图片死链检查（0 缺失为通过）
-$refs = Select-String -Path README.md,"docs\*.md" -Pattern 'images/[^)"''`]+\.(png|jpg|gif)' -AllMatches |
-  ForEach-Object { $_.Matches } | ForEach-Object { $_.Value } | Sort-Object -Unique
-$refs | ForEach-Object { if (-not (Test-Path $_)) { $_ } }
+npm run docs:check   # 图片死链检查（0 缺失为通过）；CI 的 docs job 同样执行
 ```
 
 ## 项目关键约定
