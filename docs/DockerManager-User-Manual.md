@@ -44,6 +44,13 @@
 - [33. Template / Image Hub Enhancements](#33-template--image-hub-enhancements)
 - [34. Configuration Import / Export](#34-configuration-import--export)
 - [35. Webhook / Git Auto Deployment](#35-webhook--git-auto-deployment)
+- [36. Ops Toolbox](#36-ops-toolbox)
+- [37. Port Map](#37-port-map)
+- [38. Prometheus / Grafana Integration](#38-prometheus--grafana-integration)
+- [39. Security Baseline Scanning 🔒](#39-security-baseline-scanning-)
+- [40. High-Risk Operation Approval Flow](#40-high-risk-operation-approval-flow)
+- [41. AI Assistant](#41-ai-assistant)
+- [42. Help Center](#42-help-center)
 
 > **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
 
@@ -524,6 +531,17 @@ Menu: **Backup & Restore** (`/backups`)
 
 ![Backup & restore](images/backups.png)
 
+### 15.4 Panel Database Backup Management (Settings Center)
+
+Menu: **Settings → Panel Database Backup Management** (admin only)
+
+- **Backup now**: takes a consistent snapshot of the panel's own SQLite database (`VACUUM INTO`, no downtime), stored under the data directory `db-backups/`.
+- **Restore**: one-click restore from the list; takes effect immediately after the current data is overwritten (a panel restart is recommended). Files are validated for the SQLite format before restore, and an integrity check runs afterwards.
+- **Download / Delete**: download backup files for archival or delete them manually.
+- **Scheduled backup**: create a task of type **Database Backup** under Scheduled Tasks; retention is controlled by the system parameter "Panel database backup retention count" (default 7, 0 = no auto-cleanup).
+
+![Panel database backup management](images/settings-db-backup.png)
+
 ---
 
 ## 16. Swarm 🔒
@@ -606,6 +624,7 @@ Menu: **Notifications** (`/notifications`, admin only)
 - Configure alert channels (Webhook / mail, etc.) and alert rules.
 - **Container rules**: set alert triggers for specific containers (exit, restart loop, resource anomalies).
 - Alerts are pushed to targets per rules; the list shows triggered alerts with timestamps.
+- **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count); **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
 
 ![Notifications](images/notifications.png)
 
@@ -1086,6 +1105,102 @@ Automated Git repository pull and deployment:
 
 ---
 
+## 36. Ops Toolbox
+
+Menu: **Tools** (`/tools`, all users)
+
+- Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, etc.
+- Zero backend calls; handy for day-to-day ops.
+
+---
+
+## 37. Port Map
+
+Menu: **Ports** (`/ports`, all users)
+
+- Cross-engine aggregation of **port usage**: which host ports are bound by which containers.
+- **Conflict detection** for duplicated bindings and a visual port distribution map.
+
+---
+
+## 38. Prometheus / Grafana Integration
+
+- Built-in **`/metrics` endpoint** exposing Prometheus text-format metrics (optional Token auth via the `metrics.token` system parameter).
+- One-click export of a prebuilt **Grafana Dashboard JSON** for direct import.
+
+---
+
+## 39. Security Baseline Scanning 🔒
+
+Menu: **Security Baseline** (`/policy`, admin only)
+API: `GET /api/policy/scan` (read-only scan); `POST /api/policy/fix` (online fix)
+
+Six built-in baseline rules, checked read-only against all running containers:
+
+| Rule | Level | Online fix |
+| --- | --- | --- |
+| Privileged containers (--privileged) | Danger | ❌ Recreate required |
+| Sensitive mounts (docker.sock etc.) | Danger | ❌ Recreate required |
+| No memory limit | Advice | ✅ Default 512MB (params.memoryBytes) |
+| No CPU limit | Advice | ✅ Default 1 core (params.cpus) |
+| Restart policy no / none | Advice | ✅ Default unless-stopped (params.policy) |
+| Missing owner label | Info | ❌ Recreate required |
+
+**One-click fix**: memory / CPU / restart-policy violations support online fixes via the Docker Container Update API, with automatic re-scan afterwards. Privileged mode, sensitive mounts and owner labels require container recreation — the page shows hardening advice instead. Fixes go through the approval gate (`container.fix`): when the approval flow is enabled, fixes submitted by non-admins become approval requests.
+
+![Security baseline scanning](images/policy.png)
+
+---
+
+## 40. High-Risk Operation Approval Flow
+
+| Project | Description |
+| --- | --- |
+| Path | `/approvals` |
+| Permission | All users (regular users only see their own requests) |
+| Switch | Settings → System Parameters → Security → "High-risk operation approval flow" (off by default) |
+
+When enabled:
+
+1. **Non-admin** users deleting containers (including batch delete) no longer take effect directly — the action enters the **Approval Center** as pending (HTTP 202).
+2. **Admins** approve in the Approval Center and the system executes; rejection requires a mandatory reason and is fully audited.
+3. Regular users may also **proactively submit** requests (image delete, volume delete, network prune, etc.); batch container deletion creates one approval record per target.
+4. Admin operations are never gated (admin is the approver).
+5. Duplicate pending requests for the same target by the same user are merged automatically.
+6. Approval targets resolve to human-readable names (falling back to short IDs after deletion).
+7. **Batch processing**: admins can multi-select pending records and batch approve / reject (up to 50 per batch, rejection reason required, executed sequentially — one failure does not affect the rest).
+8. **AI action gating**: AI-suggested container/image deletions automatically become approval requests when the flow is enabled and the executor is a non-admin (AI actions enter "pending admin approval"; results are written back to the AI action record after execution).
+
+![Approval center](images/approvals.png)
+
+---
+
+## 41. AI Assistant
+
+| Project | Description |
+| --- | --- |
+| Path | `/assistant` |
+| Permission | All users (model config admin only 🔒) |
+| Prerequisite | Add any OpenAI-compatible endpoint in Settings → AI Config Center |
+
+- **Multi-model config center**: one-click presets for local (Ollama / LM Studio / Docker Model Runner) and cloud (OpenAI / DeepSeek / Kimi, etc.) endpoints; multiple profiles with encrypted keys.
+- **AI capabilities**: chat Q&A, file analysis (Dockerfile / Compose / logs), smart inspection, alert diagnosis, weekly reports, knowledge base, token usage governance.
+- **Automatic alert AI diagnosis**: after a danger-level alert is pushed successfully, AI analyzes the root cause and pushes the diagnosis to the same channel; controlled by the `alerts.aiDiagnosis` parameter (on by default). Alerts that were aggregated by the push window do not trigger AI diagnosis.
+- **Safety boundary**: AI only suggests; it never executes directly. Without an AI configuration all AI entries hide automatically.
+
+---
+
+## 42. Help Center
+
+| Project | Description |
+| --- | --- |
+| Path | `/help` |
+| Permission | All users |
+
+Three built-in blocks: **Quick Start** (six-step guide), **FAQ** (password reset, remote engines, approval flow, AI setup, etc.), and a **feature index** of all pages.
+
+---
+
 ## Appendix: Modules & Routes
 
 | Menu | Route | Access |
@@ -1127,5 +1242,13 @@ Automated Git repository pull and deployment:
 | Image Hub Enhancements | `/hub` | All users |
 | Config Import/Export | `/settings` → Config Management | Admin 🔒 |
 | Webhook / Git Deploy | `/tasks` → New Task | All users |
+| Ops Toolbox | `/tools` | All users |
+| Port Map | `/ports` | All users |
+| Security Baseline | `/policy` | Admin 🔒 |
+| Approval Center | `/approvals` | All users |
+| Panel Database Backup | `/settings` → Panel Database Backup Management | Admin 🔒 |
+| AI Assistant | `/assistant` | All users (config admin only 🔒) |
+| Prometheus Metrics | `/metrics` | Optional Token auth |
+| Help Center | `/help` | All users |
 
 > This document reflects the current version; the installed version may differ. Administrator-only (🔒) pages are hidden from regular users in both menu and routes.

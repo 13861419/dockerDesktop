@@ -98,6 +98,7 @@
 | `appstore_custom_apps` | 应用商店自定义应用                     | `server/src/appstore/`           |
 | `container_dependencies` | 容器启动依赖编排（拓扑排序）           | `server/src/routes/orchestrate.ts` |
 | `orchestrate_runs`   | 编排执行历史（失败项可重试）               | `server/src/routes/orchestrate.ts` |
+| `approvals`          | 高危操作审批单（含批量审批 / AI 转审批）    | `server/src/routes/approvals.ts` |
 
 > **旧版兼容**：早期版本使用 JSON/文本文件存储（`data/users.json`、`data/hub-sources.json`、`data/hub-search-source.txt`、`data/image-pull-history.json`）。服务启动时会自动将旧文件数据迁移进 SQLite，并把旧文件重命名为 `.bak` 备份，实现平滑升级、不丢失任何现有配置。
 
