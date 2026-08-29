@@ -384,6 +384,12 @@ cd e2e && npx playwright test   # Playwright E2E 冒烟（登录/容器/审批/�
 
 ![防火墙](images/28.png "防火墙")
 
+![安全基线扫描](images/policy.png "安全基线扫描")
+
+![审批中心](images/approvals.png "审批中心")
+
+![面板数据库备份](images/settings-db-backup.png "面板数据库备份")
+
 
 
 ## 🧪 常见问题
