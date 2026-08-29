@@ -20,11 +20,15 @@ export function buildDigestText(messages: string[]): string {
   return `【告警聚合】窗口内共 ${messages.length} 条告警：\n${lines}${more}`;
 }
 
+/** 聚合缓冲级别键 */
+type AggLevel = 'warn' | 'danger' | 'recovery';
+
 export function createPushAggregator(
-  send: (text: string) => Promise<{ ok: boolean; detail?: string }>,
+  send: (level: AggLevel, text: string) => Promise<{ ok: boolean; detail?: string }>,
   getWindowMs: () => number,
 ) {
-  let buffer: string[] = [];
+  /** 按级别分桶缓冲：同级别同窗口合并为一条摘要（级别不同不混合，保证按级别路由语义正确） */
+  const buffer = new Map<AggLevel, string[]>();
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   /** 立即把缓冲区内容发出（单条原样，多条合并摘要） */
@@ -33,14 +37,16 @@ export function createPushAggregator(
       clearTimeout(timer);
       timer = null;
     }
-    const batch = buffer;
-    buffer = [];
-    if (batch.length === 0) return;
-    const text = batch.length === 1 ? batch[0] : buildDigestText(batch);
-    try {
-      await send(text);
-    } catch {
-      // 聚合消息发送失败不重投：逐条记录已标 aggregated，重投会再造风暴
+    const batches = Array.from(buffer.entries());
+    buffer.clear();
+    for (const [level, msgs] of batches) {
+      if (msgs.length === 0) continue;
+      const text = msgs.length === 1 ? msgs[0] : buildDigestText(msgs);
+      try {
+        await send(level, text);
+      } catch {
+        // 聚合消息发送失败不重投：逐条记录已标 aggregated，重投会再造风暴
+      }
     }
   }
 
@@ -48,17 +54,19 @@ export function createPushAggregator(
    * 提交一条推送：recovery 或窗口关闭时即时发送并回传结果；
    * 否则进入缓冲并立即返回 aggregated（结果由窗口到期后的聚合发送统一承载）
    */
-  async function queue(level: 'warn' | 'danger' | 'recovery', message: string): Promise<AggregatedPushResult> {
+  async function queue(level: AggLevel, message: string): Promise<AggregatedPushResult> {
     const windowMs = getWindowMs();
     if (windowMs <= 0 || level === 'recovery') {
       try {
-        const res = await send(message);
+        const res = await send(level, message);
         return { status: res.ok ? 'ok' : 'failed', detail: res.detail };
       } catch (err: any) {
         return { status: 'failed', detail: String(err?.message || err) };
       }
     }
-    buffer.push(message);
+    const bucket = buffer.get(level) || [];
+    bucket.push(message);
+    buffer.set(level, bucket);
     if (!timer) timer = setTimeout(() => { void flush(); }, windowMs);
     return { status: 'aggregated' };
   }
@@ -66,7 +74,7 @@ export function createPushAggregator(
   return {
     queue,
     flush,
-    pendingCount: () => buffer.length,
+    pendingCount: () => Array.from(buffer.values()).reduce((n, msgs) => n + msgs.length, 0),
   };
 }
 

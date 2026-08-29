@@ -16,7 +16,7 @@ import { getDb, getDataDir } from './storage';
 import { getSetting } from './settings';
 import { getCurrentMonitor } from './docker/monitor';
 import { getDockerClient } from './docker/client';
-import { listChannels, sendAlert } from './notify';
+import { listChannels, sendAlert, type ChannelInfo } from './notify';
 import { createPushAggregator } from './pushAggregator';
 
 /** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
@@ -93,12 +93,60 @@ const hostStreak = new Map<string, number>();
 
 /**
  * 告警推送聚合器：窗口（alerts.pushAggWindowSec，默认 60s，0=关闭）内
- * 多条 warn/danger 推送合并为一条摘要防消息风暴；recovery 即时推送
+ * 多条同级别 warn/danger 推送合并为一条摘要防消息风暴；recovery 即时推送
+ * 发送回调按级别解析目标渠道（first / all / byLevel 三种策略）
  */
 const pushAgg = createPushAggregator(
-  (text) => sendAlert(pickEnabledChannel() || '', text),
+  (level, text) => pushToTargets(level, text),
   () => Math.max(0, Math.floor(Number(getSetting<number>('alerts.pushAggWindowSec')) || 0)) * 1000,
 );
+
+/**
+ * 按级别解析本次告警的目标渠道列表
+ *  - first（默认，兼容旧版）：仅首个启用渠道
+ *  - all：全部启用渠道
+ *  - byLevel：读取 alerts.route.<level> 渠道 ID 列表（过滤掉已停用渠道）；
+ *    路由表为空或全部停用时回退首个启用渠道
+ * @param level 告警级别
+ */
+export function resolveTargetChannels(level: 'warn' | 'danger' | 'recovery'): ChannelInfo[] {
+  const enabled = listChannels().filter((c) => c.enabled);
+  if (enabled.length === 0) return [];
+  const mode = String(getSetting<string>('alerts.channelMode') || 'first');
+  if (mode === 'all') return enabled;
+  if (mode === 'byLevel') {
+    const csv = String(getSetting<string>(`alerts.route.${level}`) || '');
+    const ids = csv.split(',').map((s) => s.trim()).filter(Boolean);
+    const picked = ids.map((id) => enabled.find((c) => c.id === id)).filter((c): c is ChannelInfo => Boolean(c));
+    if (picked.length) return picked;
+    return [enabled[0]];
+  }
+  return [enabled[0]];
+}
+
+/**
+ * 推送一条文本到按级别解析出的全部目标渠道
+ * @returns 任一渠道成功即 ok=true；detail 汇总失败明细
+ */
+async function pushToTargets(
+  level: 'warn' | 'danger' | 'recovery',
+  text: string,
+): Promise<{ ok: boolean; detail: string }> {
+  const targets = resolveTargetChannels(level);
+  if (targets.length === 0) return { ok: false, detail: '无启用的通知渠道' };
+  let anyOk = false;
+  const fails: string[] = [];
+  for (const t of targets) {
+    try {
+      const r = await sendAlert(t.id, text);
+      if (r.ok) anyOk = true;
+      else fails.push(`${t.name}: ${r.detail}`);
+    } catch (err: any) {
+      fails.push(`${t.name}: ${String(err?.message || err)}`);
+    }
+  }
+  return { ok: anyOk, detail: fails.length ? fails.join('；') : '全部目标渠道推送成功' };
+}
 
 /**
  * 读取告警规则表，缺省行自动补默认值
@@ -301,16 +349,6 @@ function buildMessage(type: AlertType, level: AlertLevel, value: number): string
 }
 
 /**
- * 选择第一个启用的通知渠道用于本次推送
- * @returns 渠道 id；无启用渠道时返回 null
- */
-function pickEnabledChannel(): string | null {
-  const channels = listChannels();
-  const enabled = channels.find((c) => c.enabled);
-  return enabled ? enabled.id : null;
-}
-
-/**
  * 写入一条告警记录并尝试推送到启用渠道（通用）
  * @param type 告警类型（资源或 task）
  * @param level 级别（warn/danger/recovery）
@@ -318,20 +356,21 @@ function pickEnabledChannel(): string | null {
  * @param value 可选数值（如使用率）
  */
 async function emitAlert(type: AlertType, level: AlertLevel, message: string, value: number | null): Promise<void> {
-  const channelId = pickEnabledChannel();
+  const targets = resolveTargetChannels(level);
+  const channelId = targets.length ? targets.map((t) => t.id).join(',') : null;
   const d = getDb();
 
   let pushStatus = 'none';
   let pushDetail: string | null = null;
 
-  if (channelId) {
+  if (targets.length) {
     const res = await pushAgg.queue(level, message);
     if (res.status === 'ok') {
       pushStatus = 'ok';
       // danger 级别告警：异步追加 AI 诊断（不阻塞告警主链路，可在设置中关闭，AI 不可用则静默）
       if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
         import('./aiDiagnose')
-          .then((m) => m.pushAiDiagnosis(channelId, { type, level, message, value }))
+          .then((m) => m.pushAiDiagnosis(targets[0].id, { type, level, message, value }))
           .catch(() => {});
       }
     } else if (res.status === 'failed') {
@@ -954,18 +993,19 @@ async function emitContainerAlert(
   message: string,
   value: number | null,
 ): Promise<void> {
-  const channelId = pickEnabledChannel();
+  const targets = resolveTargetChannels(level);
+  const channelId = targets.length ? targets.map((t) => t.id).join(',') : null;
   const d = getDb();
   let pushStatus = 'none';
   let pushDetail: string | null = null;
-  if (channelId) {
+  if (targets.length) {
     const res = await pushAgg.queue(level, message);
     if (res.status === 'ok') {
       pushStatus = 'ok';
       // danger 级别告警：异步追加 AI 诊断（与宿主级告警一致，可在设置中关闭）
       if (level === 'danger' && getSetting<boolean>('alerts.aiDiagnosis') !== false) {
         import('./aiDiagnose')
-          .then((m) => m.pushAiDiagnosis(channelId, { type: rule.watchType, level, message, value }))
+          .then((m) => m.pushAiDiagnosis(targets[0].id, { type: rule.watchType, level, message, value }))
           .catch(() => {});
       }
     } else if (res.status === 'failed') {

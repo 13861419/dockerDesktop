@@ -33,7 +33,9 @@ import {
   createContainerAlertRule,
   updateContainerAlertRule,
   deleteContainerAlertRule,
+  resolveTargetChannels,
 } from '../alerting';
+import { getSetting, setSetting } from '../settings';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
 import { getCurrentMonitor } from '../docker/monitor';
@@ -213,8 +215,75 @@ router.put(
       workdaysOnly: body.workdaysOnly !== undefined ? Boolean(body.workdaysOnly) : undefined,
       workStart: body.workStart !== undefined ? body.workStart : undefined,
       workEnd: body.workEnd !== undefined ? body.workEnd : undefined,
+      consecutive: body.consecutive !== undefined ? Number(body.consecutive) : undefined,
     });
     logOperation(res.locals.username, '更新告警规则', '通知', type, '');
+    res.json({ ok: true });
+  }),
+);
+
+/** 校验并归一化路由策略入参（mode 与按级别渠道 ID 列表） */
+function normalizeRoutePolicy(body: any): { mode: string; route: Record<string, string> } | null {
+  const mode = String(body?.mode || 'first');
+  if (!['first', 'all', 'byLevel'].includes(mode)) return null;
+  const validTypes = listChannels().map((c) => c.id);
+  const route: Record<string, string> = {};
+  for (const level of ['warn', 'danger', 'recovery']) {
+    const raw = body?.route?.[level];
+    const ids = Array.isArray(raw)
+      ? raw.map(String)
+      : String(raw || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+    if (ids.some((id) => !validTypes.includes(id))) return null;
+    route[level] = ids.join(',');
+  }
+  return { mode, route };
+}
+
+/**
+ * GET /api/notifications/route-policy
+ * 读取告警推送路由策略（模式 + 按级别渠道表 + 解析预览）
+ */
+router.get(
+  '/route-policy',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const mode = String(getSetting<string>('alerts.channelMode') || 'first');
+    const route: Record<string, string[]> = {};
+    const preview: Record<string, string[]> = {};
+    for (const level of ['warn', 'danger', 'recovery']) {
+      const csv = String(getSetting<string>(`alerts.route.${level}`) || '');
+      route[level] = csv.split(',').map((s) => s.trim()).filter(Boolean);
+      preview[level] = resolveTargetChannels(level as 'warn' | 'danger' | 'recovery').map((c) => c.id);
+    }
+    res.json({
+      mode,
+      route,
+      preview,
+      channels: listChannels().map((c) => ({ id: c.id, name: c.name, type: c.type, enabled: c.enabled })),
+    });
+  }),
+);
+
+/**
+ * PUT /api/notifications/route-policy
+ * 保存告警推送路由策略（管理员）
+ * body: { mode: 'first'|'all'|'byLevel', route: { warn: string[], danger: string[], recovery: string[] } }
+ */
+router.put(
+  '/route-policy',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const normalized = normalizeRoutePolicy(req.body || {});
+    if (!normalized) {
+      return res.status(400).json({ error: '路由策略无效：mode 需为 first/all/byLevel，且渠道 ID 须存在' });
+    }
+    setSetting('alerts.channelMode', normalized.mode);
+    for (const level of ['warn', 'danger', 'recovery']) {
+      setSetting(`alerts.route.${level}`, normalized.route[level]);
+    }
+    logOperation(res.locals.username, '更新推送路由策略', '通知', '', `mode=${normalized.mode}`);
     res.json({ ok: true });
   }),
 );

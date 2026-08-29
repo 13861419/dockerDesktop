@@ -28,6 +28,8 @@ export interface SettingDescriptor {
   group: 'general' | 'runtime' | 'security' | 'retention' | 'notification';
   /** 是否仅展示（如端口需要重启才能生效且不建议 UI 修改） */
   readonly?: boolean;
+  /** 不出现在设置页通用列表（由专属界面读写的存储键） */
+  hidden?: boolean;
 }
 
 /** 值来源 */
@@ -174,6 +176,7 @@ export function listSettings(): Array<
 > {
   const items: Array<SettingDescriptor & { value: any; source: SettingSource; configured?: boolean }> = [];
   for (const d of registry.values()) {
+    if (d.hidden) continue; // 专属界面读写的存储键不在通用列表展示
     const raw = getSettingRaw(d.key);
     if (!raw) continue;
     if (d.type === 'secret') {
@@ -285,5 +288,41 @@ registerSettings([
     type: 'number',
     def: 60,
     group: 'notification',
+  },
+  {
+    key: 'alerts.channelMode',
+    label: '告警推送路由策略',
+    hint: 'first=仅首个启用渠道（兼容旧版）；all=全部启用渠道；byLevel=按级别路由（结合 alerts.route.* 路由表，在告警中心「推送路由」卡片配置）',
+    type: 'string',
+    def: 'first',
+    group: 'notification',
+    hidden: true,
+  },
+  {
+    key: 'alerts.route.warn',
+    label: 'warn 级别路由渠道',
+    hint: 'byLevel 模式下 warn 告警推送的渠道 ID 列表（逗号分隔）',
+    type: 'string',
+    def: '',
+    group: 'notification',
+    hidden: true,
+  },
+  {
+    key: 'alerts.route.danger',
+    label: 'danger 级别路由渠道',
+    hint: 'byLevel 模式下 danger 告警推送的渠道 ID 列表（逗号分隔）',
+    type: 'string',
+    def: '',
+    group: 'notification',
+    hidden: true,
+  },
+  {
+    key: 'alerts.route.recovery',
+    label: 'recovery 级别路由渠道',
+    hint: 'byLevel 模式下恢复通知推送的渠道 ID 列表（逗号分隔）',
+    type: 'string',
+    def: '',
+    group: 'notification',
+    hidden: true,
   },
 ]);

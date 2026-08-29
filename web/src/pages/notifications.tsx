@@ -207,6 +207,14 @@ export default function NotificationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ChannelInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // 推送路由策略
+  const [routePolicy, setRoutePolicy] = useState<{ mode: string; route: Record<string, string[]> }>({
+    mode: 'first',
+    route: { warn: [], danger: [], recovery: [] },
+  });
+  const [routeSaving, setRouteSaving] = useState(false);
+  const ROUTE_LEVEL_LABELS: Record<string, string> = { warn: '警告（warn）', danger: '危险（danger）', recovery: '恢复（recovery）' };
+
   // 规则编辑
   const [ruleModal, setRuleModal] = useState<AlertRule | null>(null);
   const [ruleForm, setRuleForm] = useState<{
@@ -308,12 +316,14 @@ export default function NotificationsPage() {
     setRuleLoading(true);
     setChannelLoading(true);
     try {
-      const [r, c] = await Promise.all([
+      const [r, c, p] = await Promise.all([
         get<{ rules: AlertRule[] }>('/api/notifications/rules'),
         get<{ channels: ChannelInfo[] }>('/api/notifications/channels'),
+        get<{ mode: string; route: Record<string, string[]> }>('/api/notifications/route-policy'),
       ]);
       setRules(r?.rules || []);
       setChannels(c?.channels || []);
+      setRoutePolicy({ mode: p?.mode || 'first', route: p?.route || { warn: [], danger: [], recovery: [] } });
     } catch (e: any) {
       showToast(e?.message || '加载失败', 'error');
     } finally {
@@ -321,6 +331,33 @@ export default function NotificationsPage() {
       setChannelLoading(false);
     }
   }, [showToast]);
+
+  /**
+   * 切换某级别路由中的渠道勾选
+   */
+  const toggleRouteChannel = useCallback((level: string, channelId: string, checked: boolean) => {
+    setRoutePolicy((p) => {
+      const cur = p.route[level] || [];
+      const next = checked ? [...cur, channelId] : cur.filter((id) => id !== channelId);
+      return { ...p, route: { ...p.route, [level]: next } };
+    });
+  }, []);
+
+  /**
+   * 保存推送路由策略
+   */
+  const handleSaveRoutePolicy = useCallback(async () => {
+    setRouteSaving(true);
+    try {
+      await put('/api/notifications/route-policy', routePolicy);
+      showToast('推送路由已更新');
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '保存失败', 'error');
+    } finally {
+      setRouteSaving(false);
+    }
+  }, [routePolicy, load, showToast]);
 
   /**
    * 加载容器告警规则
@@ -894,6 +931,40 @@ export default function NotificationsPage() {
             </tbody>
           </table>
         )}
+      </Card>
+
+      {/* 推送路由策略 */}
+      <Card title="推送路由" extra={<span className="notify-dim">决定告警实际发往哪些启用渠道</span>}>
+        <Field label="路由策略">
+          <Select value={routePolicy.mode} onChange={(e) => setRoutePolicy((p) => ({ ...p, mode: e.target.value }))}>
+            <option value="first">仅首个启用渠道（兼容旧版）</option>
+            <option value="all">全部启用渠道</option>
+            <option value="byLevel">按级别路由</option>
+          </Select>
+        </Field>
+        {routePolicy.mode === 'byLevel' &&
+          (['warn', 'danger', 'recovery'] as const).map((level) => (
+            <Field key={level} label={`「${ROUTE_LEVEL_LABELS[level]}」推送渠道`} hint="不勾选任何渠道时回退为首个启用渠道">
+              <div className="notify-checkbox-group">
+                {channels.map((c) => (
+                  <label key={c.id} className="notify-checkbox">
+                    <input
+                      type="checkbox"
+                      disabled={!c.enabled}
+                      checked={(routePolicy.route[level] || []).includes(c.id)}
+                      onChange={(e) => toggleRouteChannel(level, c.id, e.target.checked)}
+                    />
+                    {c.name}
+                    {!c.enabled && '（停用）'}
+                  </label>
+                ))}
+                {channels.length === 0 && <span className="notify-dim">尚未创建通知渠道</span>}
+              </div>
+            </Field>
+          ))}
+        <div style={{ marginTop: 10 }}>
+          <Button size="sm" loading={routeSaving} onClick={handleSaveRoutePolicy}>保存路由</Button>
+        </div>
       </Card>
 
       {/* 容器告警规则 */}

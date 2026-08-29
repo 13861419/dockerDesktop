@@ -20,10 +20,10 @@ test('buildDigestText：最多展示 5 条并附总条数', () => {
 });
 
 test('窗口关闭（0）时逐条即时推送并回传结果', async () => {
-  const sent: string[] = [];
+  const sent: Array<{ level: string; text: string }> = [];
   const agg = createPushAggregator(
-    async (text) => {
-      sent.push(text);
+    async (level, text) => {
+      sent.push({ level, text });
       return { ok: true };
     },
     () => 0,
@@ -32,30 +32,33 @@ test('窗口关闭（0）时逐条即时推送并回传结果', async () => {
   const r2 = await agg.queue('danger', 'B');
   assert.strictEqual(r1.status, 'ok');
   assert.strictEqual(r2.status, 'ok');
-  assert.deepStrictEqual(sent, ['A', 'B']);
+  assert.deepStrictEqual(sent, [
+    { level: 'warn', text: 'A' },
+    { level: 'danger', text: 'B' },
+  ]);
   assert.strictEqual(agg.pendingCount(), 0);
 });
 
 test('recovery 即时推送，不进入聚合窗口', async () => {
-  const sent: string[] = [];
+  const sent: Array<{ level: string; text: string }> = [];
   const agg = createPushAggregator(
-    async (text) => {
-      sent.push(text);
+    async (level, text) => {
+      sent.push({ level, text });
       return { ok: true };
     },
     () => 60_000,
   );
   const r = await agg.queue('recovery', '已恢复');
   assert.strictEqual(r.status, 'ok');
-  assert.deepStrictEqual(sent, ['已恢复']);
+  assert.deepStrictEqual(sent, [{ level: 'recovery', text: '已恢复' }]);
   assert.strictEqual(agg.pendingCount(), 0);
 });
 
-test('窗口内多条 warn/danger 合并为一条摘要', async () => {
-  const sent: string[] = [];
+test('窗口内同级别合并为一条摘要，不同级别分桶各自发送', async () => {
+  const sent: Array<{ level: string; text: string }> = [];
   const agg = createPushAggregator(
-    async (text) => {
-      sent.push(text);
+    async (level, text) => {
+      sent.push({ level, text });
       return { ok: true };
     },
     () => 200,
@@ -65,19 +68,21 @@ test('窗口内多条 warn/danger 合并为一条摘要', async () => {
   await agg.queue('danger', '容器 c 不存在');
   assert.strictEqual(agg.pendingCount(), 3);
   await agg.flush();
-  assert.strictEqual(sent.length, 1, '应只发送一条聚合消息');
-  assert.ok(sent[0].includes('共 3 条'));
-  assert.ok(sent[0].includes('容器 a 已退出'));
-  assert.ok(sent[0].includes('容器 b 重启循环'));
-  assert.ok(sent[0].includes('容器 c 不存在'));
+  assert.strictEqual(sent.length, 2, 'danger 与 warn 各发一条，不混合');
+  const danger = sent.find((s) => s.level === 'danger')!;
+  const warn = sent.find((s) => s.level === 'warn')!;
+  assert.ok(danger.text.includes('共 2 条'), 'danger 摘要应含 2 条');
+  assert.ok(danger.text.includes('容器 a 已退出'));
+  assert.ok(danger.text.includes('容器 c 不存在'));
+  assert.strictEqual(warn.text, '容器 b 重启循环', 'warn 单条原样发送');
   assert.strictEqual(agg.pendingCount(), 0);
 });
 
 test('窗口到期自动 flush（单条原样）', async () => {
-  const sent: string[] = [];
+  const sent: Array<{ level: string; text: string }> = [];
   const agg = createPushAggregator(
-    async (text) => {
-      sent.push(text);
+    async (level, text) => {
+      sent.push({ level, text });
       return { ok: true };
     },
     () => 150,
@@ -86,7 +91,8 @@ test('窗口到期自动 flush（单条原样）', async () => {
   assert.strictEqual(sent.length, 0);
   await sleep(400);
   assert.strictEqual(sent.length, 1);
-  assert.strictEqual(sent[0], '单条窗口消息');
+  assert.strictEqual(sent[0].text, '单条窗口消息');
+  assert.strictEqual(sent[0].level, 'danger');
 });
 
 test('send 抛错时即时路径返回 failed', async () => {
