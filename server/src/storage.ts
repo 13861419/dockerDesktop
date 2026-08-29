@@ -734,6 +734,18 @@ function createTables(): void {
     // 列已存在则忽略
   }
 
+  // 迁移：为 alert_rules / container_alert_rules 补充连续周期列（告警持续时间窗口：连续 N 个采样周期超阈值才触发，1=立即）
+  try {
+    d.exec('ALTER TABLE alert_rules ADD COLUMN consecutive INTEGER NOT NULL DEFAULT 1');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE container_alert_rules ADD COLUMN consecutive INTEGER NOT NULL DEFAULT 1');
+  } catch {
+    // 列已存在则忽略
+  }
+
   // 迁移：为 cron_tasks 补充 Webhook 触发 token 列（NULL/空=未开启 Webhook）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN webhook_token TEXT');

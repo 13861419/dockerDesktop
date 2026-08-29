@@ -621,9 +621,10 @@ Menu: **Operation Logs** (`/operation-logs`)
 
 Menu: **Notifications** (`/notifications`, admin only)
 
-- Configure alert channels (Webhook / mail, etc.) and alert rules.
+- Configure alert channels (Webhook / mail / DingTalk / Feishu / Telegram / WeCom / Slack, etc.) and alert rules.
 - **Container rules**: set alert triggers for specific containers (exit, restart loop, resource anomalies).
 - Alerts are pushed to targets per rules; the list shows triggered alerts with timestamps.
+- **Consecutive-cycle debounce**: rules may require N consecutive sampling cycles over the threshold before firing, filtering transient spikes.
 - **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count); **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
 
 ![Notifications](../images/notifications.png)
@@ -727,7 +728,7 @@ The fields of each create / edit dialog are listed below. Items marked `*` are r
 
 ### 25.5 Notifications (`/notifications`)
 
-**Channels**: channel name *, channel type (`Webhook` / `SMTP mail` / `DingTalk bot` / `Feishu bot`).
+**Channels**: channel name *, channel type (`Webhook` / `SMTP mail` / `DingTalk bot` / `Feishu bot` / `Telegram` / `WeCom bot` / `Slack`).
 
 | Type | Fields |
 | --- | --- |
@@ -735,10 +736,15 @@ The fields of each create / edit dialog are listed below. Items marked `*` are r
 | SMTP | SMTP host *, port *, use SSL, account, password, sender *, recipients (comma-separated) * |
 | DingTalk | access_token *, signing Secret |
 | Feishu | Webhook URL * |
+| Telegram | Bot Token * (stored encrypted), Chat ID * |
+| WeCom | Webhook URL * |
+| Slack | Incoming Webhook URL * |
 
-**Resource alert rules (CPU / memory / disk / GPU / network)**: enable toggle, warn threshold % *, danger threshold % *, silence window, workdays only, work hours.
+**Resource alert rules (CPU / memory / disk / GPU / network)**: enable toggle, warn threshold % *, danger threshold % *, consecutive cycles (fire only after N consecutive sampling cycles over the threshold, default 1 = immediate), silence window, workdays only, work hours.
 
-**Container alert rules**: target container *, monitor type * (exit / healthcheck / port / CPU / memory), probe port (port type), warn %, danger %, enable, silence window, workdays only, work hours.
+**Container alert rules**: target container *, monitor type * (exit / healthcheck / port / CPU / memory), probe port (port type), warn %, danger %, consecutive cycles (CPU / memory only), enable, silence window, workdays only, work hours.
+
+**Debounce toolkit**: transient-spike filtering (consecutive cycles) → push aggregation → silence window / work hours → 30-minute repeat suppression for the same alert; combine as needed.
 
 ### 25.6 Firewall (`/firewall`)
 

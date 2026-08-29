@@ -34,6 +34,7 @@ interface AlertRule {
   workdaysOnly: boolean;
   workStart: string | null;
   workEnd: string | null;
+  consecutive: number;
   currentPercent: number | null;
 }
 
@@ -41,7 +42,7 @@ interface AlertRule {
 interface ChannelInfo {
   id: string;
   name: string;
-  type: 'webhook' | 'email' | 'dingtalk' | 'feishu';
+  type: 'webhook' | 'email' | 'dingtalk' | 'feishu' | 'telegram' | 'wecom' | 'slack';
   enabled: boolean;
   config: Record<string, any>;
   secretsSet: Record<string, boolean>;
@@ -70,6 +71,9 @@ const CHANNEL_LABELS: Record<string, string> = {
   email: '邮件',
   dingtalk: '钉钉',
   feishu: '飞书',
+  telegram: 'Telegram',
+  wecom: '企业微信',
+  slack: 'Slack',
 };
 
 /** 告警记录类型中文名（含任务失败 type=task 与容器告警 exited/health/port/cpu/mem） */
@@ -131,7 +135,9 @@ interface ChannelForm {
   to: string;         // email to
   useTls: boolean;    // email tls
   accessToken: string; // dingtalk access_token
-  webhookUrl: string; // feishu webhook url
+  webhookUrl: string; // feishu / wecom / slack webhook url
+  botToken: string;   // telegram bot token
+  chatId: string;     // telegram chat id
 }
 
 const EMPTY_FORM: ChannelForm = {
@@ -148,6 +154,8 @@ const EMPTY_FORM: ChannelForm = {
   useTls: true,
   accessToken: '',
   webhookUrl: '',
+  botToken: '',
+  chatId: '',
 };
 
 /** 规则名称映射（含新增 gpu/net） */
@@ -210,6 +218,7 @@ export default function NotificationsPage() {
     workdaysOnly: boolean;
     workStart: string;
     workEnd: string;
+    consecutive: string;
   }>({
     enabled: true,
     warnThreshold: '75',
@@ -219,6 +228,7 @@ export default function NotificationsPage() {
     workdaysOnly: false,
     workStart: '',
     workEnd: '',
+    consecutive: '1',
   });
   const [savingRule, setSavingRule] = useState(false);
 
@@ -388,6 +398,8 @@ export default function NotificationsPage() {
       useTls: c.useTls !== false,
       accessToken: '',
       webhookUrl: c.webhookUrl || '',
+      botToken: '',
+      chatId: c.chatId || '',
     });
     setFormError('');
     setChannelModal({ editing: ch, open: true });
@@ -417,7 +429,13 @@ export default function NotificationsPage() {
         if (form.secret.trim()) base.secret = form.secret.trim();
         break;
       case 'feishu':
+      case 'wecom':
+      case 'slack':
         base.webhookUrl = form.webhookUrl.trim();
+        break;
+      case 'telegram':
+        base.botToken = form.botToken.trim();
+        base.chatId = form.chatId.trim();
         break;
     }
     return base;
@@ -528,6 +546,7 @@ export default function NotificationsPage() {
       workdaysOnly: rule.workdaysOnly,
       workStart: rule.workStart || '',
       workEnd: rule.workEnd || '',
+      consecutive: String(rule.consecutive || 1),
     });
   }, []);
 
@@ -546,6 +565,11 @@ export default function NotificationsPage() {
       showToast('警告阈值不能高于危险阈值', 'error');
       return;
     }
+    const consecutive = Math.floor(Number(ruleForm.consecutive) || 1);
+    if (consecutive < 1 || consecutive > 120) {
+      showToast('连续周期需为 1-120 的整数', 'error');
+      return;
+    }
     setSavingRule(true);
     try {
       await put(`/api/notifications/rules/${ruleModal.type}`, {
@@ -557,6 +581,7 @@ export default function NotificationsPage() {
         workdaysOnly: ruleForm.workdaysOnly,
         workStart: ruleForm.workStart || null,
         workEnd: ruleForm.workEnd || null,
+        consecutive,
       });
       showToast('规则已更新');
       setRuleModal(null);
@@ -1150,6 +1175,9 @@ export default function NotificationsPage() {
             <option value="email">邮件 (SMTP)</option>
             <option value="dingtalk">钉钉机器人</option>
             <option value="feishu">飞书机器人</option>
+            <option value="telegram">Telegram</option>
+            <option value="wecom">企业微信机器人</option>
+            <option value="slack">Slack</option>
           </Select>
         </Field>
 
@@ -1261,6 +1289,46 @@ export default function NotificationsPage() {
           </Field>
         )}
 
+        {form.type === 'telegram' && (
+          <>
+            <Field label="Bot Token" required hint={channelModal.editing?.secretsSet.botToken ? '已配置，留空则不修改' : '@BotFather 创建机器人时签发'}>
+              <Input
+                type="password"
+                value={form.botToken}
+                placeholder={channelModal.editing?.secretsSet.botToken ? '••••••' : '123456:ABC-DEF...'}
+                onChange={(e) => setForm((f) => ({ ...f, botToken: e.target.value }))}
+              />
+            </Field>
+            <Field label="Chat ID" required hint="目标会话 ID（群组为负数）">
+              <Input
+                value={form.chatId}
+                placeholder="-1001234567890"
+                onChange={(e) => setForm((f) => ({ ...f, chatId: e.target.value }))}
+              />
+            </Field>
+          </>
+        )}
+
+        {form.type === 'wecom' && (
+          <Field label="Webhook 地址" required>
+            <Input
+              value={form.webhookUrl}
+              placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx"
+              onChange={(e) => setForm((f) => ({ ...f, webhookUrl: e.target.value }))}
+            />
+          </Field>
+        )}
+
+        {form.type === 'slack' && (
+          <Field label="Webhook 地址" required>
+            <Input
+              value={form.webhookUrl}
+              placeholder="https://hooks.slack.com/services/T000/B000/xxxx"
+              onChange={(e) => setForm((f) => ({ ...f, webhookUrl: e.target.value }))}
+            />
+          </Field>
+        )}
+
         {formError && <div className="notify-form-error">{formError}</div>}
       </Modal>
 
@@ -1299,6 +1367,13 @@ export default function NotificationsPage() {
           <Input
             value={ruleForm.dangerThreshold}
             onChange={(e) => setRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
+          />
+        </Field>
+
+        <Field label="连续周期" hint="连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警">
+          <Input
+            value={ruleForm.consecutive}
+            onChange={(e) => setRuleForm((f) => ({ ...f, consecutive: e.target.value }))}
           />
         </Field>
 

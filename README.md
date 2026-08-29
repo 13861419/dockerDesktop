@@ -23,7 +23,7 @@
 - **防火墙**：Windows 防火墙入站端口放行管理（基于系统 `netsh`，管理员权限提示）
 - **事件流**：实时查看 Docker 引擎事件（含统计可视化）；事件**持久化到 SQLite**，可查询**历史**、**导出 CSV**、清空
 - **操作日志**：管理操作审计日志，含统计与 JSON / CSV 导出；**保留天数可配置**（默认 90 天），超期数据每日自动清理，AI 用量明细 / 巡检记录同模式（默认 30 天）
-- **告警中心 / 通知渠道（C3）**：宿主级（CPU / 内存 / 磁盘 / GPU / 网络带宽 Mbps）与容器级（退出 / 健康状态 / 端口监听 / CPU 内存阈值）告警规则；支持**静默时段 / 仅工作日 / 工作时间**；**推送窗口聚合防风暴**（窗口内多条告警合并为一条摘要，恢复通知始终即时）；通知渠道（Webhook / 邮件 / 钉钉 / 飞书，敏感凭证加密存储）；告警记录查询、**CSV 导出 / 归档**、实时资源快照手工检测
+- **告警中心 / 通知渠道（C3）**：宿主级（CPU / 内存 / 磁盘 / GPU / 网络带宽 Mbps）与容器级（退出 / 健康状态 / 端口监听 / CPU 内存阈值）告警规则；支持**静默时段 / 仅工作日 / 工作时间**；**推送窗口聚合防风暴**（窗口内多条告警合并为一条摘要，恢复通知始终即时）；**连续周期防抖**（连续 N 个采样周期超阈值才触发，过滤瞬时毛刺）；通知渠道（Webhook / 邮件 / 钉钉 / 飞书 / Telegram / 企业微信 / Slack，敏感凭证加密存储）；告警记录查询、**CSV 导出 / 归档**、实时资源快照手工检测
 - **镜像漏洞扫描**：镜像详情页基于本机 **Trivy** 的 CVE 漏洞扫描（零 npm 依赖，按严重等级分级，未安装时给出引导文案）
 - **容器模板 / Compose 模板库**：一键保存 / 复用容器创建配置（`/api/templates`）与 Compose 编排模板，支持"从模板创建"回填
 - **编排（启动依赖排序）**：为容器配置启动依赖，拓扑排序（含环检测）+ 一键分层并行启动 / 逆序停止 / 重启，编排历史失败项可重试
@@ -88,7 +88,7 @@
 | `image_build_history`| 镜像构建历史（日志预览 / 耗时 / 结果）      | `server/src/routes/build.ts`     |
 | `docker_events`      | Docker 事件持久化历史（实时事件落库）       | `server/src/docker/events.ts`   |
 | `firewall_ports`     | Windows 防火墙放行端口规则              | `server/src/routes/firewall.ts`  |
-| `notify_channels`    | 告警通知渠道（Webhook/邮件/钉钉/飞书，敏感凭证加密） | `server/src/notify.ts`           |
+| `notify_channels`    | 告警通知渠道（Webhook/邮件/钉钉/飞书/Telegram/企业微信/Slack，敏感凭证加密） | `server/src/notify.ts`           |
 | `alert_rules`        | 宿主级告警规则（CPU/内存/磁盘/GPU/网络带宽等，含静默时段） | `server/src/alerting.ts`         |
 | `alert_records`      | 告警触发记录 / 归档 / 导出                | `server/src/alerting.ts`         |
 | `container_alert_rules` | 容器级告警规则（退出/健康/端口监听/CPU/内存阈值） | `server/src/alerting.ts`         |
@@ -194,8 +194,8 @@ dockerDesktop/
 │       ├── users.ts            # 用户存储（SQLite users 表）
 │       ├── hubConfig.ts        # 镜像源存储（SQLite hub_sources/setting 表）
 │       ├── imagePullHistory.ts # 拉取时间存储（SQLite image_pull_history 表）
-│       ├── alerting.ts         # 告警规则检测与记录（宿主级/容器级）
-│       ├── notify.ts           # 通知渠道（Webhook/邮件/钉钉/飞书）推送
+│       ├── alerting.ts         # 告警规则检测与记录（宿主级/容器级，含连续周期防抖）
+│       ├── notify.ts           # 通知渠道（Webhook/邮件/钉钉/飞书/Telegram/企业微信/Slack）推送
 │       ├── trivyCli.ts         # 零依赖 Trivy 镜像漏洞扫描封装
 │       ├── gitCli.ts           # 零依赖 Git CLI 封装（clone/pull + 凭证注入）
 │       └── scheduler.ts        # 计划任务调度与下次执行时间计算
@@ -253,7 +253,7 @@ npm run package
 npm run package:installer
 ```
 
-生成 `DockerManager-setup-0.2.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
+生成 `DockerManager-setup-0.3.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
 
 #### Linux（Ubuntu 24 / RHEL 9 系）
 

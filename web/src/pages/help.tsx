@@ -20,7 +20,7 @@ const QUICK_STEPS: Array<{ title: string; desc: string }> = [
   { title: '总览体检', desc: '「总览」查看主机 CPU / 内存 / 磁盘与容器实时曲线；「健康体检」一键扫描镜像、网络、卷与健康配置。' },
   { title: '管理容器', desc: '「容器」页支持创建、启停、删除、进入终端、查看日志；可按标签、状态、镜像名过滤。' },
   { title: '编排部署', desc: '「Compose」编写或由容器逆向生成 yaml；「应用商店」一键部署常用应用；「编排」管理启动依赖顺序。' },
-  { title: '告警通知', desc: '「告警中心」配置 CPU / 内存 / 磁盘 / GPU / 容器级阈值规则，通过 Webhook / 邮件 / 钉钉 / 飞书等 39+ 渠道推送。' },
+  { title: '告警通知', desc: '「告警中心」配置 CPU / 内存 / 磁盘 / GPU / 容器级阈值规则，支持「连续周期」防毛刺，通过 Webhook / 邮件 / 钉钉 / 飞书 / Telegram / 企业微信 / Slack 等渠道推送。' },
   { title: 'AI 助手（可选）', desc: '「设置 → AI 配置中心」添加任意 OpenAI 兼容端点后，即可使用对话、巡检、告警诊断、周报等 AI 能力。' },
 ];
 
@@ -45,6 +45,14 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     q: '高危操作审批流如何开启？',
     a: '「设置 → 系统参数 → 安全」中开启「高危操作审批流」。开启后非管理员的删除容器操作会进入「审批中心」待审批，管理员批准后系统执行；普通用户也可在审批中心主动提交镜像删除、网络清理等申请。',
+  },
+  {
+    q: '告警频繁误报（瞬时毛刺）怎么处理？',
+    a: '编辑告警规则时把「连续周期」调大（如 3，即连续约 30 秒超阈值才触发）。1 = 立即告警；配合静默时段、工作时段与推送聚合窗口，可实现完整的告警防抖。',
+  },
+  {
+    q: '支持哪些通知渠道？',
+    a: '内置 Webhook、邮件（SMTP）、钉钉、飞书、Telegram、企业微信、Slack 七类渠道，可添加多个并按启停控制；「测试推送」可验证连通性，danger 级告警还可联动 AI 诊断。',
   },
   {
     q: 'AI 助手如何配置？',
@@ -98,7 +106,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/settings', name: '设置', desc: '账号、备份、AI 配置、系统参数、用户管理' },
   { path: '/logs', name: '日志聚合', desc: '跨容器日志检索与导出' },
   { path: '/operation-logs', name: '操作日志', desc: '全量操作审计' },
-  { path: '/notifications', name: '告警中心', desc: '告警规则、渠道、记录与 AI 诊断' },
+  { path: '/notifications', name: '告警中心', desc: '告警规则（含连续周期防抖）、七类通知渠道、记录与 AI 诊断' },
   { path: '/events', name: '事件流', desc: 'Docker 事件实时流与持久化历史' },
   { path: '/tools', name: '工具箱', desc: 'JSON / 正则 / Base64 / 时间戳 / 进制 / 端口网段计算' },
   { path: '/approvals', name: '审批中心', desc: '高危操作审批与记录' },

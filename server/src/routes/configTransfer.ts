@@ -48,6 +48,9 @@ const CHANNEL_SECRET_FIELDS: Record<string, string[]> = {
   email: ['password'],
   dingtalk: ['accessToken', 'secret'],
   feishu: [],
+  telegram: ['botToken'],
+  wecom: [],
+  slack: [],
 };
 
 /**
@@ -171,7 +174,7 @@ function buildExport(includeSecrets: boolean): Record<string, unknown> {
   }));
 
   // 宿主告警规则
-  out.alertRules = (d.prepare('SELECT type, enabled, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end FROM alert_rules').all() as any[]).map((r) => ({
+  out.alertRules = (d.prepare('SELECT type, enabled, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, consecutive FROM alert_rules').all() as any[]).map((r) => ({
     type: r.type,
     enabled: !!r.enabled,
     warnThreshold: r.warn_threshold,
@@ -181,19 +184,23 @@ function buildExport(includeSecrets: boolean): Record<string, unknown> {
     workdaysOnly: !!r.workdays_only,
     workStart: r.work_start || null,
     workEnd: r.work_end || null,
+    consecutive: Math.max(1, Math.floor(Number(r.consecutive) || 1)),
   }));
 
   // 容器级告警规则
-  out.containerAlertRules = (d.prepare('SELECT container_id, watch_type, enabled, port, silent_start, silent_end, workdays_only, work_start, work_end FROM container_alert_rules').all() as any[]).map((r) => ({
+  out.containerAlertRules = (d.prepare('SELECT container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, consecutive FROM container_alert_rules').all() as any[]).map((r) => ({
     containerId: r.container_id,
     watchType: r.watch_type,
     enabled: !!r.enabled,
     port: r.port || null,
+    warnThreshold: r.warn_threshold,
+    dangerThreshold: r.danger_threshold,
     silentStart: r.silent_start || null,
     silentEnd: r.silent_end || null,
     workdaysOnly: !!r.workdays_only,
     workStart: r.work_start || null,
     workEnd: r.work_end || null,
+    consecutive: Math.max(1, Math.floor(Number(r.consecutive) || 1)),
   }));
 
   // 通知渠道：config 内敏感字段按 includeSecrets 解密/清空
@@ -484,19 +491,20 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
     if (Array.isArray(payload.alertRules)) {
       for (const r of payload.alertRules) {
         if (!r || !r.type) continue;
+        const consecutive = Math.max(1, Math.floor(Number(r.consecutive) || 1));
         if (exists('SELECT type FROM alert_rules WHERE type = ?', [r.type])) {
           if (conflict === 'skip') { count('alertRules', 0); continue; }
           if (conflict === 'error') throw new Error(`告警规则已存在: ${r.type}`);
-          d.prepare('UPDATE alert_rules SET enabled=?, warn_threshold=?, danger_threshold=?, silent_start=?, silent_end=?, workdays_only=?, work_start=?, work_end=?, updated_at=? WHERE type=?').run(
+          d.prepare('UPDATE alert_rules SET enabled=?, warn_threshold=?, danger_threshold=?, silent_start=?, silent_end=?, workdays_only=?, work_start=?, work_end=?, consecutive=?, updated_at=? WHERE type=?').run(
             r.enabled ? 1 : 0, Number(r.warnThreshold) || 0, Number(r.dangerThreshold) || 0, r.silentStart || null, r.silentEnd || null,
-            r.workdaysOnly ? 1 : 0, r.workStart || null, r.workEnd || null, Date.now(), r.type,
+            r.workdaysOnly ? 1 : 0, r.workStart || null, r.workEnd || null, consecutive, Date.now(), r.type,
           );
           count('alertRules', 1);
           continue;
         }
-        d.prepare('INSERT INTO alert_rules (type, enabled, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+        d.prepare('INSERT INTO alert_rules (type, enabled, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, consecutive, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
           r.type, r.enabled ? 1 : 0, Number(r.warnThreshold) || 0, Number(r.dangerThreshold) || 0, r.silentStart || null, r.silentEnd || null,
-          r.workdaysOnly ? 1 : 0, r.workStart || null, r.workEnd || null, Date.now(),
+          r.workdaysOnly ? 1 : 0, r.workStart || null, r.workEnd || null, consecutive, Date.now(),
         );
         count('alertRules', 1);
       }
@@ -507,6 +515,7 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
       for (const r of payload.containerAlertRules) {
         if (!r || !r.containerId || !r.watchType) continue;
         const now = Date.now();
+        const consecutive = Math.max(1, Math.floor(Number(r.consecutive) || 1));
         // 先尝试清掉同名旧规则（若 overwrite）；再插入
         if (conflict === 'overwrite') {
           d.prepare('DELETE FROM container_alert_rules WHERE container_id = ? AND watch_type = ?').run(r.containerId, r.watchType);
@@ -514,9 +523,11 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
         const dup = exists('SELECT id FROM container_alert_rules WHERE container_id = ? AND watch_type = ?', [r.containerId, r.watchType]);
         if (conflict === 'error' && dup) throw new Error(`容器告警规则已存在: ${r.containerId}/${r.watchType}`);
         if (dup && conflict === 'skip') { count('containerAlertRules', 0); continue; }
-        d.prepare('INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-          r.containerId, r.watchType, r.enabled ? 1 : 0, r.port || null, r.silentStart || null, r.silentEnd || null,
-          r.workdaysOnly ? 1 : 0, r.workStart || null, r.workEnd || null, now, now,
+        d.prepare('INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, consecutive, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+          r.containerId, r.watchType, r.enabled ? 1 : 0, r.port || null,
+          Number(r.warnThreshold) || 75, Number(r.dangerThreshold) || 90,
+          r.silentStart || null, r.silentEnd || null,
+          r.workdaysOnly ? 1 : 0, r.workStart || null, r.workEnd || null, consecutive, now, now,
         );
         count('containerAlertRules', 1);
       }

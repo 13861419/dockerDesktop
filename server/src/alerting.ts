@@ -36,9 +36,10 @@ interface AlertRuleRow {
   workdays_only: number;
   work_start: string | null;
   work_end: string | null;
+  consecutive?: number;
 }
 
-/** 归一化后的告警规则（含静默/工作时段配置） */
+/** 归一化后的告警规则（含静默/工作时段与持续时间窗口配置） */
 interface AlertRule {
   enabled: boolean;
   warn: number;
@@ -48,6 +49,8 @@ interface AlertRule {
   workdaysOnly: boolean;
   workStart: string | null;
   workEnd: string | null;
+  /** 持续时间窗口：连续 N 个采样周期超阈值才触发（1=立即） */
+  consecutive: number;
 }
 
 /** 告警记录行 */
@@ -85,6 +88,8 @@ let timer: NodeJS.Timeout | null = null;
 const lastAlertAt = new Map<string, number>();
 /** 资源当前活跃告警级别：type -> 当前级别，用于恢复通知状态机 */
 const activeAlerts = new Map<string, AlertLevel>();
+/** 宿主级连续命中计数：type -> 连续超阈值的采样周期数 */
+const hostStreak = new Map<string, number>();
 
 /**
  * 告警推送聚合器：窗口（alerts.pushAggWindowSec，默认 60s，0=关闭）内
@@ -103,7 +108,7 @@ function loadRules(): Record<AlertType, AlertRule> {
   const d = getDb();
   const rows = d
     .prepare(
-      'SELECT type, enabled, warn_threshold, danger_threshold, updated_at, silent_start, silent_end, workdays_only, work_start, work_end FROM alert_rules',
+      'SELECT type, enabled, warn_threshold, danger_threshold, updated_at, silent_start, silent_end, workdays_only, work_start, work_end, consecutive FROM alert_rules',
     )
     .all() as unknown as AlertRuleRow[];
   const byType = new Map<string, AlertRuleRow>();
@@ -125,6 +130,7 @@ function loadRules(): Record<AlertType, AlertRule> {
       workdaysOnly: r.workdays_only === 1,
       workStart: r.work_start || null,
       workEnd: r.work_end || null,
+      consecutive: Math.max(1, Math.floor(Number(r.consecutive) || 1)),
     });
     if (!row) {
       ins.run(def.type, 1, def.warn, def.danger, now);
@@ -137,6 +143,7 @@ function loadRules(): Record<AlertType, AlertRule> {
         workdaysOnly: false,
         workStart: null,
         workEnd: null,
+        consecutive: 1,
       };
     } else {
       result[def.type] = normalize(row);
@@ -155,6 +162,60 @@ function evaluateLevel(percent: number, rule: { warn: number; danger: number }):
   if (percent >= rule.danger) return 'danger';
   if (percent >= rule.warn) return 'warn';
   return null;
+}
+
+/** 连续命中窗口状态机的单步判定结果 */
+export interface StreakDecision {
+  /** 本轮是否允许触发告警推送（是否还需经过 maybeFire 去重由调用方决定） */
+  fire: boolean;
+  /** 是否强制推送（达到窗口后的首次触发，或已有活跃告警时的级别升级） */
+  escalated: boolean;
+  /** 更新后的连续命中数（超阈值周期数；回到阈值下方清零） */
+  streak: number;
+  /** 更新后的活跃告警级别（null=清除活跃态） */
+  active: AlertLevel | null;
+  /** 本轮是否应发送恢复通知 */
+  recovery: boolean;
+}
+
+/**
+ * 告警持续时间窗口状态机（纯函数，供检测循环与单测复用）
+ *
+ * 同一资源连续 N 个采样周期超阈值才允许首次触发（防瞬时毛刺）；
+ * 已有活跃告警时维持原行为（级别升级立即推送，否则按静默间隔去重）；
+ * 回到阈值下方发恢复通知并把连续命中数清零。
+ *
+ * @param prevActive 此前活跃告警级别（null=无活跃告警）
+ * @param level 本轮判定级别（null=未达告警线）
+ * @param prevStreak 此前连续命中数（不含本轮）
+ * @param consecutive 需要的连续命中周期数（<1 视为 1）
+ */
+export function evaluateStreak(
+  prevActive: AlertLevel | null,
+  level: AlertLevel | null,
+  prevStreak: number,
+  consecutive: number,
+): StreakDecision {
+  const need = Math.max(1, Math.floor(Number(consecutive) || 1));
+  if (level) {
+    const streak = Math.floor(prevStreak) + 1;
+    if (prevActive !== null) {
+      // 已有活跃告警：维持活跃态，升级立即推送，否则交给 maybeFire 去重
+      const escalated = level === 'danger' && prevActive !== 'danger';
+      return { fire: true, escalated, streak, active: level, recovery: false };
+    }
+    if (streak >= need) {
+      // 首次达到窗口：触发并强制推送
+      return { fire: true, escalated: true, streak, active: level, recovery: false };
+    }
+    // 未达窗口：仅累计，不置活跃态、不触发
+    return { fire: false, escalated: false, streak, active: prevActive, recovery: false };
+  }
+  if (prevActive) {
+    return { fire: true, escalated: false, streak: 0, active: null, recovery: true };
+  }
+  // 从未告警过就回落：仅清零计数，不产生恢复通知
+  return { fire: false, escalated: false, streak: 0, active: null, recovery: false };
 }
 
 /**
@@ -366,20 +427,23 @@ async function check(): Promise<void> {
     if (!rule.enabled) {
       // 规则被停用：清除活跃态（不发送恢复，视为静默解除）
       if (prev) activeAlerts.delete(s.type);
+      hostStreak.delete(s.type);
       continue;
     }
     // 处于静默/非工作时段：整体跳过该资源检测（不告警也不做恢复判定）
     if (isInSilentWindow(rule, new Date())) continue;
     const level = evaluateLevel(s.percent, rule);
-    if (level) {
-      const escalated = prev === null || (level === 'danger' && prev !== 'danger');
-      activeAlerts.set(s.type, level);
-      // 级别升级或从无到有时强制推送，否则按静默间隔去重
-      await maybeFire(s.type, level, s.percent, escalated);
-    } else if (prev) {
+    const decision = evaluateStreak(prev, level, hostStreak.get(s.type) ?? 0, rule.consecutive);
+    if (decision.streak > 0) hostStreak.set(s.type, decision.streak);
+    else hostStreak.delete(s.type);
+    if (decision.recovery) {
       // 已恢复：推送恢复通知并清除活跃态
       activeAlerts.delete(s.type);
       await fireRecovery(s.type, s.percent);
+    } else if (decision.fire && level) {
+      if (decision.active) activeAlerts.set(s.type, decision.active);
+      // 首次达到窗口或升级时强制推送，其余按静默间隔去重
+      await maybeFire(s.type, level, s.percent, decision.escalated);
     }
   }
   // 容器级告警检测（退出/健康检查/端口探测），与宿主级规则并行
@@ -393,8 +457,10 @@ async function check(): Promise<void> {
 export function resetAlertingState(): void {
   lastAlertAt.clear();
   activeAlerts.clear();
+  hostStreak.clear();
   containerLastAlert.clear();
   containerActive.clear();
+  containerStreak.clear();
 }
 
 /**
@@ -445,6 +511,7 @@ export function getAlertRules(): Array<{
   workdaysOnly: boolean;
   workStart: string | null;
   workEnd: string | null;
+  consecutive: number;
 }> {
   const rules = loadRules();
   return DEFAULT_RULES.map((def) => ({
@@ -458,6 +525,7 @@ export function getAlertRules(): Array<{
     workdaysOnly: rules[def.type].workdaysOnly,
     workStart: rules[def.type].workStart,
     workEnd: rules[def.type].workEnd,
+    consecutive: rules[def.type].consecutive,
   }));
 }
 
@@ -513,6 +581,7 @@ export function updateAlertRule(
     workdaysOnly?: boolean;
     workStart?: string | null;
     workEnd?: string | null;
+    consecutive?: number;
   },
 ): void {
   if (!['cpu', 'mem', 'disk', 'gpu', 'net'].includes(type)) {
@@ -520,7 +589,7 @@ export function updateAlertRule(
   }
   const d = getDb();
   loadRules(); // 确保默认行存在
-  const row = d.prepare('SELECT warn_threshold, danger_threshold, enabled, silent_start, silent_end, workdays_only, work_start, work_end FROM alert_rules WHERE type = ?').get(type) as
+  const row = d.prepare('SELECT warn_threshold, danger_threshold, enabled, silent_start, silent_end, workdays_only, work_start, work_end, consecutive FROM alert_rules WHERE type = ?').get(type) as
     | {
         warn_threshold: number;
         danger_threshold: number;
@@ -530,6 +599,7 @@ export function updateAlertRule(
         workdays_only: number;
         work_start: string | null;
         work_end: string | null;
+        consecutive: number | null;
       }
     | undefined;
   if (!row) throw Object.assign(new Error('告警规则不存在'), { statusCode: 404 });
@@ -546,6 +616,16 @@ export function updateAlertRule(
   }
   const enabled = patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : row.enabled;
 
+  // 持续时间窗口：连续 N 个采样周期（1-120，0/负数按 1 处理即立即告警）
+  let consecutive = row.consecutive != null ? Math.max(1, Math.floor(Number(row.consecutive) || 1)) : 1;
+  if (patch.consecutive !== undefined) {
+    const c = Math.floor(Number(patch.consecutive));
+    if (Number.isNaN(c) || c < 1 || c > 120) {
+      throw Object.assign(new Error('连续周期需为 1-120 的整数（1 = 立即告警）'), { statusCode: 400 });
+    }
+    consecutive = c;
+  }
+
   // 静默/工作时段字段校验与归一化
   const silentStart = patch.silentStart !== undefined ? normalizeTime(patch.silentStart) : row.silent_start || null;
   const silentEnd = patch.silentEnd !== undefined ? normalizeTime(patch.silentEnd) : row.silent_end || null;
@@ -556,7 +636,7 @@ export function updateAlertRule(
   const workdaysOnly = patch.workdaysOnly !== undefined ? (patch.workdaysOnly ? 1 : 0) : row.workdays_only;
 
   d.prepare(
-    'UPDATE alert_rules SET enabled = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, updated_at = ? WHERE type = ?',
+    'UPDATE alert_rules SET enabled = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, consecutive = ?, updated_at = ? WHERE type = ?',
   ).run(
     enabled,
     warn,
@@ -566,6 +646,7 @@ export function updateAlertRule(
     workdaysOnly,
     workStart,
     workEnd,
+    consecutive,
     Date.now(),
     type,
   );
@@ -768,6 +849,7 @@ interface ContainerAlertRuleRow {
   work_end: string | null;
   created_at: number;
   updated_at: number;
+  consecutive?: number;
 }
 
 /** 归一化后的容器告警规则（含 displayName 由外部回填） */
@@ -785,6 +867,8 @@ export interface ContainerAlertRule {
   workdaysOnly: boolean;
   workStart: string | null;
   workEnd: string | null;
+  /** 持续时间窗口：连续 N 个采样周期超阈值才触发（仅 cpu/mem 类型生效，1=立即） */
+  consecutive: number;
   /** 当前使用率（纯展示；仅 watchType=cpu/mem 时由 getContainerAlertRules 回填，可为 null） */
   currentValue?: number | null;
 }
@@ -804,12 +888,15 @@ function normalizeContainerRule(r: ContainerAlertRuleRow): ContainerAlertRule {
     workdaysOnly: r.workdays_only === 1,
     workStart: r.work_start || null,
     workEnd: r.work_end || null,
+    consecutive: Math.max(1, Math.floor(Number(r.consecutive) || 1)),
   };
 }
 
 /** 容器告警去重/状态机（以规则 id 为键，避免与宿主级规则的 type:level 冲突） */
 const containerLastAlert = new Map<number, number>();
 const containerActive = new Map<number, 'warn' | 'danger' | null>();
+/** 容器级连续命中计数：规则 id -> 连续超阈值的采样周期数（仅 cpu/mem） */
+const containerStreak = new Map<number, number>();
 
 /**
  * 将归一化容器规则转为可复用现有静默判定的 AlertRule 形状
@@ -825,6 +912,7 @@ function containerRuleToQuiet(r: ContainerAlertRule): AlertRule {
     workdaysOnly: r.workdaysOnly,
     workStart: r.workStart,
     workEnd: r.workEnd,
+    consecutive: r.consecutive,
   };
 }
 
@@ -1002,6 +1090,7 @@ async function checkContainerResourceRule(
   if (!stat) {
     // 容器不存在或未运行：cpu/mem 无从统计，不告警也不发恢复（保持活跃态清理）
     if (prev) setActive(null);
+    containerStreak.delete(rule.id);
     return;
   }
   const value = rule.watchType === 'cpu' ? stat.cpuPercent : stat.memPercent;
@@ -1015,14 +1104,20 @@ async function checkContainerResourceRule(
     };
   }
 
-  if (hit) {
-    const escalated = prev === null || (hit.level === 'danger' && prev !== 'danger');
-    setActive(hit.level);
+  // 持续时间窗口：连续 N 个采样周期超阈值才首次触发（事件类规则不适用）
+  const decision = evaluateStreak(prev, level, containerStreak.get(rule.id) ?? 0, rule.consecutive);
+  if (decision.streak > 0) containerStreak.set(rule.id, decision.streak);
+  else containerStreak.delete(rule.id);
+
+  if (hit && decision.fire) {
+    const escalated = decision.escalated;
+    // fire 路径下 active 必为 warn/danger（recovery 走 recovery 分支）
+    if (decision.active) setActive(decision.active as 'warn' | 'danger');
     if (canFire(escalated)) {
       markFired();
       await emitContainerAlert(rule, name, hit.level, hit.message, hit.value);
     }
-  } else if (prev) {
+  } else if (!hit && decision.recovery) {
     setActive(null);
     await emitContainerAlert(rule, name, 'recovery', `Docker 面板【容器】${name} ${label}使用率已恢复正常`, null);
   }
@@ -1058,6 +1153,7 @@ async function checkContainerRules(): Promise<void> {
   for (const rule of rules) {
     if (!rule.enabled) {
       if (containerActive.has(rule.id)) containerActive.delete(rule.id);
+      containerStreak.delete(rule.id);
       continue;
     }
     if (isInSilentWindow(containerRuleToQuiet(rule), new Date())) continue;
@@ -1096,7 +1192,7 @@ async function checkContainerRules(): Promise<void> {
 export function loadContainerRules(nameMap?: Map<string, string>): ContainerAlertRule[] {
   const rows = getDb()
     .prepare(
-      'SELECT id, container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at FROM container_alert_rules',
+      'SELECT id, container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, consecutive, created_at, updated_at FROM container_alert_rules',
     )
     .all() as unknown as ContainerAlertRuleRow[];
   return rows.map((r) => {
@@ -1141,7 +1237,7 @@ export async function getContainerAlertRules(): Promise<ContainerAlertRule[]> {
 /**
  * 校验 watch_type / port 等并构建写入字段
  */
-function validateContainerRuleInput(body: any): { containerId: string; watchType: string; port: number | null; warnThreshold: number; dangerThreshold: number; enabled: number; silentStart: string | null; silentEnd: string | null; workdaysOnly: number; workStart: string | null; workEnd: string | null } {
+function validateContainerRuleInput(body: any): { containerId: string; watchType: string; port: number | null; warnThreshold: number; dangerThreshold: number; enabled: number; silentStart: string | null; silentEnd: string | null; workdaysOnly: number; workStart: string | null; workEnd: string | null; consecutive: number } {
   const containerId = String(body?.containerId || '').trim();
   if (!containerId) throw Object.assign(new Error('请选择一个目标容器'), { statusCode: 400 });
   const watchType = String(body?.watchType || '').trim() as ContainerWatchType;
@@ -1172,6 +1268,14 @@ function validateContainerRuleInput(body: any): { containerId: string; watchType
   const workEnd = body?.workEnd !== undefined ? normalizeTime(body.workEnd) : null;
   validateRange(silentStart, silentEnd, '静默时段');
   validateRange(workStart, workEnd, '工作时段');
+  let consecutive = 1;
+  if (watchType === 'cpu' || watchType === 'mem') {
+    const c = Math.floor(Number(body?.consecutive) || 1);
+    if (Number.isNaN(c) || c < 1 || c > 120) {
+      throw Object.assign(new Error('连续周期需为 1-120 的整数（1 = 立即告警）'), { statusCode: 400 });
+    }
+    consecutive = c;
+  }
   return {
     containerId,
     watchType,
@@ -1184,6 +1288,7 @@ function validateContainerRuleInput(body: any): { containerId: string; watchType
     workdaysOnly: body?.workdaysOnly ? 1 : 0,
     workStart,
     workEnd,
+    consecutive,
   };
 }
 
@@ -1201,10 +1306,10 @@ export function createContainerAlertRule(body: any): ContainerAlertRule {
   if (dup) throw Object.assign(new Error('该容器已存在同类型的告警规则'), { statusCode: 409 });
   const info = d
     .prepare(
-      'INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO container_alert_rules (container_id, watch_type, enabled, port, warn_threshold, danger_threshold, silent_start, silent_end, workdays_only, work_start, work_end, consecutive, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(
-      v.containerId, v.watchType, v.enabled, v.port, v.warnThreshold, v.dangerThreshold, v.silentStart, v.silentEnd, v.workdaysOnly, v.workStart, v.workEnd, now, now,
+      v.containerId, v.watchType, v.enabled, v.port, v.warnThreshold, v.dangerThreshold, v.silentStart, v.silentEnd, v.workdaysOnly, v.workStart, v.workEnd, v.consecutive, now, now,
     );
   return loadContainerRules().find((r) => r.id === Number(info.lastInsertRowid))!;
 }
@@ -1244,6 +1349,17 @@ export function updateContainerAlertRule(id: number, body: any): ContainerAlertR
   next.workdays_only = body?.workdaysOnly !== undefined ? (body.workdaysOnly ? 1 : 0) : row.workdays_only;
   validateRange(next.silent_start, next.silent_end, '静默时段');
   validateRange(next.work_start, next.work_end, '工作时段');
+  if (next.watch_type === 'cpu' || next.watch_type === 'mem') {
+    if (body?.consecutive !== undefined) {
+      const c = Math.floor(Number(body.consecutive));
+      if (Number.isNaN(c) || c < 1 || c > 120) {
+        throw Object.assign(new Error('连续周期需为 1-120 的整数（1 = 立即告警）'), { statusCode: 400 });
+      }
+      next.consecutive = c;
+    }
+  }
+  validateRange(next.silent_start, next.silent_end, '静默时段');
+  validateRange(next.work_start, next.work_end, '工作时段');
   if (next.watch_type === 'port') {
     const raw = Number(body?.port ?? row.port);
     if (!raw || raw < 1 || raw > 65535) {
@@ -1253,9 +1369,9 @@ export function updateContainerAlertRule(id: number, body: any): ContainerAlertR
   }
 
   d.prepare(
-    'UPDATE container_alert_rules SET container_id = ?, watch_type = ?, enabled = ?, port = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, updated_at = ? WHERE id = ?',
+    'UPDATE container_alert_rules SET container_id = ?, watch_type = ?, enabled = ?, port = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, consecutive = ?, updated_at = ? WHERE id = ?',
   ).run(
-    next.container_id, next.watch_type, next.enabled, next.port, next.warn_threshold, next.danger_threshold, next.silent_start, next.silent_end, next.workdays_only, next.work_start, next.work_end, Date.now(), id,
+    next.container_id, next.watch_type, next.enabled, next.port, next.warn_threshold, next.danger_threshold, next.silent_start, next.silent_end, next.workdays_only, next.work_start, next.work_end, Math.max(1, Math.floor(Number(next.consecutive) || 1)), Date.now(), id,
   );
   return loadContainerRules().find((r) => r.id === id)!;
 }
@@ -1268,5 +1384,6 @@ export function deleteContainerAlertRule(id: number): void {
   getDb().prepare('DELETE FROM container_alert_rules WHERE id = ?').run(id);
   containerLastAlert.delete(id);
   containerActive.delete(id);
+  containerStreak.delete(id);
 }
 

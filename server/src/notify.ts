@@ -1,7 +1,7 @@
 /**
  * 通知渠道存储与推送模块
  *
- * 负责通知渠道（Webhook / 邮件 / 钉钉 / 飞书）的持久化 CRUD，
+ * 负责通知渠道（Webhook / 邮件 / 钉钉 / 飞书 / Telegram / 企业微信 / Slack）的持久化 CRUD，
  * 以及将告警消息推送到已启用渠道。
  *
  * - 渠道配置中敏感字段（口令/密钥/访问令牌）使用 storage 的对称加密存储，
@@ -14,7 +14,7 @@ import tls from 'tls';
 import { getDb, encryptSecret, decryptSecret } from './storage';
 
 /** 渠道类型 */
-export type ChannelType = 'webhook' | 'email' | 'dingtalk' | 'feishu';
+export type ChannelType = 'webhook' | 'email' | 'dingtalk' | 'feishu' | 'telegram' | 'wecom' | 'slack';
 
 /** 渠道行结构（数据库行） */
 interface ChannelRow {
@@ -47,6 +47,9 @@ const SECRET_FIELDS: Record<ChannelType, string[]> = {
   email: ['password'],
   dingtalk: ['accessToken', 'secret'],
   feishu: [],
+  telegram: ['botToken'],
+  wecom: [],
+  slack: [],
 };
 
 /**
@@ -144,6 +147,21 @@ function validateConfig(type: ChannelType, config: Record<string, any>): void {
     if (!String(config?.webhookUrl ?? '').trim()) {
       throw Object.assign(new Error('请填写飞书机器人 Webhook 地址'), { statusCode: 400 });
     }
+  } else if (type === 'telegram') {
+    if (!String(config?.botToken ?? '').trim()) {
+      throw Object.assign(new Error('请填写 Telegram Bot Token'), { statusCode: 400 });
+    }
+    if (!String(config?.chatId ?? '').trim()) {
+      throw Object.assign(new Error('请填写 Telegram Chat ID'), { statusCode: 400 });
+    }
+  } else if (type === 'wecom') {
+    if (!String(config?.webhookUrl ?? '').trim()) {
+      throw Object.assign(new Error('请填写企业微信机器人 Webhook 地址'), { statusCode: 400 });
+    }
+  } else if (type === 'slack') {
+    if (!String(config?.webhookUrl ?? '').trim()) {
+      throw Object.assign(new Error('请填写 Slack Incoming Webhook 地址'), { statusCode: 400 });
+    }
   }
 }
 
@@ -178,7 +196,7 @@ export function createChannel(input: { name: string; type: ChannelType; config: 
   const type = input?.type;
   const config = input?.config || {};
   if (!name) throw Object.assign(new Error('请输入渠道名称'), { statusCode: 400 });
-  if (!['webhook', 'email', 'dingtalk', 'feishu'].includes(type)) {
+  if (!['webhook', 'email', 'dingtalk', 'feishu', 'telegram', 'wecom', 'slack'].includes(type)) {
     throw Object.assign(new Error('不支持的渠道类型'), { statusCode: 400 });
   }
   validateConfig(type, config);
@@ -273,6 +291,12 @@ async function dispatch(type: ChannelType, cfg: Record<string, any>, text: strin
       return pushDingtalk(String(cfg.accessToken || ''), String(cfg.secret || ''), text);
     case 'feishu':
       return pushFeishu(String(cfg.webhookUrl || ''), text);
+    case 'telegram':
+      return pushTelegram(String(cfg.botToken || ''), String(cfg.chatId || ''), text);
+    case 'wecom':
+      return pushWecom(String(cfg.webhookUrl || ''), text);
+    case 'slack':
+      return pushSlack(String(cfg.webhookUrl || ''), text);
     case 'email':
       return sendEmail(cfg, text);
     default:
@@ -344,6 +368,87 @@ async function pushFeishu(webhookUrl: string, text: string): Promise<{ ok: boole
     });
     const body = (await res.text()).slice(0, 300);
     return { ok: res.ok, detail: body || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, detail: String(err?.message || err) };
+  }
+}
+
+/**
+ * Telegram Bot 推送（sendMessage API，支持 Markdown 链接转义无需处理，纯文本发送）
+ * @param botToken Bot Token（@BotFather 签发）
+ * @param chatId 目标会话 ID（群组为负数，私聊为正数）
+ * @param text 告警文本
+ */
+async function pushTelegram(botToken: string, chatId: string, text: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+      signal: AbortSignal.timeout(10000),
+    });
+    let body = (await res.text()).slice(0, 300);
+    // Telegram 返回 {ok:true/false,...}，HTTP 200 也可能业务失败
+    if (res.ok) {
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed?.ok === false) return { ok: false, detail: parsed?.description || body };
+      } catch {
+        // 非 JSON 视为失败
+      }
+      return { ok: true, detail: 'Telegram 已发送' };
+    }
+    body = body || `HTTP ${res.status}`;
+    return { ok: false, detail: body };
+  } catch (err: any) {
+    return { ok: false, detail: String(err?.message || err) };
+  }
+}
+
+/**
+ * 企业微信群机器人推送（Webhook 机器人，msgtype=text）
+ * @param webhookUrl 机器人 Webhook 地址（含 key 参数）
+ * @param text 告警文本
+ */
+async function pushWecom(webhookUrl: string, text: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msgtype: 'text', text: { content: text } }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const body = (await res.text()).slice(0, 300);
+    if (res.ok) {
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed?.errcode !== 0) return { ok: false, detail: body };
+        return { ok: true, detail: '企业微信已发送' };
+      } catch {
+        return { ok: false, detail: body };
+      }
+    }
+    return { ok: false, detail: body || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, detail: String(err?.message || err) };
+  }
+}
+
+/**
+ * Slack Incoming Webhook 推送（纯文本）
+ * @param webhookUrl Incoming Webhook 地址
+ * @param text 告警文本
+ */
+async function pushSlack(webhookUrl: string, text: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${(await res.text()).slice(0, 200)}` };
+    return { ok: true, detail: 'Slack 已发送' };
   } catch (err: any) {
     return { ok: false, detail: String(err?.message || err) };
   }
