@@ -33,22 +33,35 @@
   - 一键恢复（含 SQLite 格式校验与 `quick_check` 完整性校验）、下载、删除
 - **E2E 冒烟测试**
   - e2e/ 独立 Playwright 工程：登录 → 总览 → 容器 → 审批中心 → 安全基线 4 条主链路
+- **告警推送窗口聚合（防风暴）**
+  - 窗口内（`alerts.pushAggWindowSec`，默认 60s，0=关闭）多条 warn/danger 推送合并为一条摘要（最多 5 条原文 + 总数）
+  - recovery 与窗口关闭时逐条即时推送；被聚合记录 push_status='aggregated'；聚合推送不触发 AI 诊断
+- **E2E 计划任务全链路**
+  - 新建数据库备份任务 → 立即执行 → 执行历史 → 删除清理
 
 ### Fixed（修复）
 
 - 计划任务手动执行未走调度器注册表：AI 巡检 / AI 周报 / 基线扫描等类型手动执行报「未注册处理器」
 - `web/src/types/index.ts` 中文注释乱码（编码损坏，仅注释受影响）
 - 计划任务类型选项补齐缺失的「镜像清理」（imageGc）
+- 面板数据库恢复缺少存在性校验（不存在时裸 ENOENT → 500，现统一 404）
+- 镜像搜索用例 Docker Hub 可达性探测：离线/网络受限环境自动跳过，消除假失败
 
 ### Changed（变更）
 
 - SQLite `busy_timeout` 5s → 15s（服务器连接）；配置导入事务隔离级别提升
 - 测试隔离加固：configTransfer 导入测试注入无冲突键；保留天数用例自愈重试
+- 并行测试抖动根治：审批门禁用例并入 approvals 文件（消除 approvals.enabled 跨文件互踩）；数据库恢复改隔离单测
+- **.rpm 构建环境迁移 AlmaLinux 9**（CentOS 7 glibc 2.17 无法运行 Node 22）；修复容器内 tsc 缺 @types、rpmbuild `--buildarch` 无效参数、curl 与 curl-minimal 冲突、install.sh 未进镜像
+- Windows 上可用 `build-deb-win.ps1` / `build-rpm-win.ps1` 直接驱动 Linux 打包（无需 WSL Docker 集成）
+- 安装包版本号单一来源：从根 package.json 自动注入 NSIS（/DAPP_VERSION）
+- 审批门禁用例并入 approvals 测试文件；test:api 清单补齐新增测试文件（628 项）
 
 ### Test（测试）
 
-- 单测 194/194、API 集成测试 623/624（唯一失败为 Docker Hub 网络抖动，环境问题）
-- E2E 冒烟 4/4（Playwright，浏览器建议经 npmmirror 镜像安装）
+- 单测 206/206、API 集成测试 628/628（含可达性探测后实际全绿）
+- E2E 冒烟 5/5（Playwright，浏览器建议经 npmmirror 镜像安装）
+- 全量回归与互踩对连跑验证：3×18/18、3×63/63
 
 ## [0.1.0] - 初始版本
 

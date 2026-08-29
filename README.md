@@ -1,6 +1,6 @@
 # Docker Manager（Docker 管理面板）
 
-一个跨平台的 Docker 容器管理面板（类似 1Panel），支持 **Windows**、**Ubuntu 24** 和 **CentOS 7+**，提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
+一个跨平台的 Docker 容器管理面板（类似 1Panel），支持 **Windows**、**Ubuntu 24** 和 **RHEL 9 系**（AlmaLinux / Rocky），提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
 
 ## ✨ 功能特性
 
@@ -23,7 +23,7 @@
 - **防火墙**：Windows 防火墙入站端口放行管理（基于系统 `netsh`，管理员权限提示）
 - **事件流**：实时查看 Docker 引擎事件（含统计可视化）；事件**持久化到 SQLite**，可查询**历史**、**导出 CSV**、清空
 - **操作日志**：管理操作审计日志，含统计与 JSON / CSV 导出；**保留天数可配置**（默认 90 天），超期数据每日自动清理，AI 用量明细 / 巡检记录同模式（默认 30 天）
-- **告警中心 / 通知渠道（C3）**：宿主级（CPU / 内存 / 磁盘 / GPU / 网络带宽 Mbps）与容器级（退出 / 健康状态 / 端口监听 / CPU 内存阈值）告警规则；支持**静默时段 / 仅工作日 / 工作时间**；通知渠道（Webhook / 邮件 / 钉钉 / 飞书，敏感凭证加密存储）；告警记录查询、**CSV 导出 / 归档**、实时资源快照手工检测
+- **告警中心 / 通知渠道（C3）**：宿主级（CPU / 内存 / 磁盘 / GPU / 网络带宽 Mbps）与容器级（退出 / 健康状态 / 端口监听 / CPU 内存阈值）告警规则；支持**静默时段 / 仅工作日 / 工作时间**；**推送窗口聚合防风暴**（窗口内多条告警合并为一条摘要，恢复通知始终即时）；通知渠道（Webhook / 邮件 / 钉钉 / 飞书，敏感凭证加密存储）；告警记录查询、**CSV 导出 / 归档**、实时资源快照手工检测
 - **镜像漏洞扫描**：镜像详情页基于本机 **Trivy** 的 CVE 漏洞扫描（零 npm 依赖，按严重等级分级，未安装时给出引导文案）
 - **容器模板 / Compose 模板库**：一键保存 / 复用容器创建配置（`/api/templates`）与 Compose 编排模板，支持"从模板创建"回填
 - **编排（启动依赖排序）**：为容器配置启动依赖，拓扑排序（含环检测）+ 一键分层并行启动 / 逆序停止 / 重启，编排历史失败项可重试
@@ -209,7 +209,7 @@ dockerDesktop/
 - **npm**（随 Node.js 安装）
 - 已启动的 **Docker 引擎**
   - **Windows**：Docker Desktop（需开启 WSL2 后端）
-  - **Ubuntu 24 / CentOS 7+**：docker-ce + docker-compose-plugin
+  - **Linux**：docker-ce + docker-compose-plugin（Ubuntu 24 / Debian 12 / RHEL 9 系；Node 22 要求 glibc ≥ 2.28，CentOS 7 无法运行）
 
 ## 🚀 安装与运行
 
@@ -254,7 +254,7 @@ npm run package:installer
 
 生成 `DockerManager-setup-0.2.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
 
-#### Linux（Ubuntu 24 / CentOS 7+）
+#### Linux（Ubuntu 24 / RHEL 9 系）
 
 ```bash
 # 方式 A：使用安装脚本（推荐）
@@ -262,11 +262,14 @@ npm run package:installer
 # 2. 解压后运行安装脚本
 sudo bash install.sh
 
-# 方式 B：从源码打包
+# 方式 B：从源码打包（Docker 容器内构建）
 npm run package          # 生成 dist-release/DockerManager
-npm run package:deb -- amd64   # 生成 .deb 包（需要 Docker）
-npm run package:rpm -- x86_64  # 生成 .rpm 包（需要 Docker）
+npm run package:deb -- amd64   # 生成 .deb 包（Ubuntu 24，需要 Docker）
+npm run package:rpm -- x86_64  # 生成 .rpm 包（AlmaLinux 9，需要 Docker）
 ```
+
+> - .rpm 包基于 **AlmaLinux 9** 构建环境生成（Node 22 官方二进制要求 glibc ≥ 2.28，CentOS 7 无法运行）。
+> - Windows 上本机 bash 为 WSL 且未接入 Docker Desktop 时，可直接用 PowerShell 驱动：`packaging/linux/build-deb-win.ps1` / `build-rpm-win.ps1`。
 
 安装完成后通过 `systemctl` 管理服务：
 
@@ -274,6 +277,14 @@ npm run package:rpm -- x86_64  # 生成 .rpm 包（需要 Docker）
 sudo systemctl start docker-manager    # 启动
 sudo systemctl status docker-manager   # 查看状态
 sudo systemctl enable docker-manager   # 开机自启
+```
+
+### 🧪 测试（源码模式）
+
+```bash
+npm run test:server:unit        # 后端单元测试（含推送聚合器等纯函数模块）
+npm run test:server:api         # API 集成测试（需后端运行在 9528）
+cd e2e && npx playwright test   # Playwright E2E 冒烟（登录/容器/审批/基线/计划任务）
 ```
 
 ## 🔑 使用说明
