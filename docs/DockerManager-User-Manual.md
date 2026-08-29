@@ -1112,6 +1112,8 @@ Menu: **Tools** (`/tools`, all users)
 - Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, etc.
 - Zero backend calls; handy for day-to-day ops.
 
+![Ops Toolbox](images/tools.png)
+
 ---
 
 ## 37. Port Map
@@ -1120,6 +1122,8 @@ Menu: **Ports** (`/ports`, all users)
 
 - Cross-engine aggregation of **port usage**: which host ports are bound by which containers.
 - **Conflict detection** for duplicated bindings and a visual port distribution map.
+
+![Port Map](images/ports.png)
 
 ---
 
@@ -1188,6 +1192,8 @@ When enabled:
 - **Automatic alert AI diagnosis**: after a danger-level alert is pushed successfully, AI analyzes the root cause and pushes the diagnosis to the same channel; controlled by the `alerts.aiDiagnosis` parameter (on by default). Alerts that were aggregated by the push window do not trigger AI diagnosis.
 - **Safety boundary**: AI only suggests; it never executes directly. Without an AI configuration all AI entries hide automatically.
 
+![AI Assistant](images/assistant.png)
+
 ---
 
 ## 42. Help Center
@@ -1198,6 +1204,8 @@ When enabled:
 | Permission | All users |
 
 Three built-in blocks: **Quick Start** (six-step guide), **FAQ** (password reset, remote engines, approval flow, AI setup, etc.), and a **feature index** of all pages.
+
+![Help Center](images/help.png)
 
 ---
 
