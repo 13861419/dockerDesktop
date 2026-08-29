@@ -148,7 +148,7 @@ sudo yum install -y docker-manager-*.rpm
 ### 0.6 方式五：Docker 运行
 
 ```bash
-# 从 Docker Hub 拉取
+# 从 GHCR 拉取
 docker pull ghcr.io/13861419/dockerdesktop:latest
 
 # 启动

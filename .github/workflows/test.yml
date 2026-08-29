@@ -2,9 +2,11 @@
 #  Docker Manager - Test CI
 #  触发条件: push 到 main / Pull Request
 #  内容:
-#    1. unit  — server 单元测试（自包含，无需 Docker）
-#    2. api   — server API 集成测试（需本机 Docker 守护进程 + 9528 后端）
-#    3. docs  — 文档图片死链校验（AGENTS.md 提交远端前检查项）
+#    1. unit      — server 单元测试（自包含，无需 Docker）
+#    2. typecheck — web / server TypeScript 类型检查
+#    3. api       — server API 集成测试（需本机 Docker 守护进程 + 9528 后端）
+#    4. e2e       — Playwright 冒烟（9528 后端 + 自动拉起 vite）
+#    5. docs      — 文档图片死链校验（AGENTS.md 提交远端前检查项）
 # ============================================================
 name: Test
 
@@ -22,6 +24,19 @@ jobs:
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - run: npm run test:server:unit
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - name: Typecheck web (tsc -b)
+        run: npx tsc -b
+        working-directory: web
+      - name: Typecheck server
+        run: npx tsc --project server/tsconfig.json --noEmit
 
   docs:
     runs-on: ubuntu-latest
@@ -52,6 +67,39 @@ jobs:
           tail -50 server.log
           exit 1
       - run: npm run test:server:api
+      - name: Dump server log
+        if: failure()
+        run: tail -100 server.log
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - name: Start backend (9528)
+        run: npm run dev:server > server.log 2>&1 &
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9528/api/health; then
+              echo; echo "backend healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "backend did not become healthy"
+          tail -50 server.log
+          exit 1
+      - name: Install e2e deps
+        run: npm ci
+        working-directory: e2e
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Run Playwright tests
+        run: npx playwright test
+        working-directory: e2e
       - name: Dump server log
         if: failure()
         run: tail -100 server.log

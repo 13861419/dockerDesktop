@@ -68,6 +68,7 @@
 - E2E 冒烟 5/5（Playwright，浏览器建议经 npmmirror 镜像安装）
 - 全量回归与互踩对连跑验证：3×18/18、3×63/63
 - 新增 GitHub Actions 测试工作流（Test CI）：单元测试 / API 集成 / 文档图片死链校验三并行 job
+- Test CI 补前端质量门（web `tsc -b` + server `tsc --noEmit` 类型检查 job）与 E2E Playwright 冒烟 job（9528 后端 + 自动拉起 vite）
 - 新增 `npm run docs:check` 跨平台文档图片校验脚本（`scripts/check-doc-images.js`）
 
 ## [0.1.0] - 初始版本
