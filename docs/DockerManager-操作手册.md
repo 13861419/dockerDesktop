@@ -62,7 +62,7 @@
 | Node.js | ≥ 22 | 安装脚本会自动安装 |
 | Docker Engine | 最新稳定版 | 安装脚本会自动安装 |
 | Docker Compose | v2 插件 | 安装脚本会自动安装 |
-| 操作系统 | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ | |
+| 操作系统 | Ubuntu 24.04 / Debian 12+ / RHEL 9 系（AlmaLinux / Rocky）/ Windows 10+（Node 22 要求 glibc ≥ 2.28，CentOS 7 无法运行） | |
 
 > 默认账号 `admin` / `admin888`，默认端口 `9528`。首次登录后请立即修改密码。
 
@@ -86,7 +86,7 @@ sudo systemctl status docker-manager
 
 安装完成后访问 `http://<服务器IP>:9528`。
 
-### 0.3 方式二：YUM 源安装（CentOS / RHEL）
+### 0.3 方式二：YUM 源安装（RHEL 9 系 / AlmaLinux / Rocky）
 
 ```bash
 # 添加 YUM 源
@@ -118,7 +118,7 @@ sudo systemctl status docker-manager
 sudo dpkg -i docker-manager-*.deb
 sudo apt-get install -f    # 自动补齐依赖
 
-# CentOS / RHEL
+# RHEL 9 系 / CentOS Stream
 sudo rpm -ivh docker-manager-*.rpm
 # 或
 sudo yum install -y docker-manager-*.rpm

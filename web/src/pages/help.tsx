@@ -28,7 +28,7 @@ const QUICK_STEPS: Array<{ title: string; desc: string }> = [
 const FAQ_ITEMS: FaqItem[] = [
   {
     q: '忘记了管理员密码怎么办？',
-    a: '默认账号 admin / admin888 可登录（若未修改）。如已修改，可在服务器上删除数据目录中的 users 相关文件后重启面板，面板会以默认账号重新初始化；多实例部署时注意先备份。',
+    a: '如已修改默认密码，可在服务器上停止面板后删除数据目录中的 docker-manager.db（及同目录 -wal / -shm 文件）再重启，面板会以默认账号 admin / admin888 重新初始化；操作前注意备份。',
   },
   {
     q: '如何管理远程 Docker 引擎？',
@@ -57,6 +57,14 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     q: 'Prometheus / Grafana 如何对接？',
     a: '后端内置 /metrics 端点（Prometheus 文本格式，dm_* 指标族），可在「设置 → 系统参数」配置抓取 Token；「总览 → 资源监控 → 导出 Grafana」可下载直接导入的 Dashboard JSON。',
+  },
+  {
+    q: '如何备份/恢复面板自身的数据？',
+    a: '「设置 → 面板数据库备份管理」（管理员）可对面板 SQLite 数据库做一致性快照（不停服）、一键恢复与下载；也可在「计划任务」创建「数据库备份」类型任务定时自动备份，保留份数在系统参数中配置。',
+  },
+  {
+    q: '安全基线扫描能自动修复吗？',
+    a: '「安全基线」页（/policy）内置 6 项只读检查。内存 / CPU / 重启策略违规支持在线一键修复（修复后自动复检）；特权模式、敏感挂载需重建容器。开启审批流后，非管理员提交的修复会转入审批中心。',
   },
 ];
 
@@ -94,6 +102,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/events', name: '事件流', desc: 'Docker 事件实时流与持久化历史' },
   { path: '/tools', name: '工具箱', desc: 'JSON / 正则 / Base64 / 时间戳 / 进制 / 端口网段计算' },
   { path: '/approvals', name: '审批中心', desc: '高危操作审批与记录' },
+  { path: '/policy', name: '安全基线', desc: '6 项只读基线检查、违规报告与在线一键修复' },
 ];
 
 /** FAQ 折叠面板项 */
