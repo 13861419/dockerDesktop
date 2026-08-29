@@ -335,6 +335,7 @@ function createTables(): void {
       type       TEXT NOT NULL,             -- webhook | email | dingtalk | feishu
       enabled    INTEGER NOT NULL DEFAULT 1,
       config     TEXT NOT NULL DEFAULT '{}', -- 类型相关配置（URL/收件人等），敏感字段加密
+      template   TEXT NOT NULL DEFAULT '',  -- 消息模板（空=原样透传），支持 {{level}} {{message}} {{time}} {{channel}}
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -623,6 +624,19 @@ function createTables(): void {
       system      INTEGER NOT NULL DEFAULT 0,       -- 1 = 内置角色（admin/operator/user/auditor）
       created_at  INTEGER NOT NULL
     );
+
+    -- 容器自愈规则表（0.5.0）：按容器名匹配，unhealthy/退出时自动执行动作（带冷却期）
+    CREATE TABLE IF NOT EXISTS selfheal_rules (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      container_name    TEXT NOT NULL,              -- 容器名（精确匹配，跨重建稳定）
+      watch_type        TEXT NOT NULL,              -- unhealthy | exited
+      action            TEXT NOT NULL,              -- restart | start
+      cooldown_sec      INTEGER NOT NULL DEFAULT 300,
+      enabled           INTEGER NOT NULL DEFAULT 1,
+      last_triggered_at INTEGER,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）
@@ -769,6 +783,12 @@ function createTables(): void {
   // 迁移：为 ai_usage 补充响应时间列
   try {
     d.exec('ALTER TABLE ai_usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：为 notify_channels 补充消息模板列（空=原样透传）
+  try {
+    d.exec("ALTER TABLE notify_channels ADD COLUMN template TEXT NOT NULL DEFAULT ''");
   } catch {
     // 列已存在则忽略
   }

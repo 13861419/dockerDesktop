@@ -10,6 +10,7 @@ import type { Server as HttpServer, IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import { isValidToken, getSessionUsername } from '../auth';
 import { getUserRole } from '../users';
+import { hasPermission } from '../rbac';
 
 /** 单个 upgrade 处理函数：按路径匹配并升级连接，返回是否已处理 */
 type WsHandler = (
@@ -31,7 +32,8 @@ let boundServer: HttpServer | null = null;
  * 约定为 ?token=<会话Token>，与登录后前端的 getToken() 保持一致。
  *
  * @param url 已解析的请求 URL（含 query）
- * @param requireOperator 是否要求 admin / operator 运维权限（终端等资源操作需该权限）
+ * @param requireOperator 是否要求资源操作权限（终端等高危操作需 containers.run 权限；
+ *                        admin 恒通过，operator 内置含该权限，自定义角色按权限数组判定）
  * @returns 校验通过返回 { username, role }，否则返回 null（调用方应拒绝连接）
  */
 export function authenticateWs(
@@ -43,7 +45,7 @@ export function authenticateWs(
   const username = getSessionUsername(token);
   if (!username) return null;
   const role = getUserRole(username);
-  if (options?.requireOperator && role !== 'admin' && role !== 'operator') return null;
+  if (options?.requireOperator && !hasPermission(role, 'containers.run')) return null;
   return { username, role };
 }
 

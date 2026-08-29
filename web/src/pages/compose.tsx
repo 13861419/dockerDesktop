@@ -14,7 +14,7 @@ import YamlEditor from '../components/YamlEditor';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
 import './compose.less';
 
@@ -156,8 +156,9 @@ function findTemplateByValue(value: string, userTemplates: ComposeTemplate[]) {
  */
 export default function ComposePage() {
   const { showToast } = useToast();
-  const canManage = isAdmin();
-  const canDelete = isAdmin();
+  const { hasPerm } = useCanManage();
+  const canManage = hasPerm('compose.write');
+  const canDelete = hasPerm('compose.write');
   const [projects, setProjects] = useState<ComposeProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);

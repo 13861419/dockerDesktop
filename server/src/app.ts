@@ -57,6 +57,7 @@ import metricsRouter from './routes/metrics';
 import policyRouter from './routes/policy';
 import approvalsRouter from './routes/approvals';
 import rolesRouter from './routes/roles';
+import selfhealRouter from './routes/selfheal';
 import sqliteBackupRouter from './routes/sqliteBackup';
 import { requireAuth } from './auth';
 
@@ -132,6 +133,7 @@ app.use('/api/ports', requireAuth, portsRouter);
 app.use('/api/policy', requireAuth, policyRouter);
 app.use('/api/approvals', requireAuth, approvalsRouter);
 app.use('/api/roles', requireAuth, rolesRouter);
+app.use('/api/selfheal', requireAuth, selfhealRouter);
 app.use('/api/sqlite-backups', requireAuth, sqliteBackupRouter);
 
 

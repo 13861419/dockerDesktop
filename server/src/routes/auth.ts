@@ -14,6 +14,7 @@ import {
 } from '../auth';
 import { isLocked, getLockRemaining, registerFailure, resetFailures } from '../loginProtection';
 import { getUserRole } from '../users';
+import { listRoles } from '../rbac';
 
 const router = Router();
 
@@ -96,7 +97,10 @@ router.get(
       return res.status(401).json({ error: '未登录或会话已过期' });
     }
     const username = getSessionUsername(token) || 'admin';
-    res.json({ authenticated: true, username, role: getUserRole(username) });
+    const role = getUserRole(username);
+    // 权限数组：admin 恒为全权（'*'）；其余角色读取 roles 表权限数组（角色缺失视为无权限）
+    const permissions = role === 'admin' ? ['*'] : listRoles().find((r) => r.name === role)?.permissions ?? [];
+    res.json({ authenticated: true, username, role, permissions });
   }),
 );
 

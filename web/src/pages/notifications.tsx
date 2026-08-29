@@ -18,7 +18,7 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
-import { Field, Input, Select } from '../components/Form';
+import { Field, Input, Select, TextArea } from '../components/Form';
 import type { ContainerListItem, ContainerRule, ContainerRuleListResponse, ContainerRuleWatchType } from '../types';
 import './notifications.less';
 
@@ -46,6 +46,7 @@ interface ChannelInfo {
   enabled: boolean;
   config: Record<string, any>;
   secretsSet: Record<string, boolean>;
+  template: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -87,6 +88,7 @@ const TYPE_LABELS: Record<string, string> = {
   exited: '容器退出',
   health: '健康检查',
   port: '端口',
+  selfheal: '自愈',
 };
 
 /** 容器级告警监控类型中文名 */
@@ -138,6 +140,7 @@ interface ChannelForm {
   webhookUrl: string; // feishu / wecom / slack webhook url
   botToken: string;   // telegram bot token
   chatId: string;     // telegram chat id
+  template: string;   // 渠道消息模板（空=原样透传）
 }
 
 const EMPTY_FORM: ChannelForm = {
@@ -156,10 +159,36 @@ const EMPTY_FORM: ChannelForm = {
   webhookUrl: '',
   botToken: '',
   chatId: '',
+  template: '',
 };
 
 /** 规则名称映射（含新增 gpu/net） */
 const RULE_NAMES: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络' };
+
+/** 自愈规则（后端 /api/selfheal/rules 行） */
+interface SelfHealRule {
+  id: number;
+  containerName: string;
+  watchType: 'unhealthy' | 'exited';
+  action: 'restart' | 'start';
+  cooldownSec: number;
+  enabled: boolean;
+  lastTriggeredAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 自愈监控类型中文名 */
+const SELFHEAL_WATCH_LABELS: Record<string, string> = {
+  unhealthy: '健康检查失败',
+  exited: '退出/死亡',
+};
+
+/** 自愈动作中文名 */
+const SELFHEAL_ACTION_LABELS: Record<string, string> = {
+  restart: '自动重启',
+  start: '自动启动',
+};
 
 /**
  * 格式化时间
@@ -214,6 +243,16 @@ export default function NotificationsPage() {
   });
   const [routeSaving, setRouteSaving] = useState(false);
   const ROUTE_LEVEL_LABELS: Record<string, string> = { warn: '警告（warn）', danger: '危险（danger）', recovery: '恢复（recovery）' };
+
+  // 容器自愈
+  const [selfHealRules, setSelfHealRules] = useState<SelfHealRule[]>([]);
+  const [selfHealLoading, setSelfHealLoading] = useState(true);
+  const [selfHealModal, setSelfHealModal] = useState<{ editing: SelfHealRule | null; open: boolean }>({ editing: null, open: false });
+  const [selfHealForm, setSelfHealForm] = useState({ containerName: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', enabled: true });
+  const [selfHealError, setSelfHealError] = useState('');
+  const [selfHealSaving, setSelfHealSaving] = useState(false);
+  const [selfHealRunning, setSelfHealRunning] = useState(false);
+  const [selfHealDeleteTarget, setSelfHealDeleteTarget] = useState<SelfHealRule | null>(null);
 
   // 规则编辑
   const [ruleModal, setRuleModal] = useState<AlertRule | null>(null);
@@ -389,9 +428,121 @@ export default function NotificationsPage() {
     }
   }, [showToast]);
 
+  /**
+   * 加载自愈规则
+   */
+  const loadSelfHealRules = useCallback(async () => {
+    setSelfHealLoading(true);
+    try {
+      const res = await get<{ rules: SelfHealRule[] }>('/api/selfheal/rules');
+      setSelfHealRules(res?.rules || []);
+    } catch (e: any) {
+      showToast(e?.message || '加载自愈规则失败', 'error');
+    } finally {
+      setSelfHealLoading(false);
+    }
+  }, [showToast]);
+
+  /**
+   * 打开新增自愈规则弹窗
+   */
+  const openCreateSelfHeal = useCallback(() => {
+    setSelfHealForm({ containerName: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', enabled: true });
+    setSelfHealError('');
+    setSelfHealModal({ editing: null, open: true });
+  }, []);
+
+  /**
+   * 打开编辑自愈规则弹窗
+   */
+  const openEditSelfHeal = useCallback((rule: SelfHealRule) => {
+    setSelfHealForm({
+      containerName: rule.containerName,
+      watchType: rule.watchType,
+      action: rule.action,
+      cooldownSec: String(rule.cooldownSec),
+      enabled: rule.enabled,
+    });
+    setSelfHealError('');
+    setSelfHealModal({ editing: rule, open: true });
+  }, []);
+
+  /**
+   * 提交自愈规则新增 / 编辑
+   */
+  const handleSaveSelfHeal = useCallback(async () => {
+    if (!selfHealForm.containerName.trim()) {
+      setSelfHealError('请输入容器名');
+      return;
+    }
+    const cooldownSec = Math.floor(Number(selfHealForm.cooldownSec) || 0);
+    if (cooldownSec < 10 || cooldownSec > 86400) {
+      setSelfHealError('冷却期需为 10-86400 秒');
+      return;
+    }
+    setSelfHealSaving(true);
+    try {
+      const payload = {
+        containerName: selfHealForm.containerName.trim(),
+        watchType: selfHealForm.watchType,
+        action: selfHealForm.action,
+        cooldownSec,
+        enabled: selfHealForm.enabled,
+      };
+      if (selfHealModal.editing) {
+        await put(`/api/selfheal/rules/${selfHealModal.editing.id}`, payload);
+        showToast('自愈规则已更新');
+      } else {
+        await post('/api/selfheal/rules', payload);
+        showToast('自愈规则已创建');
+      }
+      setSelfHealModal({ editing: null, open: false });
+      loadSelfHealRules();
+    } catch (e: any) {
+      setSelfHealError(e?.message || '保存失败');
+    } finally {
+      setSelfHealSaving(false);
+    }
+  }, [selfHealForm, selfHealModal, loadSelfHealRules, showToast]);
+
+  /**
+   * 确认删除自愈规则
+   */
+  const handleDeleteSelfHeal = useCallback(async () => {
+    if (!selfHealDeleteTarget) return;
+    try {
+      await del(`/api/selfheal/rules/${selfHealDeleteTarget.id}`);
+      showToast('自愈规则已删除');
+      setSelfHealDeleteTarget(null);
+      loadSelfHealRules();
+    } catch (e: any) {
+      showToast(e?.message || '删除失败', 'error');
+    }
+  }, [selfHealDeleteTarget, loadSelfHealRules, showToast]);
+
+  /**
+   * 立即执行一轮自愈巡检
+   */
+  const handleRunSelfHeal = useCallback(async () => {
+    setSelfHealRunning(true);
+    try {
+      const res = await post<{ triggered: number }>('/api/selfheal/run');
+      showToast(res?.triggered ? `巡检完成，触发 ${res.triggered} 条自愈` : '巡检完成，本轮无触发');
+      loadSelfHealRules();
+    } catch (e: any) {
+      showToast(e?.message || '巡检失败', 'error');
+    } finally {
+      setSelfHealRunning(false);
+    }
+  }, [loadSelfHealRules, showToast]);
+
   useEffect(() => {
     loadContainerRules();
   }, [loadContainerRules]);
+
+  useEffect(() => {
+    loadSelfHealRules();
+  }, [loadSelfHealRules]);
 
   useEffect(() => {
     load();
@@ -439,6 +590,7 @@ export default function NotificationsPage() {
       webhookUrl: c.webhookUrl || '',
       botToken: '',
       chatId: c.chatId || '',
+      template: ch.template || '',
     });
     setFormError('');
     setChannelModal({ editing: ch, open: true });
@@ -498,6 +650,7 @@ export default function NotificationsPage() {
         await put(`/api/notifications/channels/${channelModal.editing.id}`, {
           name: form.name.trim(),
           config: buildChannelConfig(),
+          template: form.template,
         });
         showToast('渠道已更新');
       } else {
@@ -505,6 +658,7 @@ export default function NotificationsPage() {
           name: form.name.trim(),
           type: form.type,
           config: buildChannelConfig(),
+          template: form.template,
         });
         showToast('渠道已创建');
       }
@@ -967,6 +1121,60 @@ export default function NotificationsPage() {
         </div>
       </Card>
 
+      {/* 容器自愈 */}
+      <Card
+        className="notify-card"
+        title="容器自愈"
+        extra={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="ghost" size="sm" onClick={loadSelfHealRules}>刷新</Button>
+            <Button variant="ghost" size="sm" loading={selfHealRunning} disabled={!canManage} onClick={handleRunSelfHeal}>立即巡检</Button>
+            <Button size="sm" disabled={!canManage} onClick={openCreateSelfHeal}>+ 新增规则</Button>
+          </div>
+        }
+      >
+        <p className="notify-desc">
+          对指定容器监听健康检查失败或退出，命中后自动执行恢复动作（带冷却期防重），触发记录见下方「告警记录」（类型 = 自愈）。
+        </p>
+        {selfHealLoading ? (
+          <SkeletonRows rows={2} />
+        ) : selfHealRules.length === 0 ? (
+          <Empty title="暂无自愈规则" description="新增一条规则，让面板在容器异常时自动重启或拉起。" />
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: '18%' }}>容器</th>
+                <th style={{ width: '18%' }}>监控条件</th>
+                <th style={{ width: '14%' }}>恢复动作</th>
+                <th style={{ width: '12%' }}>冷却期</th>
+                <th style={{ width: '14%' }}>状态</th>
+                <th style={{ width: '14%' }}>最近触发</th>
+                <th style={{ width: '20%' }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selfHealRules.map((r) => (
+                <tr key={r.id}>
+                  <td><strong>{r.containerName}</strong></td>
+                  <td>{SELFHEAL_WATCH_LABELS[r.watchType] || r.watchType}</td>
+                  <td>{SELFHEAL_ACTION_LABELS[r.action] || r.action}</td>
+                  <td>{r.cooldownSec}s</td>
+                  <td>
+                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
+                  </td>
+                  <td>{r.lastTriggeredAt ? formatTime(r.lastTriggeredAt) : <span className="notify-dim">从未</span>}</td>
+                  <td>
+                    <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEditSelfHeal(r)}>编辑</Button>{' '}
+                    <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => setSelfHealDeleteTarget(r)}>删除</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
       {/* 容器告警规则 */}
       <Card
         className="notify-card"
@@ -1410,6 +1618,18 @@ export default function NotificationsPage() {
           </Field>
         )}
 
+        <Field
+          label="消息模板（可选）"
+          hint="支持变量：{{level}} {{message}} {{time}} {{channel}}；留空则按默认文案推送"
+        >
+          <TextArea
+            rows={3}
+            value={form.template}
+            placeholder={'如：【{{level}}】{{message}}\n时间：{{time}}'}
+            onChange={(e) => setForm((f) => ({ ...f, template: e.target.value }))}
+          />
+        </Field>
+
         {formError && <div className="notify-form-error">{formError}</div>}
       </Modal>
 
@@ -1675,6 +1895,76 @@ export default function NotificationsPage() {
         loading={deletingContainerRule}
         onConfirm={handleDeleteContainerRule}
         onCancel={() => setDeleteContainerRule(null)}
+      />
+
+      {/* 自愈规则新增/编辑弹窗 */}
+      <Modal
+        open={selfHealModal.open}
+        title={selfHealModal.editing ? '编辑自愈规则' : '新增自愈规则'}
+        onClose={() => setSelfHealModal({ editing: null, open: false })}
+        footer={
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setSelfHealModal({ editing: null, open: false })}>取消</Button>
+            <Button loading={selfHealSaving} onClick={handleSaveSelfHeal}>{selfHealModal.editing ? '保存' : '创建'}</Button>
+          </div>
+        }
+      >
+        <Field label="容器名" required hint="精确匹配容器名（docker ps 的 NAME 列），容器重建后依然生效">
+          <Input
+            value={selfHealForm.containerName}
+            placeholder="如：nginx-proxy"
+            onChange={(e) => setSelfHealForm((f) => ({ ...f, containerName: e.target.value }))}
+          />
+        </Field>
+        <Field label="监控条件" required>
+          <Select
+            value={selfHealForm.watchType}
+            onChange={(e) => setSelfHealForm((f) => ({ ...f, watchType: e.target.value }))}
+          >
+            <option value="unhealthy">健康检查失败（unhealthy）</option>
+            <option value="exited">容器退出/死亡（exited/dead）</option>
+          </Select>
+        </Field>
+        <Field label="恢复动作" required>
+          <Select
+            value={selfHealForm.action}
+            onChange={(e) => setSelfHealForm((f) => ({ ...f, action: e.target.value }))}
+          >
+            <option value="restart">重启容器（restart）</option>
+            <option value="start">启动容器（start）</option>
+          </Select>
+        </Field>
+        <Field label="冷却期（秒）" required hint="同一规则两次触发之间的最小间隔（10-86400 秒），防止反复重启刷屏">
+          <Input
+            type="number"
+            min={10}
+            max={86400}
+            value={selfHealForm.cooldownSec}
+            onChange={(e) => setSelfHealForm((f) => ({ ...f, cooldownSec: e.target.value }))}
+          />
+        </Field>
+        <Field label="启用状态">
+          <label className="notify-checkbox">
+            <input
+              type="checkbox"
+              checked={selfHealForm.enabled}
+              onChange={(e) => setSelfHealForm((f) => ({ ...f, enabled: e.target.checked }))}
+            />
+            启用该自愈规则
+          </label>
+        </Field>
+        {selfHealError && <div className="notify-form-error">{selfHealError}</div>}
+      </Modal>
+
+      {/* 删除自愈规则确认 */}
+      <ConfirmDialog
+        open={!!selfHealDeleteTarget}
+        title="删除自愈规则"
+        message={`确定删除容器「${selfHealDeleteTarget?.containerName ?? ''}」的自愈规则吗？删除后容器异常时将不再自动恢复。`}
+        confirmText="删除"
+        danger
+        onConfirm={handleDeleteSelfHeal}
+        onCancel={() => setSelfHealDeleteTarget(null)}
       />
 
       {/* 删除渠道确认 */}

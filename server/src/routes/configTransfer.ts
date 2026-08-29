@@ -19,6 +19,7 @@ import { nextRunTime } from '../scheduler';
 import { syncReverseProxy } from './sites';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
+import { PERMISSIONS, clearRbacCache } from '../rbac';
 
 const router = Router();
 
@@ -272,6 +273,26 @@ function buildExport(includeSecrets: boolean): Record<string, unknown> {
       hasPassword: hasCred,
     };
   });
+
+  // 自定义角色（内置角色由 ensureBuiltinRoles 幂等兜底，不导出）
+  out.roles = (d.prepare('SELECT name, permissions, created_at FROM roles WHERE system = 0').all() as any[]).map((r) => {
+    let perms: string[] = [];
+    try {
+      perms = JSON.parse(r.permissions) || [];
+    } catch {
+      perms = [];
+    }
+    return { name: r.name, permissions: perms, createdAt: r.created_at };
+  });
+
+  // 容器自愈规则（冷却期与开关，不含运行时 last_triggered_at）
+  out.selfHealRules = (d.prepare('SELECT container_name, watch_type, action, cooldown_sec, enabled FROM selfheal_rules').all() as any[]).map((r) => ({
+    containerName: r.container_name,
+    watchType: r.watch_type,
+    action: r.action,
+    cooldownSec: r.cooldown_sec,
+    enabled: !!r.enabled,
+  }));
 
   return {
     version: FORMAT_VERSION,
@@ -597,6 +618,51 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
       }
     }
 
+    // 14. 自定义角色（name 唯一；权限键过滤到目录内合法键；内置角色不覆盖）
+    if (Array.isArray(payload.roles)) {
+      const validKeys = new Set(PERMISSIONS.map((p) => p.key));
+      for (const r of payload.roles) {
+        if (!r || !r.name) continue;
+        const perms = Array.isArray(r.permissions) ? r.permissions.map(String).filter((k: string) => validKeys.has(k)) : [];
+        const now = Date.now();
+        if (exists('SELECT name FROM roles WHERE name = ?', [r.name])) {
+          if (conflict === 'skip') { count('roles', 0); continue; }
+          if (conflict === 'error') throw new Error(`角色已存在: ${r.name}`);
+          const row = d.prepare('SELECT system FROM roles WHERE name = ?').get(r.name) as any;
+          if (row?.system === 1) { count('roles', 0); continue; } // 内置角色权限固定
+          d.prepare('UPDATE roles SET permissions = ? WHERE name = ?').run(JSON.stringify(perms), r.name);
+          count('roles', 1);
+          continue;
+        }
+        d.prepare('INSERT INTO roles (name, permissions, system, created_at) VALUES (?, ?, 0, ?)').run(String(r.name), JSON.stringify(perms), now);
+        count('roles', 1);
+      }
+    }
+
+    // 15. 容器自愈规则（(container_name, watch_type) 唯一）
+    if (Array.isArray(payload.selfHealRules)) {
+      for (const r of payload.selfHealRules) {
+        if (!r || !r.containerName || !r.watchType) continue;
+        const now = Date.now();
+        if (conflict === 'overwrite') {
+          d.prepare('DELETE FROM selfheal_rules WHERE container_name = ? AND watch_type = ?').run(r.containerName, r.watchType);
+        }
+        const dup = exists('SELECT id FROM selfheal_rules WHERE container_name = ? AND watch_type = ?', [r.containerName, r.watchType]);
+        if (conflict === 'error' && dup) throw new Error(`自愈规则已存在: ${r.containerName}/${r.watchType}`);
+        if (dup && conflict === 'skip') { count('selfHealRules', 0); continue; }
+        d.prepare('INSERT INTO selfheal_rules (container_name, watch_type, action, cooldown_sec, enabled, last_triggered_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)').run(
+          r.containerName,
+          r.watchType === 'exited' ? 'exited' : 'unhealthy',
+          r.action === 'start' ? 'start' : 'restart',
+          Math.max(10, Math.floor(Number(r.cooldownSec)) || 300),
+          r.enabled === false ? 0 : 1,
+          now,
+          now,
+        );
+        count('selfHealRules', 1);
+      }
+    }
+
     d.exec('COMMIT');
   } catch (err: any) {
     d.exec('ROLLBACK');
@@ -604,6 +670,9 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
   }
 
   // 后处理（提交后执行，避免事务内做网络/子系统操作）
+  if (payload.roles && payload.roles.length) {
+    try { clearRbacCache(); } catch { /* 忽略 */ }
+  }
   if (currentFlagged || (payload.engines && payload.engines.length)) {
     try { resetDockerCache(); } catch { /* 忽略 */ }
     try { restartEventMonitor(); } catch { /* 忽略 */ }

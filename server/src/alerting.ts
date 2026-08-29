@@ -128,7 +128,7 @@ export function resolveTargetChannels(level: 'warn' | 'danger' | 'recovery'): Ch
  * 推送一条文本到按级别解析出的全部目标渠道
  * @returns 任一渠道成功即 ok=true；detail 汇总失败明细
  */
-async function pushToTargets(
+export async function pushToTargets(
   level: 'warn' | 'danger' | 'recovery',
   text: string,
 ): Promise<{ ok: boolean; detail: string }> {
@@ -138,7 +138,7 @@ async function pushToTargets(
   const fails: string[] = [];
   for (const t of targets) {
     try {
-      const r = await sendAlert(t.id, text);
+      const r = await sendAlert(t.id, text, { level });
       if (r.ok) anyOk = true;
       else fails.push(`${t.name}: ${r.detail}`);
     } catch (err: any) {

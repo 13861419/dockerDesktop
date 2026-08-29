@@ -221,9 +221,11 @@ export default function NetworksPage() {
   const { showToast } = useToast();
   // 是否可写（创建/删除/清理/连接/断开）：仅管理员可用；普通用户可只读浏览。
   // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
-  const { canManage: canDelete, checking: checkingAdmin } = useCanManage();
-  const canManage = canDelete;
-  const checking = checkingAdmin;
+const { checking: checkingAdmin, hasPerm } = useCanManage();
+const canManage = hasPerm('networks.write');
+const canDelete = canManage;
+const canPrune = hasPerm('networks.prune');
+const checking = checkingAdmin;
   const [networks, setNetworks] = useState<NetworkItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -502,7 +504,7 @@ export default function NetworksPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPrune}>
               清理未使用
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canDelete}>

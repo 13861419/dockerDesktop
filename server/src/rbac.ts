@@ -27,6 +27,7 @@ export const PERMISSIONS: Array<{ key: string; label: string; group: string }> =
   { key: 'networks.prune', label: '清理网络', group: '网络' },
   { key: 'compose.write', label: '编排部署/重启/构建', group: '编排' },
   { key: 'compose.down', label: '停止编排项目', group: '编排' },
+  { key: 'selfheal.manage', label: '容器自愈规则（查看/创建/修改/删除/手动巡检）', group: '自愈' },
 ];
 
 /** 内置角色默认权限 */
@@ -196,4 +197,11 @@ function validatePermissions(permissions: unknown): string[] {
     if (!valid.has(p)) throw Object.assign(new Error(`未知权限键: ${p}`), { statusCode: 400 });
   }
   return Array.from(new Set(list));
+}
+
+/**
+ * 清空权限缓存（配置导入等绕过 createRole/updateRole 的写路径完成后调用）
+ */
+export function clearRbacCache(): void {
+  cache.clear();
 }

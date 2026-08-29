@@ -23,6 +23,7 @@ interface ChannelRow {
   type: string;
   enabled: number;
   config: string;
+  template: string;
   created_at: number;
   updated_at: number;
 }
@@ -37,6 +38,8 @@ export interface ChannelInfo {
   config: Record<string, any>;
   /** 敏感字段是否已设置（代替明文回显） */
   secretsSet: Record<string, boolean>;
+  /** 消息模板（空=原样透传），支持 {{level}} {{message}} {{time}} {{channel}} */
+  template: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -118,6 +121,7 @@ function toChannelInfo(row: ChannelRow): ChannelInfo {
     enabled: row.enabled === 1,
     config: publicCfg,
     secretsSet,
+    template: String(row.template || ''),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -170,7 +174,7 @@ function validateConfig(type: ChannelType, config: Record<string, any>): void {
  */
 export function listChannels(): ChannelInfo[] {
   const rows = getDb()
-    .prepare('SELECT id, name, type, enabled, config, created_at, updated_at FROM notify_channels ORDER BY created_at ASC')
+    .prepare('SELECT id, name, type, enabled, config, template, created_at, updated_at FROM notify_channels ORDER BY created_at ASC')
     .all() as unknown as ChannelRow[];
   return rows.map(toChannelInfo);
 }
@@ -181,17 +185,32 @@ export function listChannels(): ChannelInfo[] {
  */
 export function getChannel(id: string): { info: ChannelInfo; cfg: Record<string, any> } | null {
   const row = getDb()
-    .prepare('SELECT id, name, type, enabled, config, created_at, updated_at FROM notify_channels WHERE id = ?')
+    .prepare('SELECT id, name, type, enabled, config, template, created_at, updated_at FROM notify_channels WHERE id = ?')
     .get(id) as unknown as ChannelRow | undefined;
   if (!row) return null;
   return { info: toChannelInfo(row), cfg: decodeConfig(row.config) };
 }
 
 /**
- * 新增通知渠道
- * @param input 渠道输入（name/type/config）
+ * 归一化并校验消息模板（去首尾空白、限长）
+ * @param raw 用户提交的模板原文
  */
-export function createChannel(input: { name: string; type: ChannelType; config: Record<string, any> }): { id: string } {
+function normalizeTemplate(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (s.length > 500) throw Object.assign(new Error('消息模板不能超过 500 字符'), { statusCode: 400 });
+  return s;
+}
+
+/**
+ * 新增通知渠道
+ * @param input 渠道输入（name/type/config/template）
+ */
+export function createChannel(input: {
+  name: string;
+  type: ChannelType;
+  config: Record<string, any>;
+  template?: string;
+}): { id: string } {
   const name = String(input?.name || '').trim();
   const type = input?.type;
   const config = input?.config || {};
@@ -200,11 +219,12 @@ export function createChannel(input: { name: string; type: ChannelType; config: 
     throw Object.assign(new Error('不支持的渠道类型'), { statusCode: 400 });
   }
   validateConfig(type, config);
+  const template = normalizeTemplate(input?.template);
   const id = crypto.randomUUID();
   const now = Date.now();
   getDb()
-    .prepare('INSERT INTO notify_channels (id, name, type, enabled, config, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)')
-    .run(id, name, type, encodeConfig(config, type), now, now);
+    .prepare('INSERT INTO notify_channels (id, name, type, enabled, config, template, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?)')
+    .run(id, name, type, encodeConfig(config, type), template, now, now);
   return { id };
 }
 
@@ -215,13 +235,14 @@ export function createChannel(input: { name: string; type: ChannelType; config: 
  */
 export function updateChannel(
   id: string,
-  patch: { name?: string; enabled?: boolean; config?: Record<string, any> },
+  patch: { name?: string; enabled?: boolean; config?: Record<string, any>; template?: string },
 ): void {
   const existing = getChannel(id);
   if (!existing) throw Object.assign(new Error('渠道不存在'), { statusCode: 404 });
   const d = getDb();
   const name = patch.name !== undefined ? String(patch.name).trim() : existing.info.name;
   if (!name) throw Object.assign(new Error('请输入渠道名称'), { statusCode: 400 });
+  const template = patch.template !== undefined ? normalizeTemplate(patch.template) : existing.info.template;
 
   // 合并配置：新提交覆盖非敏感字段；敏感字段为空保留原值
   let merged: Record<string, any> = { ...existing.cfg };
@@ -236,10 +257,11 @@ export function updateChannel(
 
   const enabled = patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.info.enabled ? 1 : 0;
   const now = Date.now();
-  d.prepare('UPDATE notify_channels SET name = ?, enabled = ?, config = ?, updated_at = ? WHERE id = ?').run(
+  d.prepare('UPDATE notify_channels SET name = ?, enabled = ?, config = ?, template = ?, updated_at = ? WHERE id = ?').run(
     name,
     enabled,
     encodeConfig(merged, existing.info.type),
+    template,
     now,
     id,
   );
@@ -265,16 +287,60 @@ function dingtalkSign(secret: string): { timestamp: string; sign: string } {
   return { timestamp, sign: encodeURIComponent(sign) };
 }
 
+/** 模板变量取值（level/message/time/channel） */
+export interface TemplateVars {
+  level?: string;
+  message?: string;
+  time?: string;
+  channel?: string;
+}
+
+/**
+ * 按渠道模板渲染消息文本：替换 {{level}} {{message}} {{time}} {{channel}}。
+ * 未知占位符原样保留；模板为空时返回原文本（兼容未配置模板的渠道）。
+ * @param template 模板原文
+ * @param vars 变量取值
+ */
+export function renderTemplate(template: string, vars: TemplateVars): string {
+  const tpl = String(template ?? '');
+  if (!tpl.trim()) return String(vars.message ?? '');
+  const level = String(vars.level ?? '');
+  const message = String(vars.message ?? '');
+  const time = String(vars.time ?? '');
+  const channel = String(vars.channel ?? '');
+  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key: string) => {
+    if (key === 'level') return level;
+    if (key === 'message') return message;
+    if (key === 'time') return time;
+    if (key === 'channel') return channel;
+    return m;
+  });
+}
+
 /**
  * 推送一条告警消息到指定渠道
  * @param channelId 渠道 id
  * @param text 告警文本
+ * @param vars 可选变量（如告警级别），用于渠道模板渲染；未传时 level 为空串
  */
-export async function sendAlert(channelId: string, text: string): Promise<{ ok: boolean; detail: string }> {
+export async function sendAlert(
+  channelId: string,
+  text: string,
+  vars?: { level?: 'warn' | 'danger' | 'recovery' },
+): Promise<{ ok: boolean; detail: string }> {
   const ch = getChannel(channelId);
   if (!ch) return { ok: false, detail: '渠道不存在' };
   if (!ch.info.enabled) return { ok: false, detail: '渠道已停用' };
-  return dispatch(ch.info.type, ch.cfg, text);
+  let finalText = text;
+  if (ch.info.template) {
+    finalText = renderTemplate(ch.info.template, {
+      level: vars?.level ?? '',
+      message: text,
+      time: new Date().toLocaleString('zh-CN', { hour12: false }),
+      channel: ch.info.name,
+    });
+  }
+  return dispatch(ch.info.type, ch.cfg, finalText);
 }
 
 /**

@@ -14,7 +14,8 @@ import { Field, Input, Select } from '../components/Form';
 import { PageLoading, SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
-import { getToken, isAdmin, canOperate } from '../api/auth';
+import { getToken, canOperate } from '../api/auth';
+import { useCanManage } from '../hooks/useCanManage';
 import { ImageItem } from '../types';
 import './images.less';
 
@@ -136,7 +137,11 @@ const suggestStatStyle: React.CSSProperties = {
 export default function ImagesPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const canManage = isAdmin();
+  const { hasPerm } = useCanManage();
+  const canPull = hasPerm('images.pull');
+  const canManage = hasPerm('images.write');
+  const canDeleteImage = hasPerm('images.delete');
+  const canPruneImage = hasPerm('images.prune');
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 列表加载失败的错误信息（用于展示可重试的错误态）
@@ -289,8 +294,8 @@ export default function ImagesPage() {
   }, [loadSources]);
 
   const handlePull = useCallback(async () => {
-    if (!canManage) {
-      showToast('仅管理员可拉取镜像', 'error');
+    if (!canPull) {
+      showToast('缺少镜像拉取权限', 'error');
       setPullOpen(false);
       return;
     }
@@ -312,7 +317,7 @@ export default function ImagesPage() {
     } finally {
       setPulling(false);
     }
-  }, [canManage, pullRef, pullSource, showToast]);
+  }, [canPull, pullRef, pullSource, showToast]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -911,7 +916,7 @@ export default function ImagesPage() {
               <Button variant="secondary" onClick={openCatManage} disabled={!canManage}>
                 按分类管理
               </Button>
-              <Button variant="danger" onClick={() => setPruneAllOpen(true)}>
+              <Button variant="danger" onClick={() => setPruneAllOpen(true)} disabled={!canPruneImage}>
                 一键清理未使用镜像
               </Button>
             </div>
@@ -935,7 +940,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPruneImage}>
               清理悬空镜像
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={!canManage}>
@@ -944,7 +949,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={openSearch}>
               搜索镜像
             </Button>
-            <Button variant="primary" onClick={() => setPullOpen(true)} disabled={!canManage}>
+            <Button variant="primary" onClick={() => setPullOpen(true)} disabled={!canPull}>
               拉取镜像
             </Button>
           </div>
@@ -1173,7 +1178,7 @@ export default function ImagesPage() {
                           variant="ghost"
                           size="sm"
                           loading={pullResultRef === r.name}
-                          disabled={!canManage}
+                          disabled={!canPull}
                           onClick={() => handlePullResult(r.name)}
                         >
                           拉取
@@ -1200,7 +1205,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setPullOpen(false)} disabled={pulling}>
               取消
             </Button>
-            <Button onClick={handlePull} loading={pulling} disabled={!canManage}>
+            <Button onClick={handlePull} loading={pulling} disabled={!canPull}>
               拉取
             </Button>
           </>
@@ -1502,7 +1507,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={closeCatManage} disabled={batchDeleting}>
               关闭
             </Button>
-            {!canManage ? null : (
+            {!canDeleteImage ? null : (
               <Button
                 variant="danger"
                 disabled={selectedInCategory === 0}

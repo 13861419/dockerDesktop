@@ -81,8 +81,10 @@ export default function VolumesPage() {
   const { showToast } = useToast();
   // 是否可写（创建/删除/清理）：仅管理员可用；普通用户可只读浏览。
   // 采用服务端权威角色判定（useCanManage），防止基于被篡改的 localStorage 误放行
-  const { canManage, checking } = useCanManage();
-  const canDelete = canManage;
+const { checking, hasPerm } = useCanManage();
+const canWrite = hasPerm('volumes.write');
+const canDelete = hasPerm('volumes.delete');
+const canPrune = hasPerm('volumes.prune');
   const [volumes, setVolumes] = useState<VolumeItem[]>([]);
   const [loading, setLoading] = useState(true);
   // 卷名 -> 引用它的容器名数组（用于列表展示「使用中」状态与挂载容器）
@@ -177,8 +179,8 @@ export default function VolumesPage() {
       showToast('请输入数据卷名称', 'error');
       return;
     }
-    if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可创建数据卷', 'error');
+    if (!canWrite || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '缺少数据卷管理权限', 'error');
       setCreateOpen(false);
       return;
     }
@@ -195,7 +197,7 @@ export default function VolumesPage() {
     } finally {
       setCreating(false);
     }
-  }, [name, driver, showToast, canDelete, checking]);
+  }, [name, driver, showToast, canWrite, checking]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -267,8 +269,8 @@ export default function VolumesPage() {
       showToast('请输入目标卷名', 'error');
       return;
     }
-    if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可克隆数据卷', 'error');
+    if (!canWrite || checking) {
+      showToast(checking ? '正在确认权限，请稍候' : '缺少数据卷管理权限', 'error');
       setCloneTarget(null);
       return;
     }
@@ -283,7 +285,7 @@ export default function VolumesPage() {
     } finally {
       setCloning(false);
     }
-  }, [cloneTarget, cloneName, cloning, canDelete, checking, showToast]);
+  }, [cloneTarget, cloneName, cloning, canWrite, checking, showToast]);
 
   /**
    * 导出数据卷为 tar 下载
@@ -484,10 +486,10 @@ export default function VolumesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPrune}>
               清理未使用卷
             </Button>
-            <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canDelete}>
+            <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canWrite}>
               新建卷
             </Button>
           </div>
@@ -564,7 +566,7 @@ export default function VolumesPage() {
                       <Button variant="ghost" size="sm" onClick={() => openBackup(vol)}>
                         备份
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openClone(vol)} disabled={!canDelete}>
+                      <Button variant="ghost" size="sm" onClick={() => openClone(vol)} disabled={!canWrite}>
                         克隆
                       </Button>
                       <Button
@@ -572,14 +574,14 @@ export default function VolumesPage() {
                         size="sm"
                         onClick={() => handleExport(vol)}
                         loading={exportingName === vol.Name}
-                        disabled={canDelete ? false : true}
+                        disabled={!canWrite}
                       >
                         导出
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
                         详情
                       </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)}>
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)} disabled={!canDelete}>
                         删除
                       </Button>
                     </div>

@@ -12,6 +12,7 @@ import { setupHostTerminalServer } from './docker/hostTerminalWs';
 import { startEventMonitor } from './docker/events';
 import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
+import { startSelfHeal, stopSelfHeal } from './selfheal';
 import { initStorage, closeDb } from './storage';
 import { ensureInitialUser } from './users';
 import { ensureBuiltinRoles } from './rbac';
@@ -78,6 +79,15 @@ const server = app.listen(PORT, HOST, () => {
       console.error('告警服务启动失败:', err);
     }
   }, 1500);
+
+  // 启动容器自愈巡检（异步，与告警同节奏，稍晚启动）
+  setTimeout(() => {
+    try {
+      startSelfHeal();
+    } catch (err) {
+      console.error('容器自愈服务启动失败:', err);
+    }
+  }, 1600);
 });
 
 // 挂载容器 WebSocket 终端
@@ -102,12 +112,13 @@ try {
 }
 
 // 进程退出时安全关闭数据库连接（兜底落盘 WAL）并停止调度器
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT'] as const) {
-  process.on(sig, () => {
-    stopScheduler();
-    stopAlerting();
-    closeDb();
-    process.exit(0);
-  });
-}
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT'] as const) {
+    process.on(sig, () => {
+      stopScheduler();
+      stopAlerting();
+      stopSelfHeal();
+      closeDb();
+      process.exit(0);
+    });
+  }
 process.on('exit', () => closeDb());

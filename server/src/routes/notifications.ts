@@ -79,13 +79,19 @@ function parseRecordFilter(req: Request): { type?: string; level?: string; pushS
  * 校验并归一化渠道输入
  * @param body 请求体
  */
-function parseChannelInput(body: any): { name: string; type: ChannelType; config: Record<string, any> } {
+function parseChannelInput(body: any): { name: string; type: ChannelType; config: Record<string, any>; template?: string } {
   const type = String(body?.type || '');
   if (!CHANNEL_TYPES.includes(type as ChannelType)) {
     throw Object.assign(new Error('不支持的渠道类型'), { statusCode: 400 });
   }
   const config = body?.config && typeof body.config === 'object' ? body.config : {};
-  return { name: String(body?.name || ''), type: type as ChannelType, config };
+  const input: { name: string; type: ChannelType; config: Record<string, any>; template?: string } = {
+    name: String(body?.name || ''),
+    type: type as ChannelType,
+    config,
+  };
+  if (body?.template !== undefined) input.template = String(body.template);
+  return input;
 }
 
 /**
@@ -124,10 +130,11 @@ router.put(
   asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const body = req.body || {};
-    const patch: { name?: string; enabled?: boolean; config?: Record<string, any> } = {};
+    const patch: { name?: string; enabled?: boolean; config?: Record<string, any>; template?: string } = {};
     if (body.name !== undefined) patch.name = String(body.name);
     if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
     if (body.config && typeof body.config === 'object') patch.config = body.config;
+    if (body.template !== undefined) patch.template = String(body.template);
     updateChannel(id, patch);
     logOperation(res.locals.username, '更新通知渠道', '通知', String(body.name || id), '');
     res.json({ ok: true });
