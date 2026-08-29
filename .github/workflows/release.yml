@@ -1,10 +1,12 @@
 # ============================================================
-#  Docker Manager - Release CI (全渠道发�?
+#  Docker Manager - Release CI (全渠道发布)
 #  触发条件: push tag v*
 #  发布渠道:
-#    1. GitHub Releases �?zip / deb / rpm
-#    2. ghcr.io �?Docker 镜像（多架构�?#    3. GitHub Packages (npm)
-#    4. GitHub Pages �?APT 仓库�?# ============================================================
+#    1. GitHub Releases — zip / deb / rpm
+#    2. ghcr.io — Docker 镜像（多架构）
+#    3. GitHub Packages (npm)
+#    4. GitHub Pages — APT 仓库源
+# ============================================================
 name: Release
 
 on:
@@ -96,7 +98,8 @@ jobs:
           files: sha256sums.txt
 
   # ==========================================================
-  #  2. ghcr.io �?Docker 多架构镜�?  # ==========================================================
+  #  2. ghcr.io — Docker 多架构镜像
+  # ==========================================================
   publish-docker:
     runs-on: ubuntu-24.04
     needs: [checksums]
@@ -177,7 +180,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================
-  #  4. GitHub Pages �?APT 仓库
+  #  4. GitHub Pages — APT 仓库
   # ==========================================================
   publish-repo:
     runs-on: ubuntu-24.04
