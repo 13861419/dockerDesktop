@@ -37,7 +37,8 @@ test('审批中心：状态筛选与记录区可见', async ({ page }) => {
   await login(page);
   await page.goto('/approvals');
   await expect(page.getByRole('button', { name: '待审批' })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/审批记录/)).toBeVisible();
+  // 「审批记录」文本同时出现在统计区与卡片标题（空数据时还有「暂无审批记录」空态），取首个命中即可
+  await expect(page.getByText(/审批记录/).first()).toBeVisible();
 });
 
 test('安全基线页：规则清单可见（管理员）', async ({ page }) => {
