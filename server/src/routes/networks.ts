@@ -6,7 +6,8 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
-import { requireAdmin, requireAuth } from '../auth';
+import { requireAuth } from '../auth';
+import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 
 const router = Router();
@@ -61,7 +62,7 @@ router.get(
  */
 router.post(
   '/',
-  requireAdmin,
+  requirePermission('networks.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};
@@ -95,7 +96,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  requireAdmin,
+  requirePermission('networks.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     await docker.getNetwork(req.params.id).remove();
@@ -161,7 +162,7 @@ router.post(
  */
 router.post(
   '/:id/connect',
-  requireAdmin,
+  requirePermission('networks.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { container, aliases, ipv4Address } = req.body || {};
@@ -187,7 +188,7 @@ router.post(
  */
 router.post(
   '/:id/disconnect',
-  requireAdmin,
+  requirePermission('networks.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { container, force } = req.body || {};

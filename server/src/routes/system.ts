@@ -18,6 +18,7 @@ import {
 import { exportDatabase, importDatabaseBuffer, getDataDir } from '../storage';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
+import { listRoles } from '../rbac';
 
 const router = Router();
 
@@ -350,9 +351,9 @@ router.post(
       return res.status(400).json({ error: '密码至少 6 位' });
     }
     try {
-      // 角色白名单：管理员 / 运维 / 普通用户 / 审计员（只读）四选一，非法值按普通用户处理
-      const normalizedRole: 'admin' | 'operator' | 'user' | 'auditor' =
-        role === 'operator' ? 'operator' : role === 'admin' ? 'admin' : role === 'auditor' ? 'auditor' : 'user';
+      // 角色须为已存在的角色（内置或自定义），非法值按普通用户处理
+      const roleNames = new Set(listRoles().map((r) => r.name));
+      const normalizedRole: string = role && roleNames.has(String(role)) ? String(role) : 'user';
       addUser(String(username), String(password), normalizedRole);
       res.json({ ok: true });
     } catch (err: any) {

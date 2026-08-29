@@ -615,6 +615,14 @@ function createTables(): void {
       decided_by  TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at);
+
+    -- 自定义角色 RBAC（0.4.0）：permissions 为权限键数组 JSON
+    CREATE TABLE IF NOT EXISTS roles (
+      name        TEXT PRIMARY KEY,
+      permissions TEXT NOT NULL DEFAULT '[]',
+      system      INTEGER NOT NULL DEFAULT 0,       -- 1 = 内置角色（admin/operator/user/auditor）
+      created_at  INTEGER NOT NULL
+    );
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）

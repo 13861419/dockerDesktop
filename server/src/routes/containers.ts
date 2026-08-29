@@ -12,6 +12,7 @@ import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireOperator } from '../auth';
+import { requirePermission } from '../rbac';
 import { getSetting } from '../settings';
 import { maybeGate, shouldGate, submitApproval } from '../approvals';
 
@@ -674,7 +675,7 @@ router.post(
  */
 router.post(
   '/:id/rename',
-  requireAdmin,
+  requirePermission('containers.run'),
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -1368,7 +1369,7 @@ router.post(
  */
 router.post(
   '/:id/recreate',
-  requireAdmin,
+  requirePermission('containers.run'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const old = docker.getContainer(req.params.id);
@@ -1570,7 +1571,7 @@ function applyUpdateBodyToHostConfig(b: any, hc: any): void {
  */
 router.post(
   '/:id/update',
-  requireAdmin,
+  requirePermission('containers.run'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const container = docker.getContainer(req.params.id);
@@ -1656,7 +1657,7 @@ router.post(
  */
 router.post(
   '/:id/commit',
-  requireAdmin,
+  requirePermission('containers.run'),
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();

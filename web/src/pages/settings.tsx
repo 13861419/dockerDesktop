@@ -23,9 +23,34 @@ import './settings.less';
 
 interface UserItem {
   username: string;
-  // 支持管理员 / 运维人员 / 普通用户 / 审计员（只读）四种角色
-  role: 'admin' | 'operator' | 'user' | 'auditor';
+  // 角色名：内置 admin/operator/user/auditor 或自定义角色
+  role: string;
   createdAt: number;
+}
+
+/** 角色信息（/api/roles） */
+interface RoleInfo {
+  name: string;
+  permissions: string[];
+  system: boolean;
+}
+
+/** 权限目录项（/api/roles/permissions） */
+interface PermissionItem {
+  key: string;
+  label: string;
+  group: string;
+}
+
+/** 内置角色展示名 */
+const ROLE_LABELS: Record<string, string> = {
+  admin: '管理员',
+  operator: '运维人员',
+  user: '普通用户',
+  auditor: '审计员（只读）',
+};
+function roleLabel(name: string): string {
+  return ROLE_LABELS[name] || name;
 }
 
 interface EngineInfo {
@@ -126,8 +151,14 @@ export default function SettingsPage() {
   // 新增用户表单
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'admin' | 'operator' | 'user' | 'auditor'>('user');
+  const [newRole, setNewRole] = useState('user');
   const [creating, setCreating] = useState(false);
+
+  // 角色管理（RBAC）
+  const [roles, setRoles] = useState<RoleInfo[]>([]);
+  const [permCatalog, setPermCatalog] = useState<PermissionItem[]>([]);
+  const [roleEditing, setRoleEditing] = useState<{ name: string; permissions: string[] } | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
 
   // 修改密码表单
   const [oldPassword, setOldPassword] = useState('');
@@ -210,10 +241,12 @@ export default function SettingsPage() {
    */
   const load = useCallback(async () => {
     try {
-      const [u, s, me] = await Promise.all([
+      const [u, s, me, r, pc] = await Promise.all([
         get<UserItem[]>('/api/system/users'),
         get<SettingsInfo>('/api/system/settings'),
         get<CurrentUserInfo>('/api/auth/me'),
+        get<{ roles: RoleInfo[] }>('/api/roles'),
+        get<{ permissions: PermissionItem[] }>('/api/roles/permissions'),
       ]);
       const role = me.role || 'user';
       setUsers(u || []);
@@ -221,6 +254,8 @@ export default function SettingsPage() {
       setCurrentUser(me.username || '');
       setCurrentRole(role);
       setRole(role);
+      setRoles(r?.roles || []);
+      setPermCatalog(pc?.permissions || []);
     } catch (e: any) {
       showToast(e?.message || '加载设置失败', 'error');
     } finally {
@@ -347,6 +382,61 @@ export default function SettingsPage() {
       load();
     } catch (e: any) {
       showToast(e?.message || '删除用户失败', 'error');
+    }
+  }
+
+  /** 新建/编辑角色：切换编辑器（name 为空串表示新建） */
+  function beginCreateRole() {
+    setRoleEditing({ name: '', permissions: [] });
+  }
+  function beginEditRole(r: RoleInfo) {
+    setRoleEditing({ name: r.name, permissions: [...r.permissions] });
+  }
+  function toggleRolePerm(key: string, checked: boolean) {
+    setRoleEditing((prev) => {
+      if (!prev) return prev;
+      const perms = checked
+        ? [...prev.permissions, key]
+        : prev.permissions.filter((k) => k !== key);
+      return { ...prev, permissions: perms };
+    });
+  }
+
+  /** 保存角色（存在即更新，否则创建） */
+  async function handleSaveRole() {
+    if (!roleEditing) return;
+    if (!roleEditing.name.trim()) {
+      showToast('请输入角色名', 'error');
+      return;
+    }
+    setRoleSaving(true);
+    try {
+      if (roles.some((r) => r.name === roleEditing.name)) {
+        await put(`/api/roles/${encodeURIComponent(roleEditing.name)}`, {
+          permissions: roleEditing.permissions,
+        });
+        showToast('角色权限已更新');
+      } else {
+        await post('/api/roles', { name: roleEditing.name.trim(), permissions: roleEditing.permissions });
+        showToast('角色已创建');
+      }
+      setRoleEditing(null);
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '保存角色失败', 'error');
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+
+  /** 删除自定义角色 */
+  async function handleDeleteRole(name: string) {
+    try {
+      await del(`/api/roles/${encodeURIComponent(name)}`);
+      showToast('角色已删除');
+      load();
+    } catch (e: any) {
+      showToast(e?.message || '删除角色失败', 'error');
     }
   }
 
@@ -681,16 +771,8 @@ export default function SettingsPage() {
                     <span className="settings-current">当前</span>
                   ) : null}
                 </td>
-                {/* 角色列：四态展示，operator 显示为运维人员，auditor 显示为审计员（只读） */}
-                <td>
-                  {u.role === 'admin'
-                    ? '管理员'
-                    : u.role === 'operator'
-                      ? '运维人员'
-                      : u.role === 'auditor'
-                        ? '审计员（只读）'
-                        : '普通用户'}
-                </td>
+                {/* 角色列：内置角色显示中文名，自定义角色显示角色名 */}
+                <td>{roleLabel(u.role)}</td>
                 <td>{formatDate(u.createdAt)}</td>
                 <td>
                   <Button
@@ -728,11 +810,10 @@ export default function SettingsPage() {
               />
             </Field>
             <Field label="角色">
-              <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value as 'admin' | 'operator' | 'user' | 'auditor')} disabled={currentRole !== 'admin'}>
-                <option value="user">普通用户</option>
-                <option value="operator">运维人员</option>
-                <option value="auditor">审计员（只读）</option>
-                <option value="admin">管理员</option>
+              <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value)} disabled={currentRole !== 'admin'}>
+                {roles.map((r) => (
+                  <option key={r.name} value={r.name}>{roleLabel(r.name)}</option>
+                ))}
               </select>
             </Field>
             <div className="settings-form__actions">
@@ -775,6 +856,110 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      </Card>
+
+      {/* 角色管理（RBAC） */}
+      <Card title="角色管理">
+        <div className="settings-section">
+          <div className="settings-section__title">
+            角色列表
+            {currentRole === 'admin' && (
+              <Button variant="primary" size="sm" style={{ marginLeft: 12 }} onClick={beginCreateRole}>
+                新建角色
+              </Button>
+            )}
+          </div>
+          <table className="settings-table">
+            <thead>
+              <tr>
+                <th>角色名</th>
+                <th>类型</th>
+                <th>权限</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roles.map((r) => (
+                <tr key={r.name}>
+                  <td>{roleLabel(r.name)}</td>
+                  <td>{r.system ? '内置' : '自定义'}</td>
+                  <td>
+                    {r.permissions.includes('*')
+                      ? '全部权限'
+                      : r.permissions.length === 0
+                        ? '只读'
+                        : `${r.permissions.length} 项：${r.permissions.join('、')}`}
+                  </td>
+                  <td>
+                    {currentRole === 'admin' && (r.system ? r.name === 'operator' : true) ? (
+                      <span>
+                        <Button variant="ghost" size="sm" onClick={() => beginEditRole(r)}>
+                          编辑
+                        </Button>
+                        {!r.system && (
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteRole(r.name)}>
+                            删除
+                          </Button>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="settings-current">固定</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 角色编辑器 */}
+        {roleEditing && (
+          <div className="settings-section">
+            <div className="settings-section__title">
+              {roles.some((r) => r.name === roleEditing.name) ? `编辑角色：${roleLabel(roleEditing.name)}` : '新建角色'}
+            </div>
+            <div className="settings-form">
+              <Field label="角色名" required>
+                <Input
+                  value={roleEditing.name}
+                  placeholder="2-40 位中英文、数字、下划线或连字符"
+                  disabled={roles.some((r) => r.name === roleEditing.name)}
+                  onChange={(e) => setRoleEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
+                />
+              </Field>
+              {Array.from(new Set(permCatalog.map((p) => p.group))).map((group) => (
+                <Field key={group} label={group}>
+                  <div className="settings-kv" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                    {permCatalog
+                      .filter((p) => p.group === group)
+                      .map((p) => (
+                        <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={roleEditing.permissions.includes(p.key)}
+                            onChange={(e) => toggleRolePerm(p.key, e.target.checked)}
+                          />
+                          {p.label}
+                        </label>
+                      ))}
+                  </div>
+                </Field>
+              ))}
+              <div className="settings-form__actions">
+                <Button variant="primary" size="sm" loading={roleSaving} onClick={handleSaveRole}>
+                  保存角色
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setRoleEditing(null)}>
+                  取消
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+        <p className="settings-backup__desc">
+          说明：角色权限仅作用于资源管理域（容器 / 镜像 / 卷 / 网络 / 编排）；用户管理、系统设置、引擎切换等系统级操作始终需要管理员。
+          若开启「高危操作审批流」，未获授权的角色可提交审批，由管理员批准后执行。
+        </p>
       </Card>
 
       {/* 数据备份与恢复 */}

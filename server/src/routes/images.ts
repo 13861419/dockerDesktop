@@ -11,6 +11,7 @@ import { buildPullRef, listSources, searchHubRepos } from '../hubConfig';
 import { getPullTime, recordPullTime } from '../imagePullHistory';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth, requireOperator } from '../auth';
+import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { scanImage } from '../trivyCli';
 
@@ -569,7 +570,7 @@ router.get(
  */
 router.post(
   '/pull',
-  requireAdmin,
+  requirePermission('images.pull'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const { ref } = req.body || {};
@@ -708,7 +709,7 @@ router.post(
  */
 router.post(
   '/import',
-  requireAdmin,
+  requirePermission('images.write'),
   express.raw({ type: 'application/octet-stream', limit: '1gb' }),
   asyncHandler(
     async (req: Request, res: Response) => {
@@ -737,7 +738,7 @@ router.post(
  */
 router.post(
   '/push',
-  requireAdmin,
+  requirePermission('images.write'),
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();
@@ -793,7 +794,7 @@ router.delete(
  */
 router.post(
   '/tag',
-  requireAdmin,
+  requirePermission('images.write'),
   asyncHandler(
     async (req: Request, res: Response) => {
       const docker = await getDockerClient();

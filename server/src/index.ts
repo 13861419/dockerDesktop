@@ -14,6 +14,7 @@ import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
 import { initStorage, closeDb } from './storage';
 import { ensureInitialUser } from './users';
+import { ensureBuiltinRoles } from './rbac';
 
 const PORT = Number(process.env.PORT) || 9528;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -23,6 +24,8 @@ initStorage();
 // 确保默认管理员存在（users 表为空时按 ADMIN_USER / ADMIN_PASS 创建），
 // 避免全新环境首次部署因登录接口不触发初始化而无法登录
 ensureInitialUser();
+// 确保内置角色存在（admin/operator/user/auditor，幂等）
+ensureBuiltinRoles();
 
 // 启动 HTTP 服务，并挂载容器 WebSocket 终端
 const server = app.listen(PORT, HOST, () => {

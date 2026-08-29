@@ -6,7 +6,8 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
-import { requireAdmin, requireAuth } from '../auth';
+import { requireAuth } from '../auth';
+import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 
 const router = Router();
@@ -86,7 +87,7 @@ router.get(
  */
 router.post(
   '/',
-  requireAdmin,
+  requirePermission('volumes.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const b = req.body || {};
@@ -188,7 +189,7 @@ async function removeHelper(container: { remove: (opts?: any) => Promise<void> }
  */
 router.post(
   '/:name/clone',
-  requireAdmin,
+  requirePermission('volumes.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const srcName = String(req.params.name || '').trim();
@@ -236,7 +237,7 @@ router.post(
  */
 router.get(
   '/:name/export',
-  requireAdmin,
+  requirePermission('volumes.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const srcName = String(req.params.name || '').trim();

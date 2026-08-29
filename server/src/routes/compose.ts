@@ -12,6 +12,7 @@ import path from 'path';
 import os from 'os';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
+import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient } from '../docker/client';
 import { inferCompose, type InferInput } from '../composeInfer';
@@ -237,7 +238,7 @@ router.get(
  */
 router.post(
   '/',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const { name, content, fileName } = req.body || {};
     if (!name || !content) {
@@ -306,7 +307,7 @@ router.get(
  */
 router.post(
   '/:name/up',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -357,7 +358,7 @@ router.post(
  */
 router.post(
   '/:name/restart',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -376,7 +377,7 @@ router.post(
  */
 router.post(
   '/:name/pull',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -395,7 +396,7 @@ router.post(
  */
 router.post(
   '/:name/build',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const dir = path.join(COMPOSE_ROOT, req.params.name);
     const composeFile = findComposeFile(dir);
@@ -619,7 +620,7 @@ async function runServiceAction(name: string, service: string, action: string, u
  */
 router.post(
   '/:name/services/:service/start',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const output = await runServiceAction(
       req.params.name,
@@ -637,7 +638,7 @@ router.post(
  */
 router.post(
   '/:name/services/:service/stop',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const output = await runServiceAction(
       req.params.name,
@@ -655,7 +656,7 @@ router.post(
  */
 router.post(
   '/:name/services/:service/restart',
-  requireAdmin,
+  requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const output = await runServiceAction(
       req.params.name,

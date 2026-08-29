@@ -17,6 +17,7 @@ import { getDockerClient } from './docker/client';
 import { getSetting } from './settings';
 import { listChannels, sendAlert } from './notify';
 import { markExecuted } from './aiActions';
+import { hasPermission } from './rbac';
 
 /** 审批状态 */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -85,15 +86,29 @@ export function expireStaleApprovals(): void {
     .run(Date.now(), `待审批超时（超过 ${ttl} 小时未处理），已自动过期`, cutoff);
 }
 
+/** 审批动作 -> RBAC 权限键映射（角色持有该权限时可不经审批直接执行） */
+const GATE_PERM_MAP: Record<string, string> = {
+  'container.delete': 'containers.delete',
+  'image.delete': 'images.delete',
+  'image.deleteBatch': 'images.delete',
+  'image.prune': 'images.prune',
+  'volume.delete': 'volumes.delete',
+  'volume.prune': 'volumes.prune',
+  'network.prune': 'networks.prune',
+  'compose.down': 'compose.down',
+};
+
 /**
  * 判断当前请求是否应被审批门禁拦截
- * @param role 请求用户角色（管理员直接放行）
+ * @param role 请求用户角色（持有对应直接执行权限——含 admin——的角色放行）
  * @param actionType 动作类型（须在 GATE_ACTIONS 中）
  */
 export function shouldGate(role: string | undefined, actionType: string): boolean {
   if (!isApprovalGateEnabled()) return false;
-  if (role === 'admin') return false;
-  return actionType in GATE_ACTIONS;
+  if (!(actionType in GATE_ACTIONS)) return false;
+  const perm = GATE_PERM_MAP[actionType];
+  if (perm && hasPermission(role, perm)) return false;
+  return true;
 }
 
 /**
@@ -458,7 +473,9 @@ export function maybeGateOrForbidden(
   target: string,
   payload: Record<string, unknown> = {},
 ): boolean {
-  if (res.locals.user?.role === 'admin') return false;
+  const perm = GATE_PERM_MAP[actionType];
+  // 角色持有直接执行权限（admin 通配或自定义授权）→ 不拦截
+  if (perm && hasPermission(res.locals.user?.role, perm)) return false;
   if (!isApprovalGateEnabled() || !(actionType in GATE_ACTIONS)) {
     res.status(403).json({ error: '需要管理员权限（或在系统设置中开启审批流后提交审批）' });
     return true;

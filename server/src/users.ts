@@ -11,7 +11,8 @@ export interface UserRecord {
   username: string;
   salt: string;
   passwordHash: string;
-  role: 'admin' | 'operator' | 'user' | 'auditor';
+  /** 角色名：内置 admin/operator/user/auditor 或自定义角色（roles 表） */
+  role: string;
   createdAt: number;
 }
 
