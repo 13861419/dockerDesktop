@@ -257,14 +257,14 @@ journalctl -u docker-manager -f
 
 所有数据随时间实时刷新，无需手动操作即可掌握集群健康度。
 
-![总览截图](images/overview.png)
+![总览截图](../images/overview.png)
 
 ### 2.2 健康体检（`/health`）
 
 - 展示引擎连接健康状态与关键组件运行情况。
 - 当引擎掉线或资源异常时，可在此快速定位。
 
-![健康体检截图](images/health.png)
+![健康体检截图](../images/health.png)
 
 ---
 
@@ -307,7 +307,7 @@ journalctl -u docker-manager -f
 4. **导出配置**：将当前容器配置导出为 JSON，可用于保存为模板。
 5. **文件浏览**：见「文件管理」章节。
 
-![容器列表截图](images/containers.png)
+![容器列表截图](../images/containers.png)
 
 ---
 
@@ -345,7 +345,7 @@ journalctl -u docker-manager -f
 
 - 顶部搜索框可按 **名称 / 描述 / 镜像** 实时过滤；标题显示当前匹配数与总数。
 
-![容器模板截图](images/templates.png)
+![容器模板截图](../images/templates.png)
 
 ---
 
@@ -356,7 +356,7 @@ journalctl -u docker-manager -f
 - 对多容器应用进行统一编排管理（停止 / 启动 / 扩容等）。
 - 该页面操作会记录到操作日志。
 
-![编排截图](images/orchestrate.png)
+![编排截图](../images/orchestrate.png)
 
 ---
 
@@ -383,7 +383,7 @@ journalctl -u docker-manager -f
 - **清理**：清理未使用的悬空镜像。
 - **查看详情 / 构建历史**：进入 `imageDetail` 详情页查看层历史与构建信息。
 
-![镜像列表截图](images/images.png)
+![镜像列表截图](../images/images.png)
 
 ---
 
@@ -396,7 +396,7 @@ journalctl -u docker-manager -f
 3. 点击 **「开始构建」**，实时查看构建日志。
 4. 构建结果持久化为 **构建历史**：可回溯历史日志、**一键复用**上次的构建配置、**清空**历史。
 
-![镜像构建截图](images/build.png)
+![镜像构建截图](../images/build.png)
 
 ---
 
@@ -423,7 +423,7 @@ journalctl -u docker-manager -f
 - **网络详情**：查看连接容器、IPAM 子网等。
 - **清理未使用网络**：回收无容器的网络。
 
-![卷与网络截图](images/volumes-networks.png)
+![卷与网络截图](../images/volumes-networks.png)
 
 ---
 
@@ -436,7 +436,7 @@ journalctl -u docker-manager -f
 - 提供编排操作：**Up**（部署启动）、**Down**（停止移除）、**Pull**（拉取镜像）、**Build**（构建镜像）。
 - 点击展开可查看 Compose 文件内容与结构（端口映射等）。
 
-![Compose 截图](images/compose.png)
+![Compose 截图](../images/compose.png)
 
 ---
 
@@ -450,7 +450,7 @@ journalctl -u docker-manager -f
 4. 点击 **「安装」**，一键完成部署；已安装实例会标记状态。
 5. 可对已安装实例执行停止 / 卸载等管理操作。
 
-![应用商店截图](images/appstore.png)
+![应用商店截图](../images/appstore.png)
 
 ---
 
@@ -464,7 +464,7 @@ journalctl -u docker-manager -f
 - 支持启用 / 暂停、立即执行、删除、编辑。
 - **执行日志**：查看每次任务的执行结果与失败原因。
 
-![计划任务截图](images/tasks.png)
+![计划任务截图](../images/tasks.png)
 
 ---
 
@@ -485,7 +485,7 @@ journalctl -u docker-manager -f
 - 打开宿主机远程终端（基于 xterm），直接执行宿主机命令。
 - **仅建议管理员使用**，操作需谨慎。
 
-![文件与终端截图](images/files-terminal.png)
+![文件与终端截图](../images/files-terminal.png)
 
 ---
 
@@ -499,7 +499,7 @@ journalctl -u docker-manager -f
 - **设为当前**：切换当前使用的引擎端点。
 - 端点连接自动探测与验证，便于连接多台主机的 Docker。
 
-![Docker 引擎截图](images/engines.png)
+![Docker 引擎截图](../images/engines.png)
 
 ---
 
@@ -513,7 +513,7 @@ journalctl -u docker-manager -f
 - **文件上传**：手动将备份文件上传到云端目标。
 - 云端备份能力可在「备份恢复」中与本地备份配合使用。
 
-![云备份截图](images/cloudbackup.png)
+![云备份截图](../images/cloudbackup.png)
 
 ---
 
@@ -535,7 +535,7 @@ journalctl -u docker-manager -f
 
 - 复制整个 `data/` 目录（核心为 `docker-manager.db`）即可完成配置备份与迁移。
 
-![备份恢复截图](images/backups.png)
+![备份恢复截图](../images/backups.png)
 
 ### 15.4 面板数据库备份管理（设置中心）
 
@@ -546,7 +546,7 @@ journalctl -u docker-manager -f
 - **下载 / 删除**：备份文件可下载留存或手动删除。
 - **定时备份**：在「计划任务」新建类型为**数据库备份**的任务即可自动定时备份；保留份数由系统参数「面板数据库备份保留份数」控制（默认保留最近 7 份，0 表示不自动清理）。
 
-![面板数据库备份管理截图](images/settings-db-backup.png)
+![面板数据库备份管理截图](../images/settings-db-backup.png)
 
 ---
 
@@ -557,7 +557,7 @@ journalctl -u docker-manager -f
 - 展示 / 管理 Docker Swarm 集群节点与服务。
 - 当宿主机已初始化或加入 Swarm 时可用；不常用场景可忽略。
 
-![Swarm 截图](images/swarm.png)
+![Swarm 截图](../images/swarm.png)
 
 ---
 
@@ -578,7 +578,7 @@ journalctl -u docker-manager -f
 - 打开实例可查看表结构、执行只读查询、浏览数据。
 - 仅提供信息展示，**不提供破坏性写操作**。
 
-![数据库截图](images/databases.png)
+![数据库截图](../images/databases.png)
 
 ---
 
@@ -597,7 +597,7 @@ journalctl -u docker-manager -f
 - **常用镜像**：一键快捷拉取常用镜像（nginx、redis、mysql 等）。
 - 搜索结果可一键跳转到镜像页拉取。
 
-![镜像中心截图](images/hub.png)
+![镜像中心截图](../images/hub.png)
 
 ---
 
@@ -609,7 +609,7 @@ journalctl -u docker-manager -f
 - 事件 **持久化到 SQLite**，可查询 **历史事件**。
 - 支持 **导出 CSV**、**清空** 历史事件。
 
-![事件流截图](images/events.png)
+![事件流截图](../images/events.png)
 
 ---
 
@@ -619,7 +619,7 @@ journalctl -u docker-manager -f
 
 - 审计管理员在系统中的管理操作（删除、创建、配置变更等），便于追溯与安全审计。
 
-![操作日志截图](images/operation-logs.png)
+![操作日志截图](../images/operation-logs.png)
 
 ---
 
@@ -631,7 +631,7 @@ journalctl -u docker-manager -f
 - 支持 **容器规则**：针对特定容器（如退出、频繁重启、资源异常）配置告警触发条件。
 - 事件发生时按规则向目标推送告警；列表可查看已触发的告警记录与触发时间。
 
-![通知告警截图](images/notifications.png)
+![通知告警截图](../images/notifications.png)
 
 ---
 
@@ -644,7 +644,7 @@ journalctl -u docker-manager -f
 - 支持 **启停** 与配置 **reload**。
 - **SSL 证书**：查看证书状态与有效期，可 **上传证书** 替换现有证书（「上传证书」按钮）。
 
-![站点反代截图](images/sites.png)
+![站点反代截图](../images/sites.png)
 
 ---
 
@@ -657,7 +657,7 @@ journalctl -u docker-manager -f
 - 删除不需要的放行规则。
 - 需要管理员权限运行，操作时可能有系统提示。
 
-![防火墙截图](images/firewall.png)
+![防火墙截图](../images/firewall.png)
 
 ---
 
@@ -670,7 +670,7 @@ journalctl -u docker-manager -f
 - **用户与密码管理**：管理员可在此新增 / 删除用户、修改用户密码（与登录鉴权关联）。
 - **数据保留（自动清理）**：操作日志默认保留 90 天、AI 用量明细与 AI 巡检记录默认保留 30 天，超期数据在读取时每日自动清理一次；设为 `0` 表示永久保留（见「系统参数 → 数据保留」）。
 
-![系统设置截图](images/settings.png)
+![系统设置截图](../images/settings.png)
 
 ---
 
@@ -815,7 +815,7 @@ journalctl -u docker-manager -f
 | 权限 | 登录用户 |
 | 后端依赖 | Trivy（自动检测，未安装时提示安装） |
 
-![镜像漏洞扫描截图](images/vuln-scan.png)
+![镜像漏洞扫描截图](../images/vuln-scan.png)
 
 ### 27.1 使用方法
 
@@ -848,7 +848,7 @@ journalctl -u docker-manager -f
 | 路径 | Docker 引擎 → 引擎详情 → 迁移 / 传输 |
 | 权限 | 管理员 🔒 |
 
-![跨引擎迁移截图](images/cross-engine-migration.png)
+![跨引擎迁移截图](../images/cross-engine-migration.png)
 
 ### 28.1 功能说明
 
@@ -880,7 +880,7 @@ journalctl -u docker-manager -f
 | 路径 | 总览 → 多引擎聚合 |
 | 权限 | 管理员 🔒 |
 
-![跨引擎聚合总览截图](images/cross-engine-overview.png)
+![跨引擎聚合总览截图](../images/cross-engine-overview.png)
 
 ### 29.1 功能说明
 
@@ -906,7 +906,7 @@ journalctl -u docker-manager -f
 | 位置 | 顶部导航栏搜索框 |
 | 权限 | 登录用户 |
 
-![全局搜索截图](images/global-search.png)
+![全局搜索截图](../images/global-search.png)
 
 ### 30.1 功能说明
 
@@ -939,7 +939,7 @@ journalctl -u docker-manager -f
 | 路径 | 总览 → 资源看板 |
 | 权限 | 登录用户 |
 
-![容器资源占用看板截图](images/resource-dashboard.png)
+![容器资源占用看板截图](../images/resource-dashboard.png)
 
 ### 31.1 功能说明
 
@@ -969,7 +969,7 @@ journalctl -u docker-manager -f
 | 路径 | 总览 → 监控历史 |
 | 权限 | 登录用户 |
 
-![监控持久化历史截图](images/monitoring-history.png)
+![监控持久化历史截图](../images/monitoring-history.png)
 
 ### 32.1 功能说明
 
@@ -1002,7 +1002,7 @@ journalctl -u docker-manager -f
 | 路径 | 镜像中心 / 容器模板 |
 | 权限 | 登录用户 |
 
-![模板与镜像中心增强截图](images/hub-enhanced.png)
+![模板与镜像中心增强截图](../images/hub-enhanced.png)
 
 ### 33.1 镜像中心增强功能
 
@@ -1031,7 +1031,7 @@ journalctl -u docker-manager -f
 | 路径 | 系统设置 → 配置管理 |
 | 权限 | 管理员 🔒 |
 
-![配置导入导出截图](images/config-import-export.png)
+![配置导入导出截图](../images/config-import-export.png)
 
 ### 34.1 功能说明
 
@@ -1076,7 +1076,7 @@ journalctl -u docker-manager -f
 | 路径 | 计划任务 → 新建任务 → Webhook / Git 部署 |
 | 权限 | 登录用户 |
 
-![Webhook 与 Git 自动部署截图](images/webhook-git-deploy.png)
+![Webhook 与 Git 自动部署截图](../images/webhook-git-deploy.png)
 
 ### 35.1 Webhook 触发
 
@@ -1122,7 +1122,7 @@ journalctl -u docker-manager -f
 
 纯前端实现的常用运维小工具集合，数据不出浏览器：
 
-![运维工具箱](images/tools.png)
+![运维工具箱](../images/tools.png)
 
 | 工具 | 用途 |
 | --- | --- |
@@ -1147,7 +1147,7 @@ journalctl -u docker-manager -f
 - **冲突检测**：同一引擎内多个容器绑定相同宿主端口时高亮告警
 - **分布图**：按端口段（32 桶）统计占用分布，快速定位拥挤网段
 
-![端口地图](images/ports.png)
+![端口地图](../images/ports.png)
 
 ---
 
@@ -1184,7 +1184,7 @@ journalctl -u docker-manager -f
 
 **一键修复**：内存 / CPU / 重启策略三类违规支持在线修复（Docker Container Update API，修复后自动复检并在报告中确认违规消除）；特权模式、敏感挂载、属主标签需重建容器，页面展示加固建议。修复动作走审批门禁（`container.fix`）：开启审批流后非管理员提交修复会转入审批中心，批准后自动执行。
 
-![安全基线扫描截图](images/policy.png)
+![安全基线扫描截图](../images/policy.png)
 
 ---
 
@@ -1209,7 +1209,7 @@ journalctl -u docker-manager -f
 
 所有申请、审批、执行结果（含执行失败原因）全程留痕，可在审批中心按状态筛选查询，也可在「操作日志」按目标类型「审批」筛选管理员的批准/拒绝/撤销记录。
 
-![审批中心截图](images/approvals.png)
+![审批中心截图](../images/approvals.png)
 
 ---
 
@@ -1226,7 +1226,7 @@ journalctl -u docker-manager -f
 - **告警自动 AI 诊断**：danger 级别告警推送成功后自动调用 AI 分析根因，诊断作为后续消息推送到同一通知渠道；可在设置 → 系统参数 → 通知 → 「告警自动 AI 诊断」开关控制（默认开启，宿主级与容器级 danger 告警均生效）。被聚合推送（推送聚合窗口开启时）的告警不触发 AI 诊断，仅即时单条告警触发
 - **安全边界**：AI 只生成建议不直接执行，写操作由用户在对应页面确认；未配置 AI 时所有入口自动隐藏，不影响其它功能
 
-![AI 智能助手](images/assistant.png)
+![AI 智能助手](../images/assistant.png)
 
 ---
 
@@ -1239,7 +1239,7 @@ journalctl -u docker-manager -f
 
 内置三块内容：**快速上手**（六步引导）、**常见问题 FAQ**（密码找回、远程引擎、审批流开启、AI 配置等 8 条）、**功能速查表**（全部页面路径与用途索引）。
 
-![帮助中心](images/help.png)
+![帮助中心](../images/help.png)
 
 ---
 

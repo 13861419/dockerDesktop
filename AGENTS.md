@@ -10,7 +10,7 @@
    - 安装包 / 版本号是否与根 `package.json` 一致
    - 数据表清单是否包含新增的 SQLite 表
 3. **两份手册**（`docs/DockerManager-操作手册.md` 与 `docs/DockerManager-User-Manual.md`）：新功能是否有对应章节（中英文都要）；章节编号连续
-4. **截图**：`images/` 目录覆盖文档全部图片引用，零死链。
+4. **截图**：`images/` 目录覆盖文档全部图片引用，零死链。注意 GitHub 按文档所在目录解析相对路径：`docs/*.md` 中必须写 `../images/`（`npm run docs:check` 已按此规则校验）。
    一键重采：`cd e2e && CAPTURE=1 npx playwright test capture.spec.ts`
 5. **应用内帮助中心**（`web/src/pages/help.tsx`）：功能速查表与 FAQ 是否覆盖新功能
 6. **一致性**：CentOS 7 / glibc 等平台提法在四份文档中保持统一（Node 22 要求 glibc ≥ 2.28）

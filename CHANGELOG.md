@@ -57,6 +57,11 @@
 - 安装包版本号单一来源：从根 package.json 自动注入 NSIS（/DAPP_VERSION）
 - 审批门禁用例并入 approvals 测试文件；test:api 清单补齐新增测试文件（628 项）
 
+### Fixed（修复）
+
+- 手册在 GitHub 上大量图片无法显示：`docs/*.md` 中图片相对路径改为 `../images/`（GitHub 按文档目录解析），删除 `docs/images/` 下 33 张过时副本，统一引用根 `images/`
+- `docs:check` 校验脚本升级为 GitHub 同款相对路径解析规则
+
 ### Test（测试）
 
 - 单测 206/206、API 集成测试 628/628（含可达性探测后实际全绿）

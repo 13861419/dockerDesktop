@@ -252,14 +252,14 @@ The default landing page shows:
 
 All data refreshes in real time — no manual action needed.
 
-![Overview](images/overview.png)
+![Overview](../images/overview.png)
 
 ### 2.2 Health Check (`/health`)
 
 - Shows engine connection health and key component status.
 - Useful to quickly identify engine dropouts or anomalies.
 
-![Health check](images/health.png)
+![Health check](../images/health.png)
 
 ---
 
@@ -302,7 +302,7 @@ Click a container to open its detail page (`containerDetail`), which provides:
 4. **Export config**: export the container configuration as JSON (can be saved as a template).
 5. **File browser**: see the Files section.
 
-![Container list](images/containers.png)
+![Container list](../images/containers.png)
 
 ---
 
@@ -340,7 +340,7 @@ Menu: **Container Templates** (`/templates`, admin only)
 
 - The search box at the top filters in real time by **name / description / image**; the header shows matched vs. total counts.
 
-![Templates](images/templates.png)
+![Templates](../images/templates.png)
 
 ---
 
@@ -351,7 +351,7 @@ Menu: **Orchestrate** (`/orchestrate`, admin only)
 - Unified orchestration of multi-container applications (start/stop, scale, etc.).
 - Operations here are recorded in the operation logs.
 
-![Orchestration](images/orchestrate.png)
+![Orchestration](../images/orchestrate.png)
 
 ---
 
@@ -378,7 +378,7 @@ Menu: **Images** (`/images`)
 - **Prune** — clean up dangling images.
 - **View detail / build history** — open the `imageDetail` page.
 
-![Image list](images/images.png)
+![Image list](../images/images.png)
 
 ---
 
@@ -391,7 +391,7 @@ Menu: **Image Build** (`/build`, admin only)
 3. Click **"Start build"** and watch the streaming build log.
 4. Builds are persisted as **build history**: browse past logs, **reuse** last configuration, or **clear** history.
 
-![Image build](images/build.png)
+![Image build](../images/build.png)
 
 ---
 
@@ -418,7 +418,7 @@ Menu: **Image Build** (`/build`, admin only)
 - **Detail** — view connected containers and IPAM subnet.
 - **Prune** — reclaim networks without containers.
 
-![Volumes & networks](images/volumes-networks.png)
+![Volumes & networks](../images/volumes-networks.png)
 
 ---
 
@@ -431,7 +431,7 @@ Menu: **Compose** (`/compose`)
 - Actions: **Up**, **Down**, **Pull**, **Build**.
 - Expand to inspect the Compose file content and structure (port mapping, etc.).
 
-![Compose](images/compose.png)
+![Compose](../images/compose.png)
 
 ---
 
@@ -445,7 +445,7 @@ Menu: **App Store** (`/appstore`)
 4. Click **Install** to deploy with one click; installed instances show their status.
 5. Stop / uninstall installed instances as needed.
 
-![App Store](images/appstore.png)
+![App Store](../images/appstore.png)
 
 ---
 
@@ -458,7 +458,7 @@ Menu: **Scheduled Tasks** (`/tasks`)
 - Enable / pause, run now, delete, and edit tasks.
 - **Run logs** show the result and failure reason of each run.
 
-![Scheduled tasks](images/tasks.png)
+![Scheduled tasks](../images/tasks.png)
 
 ---
 
@@ -479,7 +479,7 @@ Menu: **Scheduled Tasks** (`/tasks`)
 - Open a host remote terminal (xterm) to run host commands.
 - **Administrators only** — proceed with caution.
 
-![Files & terminal](images/files-terminal.png)
+![Files & terminal](../images/files-terminal.png)
 
 ---
 
@@ -493,7 +493,7 @@ Menu: **Docker Engines** (`/engines`, admin only)
 - **Set current** — switch the active engine.
 - Endpoints are auto-detected and validated.
 
-![Docker engines](images/engines.png)
+![Docker engines](../images/engines.png)
 
 ---
 
@@ -507,7 +507,7 @@ Menu: **Cloud Backup** (`/cloudbackup`, admin only)
 - **Upload** — push backup files to the cloud target.
 - Cloud backups can be combined with local backups under Backup & Restore.
 
-![Cloud backup](images/cloudbackup.png)
+![Cloud backup](../images/cloudbackup.png)
 
 ---
 
@@ -529,7 +529,7 @@ Menu: **Backup & Restore** (`/backups`)
 
 - Copy the whole `data/` directory (core file `docker-manager.db`) to back up or migrate the configuration.
 
-![Backup & restore](images/backups.png)
+![Backup & restore](../images/backups.png)
 
 ### 15.4 Panel Database Backup Management (Settings Center)
 
@@ -540,7 +540,7 @@ Menu: **Settings → Panel Database Backup Management** (admin only)
 - **Download / Delete**: download backup files for archival or delete them manually.
 - **Scheduled backup**: create a task of type **Database Backup** under Scheduled Tasks; retention is controlled by the system parameter "Panel database backup retention count" (default 7, 0 = no auto-cleanup).
 
-![Panel database backup management](images/settings-db-backup.png)
+![Panel database backup management](../images/settings-db-backup.png)
 
 ---
 
@@ -551,7 +551,7 @@ Menu: **Swarm** (`/swarm`, admin only)
 - View / manage Docker Swarm cluster nodes and services.
 - Available when the host has initialized or joined a Swarm; optional for most setups.
 
-![Swarm](images/swarm.png)
+![Swarm](../images/swarm.png)
 
 ---
 
@@ -572,7 +572,7 @@ Menu: **Databases** (`/databases`)
 - Open an instance to view table structure, run read-only queries, and browse data.
 - Provides read-only display only — **no destructive write operations**.
 
-![Databases](images/databases.png)
+![Databases](../images/databases.png)
 
 ---
 
@@ -591,7 +591,7 @@ Menu: **Image Hub** (`/hub`)
 - **Common images** — one-click quick pull of popular images (nginx, redis, mysql, etc.).
 - Search results can jump straight to the Images page to pull.
 
-![Image Hub](images/hub.png)
+![Image Hub](../images/hub.png)
 
 ---
 
@@ -603,7 +603,7 @@ Menu: **Event Stream** (`/events`)
 - Events are **persisted to SQLite**; query **historical events**.
 - Support **Export CSV** and **Clear** history.
 
-![Events](images/events.png)
+![Events](../images/events.png)
 
 ---
 
@@ -613,7 +613,7 @@ Menu: **Operation Logs** (`/operation-logs`)
 
 - Audit trail of admin management operations (deletes, creates, config changes) for tracking and security.
 
-![Operation logs](images/operation-logs.png)
+![Operation logs](../images/operation-logs.png)
 
 ---
 
@@ -626,7 +626,7 @@ Menu: **Notifications** (`/notifications`, admin only)
 - Alerts are pushed to targets per rules; the list shows triggered alerts with timestamps.
 - **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count); **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
 
-![Notifications](images/notifications.png)
+![Notifications](../images/notifications.png)
 
 ---
 
@@ -639,7 +639,7 @@ Menu: **Sites (proxy / port mapping)** (`/sites`, admin only)
 - **Start / stop** and config **reload**.
 - **SSL certificates**: view status / expiry and **upload a certificate** to replace it (the "Upload certificate" button).
 
-![Sites](images/sites.png)
+![Sites](../images/sites.png)
 
 ---
 
@@ -652,7 +652,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 - Delete unneeded allow rules.
 - Requires admin privileges; system prompts may appear.
 
-![Firewall](images/firewall.png)
+![Firewall](../images/firewall.png)
 
 ---
 
@@ -664,7 +664,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 - **Language**: switch the UI language.
 - **Users & passwords**: admins can add / remove users and change passwords (linked to login auth).
 
-![Settings](images/settings.png)
+![Settings](../images/settings.png)
 
 ---
 
@@ -807,7 +807,7 @@ Install-time configuration:
 | Access | All users |
 | Backend dependency | Trivy (auto-detected; install prompt shown if missing) |
 
-![Image vulnerability scanning](images/vuln-scan.png)
+![Image vulnerability scanning](../images/vuln-scan.png)
 
 ### 27.1 Usage
 
@@ -840,7 +840,7 @@ Install-time configuration:
 | Path | Docker Engines → Engine Details → Migrate / Transfer |
 | Access | Admin 🔒 |
 
-![Cross-engine migration](images/cross-engine-migration.png)
+![Cross-engine migration](../images/cross-engine-migration.png)
 
 ### 28.1 Overview
 
@@ -872,7 +872,7 @@ Migrate containers or images from one Docker engine to another. Use cases:
 | Path | Overview → Multi-Engine Aggregation |
 | Access | Admin 🔒 |
 
-![Cross-engine aggregated overview](images/cross-engine-overview.png)
+![Cross-engine aggregated overview](../images/cross-engine-overview.png)
 
 ### 29.1 Overview
 
@@ -898,7 +898,7 @@ When multiple Docker engines are connected, the aggregated overview provides a u
 | Location | Top navigation bar search box |
 | Access | All users |
 
-![Global search](images/global-search.png)
+![Global search](../images/global-search.png)
 
 ### 30.1 Overview
 
@@ -931,7 +931,7 @@ Global search allows quick lookup across all resources without browsing individu
 | Path | Overview → Resource Dashboard |
 | Access | All users |
 
-![Container resource dashboard](images/resource-dashboard.png)
+![Container resource dashboard](../images/resource-dashboard.png)
 
 ### 31.1 Overview
 
@@ -961,7 +961,7 @@ Displays real-time resource usage rankings for all running containers, helping i
 | Path | Overview → Monitoring History |
 | Access | All users |
 
-![Monitoring history](images/monitoring-history.png)
+![Monitoring history](../images/monitoring-history.png)
 
 ### 32.1 Overview
 
@@ -994,7 +994,7 @@ The system automatically persists monitoring data, supporting different time ran
 | Path | Image Hub / Container Templates |
 | Access | All users |
 
-![Template & image hub enhancements](images/hub-enhanced.png)
+![Template & image hub enhancements](../images/hub-enhanced.png)
 
 ### 33.1 Image Hub Enhancements
 
@@ -1023,7 +1023,7 @@ The system automatically persists monitoring data, supporting different time ran
 | Path | System Settings → Configuration Management |
 | Access | Admin 🔒 |
 
-![Configuration import/export](images/config-import-export.png)
+![Configuration import/export](../images/config-import-export.png)
 
 ### 34.1 Overview
 
@@ -1068,7 +1068,7 @@ Export panel configuration to a JSON file, or import from a JSON file. Use cases
 | Path | Scheduled Tasks → New Task → Webhook / Git Deploy |
 | Access | All users |
 
-![Webhook & Git auto deployment](images/webhook-git-deploy.png)
+![Webhook & Git auto deployment](../images/webhook-git-deploy.png)
 
 ### 35.1 Webhook Trigger
 
@@ -1112,7 +1112,7 @@ Menu: **Tools** (`/tools`, all users)
 - Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, etc.
 - Zero backend calls; handy for day-to-day ops.
 
-![Ops Toolbox](images/tools.png)
+![Ops Toolbox](../images/tools.png)
 
 ---
 
@@ -1123,7 +1123,7 @@ Menu: **Ports** (`/ports`, all users)
 - Cross-engine aggregation of **port usage**: which host ports are bound by which containers.
 - **Conflict detection** for duplicated bindings and a visual port distribution map.
 
-![Port Map](images/ports.png)
+![Port Map](../images/ports.png)
 
 ---
 
@@ -1152,7 +1152,7 @@ Six built-in baseline rules, checked read-only against all running containers:
 
 **One-click fix**: memory / CPU / restart-policy violations support online fixes via the Docker Container Update API, with automatic re-scan afterwards. Privileged mode, sensitive mounts and owner labels require container recreation — the page shows hardening advice instead. Fixes go through the approval gate (`container.fix`): when the approval flow is enabled, fixes submitted by non-admins become approval requests.
 
-![Security baseline scanning](images/policy.png)
+![Security baseline scanning](../images/policy.png)
 
 ---
 
@@ -1175,7 +1175,7 @@ When enabled:
 7. **Batch processing**: admins can multi-select pending records and batch approve / reject (up to 50 per batch, rejection reason required, executed sequentially — one failure does not affect the rest).
 8. **AI action gating**: AI-suggested container/image deletions automatically become approval requests when the flow is enabled and the executor is a non-admin (AI actions enter "pending admin approval"; results are written back to the AI action record after execution).
 
-![Approval center](images/approvals.png)
+![Approval center](../images/approvals.png)
 
 ---
 
@@ -1192,7 +1192,7 @@ When enabled:
 - **Automatic alert AI diagnosis**: after a danger-level alert is pushed successfully, AI analyzes the root cause and pushes the diagnosis to the same channel; controlled by the `alerts.aiDiagnosis` parameter (on by default). Alerts that were aggregated by the push window do not trigger AI diagnosis.
 - **Safety boundary**: AI only suggests; it never executes directly. Without an AI configuration all AI entries hide automatically.
 
-![AI Assistant](images/assistant.png)
+![AI Assistant](../images/assistant.png)
 
 ---
 
@@ -1205,7 +1205,7 @@ When enabled:
 
 Three built-in blocks: **Quick Start** (six-step guide), **FAQ** (password reset, remote engines, approval flow, AI setup, etc.), and a **feature index** of all pages.
 
-![Help Center](images/help.png)
+![Help Center](../images/help.png)
 
 ---
 
