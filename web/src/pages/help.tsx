@@ -20,7 +20,7 @@ const QUICK_STEPS: Array<{ title: string; desc: string }> = [
   { title: '总览体检', desc: '「总览」查看主机 CPU / 内存 / 磁盘与容器实时曲线；「健康体检」一键扫描镜像、网络、卷与健康配置。' },
   { title: '管理容器', desc: '「容器」页支持创建、启停、删除、进入终端、查看日志；可按标签、状态、镜像名过滤。' },
   { title: '编排部署', desc: '「Compose」编写或由容器逆向生成 yaml；「应用商店」一键部署常用应用；「编排」管理启动依赖顺序。' },
-  { title: '告警通知', desc: '「告警中心」配置 CPU / 内存 / 磁盘 / GPU / 容器级阈值规则，支持「连续周期」防毛刺，通过 Webhook / 邮件 / 钉钉 / 飞书 / Telegram / 企业微信 / Slack 等渠道推送。' },
+  { title: '告警通知', desc: '「告警中心」配置 CPU / 内存 / 磁盘 / GPU / 容器级阈值规则，支持「连续周期」防毛刺与「多渠道路由」（全部启用渠道或按级别分流），通过 Webhook / 邮件 / 钉钉 / 飞书 / Telegram / 企业微信 / Slack 等渠道推送。' },
   { title: 'AI 助手（可选）', desc: '「设置 → AI 配置中心」添加任意 OpenAI 兼容端点后，即可使用对话、巡检、告警诊断、周报等 AI 能力。' },
 ];
 
@@ -44,7 +44,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: '高危操作审批流如何开启？',
-    a: '「设置 → 系统参数 → 安全」中开启「高危操作审批流」。开启后非管理员的删除容器操作会进入「审批中心」待审批，管理员批准后系统执行；普通用户也可在审批中心主动提交镜像删除、网络清理等申请。',
+    a: '「设置 → 系统参数 → 安全」中开启「高危操作审批流」。开启后非管理员的删除容器/卷、停止编排、批量删镜像、清理类等高危操作会进入「审批中心」待审批，管理员批准后系统执行；普通用户也可在审批中心主动提交申请。若在「角色管理」中为角色授予了对应操作权限（如「删除容器」），该角色可直接执行、无需审批。',
   },
   {
     q: '告警频繁误报（瞬时毛刺）怎么处理？',
@@ -52,7 +52,11 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: '支持哪些通知渠道？',
-    a: '内置 Webhook、邮件（SMTP）、钉钉、飞书、Telegram、企业微信、Slack 七类渠道，可添加多个并按启停控制；「测试推送」可验证连通性，danger 级告警还可联动 AI 诊断。',
+    a: '内置 Webhook、邮件（SMTP）、钉钉、飞书、Telegram、企业微信、Slack 七类渠道，可添加多个并按启停控制；「测试推送」可验证连通性，danger 级告警还可联动 AI 诊断。「推送路由」可选仅首个启用渠道、全部启用渠道或按 warn / danger / recovery 级别分流。',
+  },
+  {
+    q: '如何给团队成员分配有限的操作权限？',
+    a: '「设置 → 角色管理」新建自定义角色，按组勾选 13 项资源域权限（容器 / 镜像 / 卷 / 网络 / 编排），然后在「账号管理」中把用户角色设为该角色。角色权限仅作用于资源管理域，用户管理、系统设置、引擎切换等系统操作始终需要管理员。',
   },
   {
     q: 'AI 助手如何配置？',
@@ -103,13 +107,13 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/swarm', name: 'Swarm', desc: '集群服务查看' },
   { path: '/backups', name: '备份恢复', desc: '数据卷 / Compose / 站点备份' },
   { path: '/databases', name: '数据库', desc: 'MySQL / PostgreSQL / Redis 可视化' },
-  { path: '/settings', name: '设置', desc: '账号、备份、AI 配置、系统参数、用户管理' },
+  { path: '/settings', name: '设置', desc: '账号、角色管理（RBAC）、备份、AI 配置、系统参数、用户管理' },
   { path: '/logs', name: '日志聚合', desc: '跨容器日志检索与导出' },
   { path: '/operation-logs', name: '操作日志', desc: '全量操作审计' },
-  { path: '/notifications', name: '告警中心', desc: '告警规则（含连续周期防抖）、七类通知渠道、记录与 AI 诊断' },
+  { path: '/notifications', name: '告警中心', desc: '告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、记录与 AI 诊断' },
   { path: '/events', name: '事件流', desc: 'Docker 事件实时流与持久化历史' },
   { path: '/tools', name: '工具箱', desc: 'JSON / 正则 / Base64 / 时间戳 / 进制 / 端口网段计算' },
-  { path: '/approvals', name: '审批中心', desc: '高危操作审批与记录' },
+  { path: '/approvals', name: '审批中心', desc: '高危操作审批与记录（含编排停止/批量删镜像/清理类）' },
   { path: '/policy', name: '安全基线', desc: '6 项只读基线检查、违规报告与在线一键修复' },
 ];
 

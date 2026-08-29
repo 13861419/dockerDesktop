@@ -625,7 +625,8 @@ Menu: **Notifications** (`/notifications`, admin only)
 - **Container rules**: set alert triggers for specific containers (exit, restart loop, resource anomalies).
 - Alerts are pushed to targets per rules; the list shows triggered alerts with timestamps.
 - **Consecutive-cycle debounce**: rules may require N consecutive sampling cycles over the threshold before firing, filtering transient spikes.
-- **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count); **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
+- **Multi-channel routing**: the "Push routing" card offers three policies — first enabled channel only (legacy default) / all enabled channels / per-level routing (warn / danger / recovery each with its own target channels; a level with no selected channels falls back to the first enabled channel).
+- **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count), and different levels are never mixed into one digest; **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
 
 ![Notifications](../images/notifications.png)
 
@@ -664,6 +665,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 - **Theme**: switch light / dark.
 - **Language**: switch the UI language.
 - **Users & passwords**: admins can add / remove users and change passwords (linked to login auth).
+- **Role management (RBAC)**: admins can create custom roles with per-action whitelists (13 resource-domain permissions in 5 groups: containers / images / volumes / networks / compose); built-in admin / user / auditor are locked, the operator permission set is adjustable; roles still in use cannot be deleted. Role permissions apply to the resource domain only — user management, system settings, engine switching, etc. always require an admin.
 
 ![Settings](../images/settings.png)
 
@@ -739,6 +741,14 @@ The fields of each create / edit dialog are listed below. Items marked `*` are r
 | Telegram | Bot Token * (stored encrypted), Chat ID * |
 | WeCom | Webhook URL * |
 | Slack | Incoming Webhook URL * |
+
+**Push routing**: determines which enabled channels actually receive alerts.
+
+| Policy | Behavior |
+| --- | --- |
+| First enabled channel (default) | Legacy behavior: alerts go to the first enabled channel only |
+| All enabled channels | Alerts are pushed to every enabled channel simultaneously |
+| Per-level routing | warn / danger / recovery each select target channels; a level with no selection falls back to the first enabled channel; disabled channels are filtered out |
 
 **Resource alert rules (CPU / memory / disk / GPU / network)**: enable toggle, warn threshold % *, danger threshold % *, consecutive cycles (fire only after N consecutive sampling cycles over the threshold, default 1 = immediate), silence window, workdays only, work hours.
 
@@ -1172,14 +1182,18 @@ Six built-in baseline rules, checked read-only against all running containers:
 
 When enabled:
 
-1. **Non-admin** users deleting containers (including batch delete) no longer take effect directly — the action enters the **Approval Center** as pending (HTTP 202).
+1. **Non-admin** users performing container deletion (incl. batch), volume deletion, image deletion (incl. batch), image prune, volume prune, network prune, or Compose project shutdown no longer take effect directly — the action enters the **Approval Center** as pending (HTTP 202).
 2. **Admins** approve in the Approval Center and the system executes; rejection requires a mandatory reason and is fully audited.
 3. Regular users may also **proactively submit** requests (image delete, volume delete, network prune, etc.); batch container deletion creates one approval record per target.
-4. Admin operations are never gated (admin is the approver).
+4. Admins — and roles granted the corresponding permission in Role management (e.g. "Delete container", "Prune volumes") — are never gated.
 5. Duplicate pending requests for the same target by the same user are merged automatically.
 6. Approval targets resolve to human-readable names (falling back to short IDs after deletion).
 7. **Batch processing**: admins can multi-select pending records and batch approve / reject (up to 50 per batch, rejection reason required, executed sequentially — one failure does not affect the rest).
 8. **AI action gating**: AI-suggested container/image deletions automatically become approval requests when the flow is enabled and the executor is a non-admin (AI actions enter "pending admin approval"; results are written back to the AI action record after execution).
+
+**When the approval flow is off**: delete / prune endpoints return 403 for non-admins (admin-only as before); custom roles (RBAC) holding the corresponding permission always execute directly and bypass approvals.
+
+**Gated actions**: container delete (`container.delete`), image delete (`image.delete`), batch image delete (`image.deleteBatch`), dangling image prune (`image.prune`), volume delete (`volume.delete`), volume prune (`volume.prune`), network prune (`network.prune`), compose project down (`compose.down`), container config fix (`container.fix`).
 
 ![Approval center](../images/approvals.png)
 

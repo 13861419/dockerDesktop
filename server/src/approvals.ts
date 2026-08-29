@@ -106,6 +106,7 @@ const GATE_PERM_MAP: Record<string, string> = {
 export function shouldGate(role: string | undefined, actionType: string): boolean {
   if (!isApprovalGateEnabled()) return false;
   if (!(actionType in GATE_ACTIONS)) return false;
+  if (role === 'admin') return false;
   const perm = GATE_PERM_MAP[actionType];
   if (perm && hasPermission(role, perm)) return false;
   return true;
@@ -473,8 +474,8 @@ export function maybeGateOrForbidden(
   target: string,
   payload: Record<string, unknown> = {},
 ): boolean {
+  if (res.locals.user?.role === 'admin') return false;
   const perm = GATE_PERM_MAP[actionType];
-  // 角色持有直接执行权限（admin 通配或自定义授权）→ 不拦截
   if (perm && hasPermission(res.locals.user?.role, perm)) return false;
   if (!isApprovalGateEnabled() || !(actionType in GATE_ACTIONS)) {
     res.status(403).json({ error: '需要管理员权限（或在系统设置中开启审批流后提交审批）' });
