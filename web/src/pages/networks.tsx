@@ -343,16 +343,19 @@ export default function NetworksPage() {
    * 成功后提示删除数量并刷新列表；若没有可清理的网络则提示。
    */
   const handlePrune = useCallback(async () => {
-    if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可清理网络', 'error');
+    if (checking) {
+      showToast('正在确认权限，请稍候', 'error');
       setPruneOpen(false);
       return;
     }
     setPruning(true);
     try {
-      const res = await post<{ success: number; failed: number }>('/api/networks/prune');
+      const res = await post<{ success: number; failed: number; approvalPending?: boolean }>('/api/networks/prune');
       setPruneOpen(false);
-      if ((res?.success ?? 0) > 0) {
+      if (res?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        setRefreshKey((k) => k + 1);
+      } else if ((res?.success ?? 0) > 0) {
         showToast(`已清理 ${res.success} 个未使用网络${res.failed ? `，${res.failed} 个删除失败` : ''}`);
         setRefreshKey((k) => k + 1);
       } else {
@@ -363,7 +366,7 @@ export default function NetworksPage() {
     } finally {
       setPruning(false);
     }
-  }, [canDelete, checking, showToast]);
+  }, [checking, showToast]);
 
   /**
    * 拉取全部容器列表（用于连接容器下拉选择）

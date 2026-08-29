@@ -6,7 +6,8 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireAuth } from '../auth';
+import { maybeGateOrForbidden } from '../approvals';
 
 const router = Router();
 
@@ -106,8 +107,9 @@ router.post(
  */
 router.delete(
   '/:name',
-  requireAdmin,
+  requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
+    if (maybeGateOrForbidden(req, res, 'volume.delete', req.params.name, { force: req.query.force === 'true' })) return;
     const docker = await getDockerClient();
     const force = req.query.force === 'true';
     const volume = docker.getVolume(req.params.name);
@@ -132,8 +134,9 @@ router.delete(
  */
 router.post(
   '/prune',
-  requireAdmin,
-  asyncHandler(async (_req: Request, res: Response) => {
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (maybeGateOrForbidden(req, res, 'volume.prune', 'all', {})) return;
     const docker = await getDockerClient();
     const result = await docker.pruneVolumes();
     const deleted = (result?.VolumesDeleted || []).join(', ');

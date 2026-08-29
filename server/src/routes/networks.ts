@@ -6,7 +6,8 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireAuth } from '../auth';
+import { maybeGateOrForbidden } from '../approvals';
 
 const router = Router();
 
@@ -119,8 +120,9 @@ const BUILT_IN_NETWORKS = new Set(['bridge', 'host', 'none']);
  */
 router.post(
   '/prune',
-  requireAdmin,
+  requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
+    if (maybeGateOrForbidden(req, res, 'network.prune', 'all', {})) return;
     const docker = await getDockerClient();
     // 列出全部网络，在代码内判断是否被容器使用（无需依赖无效的 usage filter）
     const networks = (await docker.listNetworks()) as any[];

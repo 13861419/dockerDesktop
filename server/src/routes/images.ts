@@ -10,7 +10,8 @@ import { getDockerClient } from '../docker/client';
 import { buildPullRef, listSources, searchHubRepos } from '../hubConfig';
 import { getPullTime, recordPullTime } from '../imagePullHistory';
 import { logOperation } from '../operationLog';
-import { requireAdmin, requireOperator } from '../auth';
+import { requireAdmin, requireAuth, requireOperator } from '../auth';
+import { maybeGateOrForbidden } from '../approvals';
 import { scanImage } from '../trivyCli';
 
 const router = Router();
@@ -335,14 +336,15 @@ router.get(
  */
 router.post(
   '/delete-batch',
-  requireAdmin,
+  requireAuth,
   asyncHandler(
     async (req: Request, res: Response) => {
-      const docker = await getDockerClient();
       const names: string[] = Array.isArray(req.body?.names) ? req.body.names : [];
       if (!names.length) {
         return res.status(400).json({ error: '缺少待删除的镜像列表' });
       }
+      if (maybeGateOrForbidden(req, res, 'image.deleteBatch', names.join(', ').slice(0, 300), { names })) return;
+      const docker = await getDockerClient();
       const deleted: string[] = [];
       const failed: { name: string; error: string }[] = [];
       for (const name of names) {
@@ -770,9 +772,10 @@ router.post(
  */
 router.delete(
   '/:name',
-  requireAdmin,
+  requireAuth,
   asyncHandler(
     async (req: Request, res: Response) => {
+      if (maybeGateOrForbidden(req, res, 'image.delete', req.params.name, { force: req.query.force === 'true' })) return;
       const docker = await getDockerClient();
       const force = req.query.force === 'true';
       const result = await docker.getImage(req.params.name).remove({ force });
@@ -814,38 +817,46 @@ router.post(
  *   - all=false 或默认：仅清理悬空镜像（dangling=true，无标签镜像）
  * 返回 { ok, deleted, spaceReclaimed }
  */
+/**
+ * 执行镜像清理（路由与审批执行器共用）
+ * Docker prune 接口的过滤条件需通过 filters（JSON 数组格式）传递；
+ * dockerode 的 pruneImages({ dangling }) 会把 dangling 编码成顶层 query 参数，
+ * daemon 会忽略它（等效于无过滤条件），导致 dangling=false（清理所有未使用镜像）失效。
+ * 这里改用底层 modem 发送正确格式的 filters。
+ *   - all=true ：dangling=false，清理所有未被容器使用的镜像（含非悬空、有标签者）
+ *   - all=false：dangling=true ，仅清理悬空（无标签）镜像
+ */
+export async function pruneImagesInternal(all: boolean): Promise<{ deleted: string[]; spaceReclaimed: number }> {
+  const docker = await getDockerClient();
+  const filters = JSON.stringify({ dangling: [all ? 'false' : 'true'] });
+  const result: any = await new Promise((resolve, reject) => {
+    (docker as any).modem.dial(
+      {
+        path: '/images/prune?',
+        method: 'POST',
+        options: { filters },
+        statusCodes: { 200: true, 500: 'server error' },
+      },
+      (err: any, data: any) => (err ? reject(err) : resolve(data)),
+    );
+  });
+  // 汇总清理详情：列出被清理的镜像（Untagged/Deleted）与释放空间
+  const deleted: string[] = [];
+  for (const item of result.ImagesDeleted || []) {
+    const name = item.Untagged || item.Deleted || '';
+    if (name && !deleted.includes(name)) deleted.push(name);
+  }
+  return { deleted, spaceReclaimed: result.SpaceReclaimed || 0 };
+}
+
 router.post(
   '/prune',
-  requireAdmin,
+  requireAuth,
   asyncHandler(
     async (req: Request, res: Response) => {
-      const docker = await getDockerClient();
       const all = req.body?.all === true;
-      // Docker prune 接口的过滤条件需通过 filters（JSON 数组格式）传递；
-      // dockerode 的 pruneImages({ dangling }) 会把 dangling 编码成顶层 query 参数，
-      // daemon 会忽略它（等效于无过滤条件），导致 dangling=false（清理所有未使用镜像）失效。
-      // 这里改用底层 modem 发送正确格式的 filters。
-      //   - all=true ：dangling=false，清理所有未被容器使用的镜像（含非悬空、有标签者）
-      //   - all=false：dangling=true ，仅清理悬空（无标签）镜像
-      const filters = JSON.stringify({ dangling: [all ? 'false' : 'true'] });
-      const result: any = await new Promise((resolve, reject) => {
-        (docker as any).modem.dial(
-          {
-            path: '/images/prune?',
-            method: 'POST',
-            options: { filters },
-            statusCodes: { 200: true, 500: 'server error' },
-          },
-          (err: any, data: any) => (err ? reject(err) : resolve(data)),
-        );
-      });
-      // 汇总清理详情：列出被清理的镜像（Untagged/Deleted）与释放空间
-      const deleted: string[] = [];
-      for (const item of result.ImagesDeleted || []) {
-        const name = item.Untagged || item.Deleted || '';
-        if (name && !deleted.includes(name)) deleted.push(name);
-      }
-      const spaceReclaimed = result.SpaceReclaimed || 0;
+      if (maybeGateOrForbidden(req, res, 'image.prune', all ? '全部未使用' : '悬空', { all })) return;
+      const { deleted, spaceReclaimed } = await pruneImagesInternal(all);
       const spaceText = spaceReclaimed > 0 ? `释放空间: ${fmtBytes(spaceReclaimed)}` : '无空间回收';
       const listText = deleted.length
         ? `清理镜像(${deleted.length}个): ${deleted.join(', ')}`

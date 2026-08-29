@@ -25,8 +25,12 @@ export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export const GATE_ACTIONS: Record<string, { label: string; targetType: string }> = {
   'container.delete': { label: '删除容器', targetType: 'container' },
   'image.delete': { label: '删除镜像', targetType: 'image' },
+  'image.deleteBatch': { label: '批量删除镜像', targetType: 'image' },
+  'image.prune': { label: '清理悬空镜像', targetType: 'image' },
   'volume.delete': { label: '删除卷', targetType: 'volume' },
+  'volume.prune': { label: '清理未使用卷', targetType: 'volume' },
   'network.prune': { label: '清理网络', targetType: 'network' },
+  'compose.down': { label: '停止编排项目', targetType: 'compose' },
   'container.fix': { label: '修复容器配置', targetType: 'container' },
 };
 
@@ -346,16 +350,50 @@ const executors: Record<string, Executor> = {
     await docker.getImage(target).remove({ force: false });
     return `镜像 ${target} 已删除`;
   },
+  'image.deleteBatch': async (_target, payload) => {
+    const docker = await getDockerClient();
+    const names = Array.isArray(payload.names) ? payload.names.map(String) : [];
+    let ok = 0;
+    const fails: string[] = [];
+    for (const n of names) {
+      try {
+        await docker.getImage(n).remove({ force: true });
+        ok++;
+      } catch {
+        fails.push(n);
+      }
+    }
+    return `批量删除镜像：成功 ${ok}/${names.length}${fails.length ? `，失败：${fails.join(', ')}` : ''}`;
+  },
+  'image.prune': async (_target, payload) => {
+    // 动态导入避免模块加载环（images 路由静态依赖 approvals 门禁）
+    const { pruneImagesInternal } = await import('./routes/images');
+    const r = await pruneImagesInternal(payload.all === true);
+    return `已清理 ${r.deleted.length} 个${payload.all === true ? '未使用' : '悬空'}镜像`;
+  },
   'volume.delete': async (target) => {
     const docker = await getDockerClient();
     await docker.getVolume(target).remove();
     return `卷 ${target} 已删除`;
+  },
+  'volume.prune': async () => {
+    const docker = await getDockerClient();
+    const r = await docker.pruneVolumes();
+    const n = Array.isArray(r?.VolumesDeleted) ? r.VolumesDeleted.length : 0;
+    return `已清理 ${n} 个未使用卷`;
   },
   'network.prune': async () => {
     const docker = await getDockerClient();
     const r = await docker.pruneNetworks();
     const n = Array.isArray(r?.NetworksDeleted) ? r.NetworksDeleted.length : 0;
     return `已清理 ${n} 个未使用网络`;
+  },
+  'compose.down': async (target, payload) => {
+    // 动态导入避免模块加载环（compose 路由静态依赖 approvals 门禁）
+    const { composeProjectDown } = await import('./routes/compose');
+    const out = await composeProjectDown(target, payload.volumes === true);
+    const text = String(out || '').trim();
+    return text ? `编排项目 ${target} 已停止：${text.slice(0, 300)}` : `编排项目 ${target} 已停止`;
   },
   'container.fix': async (target, payload) => {
     // 动态导入避免模块加载环（policy → scheduler / approvals → policy）
@@ -403,4 +441,27 @@ export function maybeGate(
   });
   res.status(202).json({ approvalPending: true, approvalId: id, reused });
   return true;
+}
+
+/**
+ * 管理员专属危险操作的统一门禁：路由以 requireAuth + 本函数替代 requireAdmin。
+ * - 管理员 -> 返回 false，继续直接执行
+ * - 非管理员 + 审批流开启 -> 转为待审批记录并响应 202，返回 true
+ * - 非管理员 + 审批流关闭 -> 响应 403（保持「非管理员不可执行」的默认安全姿态）
+ *
+ * @returns true 表示已响应（调用方应直接 return）
+ */
+export function maybeGateOrForbidden(
+  req: Request,
+  res: Response,
+  actionType: string,
+  target: string,
+  payload: Record<string, unknown> = {},
+): boolean {
+  if (res.locals.user?.role === 'admin') return false;
+  if (!isApprovalGateEnabled() || !(actionType in GATE_ACTIONS)) {
+    res.status(403).json({ error: '需要管理员权限（或在系统设置中开启审批流后提交审批）' });
+    return true;
+  }
+  return maybeGate(req, res, actionType, target, payload);
 }

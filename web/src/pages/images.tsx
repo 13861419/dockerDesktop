@@ -316,16 +316,15 @@ export default function ImagesPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canManage) {
-      showToast('仅管理员可删除镜像', 'error');
-      setDeleteTarget(null);
-      return;
-    }
     const name = deleteTarget.RepoTags?.[0] || deleteTarget.Id;
     setDeleting(true);
     try {
-      await del(imageDeleteUrl(name));
-      showToast('镜像删除成功');
+      const resp = await del<{ approvalPending?: boolean }>(imageDeleteUrl(name));
+      if (resp?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+      } else {
+        showToast('镜像删除成功');
+      }
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
@@ -333,7 +332,7 @@ export default function ImagesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canManage, deleteTarget, showToast]);
+  }, [deleteTarget, showToast]);
 
   /** 获取当前分类 Tab 对应的镜像数组（为空时返回 []） */
   const currentCategoryList = (categorized && categorized[catTab]) || [];
@@ -396,23 +395,22 @@ export default function ImagesPage() {
    */
   const handleBatchDelete = useCallback(async () => {
     if (batchSelection.size === 0) return;
-    if (!canManage) {
-      showToast('仅管理员可批量删除镜像', 'error');
-      setBatchConfirmOpen(false);
-      return;
-    }
     setBatchDeleting(true);
     try {
-      const res = await post<{ ok: boolean; deleted: string[]; failed: { name: string; error: string }[] }>(
+      const res = await post<{ ok: boolean; deleted: string[]; failed: { name: string; error: string }[]; approvalPending?: boolean }>(
         '/api/images/delete-batch',
         { names: [...batchSelection] }
       );
-      const failedCount = res?.failed?.length || 0;
-      const deletedCount = res?.deleted?.length || 0;
-      if (failedCount > 0) {
-        showToast(`批量删除完成：成功 ${deletedCount} 个，失败 ${failedCount} 个`, 'error');
+      if (res?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
       } else {
-        showToast(`成功删除 ${deletedCount} 个镜像`);
+        const failedCount = res?.failed?.length || 0;
+        const deletedCount = res?.deleted?.length || 0;
+        if (failedCount > 0) {
+          showToast(`批量删除完成：成功 ${deletedCount} 个，失败 ${failedCount} 个`, 'error');
+        } else {
+          showToast(`成功删除 ${deletedCount} 个镜像`);
+        }
       }
       setBatchConfirmOpen(false);
       setBatchSelection(new Set());
@@ -422,7 +420,7 @@ export default function ImagesPage() {
     } finally {
       setBatchDeleting(false);
     }
-  }, [batchSelection, canManage, showToast]);
+  }, [batchSelection, showToast]);
 
   /**
    * 执行镜像搜索（调用后端 docker search 接口，引擎侧检索）
@@ -481,17 +479,16 @@ export default function ImagesPage() {
   );
 
   const handlePrune = useCallback(async () => {
-    if (!canManage) {
-      showToast('仅管理员可清理镜像', 'error');
-      setPruneOpen(false);
-      return;
-    }
     setPruning(true);
     try {
       // all=false：仅清理悬空镜像（dangling）
       const res = await post<any>('/api/images/prune', { all: false });
-      const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
-      showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+      if (res?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+      } else {
+        const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
+        showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+      }
       setPruneOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
@@ -499,22 +496,21 @@ export default function ImagesPage() {
     } finally {
       setPruning(false);
     }
-  }, [canManage, showToast]);
+  }, [showToast]);
 
   /**
    * 一键清理所有未被容器使用的镜像（all=true，含非悬空未使用镜像）
    */
   const handlePruneAll = useCallback(async () => {
-    if (!canManage) {
-      showToast('仅管理员可清理镜像', 'error');
-      setPruneAllOpen(false);
-      return;
-    }
     setPruningAll(true);
     try {
       const res = await post<any>('/api/images/prune', { all: true });
-      const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
-      showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+      if (res?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+      } else {
+        const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
+        showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+      }
       setPruneAllOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
@@ -522,7 +518,7 @@ export default function ImagesPage() {
     } finally {
       setPruningAll(false);
     }
-  }, [canManage, showToast]);
+  }, [showToast]);
 
   /** 返回镜像显示标签（无标签时显示 <none>） */
   const displayName = (img: ImageItem): string => img.RepoTags?.[0] || '<none>';
@@ -915,7 +911,7 @@ export default function ImagesPage() {
               <Button variant="secondary" onClick={openCatManage} disabled={!canManage}>
                 按分类管理
               </Button>
-              <Button variant="danger" onClick={() => setPruneAllOpen(true)} disabled={!canManage}>
+              <Button variant="danger" onClick={() => setPruneAllOpen(true)}>
                 一键清理未使用镜像
               </Button>
             </div>
@@ -939,7 +935,7 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canManage}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
               清理悬空镜像
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={!canManage}>
@@ -1030,7 +1026,7 @@ export default function ImagesPage() {
                       <Button variant="ghost" size="sm" onClick={() => openPush(img)} disabled={!canManage}>
                         推送
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)} disabled={!canManage}>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)}>
                         删除
                       </Button>
                     </div>
@@ -1514,8 +1510,7 @@ export default function ImagesPage() {
               >
                 批量删除已选 ({selectedInCategory})
               </Button>
-            )}
-          </>
+            )}          </>
         }
       >
         {!categorized ? (

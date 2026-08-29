@@ -199,15 +199,19 @@ export default function VolumesPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可删除数据卷', 'error');
+    if (checking) {
+      showToast('正在确认权限，请稍候', 'error');
       setDeleteTarget(null);
       return;
     }
     setDeleting(true);
     try {
-      await del('/api/volumes/' + encodeURIComponent(deleteTarget.Name));
-      showToast('数据卷删除成功');
+      const resp = await del<{ approvalPending?: boolean }>('/api/volumes/' + encodeURIComponent(deleteTarget.Name));
+      if (resp?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+      } else {
+        showToast('数据卷删除成功');
+      }
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
@@ -215,18 +219,18 @@ export default function VolumesPage() {
     } finally {
       setDeleting(false);
     }
-  }, [canDelete, checking, deleteTarget, showToast]);
+  }, [checking, deleteTarget, showToast]);
 
   const handlePrune = useCallback(async () => {
-    if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可清理数据卷', 'error');
+    if (checking) {
+      showToast('正在确认权限，请稍候', 'error');
       setPruneOpen(false);
       return;
     }
     setPruning(true);
     try {
-      await post('/api/volumes/prune');
-      showToast('清理完成');
+      const resp = await post<{ approvalPending?: boolean }>('/api/volumes/prune');
+      showToast(resp?.approvalPending ? '该操作已提交审批，等待管理员批准后执行' : '清理完成', resp?.approvalPending ? 'info' : 'success');
       setPruneOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
@@ -480,7 +484,7 @@ export default function VolumesPage() {
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
               刷新
             </Button>
-            <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canDelete}>
+            <Button variant="secondary" onClick={() => setPruneOpen(true)}>
               清理未使用卷
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canDelete}>
@@ -575,7 +579,7 @@ export default function VolumesPage() {
                       <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
                         详情
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)} disabled={!canDelete}>
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)}>
                         删除
                       </Button>
                     </div>

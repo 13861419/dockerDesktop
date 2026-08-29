@@ -11,7 +11,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { logOperation } from '../operationLog';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireAuth } from '../auth';
+import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient } from '../docker/client';
 import { inferCompose, type InferInput } from '../composeInfer';
 
@@ -319,24 +320,33 @@ router.post(
 );
 
 /**
+ * 停止并移除 compose 项目（docker compose down）
+ * 路由与审批执行器共用；审批通过后由 approvals 以项目名调用
+ * @param name compose 项目目录名
+ * @param volumes 是否同时移除数据卷（down -v）
+ * @returns docker compose 命令输出
+ * @throws compose 文件不存在时抛 404
+ */
+export async function composeProjectDown(name: string, volumes: boolean): Promise<string> {
+  const dir = path.join(COMPOSE_ROOT, name);
+  const composeFile = findComposeFile(dir);
+  if (!composeFile) {
+    throw Object.assign(new Error('未找到 compose 文件'), { statusCode: 404 });
+  }
+  return runCmd(`docker compose -f "${composeFile}" down${volumes ? ' -v' : ''}`, dir);
+}
+
+/**
  * POST /api/compose/:name/down
  * 停止并移除 compose 项目（docker compose down）
  */
 router.post(
   '/:name/down',
-  requireAdmin,
+  requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: '未找到 compose 文件' });
-    }
-    const volumes = req.body?.volumes === true;
-    const output = await runCmd(
-      `docker compose -f "${composeFile}" down${volumes ? ' -v' : ''}`,
-      dir,
-    );
-    logOperation(res.locals.username, '停止 Compose', 'compose', req.params.name, volumes ? '移除数据卷' : undefined);
+    if (maybeGateOrForbidden(req, res, 'compose.down', req.params.name, { volumes: req.body?.volumes === true })) return;
+    const output = await composeProjectDown(req.params.name, req.body?.volumes === true);
+    logOperation(res.locals.username, '停止 Compose', 'compose', req.params.name, req.body?.volumes === true ? '移除数据卷' : undefined);
     res.json({ ok: true, output });
   }),
 );

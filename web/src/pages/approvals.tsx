@@ -38,8 +38,12 @@ interface ApprovalItem {
 const ACTION_LABELS: Record<string, string> = {
   'container.delete': '删除容器',
   'image.delete': '删除镜像',
+  'image.deleteBatch': '批量删除镜像',
+  'image.prune': '清理悬空镜像',
   'volume.delete': '删除卷',
+  'volume.prune': '清理未使用卷',
   'network.prune': '清理网络',
+  'compose.down': '停止编排项目',
   'container.fix': '修复容器配置',
 };
 

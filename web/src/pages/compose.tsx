@@ -622,15 +622,16 @@ export default function ComposePage() {
   /** 执行停止（down）操作，带删卷选择 */
   const handleStopConfirm = useCallback(async () => {
     if (!stopTarget) return;
-    if (!canManage) {
-      showToast('仅管理员可停止 Compose 项目', 'error');
-      setStopTarget(null);
-      return;
-    }
     setStopping(true);
     try {
-      await post(projectUrl(stopTarget.name) + '/down', { volumes: stopVolumes });
-      showToast(stopVolumes ? '项目已停止，数据卷已删除' : '项目已停止');
+      const resp = await post<{ ok: boolean; approvalPending?: boolean }>(projectUrl(stopTarget.name) + '/down', {
+        volumes: stopVolumes,
+      });
+      if (resp?.approvalPending) {
+        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+      } else {
+        showToast(stopVolumes ? '项目已停止，数据卷已删除' : '项目已停止');
+      }
       setStopTarget(null);
       setStopVolumes(false);
       setRefreshKey((k) => k + 1);
@@ -640,7 +641,7 @@ export default function ComposePage() {
       return;
     }
     setStopping(false);
-  }, [canManage, stopTarget, stopVolumes, showToast]);
+  }, [stopTarget, stopVolumes, showToast]);
 
   /**
    * 打开日志弹窗并拉取最近日志
@@ -798,7 +799,6 @@ export default function ComposePage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        disabled={!canManage}
                         onClick={() => {
                           setStopVolumes(false);
                           setStopTarget(proj);
