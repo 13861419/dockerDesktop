@@ -54,8 +54,12 @@ test('GET /api/hostterminal/info: 返回会话信息', async () => {
   assert.ok(res.data.cwd, '应返回 cwd');
   assert.ok(res.data.shell, '应返回 shell');
   assert.ok(Array.isArray(res.data.shells), '应返回 shells 数组');
-  assert.ok(res.data.shells.includes('powershell'));
-  assert.ok(res.data.shells.includes('cmd'));
+  if (process.platform === 'win32') {
+    assert.ok(res.data.shells.includes('powershell'));
+    assert.ok(res.data.shells.includes('cmd'));
+  } else {
+    assert.ok(res.data.shells.includes('bash'));
+  }
 });
 
 // ---------- POST /api/hostterminal/exec ----------
@@ -128,13 +132,14 @@ test('POST /api/hostterminal/exec: 不存在的命令不返回 5xx', async () =>
 // ---------- cd 命令更新会话目录 ----------
 
 test('POST /api/hostterminal/exec: cd 命令更新会话目录', async () => {
+  const target = process.platform === 'win32' ? 'C:\\Windows' : '/tmp';
   const res = await req('POST', '/api/hostterminal/exec', {
-    command: 'cd C:\\Windows',
+    command: `cd ${target}`,
   }, { Authorization: `Bearer ${adminToken}` });
   assert.strictEqual(res.status, 200);
   // 再次获取 info 确认目录已更新
   const info = await req('GET', '/api/hostterminal/info', undefined, { Authorization: `Bearer ${adminToken}` });
-  assert.ok(info.data.cwd.includes('Windows'), `cwd 应包含 Windows，实际 ${info.data.cwd}`);
+  assert.ok(info.data.cwd.includes(process.platform === 'win32' ? 'Windows' : 'tmp'), `cwd 应包含目标目录，实际 ${info.data.cwd}`);
 });
 
 // ---------- 未登录测试 ----------

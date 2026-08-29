@@ -92,10 +92,14 @@ function auth(): Record<string, string> {
 }
 
 /* ---------- 常量 ---------- */
-const TEST_DIR = 'C:\\dm-api-test-hostfiles';
-const TEST_FILE = `${TEST_DIR}\\hello.txt`;
+/** 测试与后端同机运行，process.platform 即后端平台 */
+const IS_WIN = process.platform === 'win32';
+const ROOT_DIR = IS_WIN ? 'C:\\' : '/tmp';
+const SEP = IS_WIN ? '\\' : '/';
+const TEST_DIR = IS_WIN ? 'C:\\dm-api-test-hostfiles' : '/tmp/dm-api-test-hostfiles';
+const TEST_FILE = `${TEST_DIR}${SEP}hello.txt`;
 const TEST_CONTENT = 'hello from hostfiles api test ' + Date.now();
-const TEST_RENAME = `${TEST_DIR}\\hello-renamed.txt`;
+const TEST_RENAME = `${TEST_DIR}${SEP}hello-renamed.txt`;
 
 /* ---------- setup ---------- */
 
@@ -153,17 +157,18 @@ test('GET /api/hostfiles/list: 无参数返回磁盘列表', async () => {
   assert.ok(res.status < 500, `不应 5xx，实际 ${res.status}`);
   if (res.status === 200) {
     assert.ok(Array.isArray(res.data.items), '应有 items 数组');
-    const cDrive = res.data.items.find((i: any) => i.name === 'C:\\');
-    assert.ok(cDrive, '应包含 C:\\');
+    const expected = IS_WIN ? 'C:\\' : '/';
+    const top = res.data.items.find((i: any) => i.name === expected);
+    assert.ok(top, `应包含 ${expected}`);
   }
 });
 
-test('GET /api/hostfiles/list?path=C:\\: 列出 C 盘根目录', async () => {
-  const res = await req('GET', '/api/hostfiles/list?path=C%3A%5C', undefined, auth());
+test('GET /api/hostfiles/list?path=<ROOT>: 列出根目录', async () => {
+  const res = await req('GET', `/api/hostfiles/list?path=${encodeURIComponent(ROOT_DIR)}`, undefined, auth());
   assert.ok(res.status < 500, `不应 5xx，实际 ${res.status}`);
   if (res.status === 200) {
     assert.ok(Array.isArray(res.data.items), '应有 items 数组');
-    assert.ok(res.data.items.length > 0, 'C:\\ 应有内容');
+    assert.ok(res.data.items.length > 0, '根目录应有内容');
   }
 });
 
@@ -177,7 +182,7 @@ test('GET /api/hostfiles/list?path=不存在的目录: 返回 404', async () => 
    ================================================================ */
 
 test('POST /api/hostfiles/mkdir: 创建测试目录', async () => {
-  const res = await req('POST', '/api/hostfiles/mkdir', { path: 'C:\\', name: 'dm-api-test-hostfiles' }, auth());
+  const res = await req('POST', '/api/hostfiles/mkdir', { path: ROOT_DIR, name: 'dm-api-test-hostfiles' }, auth());
   assert.ok(res.status < 500, `不应 5xx，实际 ${res.status}`);
   assert.ok([200, 400].includes(res.status), `200（新建）或 400（已存在），实际 ${res.status}`);
 });
@@ -248,12 +253,12 @@ test('POST /api/hostfiles/delete: 删除测试目录（force）', async () => {
    4. upload / read round-trip
    ================================================================ */
 
-test('POST /api/hostfiles/upload: 上传文件到 C:\\', async () => {
+test('POST /api/hostfiles/upload: 上传文件到根目录', async () => {
   const uploadName = 'dm-upload-test.txt';
   const body = Buffer.from('upload payload ' + Date.now());
   const res = await reqRaw(
     'POST',
-    `/api/hostfiles/upload?path=${encodeURIComponent('C:\\')}&name=${uploadName}`,
+    `/api/hostfiles/upload?path=${encodeURIComponent(ROOT_DIR)}&name=${uploadName}`,
     body,
     auth(),
   );
@@ -263,7 +268,7 @@ test('POST /api/hostfiles/upload: 上传文件到 C:\\', async () => {
     assert.strictEqual(res.data.size, body.length);
   }
   // 清理
-  await req('POST', '/api/hostfiles/delete', { path: `C:\\${uploadName}` }, auth());
+  await req('POST', '/api/hostfiles/delete', { path: `${ROOT_DIR}${SEP}${uploadName}` }, auth());
 });
 
 /* ================================================================
@@ -272,8 +277,8 @@ test('POST /api/hostfiles/upload: 上传文件到 C:\\', async () => {
 
 test('POST /api/hostfiles/archive: 打包 C:\\dm-api-test-hostfiles（已删除则跳过）', async () => {
   // 先重建一个文件用于归档
-  await req('POST', '/api/hostfiles/mkdir', { path: 'C:\\', name: 'dm-api-test-hostfiles' }, auth());
-  const archiveFile = `${TEST_DIR}\\archive-me.txt`;
+  await req('POST', '/api/hostfiles/mkdir', { path: ROOT_DIR, name: 'dm-api-test-hostfiles' }, auth());
+  const archiveFile = `${TEST_DIR}${SEP}archive-me.txt`;
   await req('POST', '/api/hostfiles/write', { path: archiveFile, content: 'archive me' }, auth());
 
   const res = await req('POST', '/api/hostfiles/archive', { paths: [TEST_DIR] }, auth());
