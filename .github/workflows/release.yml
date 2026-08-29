@@ -1,12 +1,10 @@
 # ============================================================
-#  Docker Manager - Release CI (全渠道发布)
+#  Docker Manager - Release CI (全渠道发�?
 #  触发条件: push tag v*
 #  发布渠道:
-#    1. GitHub Releases — zip / deb / rpm
-#    2. ghcr.io — Docker 镜像（多架构）
-#    3. GitHub Packages (npm)
-#    4. GitHub Pages — APT 仓库源
-# ============================================================
+#    1. GitHub Releases �?zip / deb / rpm
+#    2. ghcr.io �?Docker 镜像（多架构�?#    3. GitHub Packages (npm)
+#    4. GitHub Pages �?APT 仓库�?# ============================================================
 name: Release
 
 on:
@@ -31,8 +29,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - run: npm run build --workspace web
@@ -47,8 +45,8 @@ jobs:
   build-ubuntu:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - run: npm run build --workspace web
@@ -64,8 +62,8 @@ jobs:
   build-centos:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - run: npm run build --workspace web
@@ -98,8 +96,7 @@ jobs:
           files: sha256sums.txt
 
   # ==========================================================
-  #  2. ghcr.io — Docker 多架构镜像
-  # ==========================================================
+  #  2. ghcr.io �?Docker 多架构镜�?  # ==========================================================
   publish-docker:
     runs-on: ubuntu-24.04
     needs: [checksums]
@@ -111,7 +108,7 @@ jobs:
           - arch: arm64
             platform: linux/arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -168,8 +165,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: [checksums]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://npm.pkg.github.com
@@ -180,7 +177,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================
-  #  4. GitHub Pages — APT 仓库
+  #  4. GitHub Pages �?APT 仓库
   # ==========================================================
   publish-repo:
     runs-on: ubuntu-24.04
@@ -188,7 +185,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Download deb artifacts
         uses: robinraju/release-downloader@v1.12
         with:

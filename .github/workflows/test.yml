@@ -1,13 +1,8 @@
 # ============================================================
 #  Docker Manager - Test CI
-#  触发条件: push 到 main / Pull Request
+#  触发条件: push �?main / Pull Request
 #  内容:
-#    1. unit      — server 单元测试（自包含，无需 Docker）
-#    2. typecheck — web / server TypeScript 类型检查
-#    3. api       — server API 集成测试（需本机 Docker 守护进程 + 9528 后端）
-#    4. e2e       — Playwright 冒烟（9528 后端 + 自动拉起 vite）
-#    5. docs      — 文档图片死链校验（AGENTS.md 提交远端前检查项）
-# ============================================================
+#    1. unit      �?server 单元测试（自包含，无需 Docker�?#    2. typecheck �?web / server TypeScript 类型检�?#    3. api       �?server API 集成测试（需本机 Docker 守护进程 + 9528 后端�?#    4. e2e       �?Playwright 冒烟�?528 后端 + 自动拉起 vite�?#    5. docs      �?文档图片死链校验（AGENTS.md 提交远端前检查项�?# ============================================================
 name: Test
 
 on:
@@ -19,8 +14,8 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - run: npm run test:server:unit
@@ -28,8 +23,8 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - name: Typecheck web (tsc -b)
@@ -41,16 +36,16 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm run docs:check
 
   api:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - name: Start backend (9528)
@@ -74,8 +69,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm install --ignore-scripts
       - name: Start backend (9528)
