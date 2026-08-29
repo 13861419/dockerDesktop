@@ -665,7 +665,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 - **Theme**: switch light / dark.
 - **Language**: switch the UI language.
 - **Users & passwords**: admins can add / remove users and change passwords (linked to login auth).
-- **Role management (RBAC)**: admins can create custom roles with per-action whitelists (13 resource-domain permissions in 5 groups: containers / images / volumes / networks / compose); built-in admin / user / auditor are locked, the operator permission set is adjustable; roles still in use cannot be deleted. Role permissions apply to the resource domain only — user management, system settings, engine switching, etc. always require an admin.
+- **Role management (RBAC)**: admins can create custom roles with per-action whitelists (14 resource-domain permissions in 6 groups: containers / images / volumes / networks / compose / self-heal); built-in admin / user / auditor are locked, the operator permission set is adjustable; roles still in use cannot be deleted. Role permissions apply to the resource domain only — user management, system settings, engine switching, etc. always require an admin. Role members see exactly the action buttons their permissions allow (unauthorized buttons are hidden); high-risk entry points such as container terminals are granted by the same permission set.
 
 ![Settings](../images/settings.png)
 
@@ -749,6 +749,20 @@ The fields of each create / edit dialog are listed below. Items marked `*` are r
 | First enabled channel (default) | Legacy behavior: alerts go to the first enabled channel only |
 | All enabled channels | Alerts are pushed to every enabled channel simultaneously |
 | Per-level routing | warn / danger / recovery each select target channels; a level with no selection falls back to the first enabled channel; disabled channels are filtered out |
+
+**Message template (per channel)**: when editing a channel you can set a message template with variables `{{level}}`, `{{message}}`, `{{time}}`, `{{channel}}`. Leave it empty to keep the default wording; unknown variables are kept as-is. All push paths (alerts, recovery, self-heal, approvals) render through the channel template.
+
+**Container self-heal**: configure automatic recovery rules per container name (exact match, stable across container recreation).
+
+| Field | Description |
+| --- | --- |
+| Container name * | e.g. `nginx-proxy` |
+| Watch condition * | Healthcheck failed (unhealthy) / container exited or dead (exited/dead) |
+| Recovery action * | restart / start |
+| Cooldown * | Minimum interval between two triggers of the same rule, 10–86400 seconds (default 300) to prevent restart storms |
+| Enable toggle | Disabled rules are skipped during checks |
+
+The backend checks every 10 seconds; on a hit the action runs and a record is written to the alert history (type = self-heal): success pushes a recovery-level notice, failure pushes danger-level — both routed via push routing and rendered through channel templates. Use "Run check now" on the card to trigger a manual sweep.
 
 **Resource alert rules (CPU / memory / disk / GPU / network)**: enable toggle, warn threshold % *, danger threshold % *, consecutive cycles (fire only after N consecutive sampling cycles over the threshold, default 1 = immediate), silence window, workdays only, work hours.
 
