@@ -841,6 +841,8 @@ export interface ContainerRule {
   warnThreshold: number;
   /** CPU/内存阈值（watchType=cpu/mem 时使用）：危险阈值（0-100） */
   dangerThreshold: number;
+  /** 连续周期（watchType=cpu/mem 时使用）：连续 N 个采样周期超阈值才触发，1=立即 */
+  consecutive: number;
   /** 当前使用率（后端为 cpu/mem 行补充，可选） */
   currentValue?: number | null;
   /** 探测端口（watchType=port 时使用，其余为 null） */

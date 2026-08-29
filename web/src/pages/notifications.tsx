@@ -249,6 +249,7 @@ export default function NotificationsPage() {
     port: string;
     warnThreshold: string;
     dangerThreshold: string;
+    consecutive: string;
     enabled: boolean;
     silentStart: string;
     silentEnd: string;
@@ -261,6 +262,7 @@ export default function NotificationsPage() {
     port: '',
     warnThreshold: '75',
     dangerThreshold: '90',
+    consecutive: '1',
     enabled: true,
     silentStart: '',
     silentEnd: '',
@@ -616,6 +618,7 @@ export default function NotificationsPage() {
       port: '',
       warnThreshold: '75',
       dangerThreshold: '90',
+      consecutive: '1',
       enabled: true,
       silentStart: '',
       silentEnd: '',
@@ -640,6 +643,7 @@ export default function NotificationsPage() {
         port: rule.port != null ? String(rule.port) : '',
         warnThreshold: rule.warnThreshold != null ? String(rule.warnThreshold) : '75',
         dangerThreshold: rule.dangerThreshold != null ? String(rule.dangerThreshold) : '90',
+        consecutive: String(rule.consecutive || 1),
         enabled: rule.enabled,
         silentStart: rule.silentStart || '',
         silentEnd: rule.silentEnd || '',
@@ -681,6 +685,11 @@ export default function NotificationsPage() {
         setContainerRuleError('警告阈值不能高于危险阈值');
         return;
       }
+      const consecutive = Math.floor(Number(containerRuleForm.consecutive) || 1);
+      if (consecutive < 1 || consecutive > 120) {
+        setContainerRuleError('连续周期需为 1-120 的整数');
+        return;
+      }
     }
     setSavingContainerRule(true);
     try {
@@ -695,10 +704,11 @@ export default function NotificationsPage() {
         workStart: containerRuleForm.workStart || null,
         workEnd: containerRuleForm.workEnd || null,
       };
-      // cpu/mem 时携带警告/危险阈值
+      // cpu/mem 时携带警告/危险阈值与连续周期
       if (containerRuleForm.watchType === 'cpu' || containerRuleForm.watchType === 'mem') {
         body.warnThreshold = Number(containerRuleForm.warnThreshold);
         body.dangerThreshold = Number(containerRuleForm.dangerThreshold);
+        body.consecutive = Math.floor(Number(containerRuleForm.consecutive) || 1);
       }
       if (containerRuleModal.editing) {
         await put(`/api/notifications/container-rules/${containerRuleModal.editing.id}`, body);
@@ -1502,6 +1512,15 @@ export default function NotificationsPage() {
                 max={100}
                 value={containerRuleForm.dangerThreshold}
                 onChange={(e) => setContainerRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
+              />
+            </Field>
+            <Field label="连续周期" hint="连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警">
+              <Input
+                type="number"
+                min={1}
+                max={120}
+                value={containerRuleForm.consecutive}
+                onChange={(e) => setContainerRuleForm((f) => ({ ...f, consecutive: e.target.value }))}
               />
             </Field>
           </>
