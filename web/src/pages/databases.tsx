@@ -23,6 +23,10 @@ import {
   RedisInfo,
   DatabaseType,
 } from '../types';
+import { translateNow } from '../i18n';
+
+/** 模块级翻译（子组件共用；语言切换时随父组件重渲染） */
+const t = translateNow;
 import './databases.less';
 
 /** 已识别容器项类型（取自列表接口返回） */
@@ -88,8 +92,8 @@ export default function DatabasesPage() {
       setRecognized(data?.recognizedInstances || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '拉取数据库实例失败');
-      showToast(e?.message || '拉取数据库实例失败', 'error');
+      setLoadError(e?.message || t('拉取数据库实例失败'));
+      showToast(e?.message || t('拉取数据库实例失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -107,7 +111,7 @@ export default function DatabasesPage() {
   const handleSave = useCallback(
     async (target: DatabaseInstance | null, values: InstanceFormValues) => {
       if (!canManage) {
-        showToast(target ? '仅管理员可编辑数据库实例' : '仅管理员可登记数据库实例', 'error');
+        showToast(target ? t('仅管理员可编辑数据库实例') : t('仅管理员可登记数据库实例'), 'error');
         setRegisterOpen(false);
         setEditTarget(null);
         return;
@@ -125,7 +129,7 @@ export default function DatabasesPage() {
           };
           if (values.password.trim()) payload.password = values.password.trim();
           await put(`/api/databases/${target.id}`, payload);
-          showToast(`${values.name} 已更新`);
+          showToast(t('{{v1}} 已更新', { v1: values.name }));
         } else {
           await post('/api/databases', {
             name: values.name.trim(),
@@ -136,13 +140,13 @@ export default function DatabasesPage() {
             password: values.password.trim() || undefined,
             containerRef: values.containerRef || undefined,
           });
-          showToast(`${values.name} 登记成功`);
+          showToast(t('{{v1}} 登记成功', { v1: values.name }));
         }
         setRegisterOpen(false);
         setEditTarget(null);
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || '保存失败', 'error');
+        showToast(e?.message || t('保存失败'), 'error');
       } finally {
         setSaving(false);
       }
@@ -162,12 +166,12 @@ export default function DatabasesPage() {
           `/api/databases/${instance.id}/test`
         );
         if (data?.ok) {
-          showToast(data.message || `${instance.name} 连接正常`);
+          showToast(data.message || t('{{v1}} 连接正常', { v1: instance.name }));
         } else {
-          showToast(data.message || `${instance.name} 连接失败`, 'error');
+          showToast(data.message || t('{{v1}} 连接失败', { v1: instance.name }), 'error');
         }
       } catch (e: any) {
-        showToast(e?.message || `${instance.name} 连接失败`, 'error');
+        showToast(e?.message || t('{{v1}} 连接失败', { v1: instance.name }), 'error');
       } finally {
         setTestingId(null);
       }
@@ -181,7 +185,7 @@ export default function DatabasesPage() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canDelete) {
-      showToast('仅管理员可删除数据库实例', 'error');
+      showToast(t('仅管理员可删除数据库实例'), 'error');
       setDeleteTarget(null);
       return;
     }
@@ -189,11 +193,11 @@ export default function DatabasesPage() {
     setDeleting(true);
     try {
       await del(`/api/databases/${target.id}`);
-      showToast(`${target.name} 已删除`);
+      showToast(t('{{v1}} 已删除', { v1: target.name }));
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -220,21 +224,21 @@ export default function DatabasesPage() {
           </div>
 
           <div className="db-card__row">
-            <span className="db-card__row-label">地址</span>
+            <span className="db-card__row-label">{t('地址')}</span>
             <span className="db-card__row-value">
               {instance.host}:{instance.port}
             </span>
           </div>
 
           <div className="db-card__row">
-            <span className="db-card__row-label">用户</span>
+            <span className="db-card__row-label">{t('用户')}</span>
             <span className="db-card__row-value">{instance.user || '—'}</span>
           </div>
 
           <div className="db-card__row">
-            <span className="db-card__row-label">密码</span>
+            <span className="db-card__row-label">{t('密码')}</span>
             <span className="db-card__badge badge badge--muted">
-              {instance.hasPassword ? '已设置' : '未设置'}
+              {instance.hasPassword ? t('已设置') : t('未设置')}
             </span>
           </div>
 
@@ -246,16 +250,16 @@ export default function DatabasesPage() {
               disabled={!!testingId}
               onClick={() => handleTest(instance)}
             >
-              连接测试
+              {t('连接测试')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setDetailTarget(instance)}>
-              列库
+              {t('列库')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setEditTarget(instance)} disabled={!canManage}>
-              编辑
+              {t('编辑')}
             </Button>
             <Button variant="danger" size="sm" onClick={() => setDeleteTarget(instance)} disabled={!canDelete}>
-              删除
+              {t('删除')}
             </Button>
           </div>
         </div>
@@ -267,24 +271,24 @@ export default function DatabasesPage() {
   return (
     <div className="page">
       <Card
-        title="数据库管理"
+        title={t('数据库管理')}
         extra={
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setRefreshKey((k) => k + 1)}
           >
-            刷新
+            {t('刷新')}
           </Button>
         }
       >
         <div className="db-tip">
-          管理已登记的数据库实例：可登记旋转识别到的容器，浏览库表、执行只读查询或查看 Redis 键。
+          {t('管理已登记的数据库实例：可登记旋转识别到的容器，浏览库表、执行只读查询或查看 Redis 键。')}
         </div>
 
         <div className="db-card__actions" style={{ justifyContent: 'flex-start', marginBottom: 16 }}>
           <Button variant="primary" size="sm" onClick={() => setRegisterOpen(true)} disabled={!canManage}>
-            登记实例
+            {t('登记实例')}
           </Button>
         </div>
 
@@ -293,21 +297,21 @@ export default function DatabasesPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取数据库实例失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('拉取数据库实例失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchDatabases}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : instances.length === 0 ? (
           <Empty
-            title="暂无数据库实例"
-            description="点击右上角「登记实例」添加或识别数据库容器"
+            title={t('暂无数据库实例')}
+            description={t('点击右上角「登记实例」添加或识别数据库容器')}
             action={
               <Button variant="primary" size="sm" onClick={() => setRegisterOpen(true)} disabled={!canManage}>
-                登记实例
+                {t('登记实例')}
               </Button>
             }
           />
@@ -346,9 +350,9 @@ export default function DatabasesPage() {
       {/* 删除实例确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除实例"
-        message={`确定要删除数据库实例 "${deleteTarget?.name || ''}" 吗？此操作不会影响实际数据库。`}
-        confirmText="删除"
+        title={t('删除实例')}
+        message={t('确定要删除数据库实例 "{{v1}}" 吗？此操作不会影响实际数据库。', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -437,13 +441,13 @@ function InstanceFormModal({
   return (
     <Modal
       open={open}
-      title={isEdit ? `编辑实例 ${instance?.name || ''}` : '登记实例'}
+      title={isEdit ? t('编辑实例 {{v1}}', { v1: instance?.name || '' }) : t('登记实例')}
       onClose={() => !submitting && onClose()}
       width={520}
       footer={
         <div className="db-modal__footer">
           <Button variant="ghost" size="md" onClick={onClose} disabled={submitting}>
-            取消
+            {t('取消')}
           </Button>
           <Button
             variant="primary"
@@ -452,7 +456,7 @@ function InstanceFormModal({
             disabled={!values.name.trim() || !values.host.trim() || !values.port.trim()}
             onClick={submit}
           >
-            {isEdit ? '保存' : '登记'}
+            {isEdit ? t('保存') : t('登记')}
           </Button>
         </div>
       }
@@ -461,7 +465,7 @@ function InstanceFormModal({
         {/* 已识别容器快捷入口：仅登记模式下展示 */}
         {!isEdit && recognized.length > 0 && (
           <div className="db-recognized__section">
-            <div className="db-recognized__tip">检测到已识别的数据库容器，点击自动填入：</div>
+            <div className="db-recognized__tip">{t('检测到已识别的数据库容器，点击自动填入：')}</div>
             <div className="db-recognized__list">
               {recognized.map((item) => (
                 <button
@@ -480,15 +484,15 @@ function InstanceFormModal({
           </div>
         )}
 
-        <Field label="名称" required>
+        <Field label={t('名称')} required>
           <Input
             value={values.name}
-            placeholder="例如：主数据库"
+            placeholder={t('例如：主数据库')}
             onChange={(e) => update('name', e.target.value)}
           />
         </Field>
 
-        <Field label="类型" required>
+        <Field label={t('类型')} required>
           <Select value={values.type} onChange={(e) => update('type', e.target.value)}>
             <option value="mysql">MySQL</option>
             <option value="postgres">PostgreSQL</option>
@@ -497,15 +501,15 @@ function InstanceFormModal({
           </Select>
         </Field>
 
-        <Field label="主机" required>
+        <Field label={t('主机')} required>
           <Input
             value={values.host}
-            placeholder="127.0.0.1 或容器名"
+            placeholder={t('127.0.0.1 或容器名')}
             onChange={(e) => update('host', e.target.value)}
           />
         </Field>
 
-        <Field label="端口" required>
+        <Field label={t('端口')} required>
           <Input
             value={values.port}
             placeholder="3306 / 5432 / 6379"
@@ -513,26 +517,26 @@ function InstanceFormModal({
           />
         </Field>
 
-        <Field label="用户名">
+        <Field label={t('用户名')}>
           <Input
             value={values.user}
-            placeholder="root（可空）"
+            placeholder={t('root（可空）')}
             onChange={(e) => update('user', e.target.value)}
           />
         </Field>
 
         <Field
-          label="密码"
+          label={t('密码')}
           hint={
             isEdit && instance?.hasPassword
-              ? '已设置密码；留空则保持原密码不变'
-              : '可空（无密码连接）'
+              ? t('已设置密码；留空则保持原密码不变')
+              : t('可空（无密码连接）')
           }
         >
           <Input
             type="password"
             value={values.password}
-            placeholder={isEdit && instance?.hasPassword ? '已设置' : '可空'}
+            placeholder={isEdit && instance?.hasPassword ? t('已设置') : t('可空')}
             onChange={(e) => update('password', e.target.value)}
           />
         </Field>
@@ -560,23 +564,23 @@ function DetailModal({
   return (
     <Modal
       open={open}
-      title={instance ? `${instance.name} (${TYPE_LABELS[instance.type] || instance.type})` : '实例详情'}
+      title={instance ? `${instance.name} (${TYPE_LABELS[instance.type] || instance.type})` : t('实例详情')}
       onClose={onClose}
       width={720}
     >
       {instance && (
         <>
           <div className="db-detail__info">
-            地址：<span className="db-card__row-value">{instance.host}:{instance.port}</span> · 用户：
-            {instance.user || '—'} · 密码：{instance.hasPassword ? '已设置' : '未设置'}
+            {t('地址：')}<span className="db-card__row-value">{instance.host}:{instance.port}</span> {t('· 用户：')}
+            {instance.user || '—'} {t('· 密码：')}{instance.hasPassword ? t('已设置') : t('未设置')}
           </div>
           {isRedis ? (
             operable ? (
               <RedisPanel instance={instance} />
             ) : (
               <Empty
-                title="需要操作员/管理员权限"
-                description="浏览 Redis 键与指标需具备 operator 或管理员权限，请联系管理员授予相应角色。"
+                title={t('需要操作员/管理员权限')}
+                description={t('浏览 Redis 键与指标需具备 operator 或管理员权限，请联系管理员授予相应角色。')}
               />
             )
           ) : (
@@ -627,7 +631,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       setDatabases(list);
       setActiveDb((prev) => (list.includes(prev) ? prev : list[0] || ''));
     } catch (e: any) {
-      showToast(e?.message || '加载库列表失败', 'error');
+      showToast(e?.message || t('加载库列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -651,7 +655,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
         setTables(Array.isArray(data) ? data : (data?.tables || []));
       } catch (e: any) {
         setTables([]);
-        showToast(e?.message || '加载表列表失败', 'error');
+        showToast(e?.message || t('加载表列表失败'), 'error');
       }
     },
     [instance.id, showToast]
@@ -662,7 +666,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
    */
   const handleCreate = useCallback(async () => {
     if (!canManage) {
-      showToast('需要操作员/管理员权限方可创建数据库', 'error');
+      showToast(t('需要操作员/管理员权限方可创建数据库'), 'error');
       setCreateOpen(false);
       return;
     }
@@ -674,13 +678,13 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       const body: Record<string, string> = { name: createName.trim() };
       if (isMysqlLike && createCharset) body.charset = createCharset;
       await post(`/api/databases/${instance.id}/databases`, body);
-      showToast(`已创建数据库 ${createName.trim()}`);
+      showToast(t('已创建数据库 {{v1}}', { v1: createName.trim() }));
       setCreateOpen(false);
       setCreateName('');
       loadDatabases();
       setActiveDb(createName.trim());
     } catch (e: any) {
-      showToast(e?.message || '创建数据库失败', 'error');
+      showToast(e?.message || t('创建数据库失败'), 'error');
     } finally {
       setCreating(false);
     }
@@ -692,7 +696,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   const handleDelete = useCallback(async () => {
     if (!deleteDb) return;
     if (!canManage) {
-      showToast('需要操作员/管理员权限方可删除数据库', 'error');
+      showToast(t('需要操作员/管理员权限方可删除数据库'), 'error');
       setDeleteDb(null);
       return;
     }
@@ -700,12 +704,12 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
     setDeleting(true);
     try {
       await del(`/api/databases/${instance.id}/databases/${encodeURIComponent(db)}`);
-      showToast(`已删除数据库 ${db}`);
+      showToast(t('已删除数据库 {{db}}', { db }));
       setDeleteDb(null);
       if (activeDb === db) setTables([]);
       loadDatabases();
     } catch (e: any) {
-      showToast(e?.message || '删除数据库失败', 'error');
+      showToast(e?.message || t('删除数据库失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -714,13 +718,13 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
   return (
     <div>
       <div className="db-detail__section">
-        <span className="db-detail__section-title">数据库 ({databases.length})</span>
+        <span className="db-detail__section-title">{t('数据库 ({{n}})', { n: databases.length })}</span>
         <div className="db-detail__section-actions">
           <Button variant="ghost" size="sm" onClick={() => setCreateOpen(true)} disabled={!canManage}>
-            新建库
+            {t('新建库')}
           </Button>
           <Button variant="ghost" size="sm" onClick={loadDatabases}>
-            刷新
+            {t('刷新')}
           </Button>
         </div>
       </div>
@@ -728,7 +732,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       {loading ? (
         <SkeletonRows rows={3} />
       ) : databases.length === 0 ? (
-        <div className="db-list__empty">暂无数据库，可点击「新建库」创建。</div>
+        <div className="db-list__empty">{t('暂无数据库，可点击「新建库」创建。')}</div>
       ) : (
         <div className="db-list">
           {databases.map((db) => (
@@ -736,7 +740,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
               <button
                 type="button"
                 className="db-list__name"
-                title={`点击列出 ${db} 的表`}
+                title={t('点击列出 {{db}} 的表', { db })}
                 onClick={() => loadTables(db)}
               >
                 {db}
@@ -747,7 +751,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
                 onClick={() => setDeleteDb(db)}
                 disabled={!canManage}
               >
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -757,7 +761,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       {tables.length > 0 && (
         <div className="db-detail__section">
           <span className="db-detail__section-title">
-            {activeDb} 中的表 ({tables.length})
+            {t('{{db}} 中的表 ({{n}})', { db: activeDb, n: tables.length })}
           </span>
         </div>
       )}
@@ -770,7 +774,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
                 <button
                   type="button"
                   className="db-list__name"
-                  title={`点击查看 ${t} 的结构与数据`}
+                  title={translateNow('点击查看 {{t}} 的结构与数据', { t })}
                   onClick={() => setDetailTable(t)}
                 >
                   {t}
@@ -789,7 +793,7 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       {canManage && (
         <>
           <div className="db-detail__section">
-            <span className="db-detail__section-title">SQL 查询</span>
+            <span className="db-detail__section-title">{t('SQL 查询')}</span>
           </div>
           <SqlQueryPanel instance={instance} activeDb={activeDb} databases={databases} />
         </>
@@ -800,13 +804,13 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       {/* 新建库弹窗 */}
       <Modal
         open={createOpen}
-        title="新建数据库"
+        title={t('新建数据库')}
         onClose={() => !creating && setCreateOpen(false)}
         width={440}
         footer={
           <div className="db-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setCreateOpen(false)} disabled={creating}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -815,23 +819,23 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
               disabled={!createName.trim() || !canManage}
               onClick={handleCreate}
             >
-              创建
+              {t('创建')}
             </Button>
           </div>
         }
       >
         <div className="db-create__fields">
-          <Field label="数据库名" required>
+          <Field label={t('数据库名')} required>
             <Input
               value={createName}
-              placeholder="例如：app_db"
+              placeholder={t('例如：app_db')}
               onChange={(e) => setCreateName(e.target.value)}
             />
           </Field>
           {(instance.type === 'mysql' || instance.type === 'mariadb') && (
-            <Field label="字符集" hint="Character Set，创建后不可通过本面板修改">
+            <Field label={t('字符集')} hint={t('Character Set，创建后不可通过本面板修改')}>
               <Select value={createCharset} onChange={(e) => setCreateCharset(e.target.value)}>
-                <option value="utf8mb4">utf8mb4（推荐）</option>
+                <option value="utf8mb4">{t('utf8mb4（推荐）')}</option>
                 <option value="utf8mb3">utf8mb3</option>
                 <option value="utf8">utf8</option>
                 <option value="gbk">gbk</option>
@@ -845,9 +849,9 @@ function SqlViewPanel({ instance }: { instance: DatabaseInstance }) {
       {/* 删除库确认框 */}
       <ConfirmDialog
         open={!!deleteDb}
-        title="删除数据库"
-        message={`确定要删除数据库 "${deleteDb || ''}" 吗？该操作将删除其中的所有数据。`}
-        confirmText="删除"
+        title={t('删除数据库')}
+        message={t('确定要删除数据库 "{{v1}}" 吗？该操作将删除其中的所有数据。', { v1: deleteDb || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -932,7 +936,7 @@ function TableDetailModal({
     } catch (e: any) {
       setSchemaColumns([]);
       setSchemaRows([]);
-      showToast(e?.message || '加载表结构失败', 'error');
+      showToast(e?.message || t('加载表结构失败'), 'error');
     } finally {
       setSchemaLoading(false);
     }
@@ -967,7 +971,7 @@ function TableDetailModal({
       setDataColumns([]);
       setDataRows([]);
       setTotal(0);
-      showToast(e?.message || '加载表数据失败', 'error');
+      showToast(e?.message || t('加载表数据失败'), 'error');
     } finally {
       setDataLoading(false);
     }
@@ -990,14 +994,14 @@ function TableDetailModal({
   return (
     <Modal
       open={open}
-      title={table ? `表详情 · ${table}` : '表详情'}
+      title={table ? t('表详情 · {{table}}', { table }) : t('表详情')}
       onClose={onClose}
       width={820}
     >
       {table && (
         <>
           <div className="db-detail__info">
-            库：<span className="db-card__row-value">{db}</span> · 表：
+            {t('库：')}<span className="db-card__row-value">{db}</span> {t('· 表：')}
             <span className="db-card__row-value">{table}</span>
           </div>
 
@@ -1008,14 +1012,14 @@ function TableDetailModal({
               className={`detail-tabs__item ${tab === 'structure' ? 'detail-tabs__item--active' : ''}`}
               onClick={() => setTab('structure')}
             >
-              结构
+              {t('结构')}
             </button>
             <button
               type="button"
               className={`detail-tabs__item ${tab === 'data' ? 'detail-tabs__item--active' : ''}`}
               onClick={() => setTab('data')}
             >
-              数据
+              {t('数据')}
             </button>
           </div>
 
@@ -1025,7 +1029,7 @@ function TableDetailModal({
               {schemaLoading ? (
                 <SkeletonRows rows={3} />
               ) : schemaColumns.length === 0 ? (
-                <div className="db-list__empty">暂无结构信息。</div>
+                <div className="db-list__empty">{t('暂无结构信息。')}</div>
               ) : (
                 <table className="db-sql__table">
                   <thead>
@@ -1055,21 +1059,21 @@ function TableDetailModal({
           {tab === 'data' && (
             <div className="db-table__panel">
               <div className="db-table__toolbar">
-                <span className="db-sql__hint">每页行数</span>
+                <span className="db-sql__hint">{t('每页行数')}</span>
                 <Select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} style={{ width: 90 }}>
                   <option value={10}>10</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                 </Select>
                 <span className="db-table__page-info">
-                  第 {page} / {totalPages} 页 · 共 {total} 行
+                  {t('第 {{page}} / {{totalPages}} 页 · 共 {{total}} 行', { page, totalPages, total })}
                 </span>
                 <div className="db-table__page-actions">
                   <Button variant="ghost" size="sm" onClick={prevPage} disabled={page <= 1}>
-                    上一页
+                    {t('上一页')}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={nextPage} disabled={page >= totalPages}>
-                    下一页
+                    {t('下一页')}
                   </Button>
                 </div>
               </div>
@@ -1077,7 +1081,7 @@ function TableDetailModal({
               {dataLoading ? (
                 <SkeletonRows rows={3} />
               ) : dataColumns.length === 0 ? (
-                <div className="db-list__empty">暂无数据。</div>
+                <div className="db-list__empty">{t('暂无数据。')}</div>
               ) : (
                 <table className="db-sql__table">
                   <thead>
@@ -1104,7 +1108,7 @@ function TableDetailModal({
               {dataColumns.length === 0 && !dataLoading && (
                 <div className="db-table__page-info" style={{ marginTop: 8 }}>
                   <Button variant="ghost" size="sm" onClick={loadData}>
-                    刷新
+                    {t('刷新')}
                   </Button>
                 </div>
               )}
@@ -1147,7 +1151,7 @@ function SqlQueryPanel({
    */
   const runQuery = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可执行 SQL 查询', 'error');
+      showToast(t('仅管理员可执行 SQL 查询'), 'error');
       return;
     }
     if (!sql.trim()) return;
@@ -1158,10 +1162,10 @@ function SqlQueryPanel({
         db: db || undefined,
       });
       setResult(data);
-      showToast(`查询完成，返回 ${data?.rowCount ?? 0} 行`, 'success');
+      showToast(t('查询完成，返回 {{v1}} 行', { v1: data?.rowCount ?? 0 }), 'success');
     } catch (e: any) {
       setResult(null);
-      showToast(e?.message || '查询失败，仅允许只读语句', 'error');
+      showToast(e?.message || t('查询失败，仅允许只读语句'), 'error');
     } finally {
       setQuerying(false);
     }
@@ -1175,18 +1179,18 @@ function SqlQueryPanel({
           onChange={(e) => setDb(e.target.value)}
           style={{ width: 220 }}
         >
-          <option value="">（不指定库）</option>
+          <option value="">{t('（不指定库）')}</option>
           {databases.map((d) => (
             <option key={d} value={d}>
               {d}
             </option>
           ))}
         </Select>
-        <span className="db-sql__hint">仅允许 SELECT / SHOW 等只读语句</span>
+        <span className="db-sql__hint">{t('仅允许 SELECT / SHOW 等只读语句')}</span>
       </div>
       <textarea
         className="input input--area db-sql__area"
-        placeholder={canManage ? 'SELECT * FROM users LIMIT 50;' : '需要操作员/管理员权限方可执行 SQL 查询'}
+        placeholder={canManage ? 'SELECT * FROM users LIMIT 50;' : t('需要操作员/管理员权限方可执行 SQL 查询')}
         value={sql}
         onChange={(e) => setSql(e.target.value)}
         disabled={!canManage}
@@ -1199,14 +1203,14 @@ function SqlQueryPanel({
           disabled={!sql.trim() || !canManage}
           onClick={runQuery}
         >
-          执行查询
+          {t('执行查询')}
         </Button>
       </div>
 
       {result && (
         <div className="db-sql__result">
           {result.columns.length === 0 ? (
-            <div className="db-list__empty">无返回结果（{result.rowCount} 行受影响）</div>
+            <div className="db-list__empty">{t('无返回结果（{{n}} 行受影响）', { n: result.rowCount })}</div>
           ) : (
             <table className="db-sql__table">
               <thead>
@@ -1273,7 +1277,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
         const rawKeys = Array.isArray(data) ? data : (data?.keys || []);
         setKeys(rawKeys.map((k) => (typeof k === 'string' ? { key: k } : k)));
       } catch (e: any) {
-        showToast(e?.message || '加载键列表失败', 'error');
+        showToast(e?.message || t('加载键列表失败'), 'error');
       } finally {
         setLoading(false);
       }
@@ -1290,7 +1294,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
       const data = await post<RedisInfo>(`/api/databases/${instance.id}/redis/info`);
       setInfo(data || {});
     } catch (e: any) {
-      showToast(e?.message || '加载 Redis 指标失败', 'error');
+      showToast(e?.message || t('加载 Redis 指标失败'), 'error');
     }
   }, [instance.id, showToast, canManage]);
 
@@ -1307,7 +1311,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
   const handleDeleteKey = useCallback(async () => {
     if (!deleteKey) return;
     if (!canDelete) {
-      showToast('需要操作员/管理员权限方可删除 Redis 键', 'error');
+      showToast(t('需要操作员/管理员权限方可删除 Redis 键'), 'error');
       setDeleteKey(null);
       return;
     }
@@ -1315,11 +1319,11 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
     setDeleting(true);
     try {
       await del(`/api/databases/${instance.id}/redis/keys`, { key });
-      showToast(`已删除键 ${key}`);
+      showToast(t('已删除键 {{key}}', { key }));
       setDeleteKey(null);
       loadKeys(pattern, limit);
     } catch (e: any) {
-      showToast(e?.message || '删除键失败', 'error');
+      showToast(e?.message || t('删除键失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -1330,11 +1334,11 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
    */
   const infoItems = useMemo(() => {
     const mapping: Array<[string, string]> = [
-      ['usedMemoryHuman', '内存'],
-      ['connectedClients', '连接数'],
-      ['uptime', '运行时长'],
-      ['keyspace', '键空间'],
-      ['hitRate', '命中率'],
+      ['usedMemoryHuman', t('内存')],
+      ['connectedClients', t('连接数')],
+      ['uptime', t('运行时长')],
+      ['keyspace', t('键空间')],
+      ['hitRate', t('命中率')],
     ];
     return mapping
       .map(([key, label]) => ({ label, value: info[key] }))
@@ -1346,8 +1350,8 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
       <div className="db-redis__info">
         {infoItems.length === 0 && (
           <div className="db-redis__info-item">
-            <div className="db-redis__info-label">状态</div>
-            <div className="db-redis__info-value">已连接</div>
+            <div className="db-redis__info-label">{t('状态')}</div>
+            <div className="db-redis__info-value">{t('已连接')}</div>
           </div>
         )}
         {infoItems.map((item) => (
@@ -1359,10 +1363,10 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
       </div>
 
       <div className="db-detail__section">
-        <span className="db-detail__section-title">键列表 ({keys.length})</span>
+        <span className="db-detail__section-title">{t('键列表 ({{n}})', { n: keys.length })}</span>
         <div className="db-detail__section-actions">
           <Button variant="ghost" size="sm" onClick={() => loadKeys(pattern, limit)} disabled={!canManage}>
-            刷新
+            {t('刷新')}
           </Button>
         </div>
       </div>
@@ -1370,27 +1374,27 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
       <div className="db-redis__toolbar">
         <Input
           className="db-redis__pattern"
-          placeholder="匹配模式，如 * / user:*"
+          placeholder={t('匹配模式，如 * / user:*')}
           value={pattern}
           onChange={(e) => setPattern(e.target.value)}
           disabled={!canManage}
         />
         <Input
           style={{ width: 90 }}
-          placeholder="限制"
+          placeholder={t('限制')}
           value={limit}
           onChange={(e) => setLimit(Number(e.target.value))}
           disabled={!canManage}
         />
         <Button variant="secondary" size="sm" onClick={() => loadKeys(pattern, limit)} disabled={!canManage}>
-          查询
+          {t('查询')}
         </Button>
       </div>
 
       {loading ? (
         <SkeletonRows rows={3} />
       ) : keys.length === 0 ? (
-        <div className="db-list__empty">暂无匹配的键。</div>
+        <div className="db-list__empty">{t('暂无匹配的键。')}</div>
       ) : (
         <div className="db-list">
           {keys.map((item) => (
@@ -1398,7 +1402,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
               <button
                 type="button"
                 className="db-list__name"
-                title={`点击查看 ${item.key} 的值`}
+                title={t('点击查看 {{v1}} 的值', { v1: item.key })}
                 onClick={() => setDetailKey(item.key)}
               >
                 {item.key}
@@ -1408,7 +1412,7 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
                 {item.size !== undefined ? ` · ${item.size}` : ''}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setDeleteKey(item.key)} disabled={!canDelete}>
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -1418,9 +1422,9 @@ function RedisPanel({ instance }: { instance: DatabaseInstance }) {
       {/* 删除键确认框 */}
       <ConfirmDialog
         open={!!deleteKey}
-        title="删除键"
-        message={`确定要删除 Redis 键 "${deleteKey || ''}" 吗？`}
-        confirmText="删除"
+        title={t('删除键')}
+        message={t('确定要删除 Redis 键 "{{v1}}" 吗？', { v1: deleteKey || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDeleteKey}
@@ -1479,7 +1483,7 @@ function RedisKeyModal({
         setData(res);
       } catch (e: any) {
         setData(null);
-        showToast(e?.message || '加载键值失败', 'error');
+        showToast(e?.message || t('加载键值失败'), 'error');
       } finally {
         setLoading(false);
       }
@@ -1487,38 +1491,38 @@ function RedisKeyModal({
   }, [open, keyName, instance.id, showToast]);
 
   /** 类型中文名映射 */
-  const typeLabel = (t: string): string => {
+  const typeLabel = (tk: string): string => {
     const map: Record<string, string> = {
-      string: '字符串',
-      list: '列表',
-      set: '集合',
-      zset: '有序集合',
-      hash: '哈希',
-      none: '不存在',
+      string: t('字符串'),
+      list: t('列表'),
+      set: t('集合'),
+      zset: t('有序集合'),
+      hash: t('哈希'),
+      none: t('不存在'),
     };
-    return map[t] || t;
+    return map[tk] || tk;
   };
 
   /** 展示 TTL：-1 永久，-2 不存在，其余为秒 */
   const renderTtl = (ttl: number): string => {
-    if (ttl === -1) return '永久';
-    if (ttl === -2) return '不存在';
-    return `${ttl} 秒`;
+    if (ttl === -1) return t('永久');
+    if (ttl === -2) return t('不存在');
+    return t('{{ttl}} 秒', { ttl });
   };
 
   return (
     <Modal
       open={open}
-      title={keyName ? `键详情 · ${keyName}` : '键详情'}
+      title={keyName ? t('键详情 · {{keyName}}', { keyName }) : t('键详情')}
       onClose={onClose}
       width={640}
     >
       {loading ? (
         <SkeletonRows rows={3} />
       ) : !data ? (
-        <div className="db-list__empty">暂无键信息。</div>
+        <div className="db-list__empty">{t('暂无键信息。')}</div>
       ) : data.type === 'none' ? (
-        <div className="db-list__empty">键不存在（可能已被删除）。</div>
+        <div className="db-list__empty">{t('键不存在（可能已被删除）。')}</div>
       ) : (
         <div className="db-redis-key">
           {/* 键信息头 */}
@@ -1640,7 +1644,7 @@ function DbBackupPanel({
       );
       setBackups(data?.backups || []);
     } catch (e: any) {
-      showToast(e?.message || '加载备份列表失败', 'error');
+      showToast(e?.message || t('加载备份列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -1660,20 +1664,20 @@ function DbBackupPanel({
    */
   const handleBackup = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可发起备份', 'error');
+      showToast(t('仅管理员可发起备份'), 'error');
       return;
     }
     if (!targetDb.trim()) {
-      showToast('请选择要备份的库', 'error');
+      showToast(t('请选择要备份的库'), 'error');
       return;
     }
     setBackingUp(true);
     try {
       await post(`/api/databases/${instance.id}/backups`, { db: targetDb.trim() });
-      showToast('备份已发起');
+      showToast(t('备份已发起'));
       load();
     } catch (e: any) {
-      showToast(e?.message || '备份失败', 'error');
+      showToast(e?.message || t('备份失败'), 'error');
     } finally {
       setBackingUp(false);
     }
@@ -1685,18 +1689,18 @@ function DbBackupPanel({
   const handleDelete = useCallback(async () => {
     if (!deleteFile) return;
     if (!canManage) {
-      showToast('需要操作员/管理员权限方可删除备份', 'error');
+      showToast(t('需要操作员/管理员权限方可删除备份'), 'error');
       setDeleteFile(null);
       return;
     }
     setDeleting(true);
     try {
       await del(`/api/databases/${instance.id}/backups/${encodeURIComponent(deleteFile)}`);
-      showToast('已删除备份文件');
+      showToast(t('已删除备份文件'));
       setDeleteFile(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -1708,7 +1712,7 @@ function DbBackupPanel({
   const handleRestore = useCallback(async () => {
     if (!restoreFile) return;
     if (!canManage) {
-      showToast('仅管理员可恢复备份', 'error');
+      showToast(t('仅管理员可恢复备份'), 'error');
       setRestoreFile(null);
       return;
     }
@@ -1722,15 +1726,15 @@ function DbBackupPanel({
       setRestoreFile(null);
       if (data?.ok) {
         const msg = data.restoredDb
-          ? `已恢复到数据库 ${data.restoredDb}`
-          : '备份恢复成功';
+          ? t('已恢复到数据库 {{v1}}', { v1: data.restoredDb })
+          : t('备份恢复成功');
         showToast(msg, 'success');
       } else {
-        showToast('备份恢复失败', 'error');
+        showToast(t('备份恢复失败'), 'error');
       }
       load();
     } catch (e: any) {
-      showToast(e?.message || '备份恢复失败', 'error');
+      showToast(e?.message || t('备份恢复失败'), 'error');
     } finally {
       setRestoring(false);
     }
@@ -1766,7 +1770,7 @@ function DbBackupPanel({
   return (
     <div className="db-backup">
       <div className="db-detail__section">
-        <span className="db-detail__section-title">数据备份 ({backups.length})</span>
+        <span className="db-detail__section-title">{t('数据备份 ({{n}})', { n: backups.length })}</span>
         <div className="db-detail__section-actions">
           {databases.length > 0 && (
             <Select value={targetDb} onChange={(e) => setTargetDb(e.target.value)} style={{ width: 160 }}>
@@ -1784,22 +1788,22 @@ function DbBackupPanel({
             disabled={!canManage || databases.length === 0}
             onClick={handleBackup}
           >
-            备份
+            {t('备份')}
           </Button>
           <Button variant="ghost" size="sm" onClick={load} disabled={!canManage}>
-            刷新
+            {t('刷新')}
           </Button>
         </div>
       </div>
 
       <div className="db-sql__hint" style={{ marginBottom: 8 }}>
-        将所选库导出为压缩 SQL 文件（逻辑备份），可下载留存。Redis 暂不支持。
+        {t('将所选库导出为压缩 SQL 文件（逻辑备份），可下载留存。Redis 暂不支持。')}
       </div>
 
       {loading ? (
         <SkeletonRows rows={3} />
       ) : backups.length === 0 ? (
-        <div className="db-list__empty">暂无备份文件，选择库后点击「备份」创建。</div>
+        <div className="db-list__empty">{t('暂无备份文件，选择库后点击「备份」创建。')}</div>
       ) : (
         <div className="db-list">
           {backups.map((b) => (
@@ -1818,7 +1822,7 @@ function DbBackupPanel({
                 }
                 disabled={!canDownload}
               >
-                下载
+                {t('下载')}
               </Button>
               <Button
                 variant="ghost"
@@ -1829,10 +1833,10 @@ function DbBackupPanel({
                 }}
                 disabled={!canManage}
               >
-                恢复
+                {t('恢复')}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setDeleteFile(b.file)} disabled={!canManage}>
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -1842,43 +1846,43 @@ function DbBackupPanel({
       {/* 备份恢复确认弹窗 */}
       <Modal
         open={!!restoreFile}
-        title="恢复备份"
+        title={t('恢复备份')}
         onClose={() => !restoring && setRestoreFile(null)}
         width={460}
         footer={
           <div className="db-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setRestoreFile(null)} disabled={restoring}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={restoring} onClick={handleRestore} disabled={!canManage}>
-              确认恢复
+              {t('确认恢复')}
             </Button>
           </div>
         }
       >
         <div className="db-restore">
           <div className="db-detail__info">
-            实例：<span className="db-card__row-value">{instance.name}</span> · 备份文件：
+            {t('实例：')}<span className="db-card__row-value">{instance.name}</span> {t('· 备份文件：')}
             <span className="db-card__row-value">{restoreFile || ''}</span>
           </div>
-          <Field label="目标库" hint="留空则恢复到备份来源库（可选）">
+          <Field label={t('目标库')} hint={t('留空则恢复到备份来源库（可选）')}>
             <Input
               value={restoreDb}
-              placeholder="例如：restore_db（可空）"
+              placeholder={t('例如：restore_db（可空）')}
               onChange={(e) => setRestoreDb(e.target.value)}
               disabled={!canManage}
             />
           </Field>
-          <div className="db-sql__hint">恢复将使用备份文件覆盖指定库的数据，操作前请确认。</div>
+          <div className="db-sql__hint">{t('恢复将使用备份文件覆盖指定库的数据，操作前请确认。')}</div>
         </div>
       </Modal>
 
       {/* 删除备份确认框 */}
       <ConfirmDialog
         open={!!deleteFile}
-        title="删除备份文件"
-        message={`确定要删除备份文件 "${deleteFile || ''}" 吗？删除后不可恢复。`}
-        confirmText="删除"
+        title={t('删除备份文件')}
+        message={t('确定要删除备份文件 "{{v1}}" 吗？删除后不可恢复。', { v1: deleteFile || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}

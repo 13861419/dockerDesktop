@@ -28,6 +28,7 @@ import {
   TaskType,
   ContainerListItem,
 } from '../types';
+import { translateNow as t } from '../i18n';
 import './tasks.less';
 
 /** 任务类型中文映射与徽标色，key 与后端 type 字段一致 */
@@ -248,8 +249,8 @@ export default function TasksPage() {
       setProjects(data?.projects || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '拉取计划任务失败');
-      showToast(e?.message || '拉取计划任务失败', 'error');
+      setLoadError(e?.message || t('拉取计划任务失败'));
+      showToast(e?.message || t('拉取计划任务失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -267,7 +268,7 @@ export default function TasksPage() {
       .then((data) => setContainers(data || []))
       .catch((e: any) => {
         // 容器列表拉取失败不阻塞任务页主体功能，仅静默降级为空列表
-        showToast(e?.message || '获取容器列表失败', 'error');
+        showToast(e?.message || t('获取容器列表失败'), 'error');
       });
   }, [showToast]);
 
@@ -276,7 +277,7 @@ export default function TasksPage() {
    */
   const openCreate = useCallback(() => {
     if (!canManage) {
-      showToast('仅管理员可新建任务', 'error');
+      showToast(t('仅管理员可新建任务'), 'error');
       return;
     }
     setEditing(null);
@@ -301,7 +302,7 @@ export default function TasksPage() {
    */
   const openEdit = useCallback((task: CronTask) => {
     if (!canManage) {
-      showToast('仅管理员可编辑任务', 'error');
+      showToast(t('仅管理员可编辑任务'), 'error');
       return;
     }
     setEditing(task);
@@ -393,7 +394,7 @@ export default function TasksPage() {
    */
   const handleCronPreview = useCallback(async () => {
     if (!isValidCron(formCron)) {
-      setCronPreviewText('无法计算/非法表达式');
+      setCronPreviewText(t('无法计算/非法表达式'));
       return;
     }
     setCronPreviewing(true);
@@ -402,9 +403,9 @@ export default function TasksPage() {
         cron: formCron.trim(),
       });
       if (data?.nextRun) {
-        setCronPreviewText(`下次执行：${formatTime(data.nextRun)}`);
+        setCronPreviewText(t('下次执行：{{v1}}', { v1: formatTime(data.nextRun) }));
       } else {
-        setCronPreviewText('无法计算/非法表达式');
+        setCronPreviewText(t('无法计算/非法表达式'));
       }
     } catch {
       // 预览失败静默忽略，清空提示避免误导
@@ -446,16 +447,16 @@ export default function TasksPage() {
    */
   const handleSave = useCallback(async () => {
     if (!canManage) {
-      showToast(editing ? '仅管理员可编辑任务' : '仅管理员可新建任务', 'error');
+      showToast(editing ? t('仅管理员可编辑任务') : t('仅管理员可新建任务'), 'error');
       setFormOpen(false);
       return;
     }
     if (!formName.trim()) {
-      showToast('请填写任务名称', 'error');
+      showToast(t('请填写任务名称'), 'error');
       return;
     }
     if (!isValidCron(formCron)) {
-      showToast('cron 表达式格式不正确（应为空格分隔的 5 段）', 'error');
+      showToast(t('cron 表达式格式不正确（应为空格分隔的 5 段）'), 'error');
       return;
     }
     setSaving(true);
@@ -477,16 +478,16 @@ export default function TasksPage() {
       if (editing) {
         // 更新任务（后端 PUT），仅更新允许修改的字段
         await put(`/api/tasks/${editing.id}`, payload);
-        showToast('任务已更新', 'success');
+        showToast(t('任务已更新'), 'success');
       } else {
         // 新建任务
         await post('/api/tasks', { ...payload, type: formType });
-        showToast('任务已创建', 'success');
+        showToast(t('任务已创建'), 'success');
       }
       setFormOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || (editing ? '更新任务失败' : '创建任务失败'), 'error');
+      showToast(e?.message || (editing ? t('更新任务失败') : t('创建任务失败')), 'error');
     } finally {
       setSaving(false);
     }
@@ -499,16 +500,16 @@ export default function TasksPage() {
   const handleToggle = useCallback(
     async (task: CronTask) => {
       if (!canManage) {
-        showToast('仅管理员可启停任务', 'error');
+        showToast(t('仅管理员可启停任务'), 'error');
         return;
       }
       const next = !task.enabled;
       try {
         await post(`/api/tasks/${task.id}/enable`, { enabled: next });
-        showToast(next ? '任务已启用' : '任务已停用');
+        showToast(next ? t('任务已启用') : t('任务已停用'));
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || '更新启用状态失败', 'error');
+        showToast(e?.message || t('更新启用状态失败'), 'error');
       }
     },
     [canManage, showToast]
@@ -521,20 +522,20 @@ export default function TasksPage() {
   const handleRun = useCallback(
     async (task: CronTask) => {
       if (!canManage) {
-        showToast('仅管理员可立即执行任务', 'error');
+        showToast(t('仅管理员可立即执行任务'), 'error');
         return;
       }
       setRunId(task.id);
       try {
         const data = await post<{ ok: boolean; detail?: string }>(`/api/tasks/${task.id}/run`);
         if (data?.ok) {
-          showToast(data?.detail || '任务执行成功');
+          showToast(data?.detail || t('任务执行成功'));
         } else {
-          showToast(data?.detail || '任务执行失败', 'error');
+          showToast(data?.detail || t('任务执行失败'), 'error');
         }
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || '立即执行失败', 'error');
+        showToast(e?.message || t('立即执行失败'), 'error');
       } finally {
         setRunId(null);
       }
@@ -548,18 +549,18 @@ export default function TasksPage() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canManage) {
-      showToast('仅管理员可删除任务', 'error');
+      showToast(t('仅管理员可删除任务'), 'error');
       setDeleteTarget(null);
       return;
     }
     setDeleting(true);
     try {
       await del(`/api/tasks/${deleteTarget.id}`);
-      showToast('任务已删除', 'success');
+      showToast(t('任务已删除'), 'success');
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '删除任务失败', 'error');
+      showToast(e?.message || t('删除任务失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -574,11 +575,11 @@ export default function TasksPage() {
       const r = await post<{ ok: boolean; url: string; token: string }>(`/api/tasks/${taskId}/webhook`);
       if (r?.ok) {
         try { await navigator.clipboard.writeText(String(r.url)); } catch { /* 忽略剪贴板失败 */ }
-        showToast('Webhook 已生成并复制到剪贴板', 'success');
+        showToast(t('Webhook 已生成并复制到剪贴板'), 'success');
         setRefreshKey((k) => k + 1);
       }
     } catch (e: any) {
-      showToast(e?.message || '生成 Webhook 失败', 'error');
+      showToast(e?.message || t('生成 Webhook 失败'), 'error');
     }
   }, [showToast]);
 
@@ -589,10 +590,10 @@ export default function TasksPage() {
   const handleWebhookOff = useCallback(async (taskId: string) => {
     try {
       await del(`/api/tasks/${taskId}/webhook`);
-      showToast('Webhook 已关闭', 'success');
+      showToast(t('Webhook 已关闭'), 'success');
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '关闭 Webhook 失败', 'error');
+      showToast(e?.message || t('关闭 Webhook 失败'), 'error');
     }
   }, [showToast]);
 
@@ -615,7 +616,7 @@ export default function TasksPage() {
         setLogsPage(data?.page || page);
         setLogsTotalPages(data?.totalPages || 1);
       } catch (e: any) {
-        showToast(e?.message || '加载执行历史失败', 'error');
+        showToast(e?.message || t('加载执行历史失败'), 'error');
       } finally {
         setLogsLoading(false);
       }
@@ -644,7 +645,7 @@ export default function TasksPage() {
       try {
         await download(`/api/tasks/logs/export?taskId=${encodeURIComponent(task.id)}`, 'cron-task-logs.csv');
       } catch (e: any) {
-        showToast(e?.message || '导出执行历史失败', 'error');
+        showToast(e?.message || t('导出执行历史失败'), 'error');
       }
     },
     [showToast]
@@ -671,19 +672,19 @@ export default function TasksPage() {
 
   return (
     <div className="tasks-page">
-      <h1 className="tasks-page__title">计划任务</h1>
+      <h1 className="tasks-page__title">{t('计划任务')}</h1>
 
       <Card>
         <div className="tasks__toolbar">
           <div className="tasks__toolbar-left">
-            <span className="tasks__total">共 {tasks.length} 个任务</span>
+            <span className="tasks__total">{t('共 {{n}} 个任务', { n: tasks.length })}</span>
           </div>
           <div className="tasks__toolbar-right">
             <Button variant="secondary" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="primary" size="sm" onClick={openCreate} disabled={!canManage}>
-              + 新建任务
+              {t('+ 新建任务')}
             </Button>
           </div>
         </div>
@@ -693,31 +694,31 @@ export default function TasksPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取计划任务失败"
-            description={loadError || '请稍后重试'}
+            title={t('拉取计划任务失败')}
+            description={loadError || t('请稍后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchTasks}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : tasks.length === 0 ? (
           <Empty
-            title="暂无计划任务"
-            description="点击「新建任务」创建定时任务，可自动清理、备份或拉取镜像"
+            title={t('暂无计划任务')}
+            description={t('点击「新建任务」创建定时任务，可自动清理、备份或拉取镜像')}
           />
         ) : (
           <table className="tasks__table">
             <thead>
               <tr>
-                <th>名称</th>
-                <th>类型</th>
-                <th>cron 表达式</th>
-                <th>启用</th>
-                <th>下次执行</th>
-                <th>上次执行</th>
-                <th>上次结果</th>
-                <th className="tasks__cell-actions">操作</th>
+                <th>{t('名称')}</th>
+                <th>{t('类型')}</th>
+                <th>{t('cron 表达式')}</th>
+                <th>{t('启用')}</th>
+                <th>{t('下次执行')}</th>
+                <th>{t('上次执行')}</th>
+                <th>{t('上次结果')}</th>
+                <th className="tasks__cell-actions">{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -750,17 +751,17 @@ export default function TasksPage() {
                   <td>
                     {task.lastRunAt && task.lastStatus !== null ? (
                       task.lastStatus === 0 ? (
-                        <span className="tasks__result tasks__result--ok">成功</span>
+                        <span className="tasks__result tasks__result--ok">{t('成功')}</span>
                       ) : (
-                        <span className="tasks__result tasks__result--fail">失败</span>
+                        <span className="tasks__result tasks__result--fail">{t('失败')}</span>
                       )
                     ) : (
-                      <span className="tasks__result tasks__result--none">未执行</span>
+                      <span className="tasks__result tasks__result--none">{t('未执行')}</span>
                     )}
                   </td>
                   <td className="tasks__cell-actions">
                     <Button variant="ghost" size="sm" onClick={() => openLogs(task)}>
-                      日志
+                      {t('日志')}
                     </Button>
                     <Button
                       variant="secondary"
@@ -769,7 +770,7 @@ export default function TasksPage() {
                       disabled={!!runId || !canManage}
                       onClick={() => handleRun(task)}
                     >
-                      立即执行
+                      {t('立即执行')}
                     </Button>
                     {task.webhookToken ? (
                       <>
@@ -781,26 +782,26 @@ export default function TasksPage() {
                           onClick={() =>
                             navigator.clipboard
                               ?.writeText(`https://${window.location.host}/api/webhook/${task.webhookToken}`)
-                              .then(() => showToast('Webhook URL 已复制'))
+                              .then(() => showToast(t('Webhook URL 已复制')))
                               .catch(() => {})
                           }
                         >
-                          Webhook已开(复制)
+                          {t('Webhook已开(复制)')}
                         </Button>
                         <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleWebhookOff(task.id)}>
-                          关闭Webhook
+                          {t('关闭Webhook')}
                         </Button>
                       </>
                     ) : (
                       <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleWebhook(task.id)}>
-                        开启Webhook
+                        {t('开启Webhook')}
                       </Button>
                     )}
                     <Button variant="secondary" size="sm" onClick={() => openEdit(task)} disabled={!canManage}>
-                      编辑
+                      {t('编辑')}
                     </Button>
                     <Button variant="danger" size="sm" onClick={() => setDeleteTarget(task)} disabled={!canManage}>
-                      删除
+                      {t('删除')}
                     </Button>
                   </td>
                 </tr>
@@ -813,46 +814,46 @@ export default function TasksPage() {
       {/* 新建/编辑任务弹窗 */}
       <Modal
         open={formOpen}
-        title={editing ? `编辑任务「${editing.name}」` : '新建任务'}
+        title={editing ? t('编辑任务「{{v1}}」', { v1: editing.name }) : t('新建任务')}
         onClose={() => !saving && setFormOpen(false)}
         width={560}
         footer={
           <>
             <Button variant="ghost" size="md" onClick={() => setFormOpen(false)} disabled={saving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={saving} onClick={handleSave} disabled={!canManage}>
-              {editing ? '保存修改' : '创建任务'}
+              {editing ? t('保存修改') : t('创建任务')}
             </Button>
           </>
         }
       >
         <div className="tasks__form">
-          <Field label="任务名称" required>
+          <Field label={t('任务名称')} required>
             <Input
               value={formName}
-              placeholder="如：每周清理未使用镜像"
+              placeholder={t('如：每周清理未使用镜像')}
               onChange={(e) => setFormName(e.target.value)}
             />
           </Field>
 
-          <Field label="任务类型">
+          <Field label={t('任务类型')}>
             <Select value={formType} onChange={(e) => setFormType(e.target.value as TaskType)} disabled={!!editing}>
-              {TYPE_OPTIONS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
+              {TYPE_OPTIONS.map((opt) => (
+<option key={opt.value} value={opt.value}>
+{t(opt.label)}
+</option>
               ))}
             </Select>
             {editing && (
-              <div className="tasks__cron-hint">编辑模式下任务类型不可修改</div>
+              <div className="tasks__cron-hint">{t('编辑模式下任务类型不可修改')}</div>
             )}
           </Field>
 
           <Field
-            label="cron 表达式"
+            label={t('cron 表达式')}
             required
-            hint="5 段式：分 时 日 月 星期，如 0 3 * * * 表示每天凌晨 3 点"
+            hint={t('5 段式：分 时 日 月 星期，如 0 3 * * * 表示每天凌晨 3 点')}
           >
             <div className="tasks__cron-row">
               <div className="tasks__cron-col">
@@ -863,7 +864,7 @@ export default function TasksPage() {
                   onChange={(e) => setFormCron(e.target.value)}
                 />
                 {formCron.trim() !== '' && !isValidCron(formCron) && (
-                  <div className="tasks__cron-error">cron 表达式需为空格分隔的 5 段</div>
+                  <div className="tasks__cron-error">{t('cron 表达式需为空格分隔的 5 段')}</div>
                 )}
               </div>
             </div>
@@ -875,7 +876,7 @@ export default function TasksPage() {
                   className="tasks__cron-preset"
                   onClick={() => setFormCron(p.cron)}
                 >
-                  {p.label} ({p.cron})
+                  {t(p.label)} ({p.cron})
                 </button>
               ))}
             </div>
@@ -885,11 +886,11 @@ export default function TasksPage() {
                 className="tasks__cron-visual-toggle"
                 onClick={toggleCronEditor}
               >
-                {cronEditorOpen ? '收起可视化编辑' : '可视化编辑'}
+                {cronEditorOpen ? t('收起可视化编辑') : t('可视化编辑')}
               </button>
               {cronEditorOpen && (
                 <button type="button" className="tasks__cron-visual-toggle" onClick={handleCronResetDefault}>
-                  重置为默认
+                  {t('重置为默认')}
                 </button>
               )}
             </div>
@@ -901,7 +902,7 @@ export default function TasksPage() {
                     <div className="tasks__cron-dim" key={dim.key}>
                       <div className="tasks__cron-dim-head">
                         <span className="tasks__cron-dim-label">
-                          {dim.label}
+                          {t(dim.label)}
                           <span className="tasks__cron-dim-hint">({dim.hint})</span>
                         </span>
                         <div className="tasks__cron-segmented">
@@ -918,14 +919,14 @@ export default function TasksPage() {
                               className={`tasks__cron-seg ${dimState.mode === m.key ? 'tasks__cron-seg--active' : ''}`}
                               onClick={() => updateDimension(i, { mode: m.key })}
                             >
-                              {m.label}
+                              {t(m.label)}
                             </button>
                           ))}
                         </div>
                       </div>
                       <div className="tasks__cron-dim-body">
                         {dimState.mode === 'any' && (
-                          <div className="tasks__cron-dim-note">不限制，任意取值（段为 *）</div>
+                          <div className="tasks__cron-dim-note">{t('不限制，任意取值（段为 *）')}</div>
                         )}
                         {dimState.mode === 'every' && (
                           <label className="tasks__cron-every">
@@ -938,7 +939,7 @@ export default function TasksPage() {
                                 updateDimension(i, { step: Math.max(1, Number(e.target.value) || 1) })
                               }
                             />
-                            <span>每隔该数值执行一次（段为 */N）</span>
+                            <span>{t('每隔该数值执行一次（段为 */N）')}</span>
                           </label>
                         )}
                         {dimState.mode === 'specified' && (
@@ -964,13 +965,13 @@ export default function TasksPage() {
                 })}
                 <div className="tasks__cron-visual-footer">
                   <Button variant="secondary" size="sm" loading={cronPreviewing} onClick={handleCronPreview}>
-                    预览下次执行时间
+                    {t('预览下次执行时间')}
                   </Button>
                   {cronPreviewText && (
                     <span className="tasks__cron-preview">{cronPreviewText}</span>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => setCronEditorOpen(false)}>
-                    收起
+                    {t('收起')}
                   </Button>
                 </div>
               </div>
@@ -986,7 +987,7 @@ export default function TasksPage() {
             gitCred={editing?.gitCred}
           />
 
-          <Field label="启用">
+          <Field label={t('启用')}>
             <label className="tasks__switch">
               <input
                 type="checkbox"
@@ -1002,23 +1003,23 @@ export default function TasksPage() {
       {/* 执行历史弹窗 */}
       <Modal
         open={!!logsTarget}
-        title={logsTarget ? `执行历史：${logsTarget.name}` : '执行历史'}
+        title={logsTarget ? t('执行历史：{{v1}}', { v1: logsTarget.name }) : t('执行历史')}
         onClose={() => setLogsTarget(null)}
         width={720}
       >
         {logsLoading ? (
           <SkeletonRows rows={6} />
         ) : logsItems.length === 0 ? (
-          <Empty title="暂无执行历史" description="任务尚未执行过，或历史已被清空" />
+          <Empty title={t('暂无执行历史')} description={t('任务尚未执行过，或历史已被清空')} />
         ) : (
           <>
             <div className="tasks__logs-scroll">
               <table className="tasks__table">
                 <thead>
                   <tr>
-                    <th>执行时间</th>
-                    <th>结果</th>
-                    <th>详情</th>
+                    <th>{t('执行时间')}</th>
+                    <th>{t('结果')}</th>
+                    <th>{t('详情')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1027,9 +1028,9 @@ export default function TasksPage() {
                       <td className="tasks__cell-time">{formatTime(item.runAt)}</td>
                       <td>
                         {item.status === 0 ? (
-                          <span className="tasks__result tasks__result--ok">成功</span>
+                          <span className="tasks__result tasks__result--ok">{t('成功')}</span>
                         ) : (
-                          <span className="tasks__result tasks__result--fail">失败</span>
+                          <span className="tasks__result tasks__result--fail">{t('失败')}</span>
                         )}
                       </td>
                       <td className="tasks__logs-detail" title={item.detail || ''}>
@@ -1043,7 +1044,7 @@ export default function TasksPage() {
 
             <div className="tasks__logs-pagination">
               <span className="tasks__logs-info">
-                共 {logsTotal} 条，当前第 {logsPageStart}-{logsPageEnd} 条
+                {t('共 {{total}} 条，当前第 {{start}}-{{end}} 条', { total: logsTotal, start: logsPageStart, end: logsPageEnd })}
               </span>
               <div className="tasks__logs-controls">
                 {logsTarget && (
@@ -1051,7 +1052,7 @@ export default function TasksPage() {
                     className="tasks__page-btn tasks__export-btn"
                     onClick={() => handleExportLogs(logsTarget)}
                   >
-                    导出 CSV
+                    {t('导出 CSV')}
                   </button>
                 )}
                 <button
@@ -1059,7 +1060,7 @@ export default function TasksPage() {
                   disabled={logsSafePage <= 1}
                   onClick={() => logsTarget && loadLogs(logsTarget, logsSafePage - 1)}
                 >
-                  上一页
+                  {t('上一页')}
                 </button>
                 {Array.from({ length: logsTotalPages }, (_, i) => i + 1).map((p) => (
                   <button
@@ -1075,7 +1076,7 @@ export default function TasksPage() {
                   disabled={logsSafePage >= logsTotalPages}
                   onClick={() => logsTarget && loadLogs(logsTarget, logsSafePage + 1)}
                 >
-                  下一页
+                  {t('下一页')}
                 </button>
               </div>
             </div>
@@ -1086,9 +1087,9 @@ export default function TasksPage() {
       {/* 删除确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除计划任务"
-        message={`确定要删除任务 "${deleteTarget?.name || ''}" 吗？删除后其全部执行历史也会一并清除。`}
-        confirmText="删除"
+        title={t('删除计划任务')}
+        message={t('确定要删除任务 "{{v1}}" 吗？删除后其全部执行历史也会一并清除。', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -1148,9 +1149,9 @@ function ConfigEditor({
    */
   const renderContainerPicker = (extraHint?: string) => (
     <>
-      <Field label="目标容器" required hint={extraHint}>
+      <Field label={t('目标容器')} required hint={extraHint}>
         {containers.length === 0 ? (
-          <div className="tasks__cron-hint">未获取到容器列表，请确认 Docker 服务已启动</div>
+          <div className="tasks__cron-hint">{t('未获取到容器列表，请确认 Docker 服务已启动')}</div>
         ) : (
           <div className="tasks__checks tasks__checks--col">
             {containers.map((c) => (
@@ -1172,7 +1173,7 @@ function ConfigEditor({
   // prune：四个/五个清理勾选项，默认全选
   if (type === 'prune') {
     return (
-      <Field label="清理范围">
+      <Field label={t('清理范围')}>
         <div className="tasks__checks">
           {PRUNE_ITEMS.map((item) => (
             <label key={item.key} className="tasks__check">
@@ -1181,7 +1182,7 @@ function ConfigEditor({
                 checked={config[item.key] === undefined ? true : !!config[item.key]}
                 onChange={(e) => setKey(item.key, e.target.checked)}
               />
-              {item.label}
+              {t(item.label)}
             </label>
           ))}
         </div>
@@ -1194,30 +1195,30 @@ function ConfigEditor({
     const target = config.target === 'volumes' ? 'volumes' : 'database';
     return (
       <>
-        <Field label="备份目标">
+        <Field label={t('备份目标')}>
           <div className="tasks__radios">
-            {BACKUP_TARGETS.map((t) => (
-              <label key={t.value} className="tasks__radio">
+            {BACKUP_TARGETS.map((bt) => (
+              <label key={bt.value} className="tasks__radio">
                 <input
                   type="radio"
-                  checked={target === t.value}
-                  onChange={() => setKey('target', t.value)}
+                  checked={target === bt.value}
+                  onChange={() => setKey('target', bt.value)}
                 />
-                {t.label}
+                {t(bt.label)}
               </label>
             ))}
             <div className="tasks__radio-hint">
               {target === 'volumes'
-                ? '备份指定 Docker 命名卷并将其打包为 tar.gz 文件'
-                : '备份本面板自身的 SQLite 数据库副本'}
+                ? t('备份指定 Docker 命名卷并将其打包为 tar.gz 文件')
+                : t('备份本面板自身的 SQLite 数据库副本')}
             </div>
           </div>
         </Field>
 
         {target === 'volumes' && (
           <Field
-            label="卷名"
-            hint="多个卷名用英文逗号分隔，如 mydata,logs"
+            label={t('卷名')}
+            hint={t('多个卷名用英文逗号分隔，如 mydata,logs')}
             required
           >
             <Input
@@ -1236,12 +1237,12 @@ function ConfigEditor({
           </Field>
         )}
 
-        <Field label="保留备份数" hint="超过该数量时自动删除最旧的备份，0 或留空表示不清理">
+        <Field label={t('保留备份数')} hint={t('超过该数量时自动删除最旧的备份，0 或留空表示不清理')}>
           <Input
             type="number"
             min={0}
             value={config.keepCount ?? ''}
-            placeholder="如 7"
+            placeholder={t('如 7')}
             onChange={(e) => setKey('keepCount', e.target.value === '' ? undefined : Number(e.target.value))}
           />
         </Field>
@@ -1252,7 +1253,7 @@ function ConfigEditor({
   // pull：拉取镜像
   if (type === 'pull') {
     return (
-      <Field label="镜像名称" required hint="如 nginx:latest">
+      <Field label={t('镜像名称')} required hint={t('如 nginx:latest')}>
         <Input
           value={config.image || ''}
           placeholder="nginx:latest"
@@ -1264,14 +1265,14 @@ function ConfigEditor({
 
   // restart：定时重启选中的容器（容器多选）
   if (type === 'restart') {
-    return renderContainerPicker('定时对选中容器执行重启（restart）操作');
+    return renderContainerPicker(t('定时对选中容器执行重启（restart）操作'));
   }
 
   // command：定时执行自定义宿主命令
   if (type === 'command') {
     return (
       <>
-        <Field label="执行命令" required hint="在宿主机上执行的 shell 命令">
+        <Field label={t('执行命令')} required hint={t('在宿主机上执行的 shell 命令')}>
           <TextArea
             value={config.command || ''}
             placeholder="docker system df"
@@ -1279,7 +1280,7 @@ function ConfigEditor({
             onChange={(e) => setKey('command', e.target.value)}
           />
         </Field>
-        <Field label="工作目录（可选）" hint="命令执行的宿主工作目录，留空使用默认目录">
+        <Field label={t('工作目录（可选）')} hint={t('命令执行的宿主工作目录，留空使用默认目录')}>
           <Input
             value={config.cwd || ''}
             placeholder="/root"
@@ -1294,35 +1295,35 @@ function ConfigEditor({
   if (type === 'git-pull-build') {
     return (
       <>
-        <Field label="部署模式">
+        <Field label={t('部署模式')}>
           <Select value={config.mode || 'image'} onChange={(e) => setKey('mode', e.target.value)}>
-            <option value="image">构建镜像</option>
-            <option value="compose">Compose 部署</option>
+            <option value="image">{t('构建镜像')}</option>
+            <option value="compose">{t('Compose 部署')}</option>
           </Select>
         </Field>
-        <Field label="Git 仓库地址" required hint="支持 https 与 ssh 协议">
+        <Field label={t('Git 仓库地址')} required hint={t('支持 https 与 ssh 协议')}>
           <Input value={config.repoUrl || ''} onChange={(e) => setKey('repoUrl', e.target.value)} placeholder="https://github.com/user/repo.git" />
         </Field>
-        <Field label="分支（可选）">
+        <Field label={t('分支（可选）')}>
           <Input value={config.branch || ''} onChange={(e) => setKey('branch', e.target.value)} placeholder="main" />
         </Field>
         {config.mode === 'image' ? (
           <>
-            <Field label="镜像名" required hint="构建后打标签，如 myapp:latest">
+            <Field label={t('镜像名')} required hint={t('构建后打标签，如 myapp:latest')}>
               <Input value={config.imageName || ''} onChange={(e) => setKey('imageName', e.target.value)} />
             </Field>
-            <Field label="Dockerfile（可选）">
+            <Field label={t('Dockerfile（可选）')}>
               <Input value={config.dockerfile || 'Dockerfile'} onChange={(e) => setKey('dockerfile', e.target.value)} />
             </Field>
-            <Field label="工作目录（可选，默认自动）">
+            <Field label={t('工作目录（可选，默认自动）')}>
               <Input value={config.destDir || ''} onChange={(e) => setKey('destDir', e.target.value)} />
             </Field>
           </>
         ) : (
           <>
-            <Field label="Compose 项目" required hint="对应 Compose 项目目录">
+            <Field label={t('Compose 项目')} required hint={t('对应 Compose 项目目录')}>
               <Select value={config.composeProject || ''} onChange={(e) => setKey('composeProject', e.target.value)}>
-                <option value="">选择项目…</option>
+                <option value="">{t('选择项目…')}</option>
                 {projects.map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -1330,26 +1331,26 @@ function ConfigEditor({
                 ))}
               </Select>
             </Field>
-            <Field label="构建后部署">
+            <Field label={t('构建后部署')}>
               <label className="tasks__check">
-                <input type="checkbox" checked={!!config.alsoBuild} onChange={(e) => setKey('alsoBuild', e.target.checked)} /> 部署前先构建镜像
+                <input type="checkbox" checked={!!config.alsoBuild} onChange={(e) => setKey('alsoBuild', e.target.checked)} /> {t('部署前先构建镜像')}
               </label>
             </Field>
           </>
         )}
-        <Field label="私有仓库凭证" hint={gitCred?.hasCred ? '已配置（留空不修改）' : '可选，公开仓库可跳过'}>
+        <Field label={t('私有仓库凭证')} hint={gitCred?.hasCred ? t('已配置（留空不修改）') : t('可选，公开仓库可跳过')}>
           <Select value={config.credType || 'token'} onChange={(e) => setKey('credType', e.target.value)}>
             <option value="token">HTTPS Token</option>
-            <option value="ssh">SSH 私钥</option>
+            <option value="ssh">{t('SSH 私钥')}</option>
           </Select>
           {config.credType === 'ssh' ? (
-            <Input value={config.credKey || ''} onChange={(e) => setKey('credKey', e.target.value)} placeholder={gitCred?.hasCred ? '已配置，输入以替换…' : '粘贴私钥内容'} />
+            <Input value={config.credKey || ''} onChange={(e) => setKey('credKey', e.target.value)} placeholder={gitCred?.hasCred ? t('已配置，输入以替换…') : t('粘贴私钥内容')} />
           ) : (
-            <Input value={config.credToken || ''} onChange={(e) => setKey('credToken', e.target.value)} placeholder={gitCred?.hasCred ? '已配置，输入以替换…' : '粘贴 Token'} />
+            <Input value={config.credToken || ''} onChange={(e) => setKey('credToken', e.target.value)} placeholder={gitCred?.hasCred ? t('已配置，输入以替换…') : t('粘贴 Token')} />
           )}
           {config.credType === 'ssh' && (
-            <Field label="私钥口令（可选）">
-              <Input value={config.credPassphrase || ''} onChange={(e) => setKey('credPassphrase', e.target.value)} placeholder="SSH 私钥口令" />
+            <Field label={t('私钥口令（可选）')}>
+              <Input value={config.credPassphrase || ''} onChange={(e) => setKey('credPassphrase', e.target.value)} placeholder={t('SSH 私钥口令')} />
             </Field>
           )}
         </Field>
@@ -1359,23 +1360,23 @@ function ConfigEditor({
 
   // healthcheck：定时检查容器运行/健康状态，异常经告警中心通知
   if (type === 'healthcheck') {
-    return renderContainerPicker('定时检查容器是否运行/健康，异常会经告警中心通知');
+    return renderContainerPicker(t('定时检查容器是否运行/健康，异常会经告警中心通知'));
   }
   // baselineScan：定时执行安全基线扫描，违规变化经通知渠道推送
   if (type === 'baselineScan') {
     return (
       <>
-        <Field label="告警严重度下限" hint="达到该级别的违规才纳入告警统计">
+        <Field label={t('告警严重度下限')} hint={t('达到该级别的违规才纳入告警统计')}>
           <Select value={config.severityMin || 'warn'} onChange={(e) => setKey('severityMin', e.target.value)}>
-            <option value="danger">仅危险（danger）</option>
-            <option value="warn">警告及以上（warn）</option>
-            <option value="info">全部（info）</option>
+            <option value="danger">{t('仅危险（danger）')}</option>
+            <option value="warn">{t('警告及以上（warn）')}</option>
+            <option value="info">{t('全部（info）')}</option>
           </Select>
         </Field>
-        <Field label="仅新增违规时告警" hint="与上次扫描对比，仅推送新出现的违规；关闭后每次扫描发现违规即推送">
+        <Field label={t('仅新增违规时告警')} hint={t('与上次扫描对比，仅推送新出现的违规；关闭后每次扫描发现违规即推送')}>
           <label className="tasks__check">
             <input type="checkbox" checked={config.onlyOnNew !== false} onChange={(e) => setKey('onlyOnNew', e.target.checked)} />{' '}
-            仅告警新增违规（默认开启）
+            {t('仅告警新增违规（默认开启）')}
           </label>
         </Field>
       </>
@@ -1384,16 +1385,16 @@ function ConfigEditor({
   // sqliteBackup：定时备份面板自身数据库，无需额外参数
   if (type === 'sqliteBackup') {
     return (
-      <Field label="备份参数" hint="备份保存在数据目录 db-backups/ 下，保留份数由设置中心「面板数据库备份保留份数」控制">
+      <Field label={t('备份参数')} hint={t('备份保存在数据目录 db-backups/ 下，保留份数由设置中心「面板数据库备份保留份数」控制')}>
         <div />
       </Field>
     );
   }
   // composeUp / composeDown：选择 Compose 项目
   return (
-    <Field label="Compose 项目" required hint="从已登记的 Compose 项目中选择">
+    <Field label={t('Compose 项目')} required hint={t('从已登记的 Compose 项目中选择')}>
       <Select value={config.project || ''} onChange={(e) => setKey('project', e.target.value)}>
-        <option value="">请选择项目</option>
+        <option value="">{t('请选择项目')}</option>
         {projects.map((p) => (
           <option key={p} value={p}>
             {p}

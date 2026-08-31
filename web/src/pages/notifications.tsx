@@ -20,6 +20,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input, Select, TextArea } from '../components/Form';
 import type { ContainerListItem, ContainerRule, ContainerRuleListResponse, ContainerRuleWatchType } from '../types';
+import { useLang } from '../i18n';
 import './notifications.less';
 
 /** 告警规则（type 放宽为 string 以兼容新增的 gpu/net） */
@@ -65,6 +66,22 @@ interface AlertRecord {
 }
 
 const PAGE_SIZE = 20;
+
+/** 渠道送达率统计（GET /api/notifications/push-stats 响应） */
+interface PushStats {
+  totals: { ok: number; fail: number; rate: number | null };
+  channels: Array<{
+    channelId: string;
+    channelName: string;
+    okCount: number;
+    failCount: number;
+    rate: number | null;
+    lastOkAt: number | null;
+    lastFailAt: number | null;
+    lastFailDetail: string | null;
+  }>;
+  recentFailures: Array<{ channelName: string; level: string; detail: string; createdAt: number }>;
+}
 
 /** 渠道类型中文名 */
 const CHANNEL_LABELS: Record<string, string> = {
@@ -205,6 +222,7 @@ function formatTime(ms: number): string {
  * 告警中心页面组件
  */
 export default function NotificationsPage() {
+  const { t } = useLang();
   const { showToast } = useToast();
   const { canManage } = useCanManage();
 
@@ -222,6 +240,8 @@ export default function NotificationsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
   const [pushFilter, setPushFilter] = useState('');
+  // 渠道送达率统计（近 7 天）
+  const [pushStats, setPushStats] = useState<PushStats | null>(null);
 
   // 渠道新增/编辑弹窗
   const [channelModal, setChannelModal] = useState<{ editing: ChannelInfo | null; open: boolean }>({ editing: null, open: false });
@@ -242,7 +262,7 @@ export default function NotificationsPage() {
     route: { warn: [], danger: [], recovery: [] },
   });
   const [routeSaving, setRouteSaving] = useState(false);
-  const ROUTE_LEVEL_LABELS: Record<string, string> = { warn: '警告（warn）', danger: '危险（danger）', recovery: '恢复（recovery）' };
+  const ROUTE_LEVEL_LABELS: Record<string, string> = { warn: t('警告（warn）'), danger: t('危险（danger）'), recovery: t('恢复（recovery）') };
 
   // 容器自愈
   const [selfHealRules, setSelfHealRules] = useState<SelfHealRule[]>([]);
@@ -340,7 +360,7 @@ export default function NotificationsPage() {
         setRecords(rec?.records || []);
         setRecordTotal(rec?.total || 0);
       } catch (e: any) {
-        showToast(e?.message || '加载记录失败', 'error');
+        showToast(e?.message || t('加载记录失败'), 'error');
       } finally {
         setRecordLoading(false);
       }
@@ -364,7 +384,7 @@ export default function NotificationsPage() {
       setChannels(c?.channels || []);
       setRoutePolicy({ mode: p?.mode || 'first', route: p?.route || { warn: [], danger: [], recovery: [] } });
     } catch (e: any) {
-      showToast(e?.message || '加载失败', 'error');
+      showToast(e?.message || t('加载失败'), 'error');
     } finally {
       setRuleLoading(false);
       setChannelLoading(false);
@@ -389,10 +409,10 @@ export default function NotificationsPage() {
     setRouteSaving(true);
     try {
       await put('/api/notifications/route-policy', routePolicy);
-      showToast('推送路由已更新');
+      showToast(t('推送路由已更新'));
       load();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setRouteSaving(false);
     }
@@ -407,7 +427,7 @@ export default function NotificationsPage() {
       const res = await get<ContainerRuleListResponse>('/api/notifications/container-rules');
       setContainerRules(res?.rules || []);
     } catch (e: any) {
-      showToast(e?.message || '加载容器规则失败', 'error');
+      showToast(e?.message || t('加载容器规则失败'), 'error');
     } finally {
       setContainerRuleLoading(false);
     }
@@ -422,7 +442,7 @@ export default function NotificationsPage() {
       const list = await get<ContainerListItem[]>('/api/containers', { all: true });
       setContainers(list || []);
     } catch (e: any) {
-      showToast(e?.message || '加载容器列表失败', 'error');
+      showToast(e?.message || t('加载容器列表失败'), 'error');
     } finally {
       setContainersLoading(false);
     }
@@ -437,7 +457,7 @@ export default function NotificationsPage() {
       const res = await get<{ rules: SelfHealRule[] }>('/api/selfheal/rules');
       setSelfHealRules(res?.rules || []);
     } catch (e: any) {
-      showToast(e?.message || '加载自愈规则失败', 'error');
+      showToast(e?.message || t('加载自愈规则失败'), 'error');
     } finally {
       setSelfHealLoading(false);
     }
@@ -472,12 +492,12 @@ export default function NotificationsPage() {
    */
   const handleSaveSelfHeal = useCallback(async () => {
     if (!selfHealForm.containerName.trim()) {
-      setSelfHealError('请输入容器名');
+      setSelfHealError(t('请输入容器名'));
       return;
     }
     const cooldownSec = Math.floor(Number(selfHealForm.cooldownSec) || 0);
     if (cooldownSec < 10 || cooldownSec > 86400) {
-      setSelfHealError('冷却期需为 10-86400 秒');
+      setSelfHealError(t('冷却期需为 10-86400 秒'));
       return;
     }
     setSelfHealSaving(true);
@@ -491,15 +511,15 @@ export default function NotificationsPage() {
       };
       if (selfHealModal.editing) {
         await put(`/api/selfheal/rules/${selfHealModal.editing.id}`, payload);
-        showToast('自愈规则已更新');
+        showToast(t('自愈规则已更新'));
       } else {
         await post('/api/selfheal/rules', payload);
-        showToast('自愈规则已创建');
+        showToast(t('自愈规则已创建'));
       }
       setSelfHealModal({ editing: null, open: false });
       loadSelfHealRules();
     } catch (e: any) {
-      setSelfHealError(e?.message || '保存失败');
+      setSelfHealError(e?.message || t('保存失败'));
     } finally {
       setSelfHealSaving(false);
     }
@@ -512,11 +532,11 @@ export default function NotificationsPage() {
     if (!selfHealDeleteTarget) return;
     try {
       await del(`/api/selfheal/rules/${selfHealDeleteTarget.id}`);
-      showToast('自愈规则已删除');
+      showToast(t('自愈规则已删除'));
       setSelfHealDeleteTarget(null);
       loadSelfHealRules();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     }
   }, [selfHealDeleteTarget, loadSelfHealRules, showToast]);
 
@@ -527,10 +547,10 @@ export default function NotificationsPage() {
     setSelfHealRunning(true);
     try {
       const res = await post<{ triggered: number }>('/api/selfheal/run');
-      showToast(res?.triggered ? `巡检完成，触发 ${res.triggered} 条自愈` : '巡检完成，本轮无触发');
+      showToast(res?.triggered ? t('巡检完成，触发 {{v1}} 条自愈', { v1: res.triggered }) : t('巡检完成，本轮无触发'));
       loadSelfHealRules();
     } catch (e: any) {
-      showToast(e?.message || '巡检失败', 'error');
+      showToast(e?.message || t('巡检失败'), 'error');
     } finally {
       setSelfHealRunning(false);
     }
@@ -553,6 +573,20 @@ export default function NotificationsPage() {
     // 仅当过滤条件变化时重置到第一页
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter, levelFilter, pushFilter]);
+
+  /** 加载渠道送达率统计 */
+  const loadPushStats = useCallback(async () => {
+    try {
+      const res = await get<PushStats>('/api/notifications/push-stats?days=7');
+      setPushStats(res);
+    } catch {
+      // 统计失败不影响主界面
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPushStats();
+  }, [loadPushStats]);
 
   useEffect(() => {
     loadRecords(recordPage);
@@ -637,7 +671,7 @@ export default function NotificationsPage() {
    */
   const handleSaveChannel = useCallback(async () => {
     if (!form.name.trim()) {
-      setFormError('请输入渠道名称');
+      setFormError(t('请输入渠道名称'));
       return;
     }
     if (channelModal.editing) {
@@ -652,7 +686,7 @@ export default function NotificationsPage() {
           config: buildChannelConfig(),
           template: form.template,
         });
-        showToast('渠道已更新');
+        showToast(t('渠道已更新'));
       } else {
         await post('/api/notifications/channels', {
           name: form.name.trim(),
@@ -660,12 +694,12 @@ export default function NotificationsPage() {
           config: buildChannelConfig(),
           template: form.template,
         });
-        showToast('渠道已创建');
+        showToast(t('渠道已创建'));
       }
       setChannelModal({ editing: null, open: false });
       load();
     } catch (e: any) {
-      setFormError(e?.message || '保存失败');
+      setFormError(e?.message || t('保存失败'));
     } finally {
       setSaving(false);
     }
@@ -681,7 +715,7 @@ export default function NotificationsPage() {
         await put(`/api/notifications/channels/${ch.id}`, { enabled: !ch.enabled });
         load();
       } catch (e: any) {
-        showToast(e?.message || '操作失败', 'error');
+        showToast(e?.message || t('操作失败'), 'error');
       }
     },
     [load, showToast],
@@ -696,9 +730,9 @@ export default function NotificationsPage() {
       setTestingId(ch.id);
       try {
         await post(`/api/notifications/channels/${ch.id}/test`);
-        showToast('测试消息已发送');
+        showToast(t('测试消息已发送'));
       } catch (e: any) {
-        showToast(e?.message || '测试推送失败', 'error');
+        showToast(e?.message || t('测试推送失败'), 'error');
       } finally {
         setTestingId(null);
       }
@@ -714,11 +748,11 @@ export default function NotificationsPage() {
     setDeleting(true);
     try {
       await del(`/api/notifications/channels/${deleteTarget.id}`);
-      showToast('渠道已删除');
+      showToast(t('渠道已删除'));
       setDeleteTarget(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -751,16 +785,16 @@ export default function NotificationsPage() {
     const warn = Number(ruleForm.warnThreshold);
     const danger = Number(ruleForm.dangerThreshold);
     if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || warn > 100 || danger < 0 || danger > 100) {
-      showToast('阈值需为 0-100 的数字', 'error');
+      showToast(t('阈值需为 0-100 的数字'), 'error');
       return;
     }
     if (warn > danger) {
-      showToast('警告阈值不能高于危险阈值', 'error');
+      showToast(t('警告阈值不能高于危险阈值'), 'error');
       return;
     }
     const consecutive = Math.floor(Number(ruleForm.consecutive) || 1);
     if (consecutive < 1 || consecutive > 120) {
-      showToast('连续周期需为 1-120 的整数', 'error');
+      showToast(t('连续周期需为 1-120 的整数'), 'error');
       return;
     }
     setSavingRule(true);
@@ -776,11 +810,11 @@ export default function NotificationsPage() {
         workEnd: ruleForm.workEnd || null,
         consecutive,
       });
-      showToast('规则已更新');
+      showToast(t('规则已更新'));
       setRuleModal(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setSavingRule(false);
     }
@@ -854,13 +888,13 @@ export default function NotificationsPage() {
    */
   const handleSaveContainerRule = useCallback(async () => {
     if (!containerRuleForm.containerId) {
-      setContainerRuleError('请选择目标容器');
+      setContainerRuleError(t('请选择目标容器'));
       return;
     }
     if (containerRuleForm.watchType === 'port') {
       const port = Number(containerRuleForm.port);
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        setContainerRuleError('探测端口需为 1-65535 的整数');
+        setContainerRuleError(t('探测端口需为 1-65535 的整数'));
         return;
       }
     }
@@ -869,16 +903,16 @@ export default function NotificationsPage() {
       const warn = Number(containerRuleForm.warnThreshold);
       const danger = Number(containerRuleForm.dangerThreshold);
       if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || warn > 100 || danger < 0 || danger > 100) {
-        setContainerRuleError('阈值需为 0-100 的数字');
+        setContainerRuleError(t('阈值需为 0-100 的数字'));
         return;
       }
       if (warn > danger) {
-        setContainerRuleError('警告阈值不能高于危险阈值');
+        setContainerRuleError(t('警告阈值不能高于危险阈值'));
         return;
       }
       const consecutive = Math.floor(Number(containerRuleForm.consecutive) || 1);
       if (consecutive < 1 || consecutive > 120) {
-        setContainerRuleError('连续周期需为 1-120 的整数');
+        setContainerRuleError(t('连续周期需为 1-120 的整数'));
         return;
       }
     }
@@ -903,15 +937,15 @@ export default function NotificationsPage() {
       }
       if (containerRuleModal.editing) {
         await put(`/api/notifications/container-rules/${containerRuleModal.editing.id}`, body);
-        showToast('容器规则已更新');
+        showToast(t('容器规则已更新'));
       } else {
         await post('/api/notifications/container-rules', body);
-        showToast('容器规则已创建');
+        showToast(t('容器规则已创建'));
       }
       setContainerRuleModal({ editing: null, open: false });
       loadContainerRules();
     } catch (e: any) {
-      setContainerRuleError(e?.message || '保存失败');
+      setContainerRuleError(e?.message || t('保存失败'));
     } finally {
       setSavingContainerRule(false);
     }
@@ -927,7 +961,7 @@ export default function NotificationsPage() {
         await put(`/api/notifications/container-rules/${rule.id}`, { enabled: !rule.enabled });
         loadContainerRules();
       } catch (e: any) {
-        showToast(e?.message || '操作失败', 'error');
+        showToast(e?.message || t('操作失败'), 'error');
       }
     },
     [loadContainerRules, showToast],
@@ -941,11 +975,11 @@ export default function NotificationsPage() {
     setDeletingContainerRule(true);
     try {
       await del(`/api/notifications/container-rules/${deleteContainerRule.id}`);
-      showToast('容器规则已删除');
+      showToast(t('容器规则已删除'));
       setDeleteContainerRule(null);
       loadContainerRules();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeletingContainerRule(false);
     }
@@ -957,11 +991,11 @@ export default function NotificationsPage() {
   const runCheck = useCallback(async () => {
     try {
       await post('/api/notifications/check');
-      showToast('已触发检测');
+      showToast(t('已触发检测'));
       load();
       loadRecords(recordPage);
     } catch (e: any) {
-      showToast(e?.message || '检测失败', 'error');
+      showToast(e?.message || t('检测失败'), 'error');
     }
   }, [load, loadRecords, recordPage, showToast]);
 
@@ -971,12 +1005,12 @@ export default function NotificationsPage() {
   const clearRecords = useCallback(async () => {
     try {
       await del('/api/notifications/records');
-      showToast('告警记录已清空');
+      showToast(t('告警记录已清空'));
       setRecordPage(1);
       setRecords([]);
       setRecordTotal(0);
     } catch (e: any) {
-      showToast(e?.message || '清空失败', 'error');
+      showToast(e?.message || t('清空失败'), 'error');
     }
   }, [showToast]);
 
@@ -991,9 +1025,9 @@ export default function NotificationsPage() {
       if (pushFilter) params.set('pushStatus', pushFilter);
       const qs = params.toString();
       await download(`/api/notifications/records/export${qs ? `?${qs}` : ''}`, 'alert-records.csv');
-      showToast('告警记录已导出');
+      showToast(t('告警记录已导出'));
     } catch (e: any) {
-      showToast(e?.message || '导出失败', 'error');
+      showToast(e?.message || t('导出失败'), 'error');
     }
   }, [typeFilter, levelFilter, pushFilter, showToast]);
 
@@ -1010,36 +1044,36 @@ export default function NotificationsPage() {
       const resp = await post<{ count: number; file: string }>(
         `/api/notifications/records/archive${qs ? `?${qs}` : ''}`,
       );
-      showToast(`已归档 ${resp?.count ?? 0} 条告警记录至服务端`);
+      showToast(t('已归档 {{v1}} 条告警记录至服务端', { v1: resp?.count ?? 0 }));
       setRecordPage(1);
       setRecords([]);
       setRecordTotal(0);
     } catch (e: any) {
-      showToast(e?.message || '归档失败', 'error');
+      showToast(e?.message || t('归档失败'), 'error');
     }
   }, [typeFilter, levelFilter, pushFilter, showToast]);
 
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">告警中心</h1>
-        <p className="page__desc">配置资源告警规则与通知渠道，合理设置阈值以便及时感知资源异常</p>
+        <h1 className="page__title">{t('告警中心')}</h1>
+        <p className="page__desc">{t('配置资源告警规则与通知渠道，合理设置阈值以便及时感知资源异常')}</p>
       </div>
 
       {/* 告警规则 */}
-      <Card title="告警规则" extra={<Button variant="ghost" size="sm" onClick={load}>刷新</Button>}>
+      <Card title={t('告警规则')} extra={<Button variant="ghost" size="sm" onClick={load}>{t('刷新')}</Button>}>
         {ruleLoading ? (
           <SkeletonRows rows={3} />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '15%' }}>资源</th>
-                <th style={{ width: '15%' }}>状态</th>
-                <th style={{ width: '20%' }}>警告阈值</th>
-                <th style={{ width: '20%' }}>危险阈值</th>
-                <th style={{ width: '15%' }}>当前使用率</th>
-                <th style={{ width: '15%' }}>操作</th>
+                <th style={{ width: '15%' }}>{t('资源')}</th>
+                <th style={{ width: '15%' }}>{t('状态')}</th>
+                <th style={{ width: '20%' }}>{t('警告阈值')}</th>
+                <th style={{ width: '20%' }}>{t('危险阈值')}</th>
+                <th style={{ width: '15%' }}>{t('当前使用率')}</th>
+                <th style={{ width: '15%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1047,12 +1081,12 @@ export default function NotificationsPage() {
                 <tr key={r.type}>
                   <td><strong>{RULE_NAMES[r.type] || r.type}</strong></td>
                   <td>
-                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
+                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? t('启用') : t('停用')}</span>
                     {(r.silentStart || r.workdaysOnly || r.workStart) && (
                       <div className="notify-rule-tags">
-                        {r.silentStart && <span className="notify-tag" title={`静默时段 ${r.silentStart} - ${r.silentEnd || '?'}`}>静默</span>}
-                        {r.workdaysOnly && <span className="notify-tag" title="仅工作日告警">工作日</span>}
-                        {r.workStart && <span className="notify-tag" title={`工作时段 ${r.workStart} - ${r.workEnd || '?'}`}>工作时段</span>}
+                        {r.silentStart && <span className="notify-tag" title={t('静默时段 {{v1}} - {{v2}}', { v1: r.silentStart, v2: r.silentEnd || '?' })}>{t('静默')}</span>}
+                        {r.workdaysOnly && <span className="notify-tag" title={t('仅工作日告警')}>{t('工作日')}</span>}
+                        {r.workStart && <span className="notify-tag" title={t('工作时段 {{v1}} - {{v2}}', { v1: r.workStart, v2: r.workEnd || '?' })}>{t('工作时段')}</span>}
                       </div>
                     )}
                   </td>
@@ -1060,7 +1094,7 @@ export default function NotificationsPage() {
                   <td>≥ {r.dangerThreshold}{unitOf(r.type)}</td>
                   <td>
                     {r.type === 'gpu' && r.currentPercent == null ? (
-                      <span className="notify-dim">未检测到 GPU</span>
+                      <span className="notify-dim">{t('未检测到 GPU')}</span>
                     ) : r.currentPercent != null ? (
                       <span
                         className={`notify-level notify-level--${
@@ -1078,7 +1112,7 @@ export default function NotificationsPage() {
                     )}
                   </td>
                   <td>
-                    <Button variant="ghost" size="sm" onClick={() => openEditRule(r)}>编辑</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openEditRule(r)}>{t('编辑')}</Button>
                   </td>
                 </tr>
               ))}
@@ -1088,17 +1122,17 @@ export default function NotificationsPage() {
       </Card>
 
       {/* 推送路由策略 */}
-      <Card title="推送路由" extra={<span className="notify-dim">决定告警实际发往哪些启用渠道</span>}>
-        <Field label="路由策略">
+      <Card title={t('推送路由')} extra={<span className="notify-dim">{t('决定告警实际发往哪些启用渠道')}</span>}>
+        <Field label={t('路由策略')}>
           <Select value={routePolicy.mode} onChange={(e) => setRoutePolicy((p) => ({ ...p, mode: e.target.value }))}>
-            <option value="first">仅首个启用渠道（兼容旧版）</option>
-            <option value="all">全部启用渠道</option>
-            <option value="byLevel">按级别路由</option>
+            <option value="first">{t('仅首个启用渠道（兼容旧版）')}</option>
+            <option value="all">{t('全部启用渠道')}</option>
+            <option value="byLevel">{t('按级别路由')}</option>
           </Select>
         </Field>
         {routePolicy.mode === 'byLevel' &&
           (['warn', 'danger', 'recovery'] as const).map((level) => (
-            <Field key={level} label={`「${ROUTE_LEVEL_LABELS[level]}」推送渠道`} hint="不勾选任何渠道时回退为首个启用渠道">
+            <Field key={level} label={t('「{{v1}}」推送渠道', { v1: ROUTE_LEVEL_LABELS[level] })} hint={t('不勾选任何渠道时回退为首个启用渠道')}>
               <div className="notify-checkbox-group">
                 {channels.map((c) => (
                   <label key={c.id} className="notify-checkbox">
@@ -1109,64 +1143,64 @@ export default function NotificationsPage() {
                       onChange={(e) => toggleRouteChannel(level, c.id, e.target.checked)}
                     />
                     {c.name}
-                    {!c.enabled && '（停用）'}
+                    {!c.enabled && t('（停用）')}
                   </label>
                 ))}
-                {channels.length === 0 && <span className="notify-dim">尚未创建通知渠道</span>}
+                {channels.length === 0 && <span className="notify-dim">{t('尚未创建通知渠道')}</span>}
               </div>
             </Field>
           ))}
         <div style={{ marginTop: 10 }}>
-          <Button size="sm" loading={routeSaving} onClick={handleSaveRoutePolicy}>保存路由</Button>
+          <Button size="sm" loading={routeSaving} onClick={handleSaveRoutePolicy}>{t('保存路由')}</Button>
         </div>
       </Card>
 
       {/* 容器自愈 */}
       <Card
         className="notify-card"
-        title="容器自愈"
+        title={t('容器自愈')}
         extra={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="ghost" size="sm" onClick={loadSelfHealRules}>刷新</Button>
-            <Button variant="ghost" size="sm" loading={selfHealRunning} disabled={!canManage} onClick={handleRunSelfHeal}>立即巡检</Button>
-            <Button size="sm" disabled={!canManage} onClick={openCreateSelfHeal}>+ 新增规则</Button>
+            <Button variant="ghost" size="sm" onClick={loadSelfHealRules}>{t('刷新')}</Button>
+            <Button variant="ghost" size="sm" loading={selfHealRunning} disabled={!canManage} onClick={handleRunSelfHeal}>{t('立即巡检')}</Button>
+            <Button size="sm" disabled={!canManage} onClick={openCreateSelfHeal}>{t('+ 新增规则')}</Button>
           </div>
         }
       >
         <p className="notify-desc">
-          对指定容器监听健康检查失败或退出，命中后自动执行恢复动作（带冷却期防重），触发记录见下方「告警记录」（类型 = 自愈）。
+          {t('对指定容器监听健康检查失败或退出，命中后自动执行恢复动作（带冷却期防重），触发记录见下方「告警记录」（类型 = 自愈）。')}
         </p>
         {selfHealLoading ? (
           <SkeletonRows rows={2} />
         ) : selfHealRules.length === 0 ? (
-          <Empty title="暂无自愈规则" description="新增一条规则，让面板在容器异常时自动重启或拉起。" />
+          <Empty title={t('暂无自愈规则')} description={t('新增一条规则，让面板在容器异常时自动重启或拉起。')} />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '18%' }}>容器</th>
-                <th style={{ width: '18%' }}>监控条件</th>
-                <th style={{ width: '14%' }}>恢复动作</th>
-                <th style={{ width: '12%' }}>冷却期</th>
-                <th style={{ width: '14%' }}>状态</th>
-                <th style={{ width: '14%' }}>最近触发</th>
-                <th style={{ width: '20%' }}>操作</th>
+                <th style={{ width: '18%' }}>{t('容器')}</th>
+                <th style={{ width: '18%' }}>{t('监控条件')}</th>
+                <th style={{ width: '14%' }}>{t('恢复动作')}</th>
+                <th style={{ width: '12%' }}>{t('冷却期')}</th>
+                <th style={{ width: '14%' }}>{t('状态')}</th>
+                <th style={{ width: '14%' }}>{t('最近触发')}</th>
+                <th style={{ width: '20%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
               {selfHealRules.map((r) => (
                 <tr key={r.id}>
                   <td><strong>{r.containerName}</strong></td>
-                  <td>{SELFHEAL_WATCH_LABELS[r.watchType] || r.watchType}</td>
-                  <td>{SELFHEAL_ACTION_LABELS[r.action] || r.action}</td>
+                  <td>{t(SELFHEAL_WATCH_LABELS[r.watchType] || r.watchType)}</td>
+                  <td>{t(SELFHEAL_ACTION_LABELS[r.action] || r.action)}</td>
                   <td>{r.cooldownSec}s</td>
                   <td>
-                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
+                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? t('启用') : t('停用')}</span>
                   </td>
-                  <td>{r.lastTriggeredAt ? formatTime(r.lastTriggeredAt) : <span className="notify-dim">从未</span>}</td>
+                  <td>{r.lastTriggeredAt ? formatTime(r.lastTriggeredAt) : <span className="notify-dim">{t('从未')}</span>}</td>
                   <td>
-                    <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEditSelfHeal(r)}>编辑</Button>{' '}
-                    <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => setSelfHealDeleteTarget(r)}>删除</Button>
+                    <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEditSelfHeal(r)}>{t('编辑')}</Button>{' '}
+                    <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => setSelfHealDeleteTarget(r)}>{t('删除')}</Button>
                   </td>
                 </tr>
               ))}
@@ -1178,29 +1212,29 @@ export default function NotificationsPage() {
       {/* 容器告警规则 */}
       <Card
         className="notify-card"
-        title="容器告警规则"
+        title={t('容器告警规则')}
         extra={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="ghost" size="sm" onClick={loadContainerRules}>刷新</Button>
-            <Button size="sm" disabled={!canManage} onClick={openCreateContainerRule}>+ 新增规则</Button>
+            <Button variant="ghost" size="sm" onClick={loadContainerRules}>{t('刷新')}</Button>
+            <Button size="sm" disabled={!canManage} onClick={openCreateContainerRule}>{t('+ 新增规则')}</Button>
           </div>
         }
       >
-        <p className="notify-desc">对指定容器监听 退出/健康检查失败/端口不可达，或 CPU/内存使用率阈值。</p>
+        <p className="notify-desc">{t('对指定容器监听 退出/健康检查失败/端口不可达，或 CPU/内存使用率阈值。')}</p>
         {containerRuleLoading ? (
           <SkeletonRows rows={3} />
         ) : containerRules.length === 0 ? (
-          <Empty title="暂无容器告警规则" description="新增一条规则，对指定容器监听退出、健康检查或端口可达性。" />
+          <Empty title={t('暂无容器告警规则')} description={t('新增一条规则，对指定容器监听退出、健康检查或端口可达性。')} />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '20%' }}>容器</th>
-                <th style={{ width: '14%' }}>监控类型</th>
-                <th style={{ width: '12%' }}>目标端口</th>
-                <th style={{ width: '18%' }}>阈值/当前值</th>
-                <th style={{ width: '14%' }}>状态</th>
-                <th style={{ width: '22%' }}>操作</th>
+                <th style={{ width: '20%' }}>{t('容器')}</th>
+                <th style={{ width: '14%' }}>{t('监控类型')}</th>
+                <th style={{ width: '12%' }}>{t('目标端口')}</th>
+                <th style={{ width: '18%' }}>{t('阈值/当前值')}</th>
+                <th style={{ width: '14%' }}>{t('状态')}</th>
+                <th style={{ width: '22%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1210,14 +1244,14 @@ export default function NotificationsPage() {
                     <strong title={r.containerId}>{containerDisplayName(r)}</strong>
                     {(r.silentStart || r.workdaysOnly || r.workStart) && (
                       <div className="notify-rule-tags">
-                        {r.silentStart && <span className="notify-tag" title={`静默时段 ${r.silentStart} - ${r.silentEnd || '?'}`}>静默</span>}
-                        {r.workdaysOnly && <span className="notify-tag" title="仅工作日告警">工作日</span>}
-                        {r.workStart && <span className="notify-tag" title={`工作时段 ${r.workStart} - ${r.workEnd || '?'}`}>工作时段</span>}
+                        {r.silentStart && <span className="notify-tag" title={t('静默时段 {{v1}} - {{v2}}', { v1: r.silentStart, v2: r.silentEnd || '?' })}>{t('静默')}</span>}
+                        {r.workdaysOnly && <span className="notify-tag" title={t('仅工作日告警')}>{t('工作日')}</span>}
+                        {r.workStart && <span className="notify-tag" title={t('工作时段 {{v1}} - {{v2}}', { v1: r.workStart, v2: r.workEnd || '?' })}>{t('工作时段')}</span>}
                       </div>
                     )}
                   </td>
                   <td>
-                    <span className={`notify-badge notify-badge--${r.watchType}`}>{WATCH_LABELS[r.watchType] || r.watchType}</span>
+                    <span className={`notify-badge notify-badge--${r.watchType}`}>{t(WATCH_LABELS[r.watchType]) || r.watchType}</span>
                   </td>
                   <td>{r.watchType === 'port' && r.port != null ? r.port : <span className="notify-dim">—</span>}</td>
                   <td>
@@ -1225,9 +1259,9 @@ export default function NotificationsPage() {
                       <span className="notify-rule-threshold">
                         ≥{r.warnThreshold}% / ≥{r.dangerThreshold}%
                         {r.currentValue != null ? (
-                          <span className="notify-dim">当前 {r.currentValue.toFixed(1)}%</span>
+                          <span className="notify-dim">{t('当前 {{v}}%', { v: r.currentValue.toFixed(1) })}</span>
                         ) : (
-                          <span className="notify-dim">当前 -</span>
+                          <span className="notify-dim">{t('当前 -')}</span>
                         )}
                       </span>
                     ) : (
@@ -1235,15 +1269,15 @@ export default function NotificationsPage() {
                     )}
                   </td>
                   <td>
-                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? '启用' : '停用'}</span>
+                    <span className={r.enabled ? 'notify-state notify-state--on' : 'notify-state'}>{r.enabled ? t('启用') : t('停用')}</span>
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Button variant="ghost" size="sm" onClick={() => openEditContainerRule(r)} disabled={!canManage}>编辑</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEditContainerRule(r)} disabled={!canManage}>{t('编辑')}</Button>
                       <Button variant="ghost" size="sm" onClick={() => toggleContainerRule(r)} disabled={!canManage}>
-                        {r.enabled ? '停用' : '启用'}
+                        {r.enabled ? t('停用') : t('启用')}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteContainerRule(r)} disabled={!canManage}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteContainerRule(r)} disabled={!canManage}>{t('删除')}</Button>
                     </div>
                   </td>
                 </tr>
@@ -1256,50 +1290,50 @@ export default function NotificationsPage() {
       {/* 通知渠道 */}
       <Card
         className="notify-card"
-        title="通知渠道"
+        title={t('通知渠道')}
         extra={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="ghost" size="sm" onClick={load}>刷新</Button>
-            <Button size="sm" onClick={openCreateChannel}>+ 新增渠道</Button>
+            <Button variant="ghost" size="sm" onClick={load}>{t('刷新')}</Button>
+            <Button size="sm" onClick={openCreateChannel}>{t('+ 新增渠道')}</Button>
           </div>
         }
       >
         {channelLoading ? (
           <SkeletonRows rows={3} />
         ) : channels.length === 0 ? (
-          <Empty title="暂无通知渠道" description="新增一个渠道（Webhook / 邮件 / 钉钉 / 飞书）接收资源告警。" />
+          <Empty title={t('暂无通知渠道')} description={t('新增一个渠道（Webhook / 邮件 / 钉钉 / 飞书）接收资源告警。')} />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '20%' }}>名称</th>
-                <th style={{ width: '16%' }}>类型</th>
-                <th style={{ width: '12%' }}>状态</th>
-                <th style={{ width: '16%' }}>创建时间</th>
-                <th style={{ width: '36%' }}>操作</th>
+                <th style={{ width: '20%' }}>{t('名称')}</th>
+                <th style={{ width: '16%' }}>{t('类型')}</th>
+                <th style={{ width: '12%' }}>{t('状态')}</th>
+                <th style={{ width: '16%' }}>{t('创建时间')}</th>
+                <th style={{ width: '36%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
               {channels.map((ch) => (
                 <tr key={ch.id}>
                   <td><strong>{ch.name}</strong></td>
-                  <td>{CHANNEL_LABELS[ch.type] || ch.type}</td>
+                  <td>{t(CHANNEL_LABELS[ch.type]) || ch.type}</td>
                   <td>
                     <span className={ch.enabled ? 'notify-state notify-state--on' : 'notify-state'}>
-                      {ch.enabled ? '启用' : '停用'}
+                      {ch.enabled ? t('启用') : t('停用')}
                     </span>
                   </td>
                   <td className="notify-dim">{formatTime(ch.createdAt)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <Button variant="ghost" size="sm" loading={testingId === ch.id} onClick={() => testChannel(ch)}>
-                        测试
+                        {t('测试')}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEditChannel(ch)}>编辑</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEditChannel(ch)}>{t('编辑')}</Button>
                       <Button variant="ghost" size="sm" onClick={() => toggleChannel(ch)}>
-                        {ch.enabled ? '停用' : '启用'}
+                        {ch.enabled ? t('停用') : t('启用')}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(ch)}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(ch)}>{t('删除')}</Button>
                     </div>
                   </td>
                 </tr>
@@ -1309,10 +1343,85 @@ export default function NotificationsPage() {
         )}
       </Card>
 
+      {/* 送达率统计 */}
+      <Card
+        className="notify-card"
+        title={t('送达率统计（近 {{days}} 天）', { days: 7 })}
+        extra={
+          <Button variant="ghost" size="sm" onClick={loadPushStats}>{t('刷新')}</Button>
+        }
+      >
+        {!pushStats || (pushStats.channels.length === 0 && pushStats.recentFailures.length === 0) ? (
+          <Empty title={t('暂无推送记录')} description={t('测试推送或告警触发后将在这里统计各渠道的送达情况。')} />
+        ) : (
+          <>
+            {pushStats.totals.rate !== null && (
+              <div className="notify-dim" style={{ marginBottom: 10 }}>
+                {t('近 {{days}} 天累计推送 {{total}} 次，成功率 {{rate}}%', {
+                  days: 7,
+                  total: pushStats.totals.ok + pushStats.totals.fail,
+                  rate: pushStats.totals.rate,
+                })}
+              </div>
+            )}
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('渠道名称')}</th>
+                  <th>{t('已推送')}</th>
+                  <th>{t('失败')}</th>
+                  <th>{t('送达率')}</th>
+                  <th>{t('最近成功')}</th>
+                  <th>{t('最近失败')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pushStats.channels.map((c) => (
+                  <tr key={c.channelId}>
+                    <td><strong>{c.channelName}</strong></td>
+                    <td>{c.okCount}</td>
+                    <td>{c.failCount}</td>
+                    <td>
+                      {c.rate === null ? (
+                        <span className="notify-dim">—</span>
+                      ) : (
+                        <span className={`notify-push notify-push--${c.rate >= 90 ? 'ok' : c.rate >= 50 ? 'none' : 'failed'}`}>{c.rate}%</span>
+                      )}
+                    </td>
+                    <td className="notify-dim">{c.lastOkAt ? formatTime(c.lastOkAt) : '—'}</td>
+                    <td className="notify-dim">
+                      {c.lastFailAt ? (
+                        <span title={c.lastFailDetail || undefined}>{formatTime(c.lastFailAt)}</span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pushStats.recentFailures.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('最近失败明细')}</div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {pushStats.recentFailures.map((f, i) => (
+                    <li key={i} className="notify-dim">
+                      <strong>{f.channelName}</strong>
+                      {f.level ? ` [${t(LEVEL_LABELS[f.level] || f.level)}] ` : ' '}
+                      {f.detail} · {formatTime(f.createdAt)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
       {/* 告警记录 */}
       <Card
         className="notify-card"
-        title={`告警记录 (${recordTotal})`}
+        title={t('告警记录 ({{recordTotal}})', { recordTotal })}
         extra={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Select
@@ -1323,16 +1432,16 @@ export default function NotificationsPage() {
               }}
               style={{ width: 110 }}
             >
-              <option value="">全部类型</option>
+              <option value="">{t('全部类型')}</option>
               <option value="cpu">CPU</option>
-              <option value="mem">内存</option>
-              <option value="disk">磁盘</option>
+              <option value="mem">{t('内存')}</option>
+              <option value="disk">{t('磁盘')}</option>
               <option value="gpu">GPU</option>
-              <option value="net">网络</option>
-              <option value="task">任务</option>
-              <option value="exited">容器退出</option>
-              <option value="health">健康检查</option>
-              <option value="port">端口</option>
+              <option value="net">{t('网络')}</option>
+              <option value="task">{t('任务')}</option>
+              <option value="exited">{t('容器退出')}</option>
+              <option value="health">{t('健康检查')}</option>
+              <option value="port">{t('端口')}</option>
             </Select>
             <Select
               value={levelFilter}
@@ -1342,10 +1451,10 @@ export default function NotificationsPage() {
               }}
               style={{ width: 110 }}
             >
-              <option value="">全部级别</option>
-              <option value="warn">警告</option>
-              <option value="danger">危险</option>
-              <option value="recovery">已恢复</option>
+              <option value="">{t('全部级别')}</option>
+              <option value="warn">{t('警告')}</option>
+              <option value="danger">{t('危险')}</option>
+              <option value="recovery">{t('已恢复')}</option>
             </Select>
             <Select
               value={pushFilter}
@@ -1355,18 +1464,18 @@ export default function NotificationsPage() {
               }}
               style={{ width: 110 }}
             >
-              <option value="">全部推送</option>
-              <option value="ok">已推送</option>
-              <option value="failed">失败</option>
-              <option value="none">未推送</option>
+              <option value="">{t('全部推送')}</option>
+              <option value="ok">{t('已推送')}</option>
+              <option value="failed">{t('失败')}</option>
+              <option value="none">{t('未推送')}</option>
             </Select>
-            <Button variant="ghost" size="sm" onClick={runCheck}>立即检测</Button>
-            <Button variant="ghost" size="sm" onClick={() => loadRecords(recordPage)}>刷新</Button>
-            <Button variant="ghost" size="sm" onClick={exportRecords} disabled={recordTotal === 0}>导出CSV</Button>
+            <Button variant="ghost" size="sm" onClick={runCheck}>{t('立即检测')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => loadRecords(recordPage)}>{t('刷新')}</Button>
+            <Button variant="ghost" size="sm" onClick={exportRecords} disabled={recordTotal === 0}>{t('导出CSV')}</Button>
             {canManage && records.length > 0 && (
               <>
-                <Button variant="ghost" size="sm" onClick={archiveRecords}>归档</Button>
-                <Button variant="ghost" size="sm" onClick={clearRecords}>清空</Button>
+                <Button variant="ghost" size="sm" onClick={archiveRecords}>{t('归档')}</Button>
+                <Button variant="ghost" size="sm" onClick={clearRecords}>{t('清空')}</Button>
               </>
             )}
           </div>
@@ -1375,35 +1484,35 @@ export default function NotificationsPage() {
         {recordLoading ? (
           <SkeletonRows rows={4} />
         ) : records.length === 0 ? (
-          <Empty title="暂无告警记录" description="资源使用率未超过阈值，或告警服务尚未触发任何事件。" />
+          <Empty title={t('暂无告警记录')} description={t('资源使用率未超过阈值，或告警服务尚未触发任何事件。')} />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '12%' }}>时间</th>
-                <th style={{ width: '11%' }}>类型</th>
-                <th style={{ width: '10%' }}>级别</th>
-                <th style={{ width: '33%' }}>消息</th>
-                <th style={{ width: '10%' }}>使用率</th>
-                <th style={{ width: '11%' }}>推送</th>
-                <th style={{ width: '13%' }}>详情</th>
+                <th style={{ width: '12%' }}>{t('时间')}</th>
+                <th style={{ width: '11%' }}>{t('类型')}</th>
+                <th style={{ width: '10%' }}>{t('级别')}</th>
+                <th style={{ width: '33%' }}>{t('消息')}</th>
+                <th style={{ width: '10%' }}>{t('使用率')}</th>
+                <th style={{ width: '11%' }}>{t('推送')}</th>
+                <th style={{ width: '13%' }}>{t('详情')}</th>
               </tr>
             </thead>
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>
                   <td className="notify-dim">{formatTime(r.createdAt)}</td>
-                  <td>{TYPE_LABELS[r.type] || r.type}</td>
+                  <td>{t(TYPE_LABELS[r.type]) || r.type}</td>
                   <td>
                     <span className={`notify-level notify-level--${r.level}`}>
-                      {LEVEL_LABELS[r.level] || r.level}
+                      {t(LEVEL_LABELS[r.level] || r.level)}
                     </span>
                   </td>
                   <td>{r.message}</td>
                   <td>{r.value != null ? `${r.value.toFixed(1)}%` : '—'}</td>
                   <td>
                     <span className={`notify-push notify-push--${r.pushStatus}`}>
-                      {r.pushStatus === 'ok' ? '已推送' : r.pushStatus === 'failed' ? '失败' : '未推送'}
+                      {r.pushStatus === 'ok' ? t('已推送') : r.pushStatus === 'failed' ? t('失败') : t('未推送')}
                     </span>
                   </td>
                   <td className="notify-dim" title={r.pushDetail || ''}>
@@ -1422,7 +1531,7 @@ export default function NotificationsPage() {
               disabled={recordPage <= 1}
               onClick={() => setRecordPage((p) => Math.max(1, p - 1))}
             >
-              上一页
+              {t('上一页')}
             </Button>
             <span className="notify-pager__info">
               {recordPage} / {Math.max(1, Math.ceil(recordTotal / PAGE_SIZE))}
@@ -1433,7 +1542,7 @@ export default function NotificationsPage() {
               disabled={recordPage >= Math.ceil(recordTotal / PAGE_SIZE)}
               onClick={() => setRecordPage((p) => p + 1)}
             >
-              下一页
+              {t('下一页')}
             </Button>
           </div>
         )}
@@ -1442,44 +1551,44 @@ export default function NotificationsPage() {
       {/* 渠道新增/编辑弹窗 */}
       <Modal
         open={channelModal.open}
-        title={channelModal.editing ? '编辑通知渠道' : '新增通知渠道'}
+        title={channelModal.editing ? t('编辑通知渠道') : t('新增通知渠道')}
         onClose={() => setChannelModal({ editing: null, open: false })}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setChannelModal({ editing: null, open: false })}>取消</Button>
-            <Button loading={saving} onClick={handleSaveChannel}>{channelModal.editing ? '保存' : '创建'}</Button>
+            <Button variant="ghost" onClick={() => setChannelModal({ editing: null, open: false })}>{t('取消')}</Button>
+            <Button loading={saving} onClick={handleSaveChannel}>{channelModal.editing ? t('保存') : t('创建')}</Button>
           </div>
         }
       >
-        <Field label="渠道名称" required>
+        <Field label={t('渠道名称')} required>
           <Input
             value={form.name}
-            placeholder="如：团队告警群"
+            placeholder={t('如：团队告警群')}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
         </Field>
-        <Field label="渠道类型">
+        <Field label={t('渠道类型')}>
           <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ChannelForm['type'] }))}>
             <option value="webhook">Webhook</option>
-            <option value="email">邮件 (SMTP)</option>
-            <option value="dingtalk">钉钉机器人</option>
-            <option value="feishu">飞书机器人</option>
+            <option value="email">{t('邮件 (SMTP)')}</option>
+            <option value="dingtalk">{t('钉钉机器人')}</option>
+            <option value="feishu">{t('飞书机器人')}</option>
             <option value="telegram">Telegram</option>
-            <option value="wecom">企业微信机器人</option>
+            <option value="wecom">{t('企业微信机器人')}</option>
             <option value="slack">Slack</option>
           </Select>
         </Field>
 
         {form.type === 'webhook' && (
           <>
-            <Field label="Webhook 地址" required>
+            <Field label={t('Webhook 地址')} required>
               <Input
                 value={form.url}
                 placeholder="https://example.com/hook"
                 onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
               />
             </Field>
-            <Field label="Secret（可选）" hint={channelModal.editing?.secretsSet.secret ? '已配置，留空则不修改' : '鉴权密钥，随请求以 Bearer 头携带'}>
+            <Field label={t('Secret（可选）')} hint={channelModal.editing?.secretsSet.secret ? t('已配置，留空则不修改') : t('鉴权密钥，随请求以 Bearer 头携带')}>
               <Input
                 type="password"
                 value={form.secret}
@@ -1492,7 +1601,7 @@ export default function NotificationsPage() {
 
         {form.type === 'email' && (
           <>
-            <Field label="SMTP 主机" required>
+            <Field label={t('SMTP 主机')} required>
               <Input
                 value={form.host}
                 placeholder="smtp.qq.com"
@@ -1501,7 +1610,7 @@ export default function NotificationsPage() {
             </Field>
             <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <Field label="端口" required>
+                <Field label={t('端口')} required>
                   <Input
                     value={form.port}
                     placeholder="465"
@@ -1512,18 +1621,18 @@ export default function NotificationsPage() {
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
                 <label className="notify-checkbox">
                   <input type="checkbox" checked={form.useTls} onChange={(e) => setForm((f) => ({ ...f, useTls: e.target.checked }))} />
-                  使用 SSL
+                  {t('使用 SSL')}
                 </label>
               </div>
             </div>
-            <Field label="账号（可选）">
+            <Field label={t('账号（可选）')}>
               <Input
                 value={form.username}
-                placeholder="账户名/邮箱"
+                placeholder={t('账户名/邮箱')}
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
               />
             </Field>
-            <Field label="密码 / 授权码" hint={channelModal.editing?.secretsSet.password ? '已配置，留空则不修改' : 'SMTP 密码或授权码'}>
+            <Field label={t('密码 / 授权码')} hint={channelModal.editing?.secretsSet.password ? t('已配置，留空则不修改') : t('SMTP 密码或授权码')}>
               <Input
                 type="password"
                 value={form.password}
@@ -1531,14 +1640,14 @@ export default function NotificationsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
               />
             </Field>
-            <Field label="发件人地址" required>
+            <Field label={t('发件人地址')} required>
               <Input
                 value={form.from}
                 placeholder="alarm@example.com"
                 onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
               />
             </Field>
-            <Field label="收件人（逗号分隔）" required>
+            <Field label={t('收件人（逗号分隔）')} required>
               <Input
                 value={form.to}
                 placeholder="a@example.com, b@example.com"
@@ -1553,11 +1662,11 @@ export default function NotificationsPage() {
             <Field label="access_token" required>
               <Input
                 value={form.accessToken}
-                placeholder="机器人 access_token"
+                placeholder={t('机器人 access_token')}
                 onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value }))}
               />
             </Field>
-            <Field label="加签密钥 Secret（可选）" hint={channelModal.editing?.secretsSet.secret ? '已配置，留空则不修改' : '开启加签时填写'}>
+            <Field label={t('加签密钥 Secret（可选）')} hint={channelModal.editing?.secretsSet.secret ? t('已配置，留空则不修改') : t('开启加签时填写')}>
               <Input
                 type="password"
                 value={form.secret}
@@ -1569,7 +1678,7 @@ export default function NotificationsPage() {
         )}
 
         {form.type === 'feishu' && (
-          <Field label="Webhook 地址" required>
+          <Field label={t('Webhook 地址')} required>
             <Input
               value={form.webhookUrl}
               placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
@@ -1580,7 +1689,7 @@ export default function NotificationsPage() {
 
         {form.type === 'telegram' && (
           <>
-            <Field label="Bot Token" required hint={channelModal.editing?.secretsSet.botToken ? '已配置，留空则不修改' : '@BotFather 创建机器人时签发'}>
+            <Field label="Bot Token" required hint={channelModal.editing?.secretsSet.botToken ? t('已配置，留空则不修改') : t('@BotFather 创建机器人时签发')}>
               <Input
                 type="password"
                 value={form.botToken}
@@ -1588,7 +1697,7 @@ export default function NotificationsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, botToken: e.target.value }))}
               />
             </Field>
-            <Field label="Chat ID" required hint="目标会话 ID（群组为负数）">
+            <Field label="Chat ID" required hint={t('目标会话 ID（群组为负数）')}>
               <Input
                 value={form.chatId}
                 placeholder="-1001234567890"
@@ -1599,7 +1708,7 @@ export default function NotificationsPage() {
         )}
 
         {form.type === 'wecom' && (
-          <Field label="Webhook 地址" required>
+          <Field label={t('Webhook 地址')} required>
             <Input
               value={form.webhookUrl}
               placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx"
@@ -1609,7 +1718,7 @@ export default function NotificationsPage() {
         )}
 
         {form.type === 'slack' && (
-          <Field label="Webhook 地址" required>
+          <Field label={t('Webhook 地址')} required>
             <Input
               value={form.webhookUrl}
               placeholder="https://hooks.slack.com/services/T000/B000/xxxx"
@@ -1619,13 +1728,13 @@ export default function NotificationsPage() {
         )}
 
         <Field
-          label="消息模板（可选）"
-          hint="支持变量：{{level}} {{message}} {{time}} {{channel}}；留空则按默认文案推送"
+          label={t('消息模板（可选）')}
+          hint={t('支持变量：{{level}} {{message}} {{time}} {{channel}}；留空则按默认文案推送')}
         >
           <TextArea
             rows={3}
             value={form.template}
-            placeholder={'如：【{{level}}】{{message}}\n时间：{{time}}'}
+            placeholder={t('如：【{{level}}】{{message}}\n时间：{{time}}')}
             onChange={(e) => setForm((f) => ({ ...f, template: e.target.value }))}
           />
         </Field>
@@ -1636,52 +1745,52 @@ export default function NotificationsPage() {
       {/* 规则编辑弹窗 */}
       <Modal
         open={!!ruleModal}
-        title="编辑告警规则"
+        title={t('编辑告警规则')}
         onClose={() => setRuleModal(null)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setRuleModal(null)}>取消</Button>
-            <Button loading={savingRule} onClick={handleSaveRule}>保存</Button>
+            <Button variant="ghost" onClick={() => setRuleModal(null)}>{t('取消')}</Button>
+            <Button loading={savingRule} onClick={handleSaveRule}>{t('保存')}</Button>
           </div>
         }
       >
-        <Field label="资源类型">
+        <Field label={t('资源类型')}>
           <Input value={ruleModal ? RULE_NAMES[ruleModal.type] : ''} disabled />
         </Field>
-        <Field label="启用规则">
+        <Field label={t('启用规则')}>
           <label className="notify-checkbox">
             <input
               type="checkbox"
               checked={ruleForm.enabled}
               onChange={(e) => setRuleForm((f) => ({ ...f, enabled: e.target.checked }))}
             />
-            启用该项资源告警
+            {t('启用该项资源告警')}
           </label>
         </Field>
-        <Field label={`警告阈值（${ruleModal ? unitOf(ruleModal.type) : '%'}）`} required>
+        <Field label={t('警告阈值（{{v1}}）', { v1: ruleModal ? unitOf(ruleModal.type) : '%' })} required>
           <Input
             value={ruleForm.warnThreshold}
             onChange={(e) => setRuleForm((f) => ({ ...f, warnThreshold: e.target.value }))}
           />
         </Field>
-        <Field label={`危险阈值（${ruleModal ? unitOf(ruleModal.type) : '%'}）`} required>
+        <Field label={t('危险阈值（{{v1}}）', { v1: ruleModal ? unitOf(ruleModal.type) : '%' })} required>
           <Input
             value={ruleForm.dangerThreshold}
             onChange={(e) => setRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
           />
         </Field>
 
-        <Field label="连续周期" hint="连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警">
+        <Field label={t('连续周期')} hint={t('连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警')}>
           <Input
             value={ruleForm.consecutive}
             onChange={(e) => setRuleForm((f) => ({ ...f, consecutive: e.target.value }))}
           />
         </Field>
 
-        <div className="notify-rule-section">静默时段</div>
+        <div className="notify-rule-section">{t('静默时段')}</div>
         <div style={{ display: 'flex', gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <Field label="开始（HH:mm）" hint="留空表示无静默时段">
+            <Field label={t('开始（HH:mm）')} hint={t('留空表示无静默时段')}>
               <Input
                 type="time"
                 value={ruleForm.silentStart}
@@ -1690,7 +1799,7 @@ export default function NotificationsPage() {
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="结束（HH:mm）">
+            <Field label={t('结束（HH:mm）')}>
               <Input
                 type="time"
                 value={ruleForm.silentEnd}
@@ -1700,21 +1809,21 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <Field label="仅工作日告警">
+        <Field label={t('仅工作日告警')}>
           <label className="notify-checkbox">
             <input
               type="checkbox"
               checked={ruleForm.workdaysOnly}
               onChange={(e) => setRuleForm((f) => ({ ...f, workdaysOnly: e.target.checked }))}
             />
-            仅在周一至周五告警，周末静默
+            {t('仅在周一至周五告警，周末静默')}
           </label>
         </Field>
 
-        <div className="notify-rule-section">工作时段</div>
+        <div className="notify-rule-section">{t('工作时段')}</div>
         <div style={{ display: 'flex', gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <Field label="开始（HH:mm）" hint="留空表示不限制工作时段">
+            <Field label={t('开始（HH:mm）')} hint={t('留空表示不限制工作时段')}>
               <Input
                 type="time"
                 value={ruleForm.workStart}
@@ -1723,7 +1832,7 @@ export default function NotificationsPage() {
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="结束（HH:mm）">
+            <Field label={t('结束（HH:mm）')}>
               <Input
                 type="time"
                 value={ruleForm.workEnd}
@@ -1737,22 +1846,22 @@ export default function NotificationsPage() {
       {/* 容器规则新增/编辑弹窗 */}
       <Modal
         open={containerRuleModal.open}
-        title={containerRuleModal.editing ? '编辑容器告警规则' : '新增容器告警规则'}
+        title={containerRuleModal.editing ? t('编辑容器告警规则') : t('新增容器告警规则')}
         onClose={() => setContainerRuleModal({ editing: null, open: false })}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setContainerRuleModal({ editing: null, open: false })}>取消</Button>
-            <Button loading={savingContainerRule} onClick={handleSaveContainerRule}>{containerRuleModal.editing ? '保存' : '创建'}</Button>
+            <Button variant="ghost" onClick={() => setContainerRuleModal({ editing: null, open: false })}>{t('取消')}</Button>
+            <Button loading={savingContainerRule} onClick={handleSaveContainerRule}>{containerRuleModal.editing ? t('保存') : t('创建')}</Button>
           </div>
         }
       >
-        <Field label="目标容器" required>
+        <Field label={t('目标容器')} required>
           <Select
             value={containerRuleForm.containerId}
             onChange={(e) => setContainerRuleForm((f) => ({ ...f, containerId: e.target.value }))}
             disabled={containersLoading}
           >
-            <option value="">{containersLoading ? '加载中…' : '请选择容器'}</option>
+            <option value="">{containersLoading ? t('加载中…') : t('请选择容器')}</option>
             {containers.map((c) => {
               const name = c.Names?.[0]?.replace(/^\//, '') || c.Id.slice(0, 12);
               return (
@@ -1763,23 +1872,23 @@ export default function NotificationsPage() {
             })}
           </Select>
         </Field>
-        <Field label="监控类型" required>
+        <Field label={t('监控类型')} required>
           <Select
             value={containerRuleForm.watchType}
             onChange={(e) => setContainerRuleForm((f) => ({ ...f, watchType: e.target.value as ContainerRuleWatchType }))}
           >
             {WATCH_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>{t(o.label)}</option>
             ))}
           </Select>
         </Field>
         {containerRuleForm.watchType === 'port' && (
-          <Field label="探测端口" required hint="留空可自动取容器映射主端口（后端要求必填，请填写 1-65535）">
+          <Field label={t('探测端口')} required hint={t('留空可自动取容器映射主端口（后端要求必填，请填写 1-65535）')}>
             <Input
               type="number"
               min={1}
               max={65535}
-              placeholder="如 8080"
+              placeholder={t('如 8080')}
               value={containerRuleForm.port}
               onChange={(e) => setContainerRuleForm((f) => ({ ...f, port: e.target.value }))}
             />
@@ -1787,7 +1896,7 @@ export default function NotificationsPage() {
         )}
         {(containerRuleForm.watchType === 'cpu' || containerRuleForm.watchType === 'mem') && (
           <>
-            <Field label="警告阈值（%）" required hint="使用率超过该值触发警告（0-100）">
+            <Field label={t('警告阈值（%）')} required hint={t('使用率超过该值触发警告（0-100）')}>
               <Input
                 type="number"
                 min={0}
@@ -1796,7 +1905,7 @@ export default function NotificationsPage() {
                 onChange={(e) => setContainerRuleForm((f) => ({ ...f, warnThreshold: e.target.value }))}
               />
             </Field>
-            <Field label="危险阈值（%）" required hint="使用率超过该值触发危险告警（0-100）">
+            <Field label={t('危险阈值（%）')} required hint={t('使用率超过该值触发危险告警（0-100）')}>
               <Input
                 type="number"
                 min={0}
@@ -1805,7 +1914,7 @@ export default function NotificationsPage() {
                 onChange={(e) => setContainerRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
               />
             </Field>
-            <Field label="连续周期" hint="连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警">
+            <Field label={t('连续周期')} hint={t('连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警')}>
               <Input
                 type="number"
                 min={1}
@@ -1816,21 +1925,21 @@ export default function NotificationsPage() {
             </Field>
           </>
         )}
-        <Field label="启用规则">
+        <Field label={t('启用规则')}>
           <label className="notify-checkbox">
             <input
               type="checkbox"
               checked={containerRuleForm.enabled}
               onChange={(e) => setContainerRuleForm((f) => ({ ...f, enabled: e.target.checked }))}
             />
-            启用该容器告警
+            {t('启用该容器告警')}
           </label>
         </Field>
 
-        <div className="notify-rule-section">静默时段</div>
+        <div className="notify-rule-section">{t('静默时段')}</div>
         <div style={{ display: 'flex', gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <Field label="开始（HH:mm）" hint="留空表示无静默时段">
+            <Field label={t('开始（HH:mm）')} hint={t('留空表示无静默时段')}>
               <Input
                 type="time"
                 value={containerRuleForm.silentStart}
@@ -1839,7 +1948,7 @@ export default function NotificationsPage() {
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="结束（HH:mm）">
+            <Field label={t('结束（HH:mm）')}>
               <Input
                 type="time"
                 value={containerRuleForm.silentEnd}
@@ -1849,21 +1958,21 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <Field label="仅工作日告警">
+        <Field label={t('仅工作日告警')}>
           <label className="notify-checkbox">
             <input
               type="checkbox"
               checked={containerRuleForm.workdaysOnly}
               onChange={(e) => setContainerRuleForm((f) => ({ ...f, workdaysOnly: e.target.checked }))}
             />
-            仅在周一至周五告警，周末静默
+            {t('仅在周一至周五告警，周末静默')}
           </label>
         </Field>
 
-        <div className="notify-rule-section">工作时段</div>
+        <div className="notify-rule-section">{t('工作时段')}</div>
         <div style={{ display: 'flex', gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <Field label="开始（HH:mm）" hint="留空表示不限制工作时段">
+            <Field label={t('开始（HH:mm）')} hint={t('留空表示不限制工作时段')}>
               <Input
                 type="time"
                 value={containerRuleForm.workStart}
@@ -1872,7 +1981,7 @@ export default function NotificationsPage() {
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="结束（HH:mm）">
+            <Field label={t('结束（HH:mm）')}>
               <Input
                 type="time"
                 value={containerRuleForm.workEnd}
@@ -1888,9 +1997,9 @@ export default function NotificationsPage() {
       {/* 删除容器规则确认 */}
       <ConfirmDialog
         open={!!deleteContainerRule}
-        title="删除容器告警规则"
-        message={`确定删除对容器「${deleteContainerRule ? containerDisplayName(deleteContainerRule) : ''}」的告警规则吗？删除后将不再监听该事件。`}
-        confirmText="删除"
+        title={t('删除容器告警规则')}
+        message={t('确定删除对容器「{{v1}}」的告警规则吗？删除后将不再监听该事件。', { v1: deleteContainerRule ? containerDisplayName(deleteContainerRule) : '' })}
+        confirmText={t('删除')}
         danger
         loading={deletingContainerRule}
         onConfirm={handleDeleteContainerRule}
@@ -1900,41 +2009,41 @@ export default function NotificationsPage() {
       {/* 自愈规则新增/编辑弹窗 */}
       <Modal
         open={selfHealModal.open}
-        title={selfHealModal.editing ? '编辑自愈规则' : '新增自愈规则'}
+        title={selfHealModal.editing ? t('编辑自愈规则') : t('新增自愈规则')}
         onClose={() => setSelfHealModal({ editing: null, open: false })}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setSelfHealModal({ editing: null, open: false })}>取消</Button>
-            <Button loading={selfHealSaving} onClick={handleSaveSelfHeal}>{selfHealModal.editing ? '保存' : '创建'}</Button>
+            <Button variant="ghost" onClick={() => setSelfHealModal({ editing: null, open: false })}>{t('取消')}</Button>
+            <Button loading={selfHealSaving} onClick={handleSaveSelfHeal}>{selfHealModal.editing ? t('保存') : t('创建')}</Button>
           </div>
         }
       >
-        <Field label="容器名" required hint="精确匹配容器名（docker ps 的 NAME 列），容器重建后依然生效">
+        <Field label={t('容器名')} required hint={t('精确匹配容器名（docker ps 的 NAME 列），容器重建后依然生效')}>
           <Input
             value={selfHealForm.containerName}
-            placeholder="如：nginx-proxy"
+            placeholder={t('如：nginx-proxy')}
             onChange={(e) => setSelfHealForm((f) => ({ ...f, containerName: e.target.value }))}
           />
         </Field>
-        <Field label="监控条件" required>
+        <Field label={t('监控条件')} required>
           <Select
             value={selfHealForm.watchType}
             onChange={(e) => setSelfHealForm((f) => ({ ...f, watchType: e.target.value }))}
           >
-            <option value="unhealthy">健康检查失败（unhealthy）</option>
-            <option value="exited">容器退出/死亡（exited/dead）</option>
+            <option value="unhealthy">{t('健康检查失败（unhealthy）')}</option>
+            <option value="exited">{t('容器退出/死亡（exited/dead）')}</option>
           </Select>
         </Field>
-        <Field label="恢复动作" required>
+        <Field label={t('恢复动作')} required>
           <Select
             value={selfHealForm.action}
             onChange={(e) => setSelfHealForm((f) => ({ ...f, action: e.target.value }))}
           >
-            <option value="restart">重启容器（restart）</option>
-            <option value="start">启动容器（start）</option>
+            <option value="restart">{t('重启容器（restart）')}</option>
+            <option value="start">{t('启动容器（start）')}</option>
           </Select>
         </Field>
-        <Field label="冷却期（秒）" required hint="同一规则两次触发之间的最小间隔（10-86400 秒），防止反复重启刷屏">
+        <Field label={t('冷却期（秒）')} required hint={t('同一规则两次触发之间的最小间隔（10-86400 秒），防止反复重启刷屏')}>
           <Input
             type="number"
             min={10}
@@ -1943,14 +2052,14 @@ export default function NotificationsPage() {
             onChange={(e) => setSelfHealForm((f) => ({ ...f, cooldownSec: e.target.value }))}
           />
         </Field>
-        <Field label="启用状态">
+        <Field label={t('启用状态')}>
           <label className="notify-checkbox">
             <input
               type="checkbox"
               checked={selfHealForm.enabled}
               onChange={(e) => setSelfHealForm((f) => ({ ...f, enabled: e.target.checked }))}
             />
-            启用该自愈规则
+            {t('启用该自愈规则')}
           </label>
         </Field>
         {selfHealError && <div className="notify-form-error">{selfHealError}</div>}
@@ -1959,9 +2068,9 @@ export default function NotificationsPage() {
       {/* 删除自愈规则确认 */}
       <ConfirmDialog
         open={!!selfHealDeleteTarget}
-        title="删除自愈规则"
-        message={`确定删除容器「${selfHealDeleteTarget?.containerName ?? ''}」的自愈规则吗？删除后容器异常时将不再自动恢复。`}
-        confirmText="删除"
+        title={t('删除自愈规则')}
+        message={t('确定删除容器「{{v1}}」的自愈规则吗？删除后容器异常时将不再自动恢复。', { v1: selfHealDeleteTarget?.containerName ?? '' })}
+        confirmText={t('删除')}
         danger
         onConfirm={handleDeleteSelfHeal}
         onCancel={() => setSelfHealDeleteTarget(null)}
@@ -1970,9 +2079,9 @@ export default function NotificationsPage() {
       {/* 删除渠道确认 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除通知渠道"
-        message={`确定删除通知渠道「${deleteTarget?.name ?? ''}」吗？删除后该渠道将不再接收告警。`}
-        confirmText="删除"
+        title={t('删除通知渠道')}
+        message={t('确定删除通知渠道「{{v1}}」吗？删除后该渠道将不再接收告警。', { v1: deleteTarget?.name ?? '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}

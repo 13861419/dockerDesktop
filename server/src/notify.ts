@@ -340,7 +340,136 @@ export async function sendAlert(
       channel: ch.info.name,
     });
   }
-  return dispatch(ch.info.type, ch.cfg, finalText);
+  const result = await dispatch(ch.info.type, ch.cfg, finalText);
+  // 渠道级送达留痕：供送达率统计（覆盖告警 / 恢复 / 自愈 / 审批 / AI 诊断 / 测试推送等全部链路）
+  recordPushLog({
+    channelId,
+    channelName: ch.info.name,
+    level: vars?.level ?? '',
+    ok: result.ok,
+    detail: result.detail,
+  });
+  return result;
+}
+
+/** 推送日志保留条数上限（超出时裁剪最旧记录） */
+const PUSH_LOG_LIMIT = 5000;
+
+/**
+ * 写入一条渠道级推送留痕（内部使用，失败静默不影响主流程）
+ */
+function recordPushLog(entry: {
+  channelId: string;
+  channelName: string;
+  level: string;
+  ok: boolean;
+  detail: string;
+}): void {
+  try {
+    const d = getDb();
+    d.prepare(
+      'INSERT INTO notify_push_log (channel_id, channel_name, level, ok, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(entry.channelId, entry.channelName, entry.level, entry.ok ? 1 : 0, entry.detail.slice(0, 300), Date.now());
+    // 保留上限裁剪：仅保留最近 PUSH_LOG_LIMIT 条
+    d.prepare('DELETE FROM notify_push_log WHERE id NOT IN (SELECT id FROM notify_push_log ORDER BY id DESC LIMIT ?)').run(PUSH_LOG_LIMIT);
+  } catch {
+    // 留痕失败不影响推送主流程
+  }
+}
+
+/** 渠道送达统计单项 */
+export interface ChannelPushStat {
+  channelId: string;
+  channelName: string;
+  okCount: number;
+  failCount: number;
+  /** 送达成功率（0-100，无记录时为 null） */
+  rate: number | null;
+  lastOkAt: number | null;
+  lastFailAt: number | null;
+  lastFailDetail: string | null;
+}
+
+/**
+ * 送达率统计：近 days 天内按渠道聚合的推送结果 + 最近失败明细
+ * @param days 统计回溯天数（默认 7）
+ */
+export function getPushStats(days = 7): {
+  since: number;
+  totals: { ok: number; fail: number; rate: number | null };
+  channels: ChannelPushStat[];
+  recentFailures: Array<{ channelName: string; level: string; detail: string; createdAt: number }>;
+} {
+  const since = Date.now() - Math.max(1, Math.min(90, days)) * 86400_000;
+  const d = getDb();
+
+  const totalsRow = d
+    .prepare('SELECT SUM(ok) AS okCount, COUNT(*) AS total FROM notify_push_log WHERE created_at >= ?')
+    .get(since) as { okCount: number | null; total: number | null };
+  const okCount = Number(totalsRow?.okCount ?? 0);
+  const total = Number(totalsRow?.total ?? 0);
+  const failCount = total - okCount;
+
+  const channelRows = d
+    .prepare(
+      `SELECT channel_id, channel_name,
+              SUM(ok) AS okCount,
+              COUNT(*) AS total,
+              MAX(CASE WHEN ok = 1 THEN created_at END) AS lastOkAt,
+              MAX(CASE WHEN ok = 0 THEN created_at END) AS lastFailAt
+       FROM notify_push_log WHERE created_at >= ?
+       GROUP BY channel_id ORDER BY total DESC`,
+    )
+    .all(since) as unknown as Array<{
+    channel_id: string;
+    channel_name: string;
+    okCount: number | null;
+    total: number | null;
+    lastOkAt: number | null;
+    lastFailAt: number | null;
+  }>;
+
+  const lastFailStmt = d.prepare(
+    'SELECT detail FROM notify_push_log WHERE channel_id = ? AND ok = 0 AND created_at >= ? ORDER BY id DESC LIMIT 1',
+  );
+
+  const channels: ChannelPushStat[] = channelRows.map((row) => {
+    const ok = Number(row.okCount ?? 0);
+    const t = Number(row.total ?? 0);
+    const lastFailAt = row.lastFailAt ?? null;
+    let lastFailDetail: string | null = null;
+    if (lastFailAt) {
+      const fr = lastFailStmt.get(row.channel_id, since) as { detail: string } | undefined;
+      lastFailDetail = fr?.detail ?? null;
+    }
+    return {
+      channelId: row.channel_id,
+      channelName: row.channel_name,
+      okCount: ok,
+      failCount: t - ok,
+      rate: t > 0 ? Math.round((ok / t) * 1000) / 10 : null,
+      lastOkAt: row.lastOkAt ?? null,
+      lastFailAt,
+      lastFailDetail,
+    };
+  });
+
+  const recentFailures = d
+    .prepare(
+      'SELECT channel_name AS channelName, level, detail, created_at AS createdAt FROM notify_push_log WHERE ok = 0 AND created_at >= ? ORDER BY id DESC LIMIT 10',
+    )
+    .all(since) as unknown as Array<{ channelName: string; level: string; detail: string; createdAt: number }>;
+
+  return {
+    since,
+    totals: {
+      ok: okCount,
+      fail: failCount,
+      rate: total > 0 ? Math.round((okCount / total) * 1000) / 10 : null,
+    },
+    channels,
+    recentFailures,
+  };
 }
 
 /**

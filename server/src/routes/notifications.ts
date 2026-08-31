@@ -17,6 +17,7 @@ import {
   updateChannel,
   deleteChannel,
   sendAlert,
+  getPushStats,
   type ChannelType,
 } from '../notify';
 import {
@@ -175,6 +176,18 @@ router.post(
       return res.status(502).json({ error: `推送失败: ${result.detail}`, detail: result.detail });
     }
     res.json({ ok: true, detail: result.detail });
+  }),
+);
+
+/**
+ * GET /api/notifications/push-stats?days=7
+ * 渠道送达率统计：近 N 天按渠道聚合的推送结果与最近失败明细
+ */
+router.get(
+  '/push-stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    const days = Number(req.query.days) || 7;
+    res.json(getPushStats(days));
   }),
 );
 

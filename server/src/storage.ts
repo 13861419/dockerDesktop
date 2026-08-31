@@ -363,6 +363,18 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_alert_records_created ON alert_records(created_at DESC);
 
+    -- 通知推送日志表：每次渠道级推送的送达结果（含 AI 诊断 / 巡检 / 周报 / 测试推送），用于送达率统计
+    CREATE TABLE IF NOT EXISTS notify_push_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel_id   TEXT NOT NULL,
+      channel_name TEXT NOT NULL,
+      level        TEXT NOT NULL DEFAULT '',  -- warn | danger | recovery | ''（无级别调用）
+      ok           INTEGER NOT NULL,          -- 1=送达 0=失败
+      detail       TEXT,                      -- 失败原因 / 成功摘要
+      created_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_notify_push_log_created ON notify_push_log(created_at DESC);
+
     -- 容器级告警规则表：针对具体容器的退出/健康检查/端口探测告警（同一容器同监控类型唯一）
     CREATE TABLE IF NOT EXISTS container_alert_rules (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,

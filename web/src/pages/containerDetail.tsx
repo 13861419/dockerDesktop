@@ -25,6 +25,7 @@ import FileExplorer from '../components/FileExplorer';
 import { useContainerLogs } from '../hooks/useContainerLogs';
 import { useToast } from '../components/Toast';
 import { ContainerPortConflicts, ContainerListItem } from '../types';
+import { useLang, translateNow } from '../i18n';
 import './containerDetail.less';
 
 /** Tab 类型 */
@@ -79,9 +80,9 @@ function formatDuration(startedAt: string): string {
   const days = Math.floor(totalSeconds / 86400);
   const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  if (days > 0) return `${days}天${hours}小时${minutes}分`;
-  if (hours > 0) return `${hours}小时${minutes}分`;
-  return `${minutes}分`;
+  if (days > 0) return translateNow('{{days}}天{{hours}}小时{{minutes}}分', { days, hours, minutes });
+  if (hours > 0) return translateNow('{{hours}}小时{{minutes}}分', { hours, minutes });
+  return translateNow('{{minutes}}分', { minutes });
 }
 
 /** 容器历史资源指标数据点（与后端 ContainerMetricPoint 对应） */
@@ -126,6 +127,7 @@ function formatRealtimeTime(ts: number): string {
  * 容器详情页组件
  */
 export default function ContainerDetailPage() {
+  const { t } = useLang();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -247,7 +249,7 @@ export default function ContainerDetailPage() {
       const data = await get<ContainerDetailInfo>(`/api/containers/${encodeURIComponent(id)}/detail`);
       setDetail(data || null);
     } catch (e: any) {
-      showToast(e?.message || '拉取容器详情失败', 'error');
+      showToast(e?.message || t('拉取容器详情失败'), 'error');
       setDetail(null);
     } finally {
       setLoading(false);
@@ -339,9 +341,9 @@ export default function ContainerDetailPage() {
         `/api/containers/${encodeURIComponent(id)}/logs/download`,
         `${detail?.name || id || 'container'}.log`
       );
-      showToast('已下载完整日志');
+      showToast(t('已下载完整日志'));
     } catch (e: any) {
-      showToast(e?.message || '下载日志失败', 'error');
+      showToast(e?.message || t('下载日志失败'), 'error');
     }
   }, [id, detail?.name, showToast]);
 
@@ -441,10 +443,10 @@ export default function ContainerDetailPage() {
     setRestarting(true);
     try {
       await post(`/api/containers/${id}/restart`);
-      showToast('已重启容器');
+      showToast(t('已重启容器'));
       fetchDetail();
     } catch (e: any) {
-      showToast(`重启失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('重启失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setRestarting(false);
     }
@@ -458,10 +460,10 @@ export default function ContainerDetailPage() {
     setStarting(true);
     try {
       await post(`/api/containers/${id}/start`);
-      showToast('容器已启动');
+      showToast(t('容器已启动'));
       fetchDetail();
     } catch (e: any) {
-      showToast(`启动失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('启动失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setStarting(false);
     }
@@ -473,10 +475,10 @@ export default function ContainerDetailPage() {
     setStopping(true);
     try {
       await post(`/api/containers/${id}/stop`);
-      showToast('容器已停止');
+      showToast(t('容器已停止'));
       fetchDetail();
     } catch (e: any) {
-      showToast(`停止失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('停止失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setStopping(false);
     }
@@ -488,10 +490,10 @@ export default function ContainerDetailPage() {
     setPausing(true);
     try {
       await post(`/api/containers/${id}/pause`);
-      showToast('容器已暂停');
+      showToast(t('容器已暂停'));
       fetchDetail();
     } catch (e: any) {
-      showToast(`暂停失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('暂停失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setPausing(false);
     }
@@ -503,10 +505,10 @@ export default function ContainerDetailPage() {
     setUnpausing(true);
     try {
       await post(`/api/containers/${id}/unpause`);
-      showToast('容器已恢复');
+      showToast(t('容器已恢复'));
       fetchDetail();
     } catch (e: any) {
-      showToast(`恢复失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('恢复失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setUnpausing(false);
     }
@@ -558,7 +560,7 @@ export default function ContainerDetailPage() {
       const k = item.key.trim();
       if (!k) continue;
       if (k in cleaned) {
-        showToast(`环境变量 ${k} 重复定义`, 'error');
+        showToast(t('环境变量 {{k}} 重复定义', { k }), 'error');
         valid = false;
         break;
       }
@@ -568,11 +570,11 @@ export default function ContainerDetailPage() {
     setEnvSaving(true);
     try {
       await post(`/api/containers/${id}/recreate`, { env: cleaned });
-      showToast('环境变量已更新（容器已重建）');
+      showToast(t('环境变量已更新（容器已重建）'));
       setEnvEditOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(`更新失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setEnvSaving(false);
     }
@@ -632,11 +634,11 @@ export default function ContainerDetailPage() {
     setMountSaving(true);
     try {
       await post(`/api/containers/${id}/recreate`, { binds });
-      showToast('挂载卷已更新（容器已重建）');
+      showToast(t('挂载卷已更新（容器已重建）'));
       setMountEditOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(`更新失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setMountSaving(false);
     }
@@ -652,7 +654,7 @@ export default function ContainerDetailPage() {
       const list = await get<Array<{ Name: string; Id: string; Driver: string }>>('/api/networks');
       setNetOptions(list || []);
     } catch (e: any) {
-      showToast(`获取网络列表失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('获取网络列表失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
       setNetOptions([]);
     }
     setNetEditOpen(true);
@@ -664,17 +666,17 @@ export default function ContainerDetailPage() {
   async function saveNet() {
     if (!id) return;
     if (!netDraft) {
-      showToast('请选择网络', 'error');
+      showToast(t('请选择网络'), 'error');
       return;
     }
     setNetSaving(true);
     try {
       await post(`/api/containers/${id}/recreate`, { network: netDraft });
-      showToast('网络已更新（容器已重建）');
+      showToast(t('网络已更新（容器已重建）'));
       setNetEditOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(`更新失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setNetSaving(false);
     }
@@ -740,11 +742,11 @@ export default function ContainerDetailPage() {
     setPortSaving(true);
     try {
       await post(`/api/containers/${id}/recreate`, { ports });
-      showToast('端口映射已更新（容器已重建）');
+      showToast(t('端口映射已更新（容器已重建）'));
       setPortEditOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(`更新失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setPortSaving(false);
     }
@@ -770,11 +772,11 @@ export default function ContainerDetailPage() {
         restartPolicy: cfgRestartDraft,
         privileged: cfgPrivilegedDraft,
       });
-      showToast('运行配置已更新（容器已重建）');
+      showToast(t('运行配置已更新（容器已重建）'));
       setCfgEditOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(`更新失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setCfgSaving(false);
     }
@@ -790,14 +792,14 @@ export default function ContainerDetailPage() {
       const resp = await del<any>(`/api/containers/${id}`, { force: true, v: deleteVolumes });
       // 审批门禁：后端返回 202 表示操作已转为待审批
       if (resp?.approvalPending) {
-        showToast('该操作已提交审批，待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，待管理员批准后执行'), 'info');
         navigate('/approvals');
         return;
       }
-      showToast('已删除容器');
+      showToast(t('已删除容器'));
       navigate('/containers');
     } catch (e: any) {
-      showToast(`删除失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('删除失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
@@ -814,11 +816,11 @@ export default function ContainerDetailPage() {
     setRebuilding(true);
     try {
       await post(`/api/containers/${id}/recreate`, {});
-      showToast('容器已重建');
+      showToast(t('容器已重建'));
       setRebuildOpen(false);
       await fetchDetail();
     } catch (e: any) {
-      showToast(`重建失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('重建失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setRebuilding(false);
     }
@@ -842,9 +844,9 @@ export default function ContainerDetailPage() {
       a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('容器配置已导出');
+      showToast(t('容器配置已导出'));
     } catch (e: any) {
-      showToast(`导出失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('导出失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     }
   }
 
@@ -861,7 +863,7 @@ export default function ContainerDetailPage() {
       setSaveTplDesc(cfg?.description || '');
       setSaveTplOpen(true);
     } catch (e: any) {
-      showToast(`获取容器配置失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('获取容器配置失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     }
   }
 
@@ -872,7 +874,7 @@ export default function ContainerDetailPage() {
     if (!id) return;
     // 模板名称必填校验
     if (!saveTplName.trim()) {
-      showToast('模板名称不能为空', 'error');
+      showToast(t('模板名称不能为空'), 'error');
       return;
     }
     setSaveTplSaving(true);
@@ -885,10 +887,10 @@ export default function ContainerDetailPage() {
         image: cfg?.image || '',
         config: cfg,
       });
-      showToast('已保存为模板');
+      showToast(t('已保存为模板'));
       setSaveTplOpen(false);
     } catch (e: any) {
-      showToast(`保存模板失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('保存模板失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setSaveTplSaving(false);
     }
@@ -911,7 +913,7 @@ export default function ContainerDetailPage() {
     if (!id) return;
     // 至少需要一个时间边界，否则无意义（等于全量）
     if (!histStart && !histEnd) {
-      showToast('请指定开始或结束时间', 'error');
+      showToast(t('请指定开始或结束时间'), 'error');
       return;
     }
     setHistLoading(true);
@@ -925,9 +927,9 @@ export default function ContainerDetailPage() {
       }
       const res = await get<{ logs: string }>(`/api/containers/${id}/logs`, params);
       const text = res?.logs || '';
-      setHistLogs(text.trim() ? text : '（该时间范围内无日志）');
+      setHistLogs(text.trim() ? text : t('（该时间范围内无日志）'));
     } catch (e: any) {
-      showToast(`拉取历史日志失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('拉取历史日志失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setHistLoading(false);
     }
@@ -975,7 +977,7 @@ export default function ContainerDetailPage() {
     if (uCpu.trim() !== '') {
       const cpus = parseFloat(uCpu);
       if (isNaN(cpus) || cpus < 0) {
-        showToast('请输入有效的 CPU 核数（如 1 或 1.5）', 'error');
+        showToast(t('请输入有效的 CPU 核数（如 1 或 1.5）'), 'error');
         return;
       }
       body.cpuLimit = Math.round(cpus * 1e9);
@@ -984,7 +986,7 @@ export default function ContainerDetailPage() {
     if (uMem.trim() !== '') {
       const gb = parseFloat(uMem);
       if (isNaN(gb) || gb < 0) {
-        showToast('请输入有效的内存大小（GB，如 2）', 'error');
+        showToast(t('请输入有效的内存大小（GB，如 2）'), 'error');
         return;
       }
       body.memLimit = Math.round(gb * 1024 * 1024 * 1024);
@@ -992,11 +994,11 @@ export default function ContainerDetailPage() {
     setUpdating(true);
     try {
       await post(`/api/containers/${id}/update`, body);
-      showToast('容器配置已在线更新');
+      showToast(t('容器配置已在线更新'));
       setUpdateOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(e?.message || '更新失败', 'error');
+      showToast(e?.message || t('更新失败'), 'error');
     } finally {
       setUpdating(false);
     }
@@ -1029,7 +1031,7 @@ export default function ContainerDetailPage() {
       if (hcEnabled) {
         const parts = hcTestCmd.trim().split(/\s+/).filter(Boolean);
         if (parts.length === 0) {
-          showToast('请填写健康检查命令', 'error');
+          showToast(t('请填写健康检查命令'), 'error');
           setHcSaving(false);
           return;
         }
@@ -1048,11 +1050,11 @@ export default function ContainerDetailPage() {
         env: detail?.env || {},
         healthcheck,
       });
-      showToast('健康检查已更新（容器已重建）');
+      showToast(t('健康检查已更新（容器已重建）'));
       setHcEditOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(e?.message || '更新健康检查失败', 'error');
+      showToast(e?.message || t('更新健康检查失败'), 'error');
     } finally {
       setHcSaving(false);
     }
@@ -1063,7 +1065,7 @@ export default function ContainerDetailPage() {
     if (!id) return;
     // repo 必填校验
     if (!commitRepo.trim()) {
-      showToast('请填写镜像仓库名 repo', 'error');
+      showToast(t('请填写镜像仓库名 repo'), 'error');
       return;
     }
     setCommitting(true);
@@ -1076,10 +1078,10 @@ export default function ContainerDetailPage() {
         author: commitAuthor.trim() || undefined,
       });
       const image = res?.image || `${commitRepo.trim()}:${tag}`;
-      showToast(`已生成镜像 ${image}`);
+      showToast(t('已生成镜像 {{image}}', { image }));
       setCommitOpen(false);
     } catch (e: any) {
-      showToast(`提交失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('提交失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setCommitting(false);
     }
@@ -1104,7 +1106,7 @@ export default function ContainerDetailPage() {
     if (!id) return;
     // 新名称必填校验
     if (!cloneValue.trim()) {
-      showToast('新名称不能为空', 'error');
+      showToast(t('新名称不能为空'), 'error');
       return;
     }
     setCloning(true);
@@ -1115,11 +1117,11 @@ export default function ContainerDetailPage() {
       });
       // 以后端返回的新容器名为准，缺省回退到输入框内容
       const clonedName = res?.name || cloneValue.trim();
-      showToast(`已克隆为 ${clonedName}`);
+      showToast(t('已克隆为 {{clonedName}}', { clonedName }));
       setCloneOpen(false);
       fetchDetail();
     } catch (e: any) {
-      showToast(`克隆失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('克隆失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setCloning(false);
     }
@@ -1144,7 +1146,7 @@ export default function ContainerDetailPage() {
     if (!id) return;
     // 命令必填校验
     if (!execCmd.trim()) {
-      showToast('请输入要执行的命令', 'error');
+      showToast(t('请输入要执行的命令'), 'error');
       return;
     }
     setExecuting(true);
@@ -1160,7 +1162,7 @@ export default function ContainerDetailPage() {
       setExecExitCode(res?.exitCode ?? null);
     } catch (e: any) {
       // 容器未运行等后端口径错误，统一 toast 提示
-      showToast(`执行失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('执行失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setExecuting(false);
     }
@@ -1227,77 +1229,77 @@ export default function ContainerDetailPage() {
     <div className="detail-page">
       <div className="detail-page__top">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-          ← 返回容器列表
+          {t('← 返回容器列表')}
         </Button>
         <div className="detail-page__title-row">
           <h1 className="detail-page__title" title={detail?.id}>
-            {detail?.name || '容器详情'}
+            {detail?.name || t('容器详情')}
           </h1>
           {running && (
             <Button variant="secondary" size="sm" loading={restarting} onClick={handleRestart}>
-              重启
+              {t('重启')}
             </Button>
           )}
           {running && (
             <Button variant="secondary" size="sm" loading={stopping} onClick={handleStop}>
-              停止
+              {t('停止')}
             </Button>
           )}
           {running && (
             <Button variant="secondary" size="sm" loading={pausing} onClick={handlePause}>
-              暂停
+              {t('暂停')}
             </Button>
           )}
           {paused && (
             <Button variant="secondary" size="sm" loading={unpausing} onClick={handleUnpause}>
-              恢复
+              {t('恢复')}
             </Button>
           )}
           {exited && (
             <Button variant="secondary" size="sm" loading={starting} onClick={handleStart}>
-              启动
+              {t('启动')}
             </Button>
           )}
           <Button variant="secondary" size="sm" onClick={openClone}>
-            克隆
+            {t('克隆')}
           </Button>
           <Button variant="secondary" size="sm" onClick={openCommit}>
-            提交为镜像
+            {t('提交为镜像')}
           </Button>
           <Button variant="secondary" size="sm" onClick={openExec}>
-            执行命令
+            {t('执行命令')}
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setRebuildOpen(true)}>
-            重建
+            {t('重建')}
           </Button>
           <Button variant="secondary" size="sm" onClick={openUpdate} disabled={!detail}>
-            更新配置
+            {t('更新配置')}
           </Button>
           <Button variant="secondary" size="sm" onClick={exportConfig}>
-            导出配置
+            {t('导出配置')}
           </Button>
           <Button variant="secondary" size="sm" onClick={openSaveTemplate}>
-            保存为模板
+            {t('保存为模板')}
           </Button>
           <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}>
-            删除
+            {t('删除')}
           </Button>
         </div>
       </div>
 
       {!detail ? (
-        <Empty title="未找到容器" description="该容器可能已被删除或 ID 不正确" />
+        <Empty title={t('未找到容器')} description={t('该容器可能已被删除或 ID 不正确')} />
       ) : (
         <>
           {/* Tab 切换栏 */}
           <div className="detail-tabs">
-            {TABS.map((t) => (
+            {TABS.map((tb) => (
               <button
-                key={t.key}
-                className={`detail-tabs__item ${tab === t.key ? 'detail-tabs__item--active' : ''}`}
-                onClick={() => setTab(t.key)}
+                key={tb.key}
+                className={`detail-tabs__item ${tab === tb.key ? 'detail-tabs__item--active' : ''}`}
+                onClick={() => setTab(tb.key)}
               >
-                {t.label}
+                {t(tb.label)}
               </button>
             ))}
           </div>
@@ -1307,94 +1309,94 @@ export default function ContainerDetailPage() {
             <div className="detail-panel">
               {/* 基本信息 */}
               <Card
-                title="基本信息"
+                title={t('基本信息')}
                 extra={
                   <Button variant="ghost" size="sm" onClick={openCfgEdit}>
-                    运行配置
+                    {t('运行配置')}
                   </Button>
                 }
               >
                 <div className="desc-grid">
                   <div className="desc-item">
-                    <div className="desc-label">名称</div>
+                    <div className="desc-label">{t('名称')}</div>
                     <div className="desc-value">{detail.name || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">镜像</div>
+                    <div className="desc-label">{t('镜像')}</div>
                     <div className="desc-value" title={detail.image}>
                       {detail.image || '-'}
                     </div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">镜像 ID</div>
+                    <div className="desc-label">{t('镜像 ID')}</div>
                     <div className="desc-value mono" title={detail.imageId}>
                       {detail.idShort || detail.id || '-'}
                     </div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">状态</div>
+                    <div className="desc-label">{t('状态')}</div>
                     <div className="desc-value">
                       <StatusBadge status={detail.state} />
                     </div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">命令</div>
+                    <div className="desc-label">{t('命令')}</div>
                     <div className="desc-value mono">{detail.command || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">入口点</div>
+                    <div className="desc-label">{t('入口点')}</div>
                     <div className="desc-value mono">{detail.entrypoint || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">重启策略</div>
+                    <div className="desc-label">{t('重启策略')}</div>
                     <div className="desc-value">{detail.restartPolicy || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">主机名</div>
+                    <div className="desc-label">{t('主机名')}</div>
                     <div className="desc-value mono">{detail.hostname || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">用户</div>
+                    <div className="desc-label">{t('用户')}</div>
                     <div className="desc-value mono">{detail.user || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">工作目录</div>
+                    <div className="desc-label">{t('工作目录')}</div>
                     <div className="desc-value mono">{detail.workingDir || '-'}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">特权模式</div>
-                    <div className="desc-value">{detail.privileged ? '是' : '否'}</div>
+                    <div className="desc-label">{t('特权模式')}</div>
+                    <div className="desc-value">{detail.privileged ? t('是') : t('否')}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">自动移除</div>
-                    <div className="desc-value">{detail.autoRemove ? '是' : '否'}</div>
+                    <div className="desc-label">{t('自动移除')}</div>
+                    <div className="desc-value">{detail.autoRemove ? t('是') : t('否')}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">创建时间</div>
+                    <div className="desc-label">{t('创建时间')}</div>
                     <div className="desc-value">{formatTime(detail.created)}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">启动时间</div>
+                    <div className="desc-label">{t('启动时间')}</div>
                     <div className="desc-value">{formatTime(detail.startedAt)}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">退出时间</div>
+                    <div className="desc-label">{t('退出时间')}</div>
                     <div className="desc-value">{formatTime(detail.finishedAt)}</div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">已运行时长</div>
+                    <div className="desc-label">{t('已运行时长')}</div>
                     <div className="desc-value">
-                      {running ? formatDuration(detail.startedAt) : '已停止'}
+                      {running ? formatDuration(detail.startedAt) : t('已停止')}
                     </div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">重启次数</div>
+                    <div className="desc-label">{t('重启次数')}</div>
                     <div className="desc-value mono">
                       {detail.restartCount ?? 0}
                     </div>
                   </div>
                   <div className="desc-item">
-                    <div className="desc-label">退出码</div>
+                    <div className="desc-label">{t('退出码')}</div>
                     <div className="desc-value mono">{detail.exitCode ?? '-'}</div>
                   </div>
                 </div>
@@ -1402,10 +1404,10 @@ export default function ContainerDetailPage() {
 
               {/* 端口映射 */}
               <Card
-                title="端口映射"
+                title={t('端口映射')}
                 extra={
                   <Button variant="ghost" size="sm" onClick={openPortEdit}>
-                    编辑
+                    {t('编辑')}
                   </Button>
                 }
               >
@@ -1413,8 +1415,8 @@ export default function ContainerDetailPage() {
                   <table className="detail-table">
                     <thead>
                       <tr>
-                        <th>容器端口</th>
-                        <th>宿主机映射</th>
+                        <th>{t('容器端口')}</th>
+                        <th>{t('宿主机映射')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1439,9 +1441,9 @@ export default function ContainerDetailPage() {
                               {/* 命中端口冲突时展示警告标记与占用容器 */}
                               {conflicts.length > 0 && (
                                 <div className="port-conflict">
-                                  <span className="port-conflict__tag">端口冲突</span>
+                                  <span className="port-conflict__tag">{t('端口冲突')}</span>
                                   <span className="port-conflict__owners">
-                                    被 {conflicts.map((c) => c.containerName).join('、')} 占用
+                                    {t('被 {{names}} 占用', { names: conflicts.map((c) => c.containerName).join('、') })}
                                   </span>
                                 </div>
                               )}
@@ -1452,16 +1454,16 @@ export default function ContainerDetailPage() {
                     </tbody>
                   </table>
                 ) : (
-                  <Empty title="无端口映射" description="该容器未发布端口" />
+                  <Empty title={t('无端口映射')} description={t('该容器未发布端口')} />
                 )}
               </Card>
 
               {/* 挂载卷 */}
               <Card
-                title="挂载卷"
+                title={t('挂载卷')}
                 extra={
                   <Button variant="ghost" size="sm" onClick={openMountEdit}>
-                    编辑
+                    {t('编辑')}
                   </Button>
                 }
               >
@@ -1469,10 +1471,10 @@ export default function ContainerDetailPage() {
                   <table className="detail-table">
                     <thead>
                       <tr>
-                        <th>类型</th>
-                        <th>来源</th>
-                        <th>目标</th>
-                        <th>读写</th>
+                        <th>{t('类型')}</th>
+                        <th>{t('来源')}</th>
+                        <th>{t('目标')}</th>
+                        <th>{t('读写')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1481,22 +1483,22 @@ export default function ContainerDetailPage() {
                           <td>{m.type || '-'}</td>
                           <td className="mono">{m.source || '-'}</td>
                           <td className="mono">{m.destination || '-'}</td>
-                          <td>{m.rw ? '读写' : '只读'}</td>
+                          <td>{m.rw ? t('读写') : t('只读')}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 ) : (
-                  <Empty title="无挂载卷" description="该容器未挂载任何卷" />
+                  <Empty title={t('无挂载卷')} description={t('该容器未挂载任何卷')} />
                 )}
               </Card>
 
               {/* 网络 */}
               <Card
-                title="网络"
+                title={t('网络')}
                 extra={
                   <Button variant="ghost" size="sm" onClick={openNetEdit}>
-                    编辑
+                    {t('编辑')}
                   </Button>
                 }
               >
@@ -1504,9 +1506,9 @@ export default function ContainerDetailPage() {
                   <table className="detail-table">
                     <thead>
                       <tr>
-                        <th>网络</th>
-                        <th>IP 地址</th>
-                        <th>网关</th>
+                        <th>{t('网络')}</th>
+                        <th>{t('IP 地址')}</th>
+                        <th>{t('网关')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1520,16 +1522,16 @@ export default function ContainerDetailPage() {
                     </tbody>
                   </table>
                 ) : (
-                  <Empty title="无网络" description="该容器未连接到网络" />
+                  <Empty title={t('无网络')} description={t('该容器未连接到网络')} />
                 )}
               </Card>
 
               {/* 环境变量 */}
               <Card
-                title="环境变量"
+                title={t('环境变量')}
                 extra={
                   <Button variant="ghost" size="sm" onClick={openEnvEdit}>
-                    编辑
+                    {t('编辑')}
                   </Button>
                 }
               >
@@ -1547,12 +1549,12 @@ export default function ContainerDetailPage() {
                     </table>
                   </div>
                 ) : (
-                  <Empty title="无环境变量" description="该容器未配置环境变量" />
+                  <Empty title={t('无环境变量')} description={t('该容器未配置环境变量')} />
                 )}
               </Card>
 
               {/* 标签 */}
-              <Card title="标签 (Labels)">
+              <Card title={t('标签 (Labels)')}>
                 {detail.labels && Object.keys(detail.labels).length > 0 ? (
                   <div className="kv-scroll">
                     <table className="kv-table">
@@ -1567,21 +1569,21 @@ export default function ContainerDetailPage() {
                     </table>
                   </div>
                 ) : (
-                  <Empty title="无标签" description="该容器未设置标签" />
+                  <Empty title={t('无标签')} description={t('该容器未设置标签')} />
                 )}
               </Card>
 
               {/* 健康检查 */}
               <Card
-                title="健康检查"
+                title={t('健康检查')}
                 extra={
                   <Button variant="secondary" size="sm" onClick={openHealthEdit}>
                     {detail.healthcheck &&
                     detail.healthcheck.test &&
                     detail.healthcheck.test.length > 0 &&
                     detail.healthcheck.test[0] !== 'NONE'
-                      ? '编辑'
-                      : '设置'}
+                      ? t('编辑')
+                      : t('设置')}
                   </Button>
                 }
               >
@@ -1589,13 +1591,13 @@ export default function ContainerDetailPage() {
                   <>
                     <div className="desc-grid">
                       <div className="desc-item">
-                        <div className="desc-label">状态</div>
+                        <div className="desc-label">{t('状态')}</div>
                         <div className="desc-value">
                           <StatusBadge status={detail.health.status} />
                         </div>
                       </div>
                       <div className="desc-item">
-                        <div className="desc-label">连续失败次数</div>
+                        <div className="desc-label">{t('连续失败次数')}</div>
                         <div className="desc-value">{detail.health.failingStreak ?? 0}</div>
                       </div>
                     </div>
@@ -1606,7 +1608,7 @@ export default function ContainerDetailPage() {
                             <div className="health-log__meta mono">
                               {formatTime(l.start)} · exit {l.exit}
                             </div>
-                            <pre className="health-log__output">{l.output || '(空输出)'}</pre>
+                            <pre className="health-log__output">{l.output || t('(空输出)')}</pre>
                           </div>
                         ))}
                       </div>
@@ -1614,13 +1616,13 @@ export default function ContainerDetailPage() {
                   </>
                 ) : (
                   <div className="desc-value">
-                    容器未配置健康检查
+                    {t('容器未配置健康检查')}
                     {detail.healthcheck &&
                     detail.healthcheck.test &&
                     detail.healthcheck.test[0] === 'NONE'
-                      ? '（已禁用）'
+                      ? t('（已禁用）')
                       : ''}
-                    。点击右上角「设置」可为容器添加健康检查。
+                    {t('。点击右上角「设置」可为容器添加健康检查。')}
                   </div>
                 )}
               </Card>
@@ -1635,7 +1637,7 @@ export default function ContainerDetailPage() {
                   <span
                     className={`log-dot ${connected ? 'log-dot--on' : 'log-dot--off'}`}
                   />
-                  {connected ? '已连接实时日志' : '未连接'}
+                  {connected ? t('已连接实时日志') : t('未连接')}
                   {error && <span className="log-error">（{error}）</span>}
                 </div>
                 <div className="log-toolbar__actions">
@@ -1645,31 +1647,31 @@ export default function ContainerDetailPage() {
                       checked={autoScroll}
                       onChange={(e) => setAutoScroll(e.target.checked)}
                     />
-                    自动滚动
+                    {t('自动滚动')}
                   </label>
                   {connected ? (
                     <Button variant="secondary" size="sm" onClick={handleDisconnect}>
-                      断开
+                      {t('断开')}
                     </Button>
                   ) : (
                     <Button variant="primary" size="sm" onClick={handleConnect}>
-                      连接
+                      {t('连接')}
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={clear}>
-                    清空
+                    {t('清空')}
                   </Button>
                   <Button variant="secondary" size="sm" onClick={handleDownloadLogs}>
-                    下载
+                    {t('下载')}
                   </Button>
                   <Button variant="secondary" size="sm" onClick={openHistoryLogs}>
-                    历史
+                    {t('历史')}
                   </Button>
                 </div>
               </div>
               <div className="log-box" ref={logBoxRef} onScroll={onLogScroll}>
                 {lines.length === 0 ? (
-                  <div className="log-empty">暂无日志，点击「连接」开始拉取实时日志</div>
+                  <div className="log-empty">{t('暂无日志，点击「连接」开始拉取实时日志')}</div>
                 ) : (
                   lines.map((l) => (
                     <div
@@ -1687,7 +1689,7 @@ export default function ContainerDetailPage() {
           {/* 终端 Tab */}
           {tab === 'terminal' && (
             <div className="terminal-panel">
-              <div className="terminal-hint">终端在容器内启动交互式 shell；精简镜像或未运行的容器无法连接。</div>
+              <div className="terminal-hint">{t('终端在容器内启动交互式 shell；精简镜像或未运行的容器无法连接。')}</div>
               {!running ? (
                 <div className="terminal-empty">
                   <div className="terminal-empty__icon">
@@ -1697,10 +1699,10 @@ export default function ContainerDetailPage() {
                       <rect x="2" y="4" width="20" height="16" rx="2" />
                     </svg>
                   </div>
-                  <div className="terminal-empty__title">容器当前未运行</div>
-                  <div className="terminal-empty__desc">终端需要在容器内启动交互式 shell，请先启动容器后重试。</div>
+                  <div className="terminal-empty__title">{t('容器当前未运行')}</div>
+                  <div className="terminal-empty__desc">{t('终端需要在容器内启动交互式 shell，请先启动容器后重试。')}</div>
                   <Button variant="primary" size="sm" loading={starting} onClick={handleStart}>
-                    启动容器
+                    {t('启动容器')}
                   </Button>
                 </div>
               ) : (
@@ -1713,18 +1715,18 @@ export default function ContainerDetailPage() {
           {tab === 'stats' && (
             <div className="stats-panel">
               <div className="stats-grid">
-                <Card title="CPU 使用率">
+                <Card title={t('CPU 使用率')}>
                   <div className="stat-value mono">{cpuValue}</div>
                 </Card>
-                <Card title="内存使用">
+                <Card title={t('内存使用')}>
                   <div className="stat-value mono">{memValue}</div>
                 </Card>
-                <Card title="网络 收 / 发">
+                <Card title={t('网络 收 / 发')}>
                   <div className="stat-value mono">{netValue}</div>
                 </Card>
               </div>
               <Card
-                title="资源曲线"
+                title={t('资源曲线')}
                 extra={
                   <div style={{ display: 'flex', gap: 6 }}>
                     {(['realtime', '1h', '24h', '7d'] as StatsRange[]).map((r) => (
@@ -1743,7 +1745,7 @@ export default function ContainerDetailPage() {
                           color: statsRange === r ? '#6366f1' : '#6b7280',
                         }}
                       >
-                        {r === 'realtime' ? '实时' : r}
+                        {r === 'realtime' ? t('实时') : r}
                       </button>
                     ))}
                   </div>
@@ -1751,17 +1753,17 @@ export default function ContainerDetailPage() {
               >
                 {statsRange !== 'realtime' && metricsLoading && metricsPoints.length === 0 ? (
                   <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                    加载历史数据中…
+                    {t('加载历史数据中…')}
                   </div>
                 ) : chartCpu.length === 0 ? (
                   <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                    暂无数据
+                    {t('暂无数据')}
                   </div>
                 ) : (
                   <LineChart
                     series={[
                       { name: 'CPU %', color: '#6366f1', data: chartCpu },
-                      { name: '内存 %', color: '#22c55e', data: chartMem },
+                      { name: t('内存 %'), color: '#22c55e', data: chartMem },
                     ]}
                     labels={chartLabels}
                     unit="%"
@@ -1783,22 +1785,22 @@ export default function ContainerDetailPage() {
 
       <Modal
         open={deleteOpen}
-        title="删除容器"
+        title={t('删除容器')}
         onClose={() => !deleting && setDeleteOpen(false)}
         width={440}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="danger" size="md" onClick={confirmDelete} loading={deleting}>
-              删除
+              {t('删除')}
             </Button>
           </div>
         }
       >
         <p className="confirm-dialog__message">
-          确定要删除容器「{detail?.name || ''}」吗？此操作不可撤销。
+          {t('确定要删除容器「{{name}}」吗？此操作不可撤销。', { name: detail?.name || '' })}
         </p>
         <label className="vol-delete__option">
           <input
@@ -1806,15 +1808,15 @@ export default function ContainerDetailPage() {
             checked={deleteVolumes}
             onChange={(e) => setDeleteVolumes(e.target.checked)}
           />
-          同时删除该容器的匿名卷（不影响具名卷）
+          {t('同时删除该容器的匿名卷（不影响具名卷）')}
         </label>
       </Modal>
 
       <ConfirmDialog
         open={rebuildOpen}
-        title="重建容器"
-        message={`确定要重建容器「${detail?.name || ''}」吗？将基于现有配置原样重新创建容器，过程会有短暂中断，且容器 ID 会改变。`}
-        confirmText="重建"
+        title={t('重建容器')}
+        message={t('确定要重建容器「{{v1}}」吗？将基于现有配置原样重新创建容器，过程会有短暂中断，且容器 ID 会改变。', { v1: detail?.name || '' })}
+        confirmText={t('重建')}
         loading={rebuilding}
         onConfirm={confirmRebuild}
         onCancel={() => setRebuildOpen(false)}
@@ -1823,26 +1825,26 @@ export default function ContainerDetailPage() {
       {/* 历史日志查看弹窗（按时间范围分页拉取） */}
       <Modal
         open={histOpen}
-        title="历史日志"
+        title={t('历史日志')}
         onClose={() => !histLoading && setHistOpen(false)}
         width={760}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setHistOpen(false)} disabled={histLoading}>
-              关闭
+              {t('关闭')}
             </Button>
             <Button variant="secondary" size="md" onClick={downloadHistoryLogs} disabled={!histLogs}>
-              下载结果
+              {t('下载结果')}
             </Button>
             <Button variant="primary" size="md" loading={histLoading} onClick={loadHistoryLogs}>
-              拉取日志
+              {t('拉取日志')}
             </Button>
           </div>
         }
       >
         <div className="histlog__range">
           <label className="histlog__field">
-            <span>开始时间（含）</span>
+            <span>{t('开始时间（含）')}</span>
             <input
               type="datetime-local"
               value={histStart}
@@ -1850,7 +1852,7 @@ export default function ContainerDetailPage() {
             />
           </label>
           <label className="histlog__field">
-            <span>结束时间（含）</span>
+            <span>{t('结束时间（含）')}</span>
             <input
               type="datetime-local"
               value={histEnd}
@@ -1858,14 +1860,14 @@ export default function ContainerDetailPage() {
             />
           </label>
           <p className="histlog__tip">
-            至少填写一个时间边界即可按时间范围拉取历史日志；留空表示不限制该边界。
+            {t('至少填写一个时间边界即可按时间范围拉取历史日志；留空表示不限制该边界。')}
           </p>
         </div>
         <div className="histlog__box">
           {histLogs ? (
             <pre className="histlog__content">{histLogs}</pre>
           ) : (
-            <div className="histlog__empty">设置时间范围后点击「拉取日志」查看历史记录。</div>
+            <div className="histlog__empty">{t('设置时间范围后点击「拉取日志」查看历史记录。')}</div>
           )}
         </div>
       </Modal>
@@ -1873,26 +1875,26 @@ export default function ContainerDetailPage() {
       {/* 克隆容器弹窗 */}
       <Modal
         open={cloneOpen}
-        title="克隆容器"
+        title={t('克隆容器')}
         onClose={() => !cloning && setCloneOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setCloneOpen(false)} disabled={cloning}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={cloning} onClick={submitClone}>
-              克隆
+              {t('克隆')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          基于「{detail?.name || ''}」复制配置并创建新容器，原容器保留不变。
+          {t('基于「{{name}}」复制配置并创建新容器，原容器保留不变。', { name: detail?.name || '' })}
         </div>
-        <Field label="新名称" required>
+        <Field label={t('新名称')} required>
           <Input
-            placeholder="新容器名称"
+            placeholder={t('新容器名称')}
             value={cloneValue}
             onChange={(e) => setCloneValue(e.target.value)}
             autoFocus
@@ -1906,42 +1908,42 @@ export default function ContainerDetailPage() {
             onChange={(e) => setCloneStart(e.target.checked)}
             disabled={cloning}
           />
-          创建后启动
+          {t('创建后启动')}
         </label>
       </Modal>
 
       {/* 保存为容器模板弹窗 */}
       <Modal
         open={saveTplOpen}
-        title="保存为容器模板"
+        title={t('保存为容器模板')}
         onClose={() => !saveTplSaving && setSaveTplOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setSaveTplOpen(false)} disabled={saveTplSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={saveTplSaving} onClick={submitSaveTemplate}>
-              保存
+              {t('保存')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          将当前容器「{detail?.name || ''}」的完整配置保存为模板，日后可在容器页一键按模板创建。
+          {t('将当前容器「{{name}}」的完整配置保存为模板，日后可在容器页一键按模板创建。', { name: detail?.name || '' })}
         </div>
-        <Field label="模板名称" required>
+        <Field label={t('模板名称')} required>
           <Input
-            placeholder="模板名称"
+            placeholder={t('模板名称')}
             value={saveTplName}
             onChange={(e) => setSaveTplName(e.target.value)}
             autoFocus
             disabled={saveTplSaving}
           />
         </Field>
-        <Field label="描述（可选）">
+        <Field label={t('描述（可选）')}>
           <Input
-            placeholder="模板用途说明"
+            placeholder={t('模板用途说明')}
             value={saveTplDesc}
             onChange={(e) => setSaveTplDesc(e.target.value)}
             disabled={saveTplSaving}
@@ -1952,32 +1954,32 @@ export default function ContainerDetailPage() {
       {/* 提交为镜像弹窗 */}
       <Modal
         open={commitOpen}
-        title="提交为镜像"
+        title={t('提交为镜像')}
         onClose={() => !committing && setCommitOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setCommitOpen(false)} disabled={committing}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={committing} onClick={submitCommit}>
-              提交
+              {t('提交')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          将容器当前的文件系统状态打包成一个新镜像（commit）。原容器不会被删除。
+          {t('将容器当前的文件系统状态打包成一个新镜像（commit）。原容器不会被删除。')}
         </div>
-        <Field label="仓库名 repo" required hint="例如：myapp 或 registry.local/myapp">
+        <Field label={t('仓库名 repo')} required hint={t('例如：myapp 或 registry.local/myapp')}>
           <Input
-            placeholder="镜像仓库名"
+            placeholder={t('镜像仓库名')}
             value={commitRepo}
             onChange={(e) => setCommitRepo(e.target.value)}
             disabled={committing}
           />
         </Field>
-        <Field label="标签 tag" hint="默认 latest">
+        <Field label={t('标签 tag')} hint={t('默认 latest')}>
           <Input
             placeholder="latest"
             value={commitTag}
@@ -1985,17 +1987,17 @@ export default function ContainerDetailPage() {
             disabled={committing}
           />
         </Field>
-        <Field label="提交说明 comment">
+        <Field label={t('提交说明 comment')}>
           <Input
-            placeholder="可选提交说明"
+            placeholder={t('可选提交说明')}
             value={commitComment}
             onChange={(e) => setCommitComment(e.target.value)}
             disabled={committing}
           />
         </Field>
-        <Field label="作者 author">
+        <Field label={t('作者 author')}>
           <Input
-            placeholder="可选作者"
+            placeholder={t('可选作者')}
             value={commitAuthor}
             onChange={(e) => setCommitAuthor(e.target.value)}
             disabled={committing}
@@ -2006,35 +2008,35 @@ export default function ContainerDetailPage() {
       {/* 环境变量编辑弹窗（通过重建容器生效） */}
       <Modal
         open={envEditOpen}
-        title="编辑环境变量"
+        title={t('编辑环境变量')}
         onClose={() => !envSaving && setEnvEditOpen(false)}
         width={620}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setEnvEditOpen(false)} disabled={envSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button type="submit" variant="primary" size="md" loading={envSaving} onClick={saveEnv}>
-              保存并重建
+              {t('保存并重建')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          修改环境变量需重新创建容器（保留镜像、端口、挂载、网络等配置）。重建会导致容器短暂中断，容器 ID 会改变。
+          {t('修改环境变量需重新创建容器（保留镜像、端口、挂载、网络等配置）。重建会导致容器短暂中断，容器 ID 会改变。')}
         </div>
         <div className="env-modal__list">
           {envDraft.map((item, index) => (
             <div className="env-modal__row" key={index}>
               <Input
                 className="env-modal__key"
-                placeholder="变量名"
+                placeholder={t('变量名')}
                 value={item.key}
                 onChange={(e) => updateEnvDraft(index, 'key', e.target.value)}
               />
               <Input
                 className="env-modal__value"
-                placeholder="变量值"
+                placeholder={t('变量值')}
                 value={item.value}
                 onChange={(e) => updateEnvDraft(index, 'value', e.target.value)}
               />
@@ -2044,16 +2046,16 @@ export default function ContainerDetailPage() {
                 className="env-modal__del"
                 onClick={() => removeEnvDraft(index)}
                 disabled={envSaving}
-                title="删除这项"
+                title={t('删除这项')}
               >
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
         </div>
         <div className="env-modal__add">
           <Button variant="secondary" size="sm" onClick={addEnvDraft} disabled={envSaving}>
-            + 添加环境变量
+            {t('+ 添加环境变量')}
           </Button>
         </div>
       </Modal>
@@ -2061,27 +2063,27 @@ export default function ContainerDetailPage() {
       {/* 挂载卷编辑弹窗（通过重建容器生效） */}
       <Modal
         open={mountEditOpen}
-        title="编辑挂载卷"
+        title={t('编辑挂载卷')}
         onClose={() => !mountSaving && setMountEditOpen(false)}
         width={640}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setMountEditOpen(false)} disabled={mountSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={mountSaving} onClick={saveMounts}>
-              保存并重建
+              {t('保存并重建')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          修改挂载卷需重新创建容器（保留镜像、端口、网络、环境变量等配置）。「来源」为宿主机路径或已存在的卷名，「目标」为容器内路径。
+          {t('修改挂载卷需重新创建容器（保留镜像、端口、网络、环境变量等配置）。「来源」为宿主机路径或已存在的卷名，「目标」为容器内路径。')}
         </div>
         <div className="mount-modal__head">
-          <span className="mount-modal__col-source">来源</span>
-          <span className="mount-modal__col-dst">容器内路径</span>
-          <span className="mount-modal__col-rw">读写</span>
+          <span className="mount-modal__col-source">{t('来源')}</span>
+          <span className="mount-modal__col-dst">{t('容器内路径')}</span>
+          <span className="mount-modal__col-rw">{t('读写')}</span>
           <span className="mount-modal__col-op" />
         </div>
         <div className="mount-modal__list">
@@ -2089,13 +2091,13 @@ export default function ContainerDetailPage() {
             <div className="mount-modal__row" key={index}>
               <Input
                 className="mount-modal__col-source"
-                placeholder="宿主机路径或卷名"
+                placeholder={t('宿主机路径或卷名')}
                 value={item.source}
                 onChange={(e) => updateMountDraft(index, 'source', e.target.value)}
               />
               <Input
                 className="mount-modal__col-dst"
-                placeholder="/容器/路径"
+                placeholder={t('/容器/路径')}
                 value={item.destination}
                 onChange={(e) => updateMountDraft(index, 'destination', e.target.value)}
               />
@@ -2112,16 +2114,16 @@ export default function ContainerDetailPage() {
                 className="mount-modal__col-op"
                 onClick={() => removeMountDraft(index)}
                 disabled={mountSaving}
-                title="删除这项挂载"
+                title={t('删除这项挂载')}
               >
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
         </div>
         <div className="env-modal__add">
           <Button variant="secondary" size="sm" onClick={addMountDraft} disabled={mountSaving}>
-            + 添加挂载
+            {t('+ 添加挂载')}
           </Button>
         </div>
       </Modal>
@@ -2129,28 +2131,28 @@ export default function ContainerDetailPage() {
       {/* 网络编辑弹窗（通过重建容器生效） */}
       <Modal
         open={netEditOpen}
-        title="选择网络"
+        title={t('选择网络')}
         onClose={() => !netSaving && setNetEditOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setNetEditOpen(false)} disabled={netSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={netSaving} onClick={saveNet}>
-              保存并重建
+              {t('保存并重建')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          切换网络需重新创建容器（保留镜像、端口、挂载、环境变量等配置）。重建会导致容器短暂中断，容器 ID 会改变。
+          {t('切换网络需重新创建容器（保留镜像、端口、挂载、环境变量等配置）。重建会导致容器短暂中断，容器 ID 会改变。')}
         </div>
-        <Field label="网络" required>
+        <Field label={t('网络')} required>
           <Select value={netDraft} onChange={(e) => setNetDraft(e.target.value)}>
-            <option value="bridge">bridge（默认桥接）</option>
-            <option value="host">host（使用宿主机网络）</option>
-            <option value="none">none（禁用网络）</option>
+            <option value="bridge">{t('bridge（默认桥接）')}</option>
+            <option value="host">{t('host（使用宿主机网络）')}</option>
+            <option value="none">{t('none（禁用网络）')}</option>
             {netOptions.map((n) => (
               <option key={n.Name} value={n.Name}>
                 {n.Name}（{n.Driver}）
@@ -2163,27 +2165,27 @@ export default function ContainerDetailPage() {
       {/* 端口映射编辑弹窗（通过重建容器生效） */}
       <Modal
         open={portEditOpen}
-        title="编辑端口映射"
+        title={t('编辑端口映射')}
         onClose={() => !portSaving && setPortEditOpen(false)}
         width={640}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setPortEditOpen(false)} disabled={portSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={portSaving} onClick={savePorts}>
-              保存并重建
+              {t('保存并重建')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          修改端口映射需重新创建容器（保留镜像、挂载、网络、环境变量等配置）。「容器端口」为容器内端口，「宿主机端口」为外部访问端口，未填写宿主端口时将以容器端口随机映射。
+          {t('修改端口映射需重新创建容器（保留镜像、挂载、网络、环境变量等配置）。「容器端口」为容器内端口，「宿主机端口」为外部访问端口，未填写宿主端口时将以容器端口随机映射。')}
         </div>
         <div className="port-modal__head">
-          <span className="port-modal__col-container">容器端口</span>
-          <span className="port-modal__col-host">宿主机端口</span>
-          <span className="port-modal__col-protocol">协议</span>
+          <span className="port-modal__col-container">{t('容器端口')}</span>
+          <span className="port-modal__col-host">{t('宿主机端口')}</span>
+          <span className="port-modal__col-protocol">{t('协议')}</span>
           <span className="port-modal__col-op" />
         </div>
         <div className="port-modal__list">
@@ -2197,7 +2199,7 @@ export default function ContainerDetailPage() {
               />
               <Input
                 className="port-modal__col-host"
-                placeholder="8080（可选）"
+                placeholder={t('8080（可选）')}
                 value={item.host}
                 onChange={(e) => updatePortDraft(index, 'host', e.target.value)}
               />
@@ -2215,16 +2217,16 @@ export default function ContainerDetailPage() {
                 className="port-modal__col-op"
                 onClick={() => removePortDraft(index)}
                 disabled={portSaving}
-                title="删除这项端口"
+                title={t('删除这项端口')}
               >
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
         </div>
         <div className="env-modal__add">
           <Button variant="secondary" size="sm" onClick={addPortDraft} disabled={portSaving}>
-            + 添加端口
+            {t('+ 添加端口')}
           </Button>
         </div>
       </Modal>
@@ -2232,39 +2234,39 @@ export default function ContainerDetailPage() {
       {/* 运行配置编辑弹窗（重启策略 / 特权模式，通过重建容器生效） */}
       <Modal
         open={cfgEditOpen}
-        title="运行配置"
+        title={t('运行配置')}
         onClose={() => !cfgSaving && setCfgEditOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setCfgEditOpen(false)} disabled={cfgSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={cfgSaving} onClick={saveCfg}>
-              保存并重建
+              {t('保存并重建')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          修改重启策略或特权模式需重新创建容器（保留镜像、端口、挂载、网络、环境变量等配置）。重建会导致容器短暂中断，容器 ID 会改变。
+          {t('修改重启策略或特权模式需重新创建容器（保留镜像、端口、挂载、网络、环境变量等配置）。重建会导致容器短暂中断，容器 ID 会改变。')}
         </div>
-        <Field label="重启策略" required>
+        <Field label={t('重启策略')} required>
           <Select value={cfgRestartDraft} onChange={(e) => setCfgRestartDraft(e.target.value)}>
-            <option value="no">no（不自动重启）</option>
-            <option value="always">always（总是重启）</option>
-            <option value="on-failure">on-failure（失败时重启）</option>
-            <option value="unless-stopped">unless-stopped（除非停止，否则重启）</option>
+            <option value="no">{t('no（不自动重启）')}</option>
+            <option value="always">{t('always（总是重启）')}</option>
+            <option value="on-failure">{t('on-failure（失败时重启）')}</option>
+            <option value="unless-stopped">{t('unless-stopped（除非停止，否则重启）')}</option>
           </Select>
         </Field>
-        <Field label="特权模式">
+        <Field label={t('特权模式')}>
           <label className="cfg-modal__priv">
             <input
               type="checkbox"
               checked={cfgPrivilegedDraft}
               onChange={(e) => setCfgPrivilegedDraft(e.target.checked)}
             />
-            以特权模式运行（授予容器更多 host 权限）
+            {t('以特权模式运行（授予容器更多 host 权限）')}
           </label>
         </Field>
       </Modal>
@@ -2272,47 +2274,47 @@ export default function ContainerDetailPage() {
       {/* 更新配置弹窗（重启策略 / 资源限制，免重建，对应 docker update） */}
       <Modal
         open={updateOpen}
-        title="更新配置"
+        title={t('更新配置')}
         onClose={() => !updating && setUpdateOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setUpdateOpen(false)} disabled={updating}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={updating} onClick={saveUpdate}>
-              保存
+              {t('保存')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          在线更新无需重建容器，不中断运行、不改变容器 ID。留空的字段将保持现状。
+          {t('在线更新无需重建容器，不中断运行、不改变容器 ID。留空的字段将保持现状。')}
         </div>
-        <Field label="重启策略" required>
+        <Field label={t('重启策略')} required>
           <Select value={uRestart} onChange={(e) => setURestart(e.target.value)}>
-            <option value="no">no（不自动重启）</option>
-            <option value="always">always（总是重启）</option>
-            <option value="on-failure">on-failure（失败时重启）</option>
-            <option value="unless-stopped">unless-stopped（除非停止，否则重启）</option>
+            <option value="no">{t('no（不自动重启）')}</option>
+            <option value="always">{t('always（总是重启）')}</option>
+            <option value="on-failure">{t('on-failure（失败时重启）')}</option>
+            <option value="unless-stopped">{t('unless-stopped（除非停止，否则重启）')}</option>
           </Select>
         </Field>
-        <Field label="CPU 限制（核数，留空不修改；填 0 取消限制）">
+        <Field label={t('CPU 限制（核数，留空不修改；填 0 取消限制）')}>
           <Input
             type="number"
             min={0}
             step="0.1"
-            placeholder="如 1 或 1.5"
+            placeholder={t('如 1 或 1.5')}
             value={uCpu}
             onChange={(e) => setUCpu(e.target.value)}
           />
         </Field>
-        <Field label="内存限制（GB，留空不修改；填 0 取消限制）">
+        <Field label={t('内存限制（GB，留空不修改；填 0 取消限制）')}>
           <Input
             type="number"
             min={0}
             step="0.5"
-            placeholder="如 2"
+            placeholder={t('如 2')}
             value={uMem}
             onChange={(e) => setUMem(e.target.value)}
           />
@@ -2322,43 +2324,43 @@ export default function ContainerDetailPage() {
       {/* 健康检查编辑弹窗（通过重建容器生效） */}
       <Modal
         open={hcEditOpen}
-        title="健康检查"
+        title={t('健康检查')}
         onClose={() => !hcSaving && setHcEditOpen(false)}
         width={520}
         footer={
           <div className="env-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setHcEditOpen(false)} disabled={hcSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={hcSaving} onClick={saveHealth}>
-              保存并重建
+              {t('保存并重建')}
             </Button>
           </div>
         }
       >
         <div className="env-modal__tip">
-          修改健康检查需重新创建容器（其余配置保留）。重建会导致容器短暂中断，容器 ID 会改变。
+          {t('修改健康检查需重新创建容器（其余配置保留）。重建会导致容器短暂中断，容器 ID 会改变。')}
         </div>
-        <Field label="启用健康检查">
+        <Field label={t('启用健康检查')}>
           <label className="cfg-modal__priv">
             <input
               type="checkbox"
               checked={hcEnabled}
               onChange={(e) => setHcEnabled(e.target.checked)}
             />
-            启用（监测容器运行状况并在详情页展示）
+            {t('启用（监测容器运行状况并在详情页展示）')}
           </label>
         </Field>
         {hcEnabled && (
           <>
-            <Field label="检测命令" required>
+            <Field label={t('检测命令')} required>
               <Input
-                placeholder="如 curl -f http://localhost 或 node /app/health.js"
+                placeholder={t('如 curl -f http://localhost 或 node /app/health.js')}
                 value={hcTestCmd}
                 onChange={(e) => setHcTestCmd(e.target.value)}
               />
             </Field>
-            <Field label="检测间隔（秒）">
+            <Field label={t('检测间隔（秒）')}>
               <Input
                 type="number"
                 min={1}
@@ -2366,7 +2368,7 @@ export default function ContainerDetailPage() {
                 onChange={(e) => setHcInterval(Number(e.target.value))}
               />
             </Field>
-            <Field label="超时（秒）">
+            <Field label={t('超时（秒）')}>
               <Input
                 type="number"
                 min={1}
@@ -2374,7 +2376,7 @@ export default function ContainerDetailPage() {
                 onChange={(e) => setHcTimeout(Number(e.target.value))}
               />
             </Field>
-            <Field label="重试次数">
+            <Field label={t('重试次数')}>
               <Input
                 type="number"
                 min={1}
