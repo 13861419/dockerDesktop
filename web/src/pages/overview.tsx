@@ -18,6 +18,7 @@ import StatusBadge from '../components/StatusBadge';
 import LineChart from '../components/LineChart';
 import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
+import { useLang } from '../i18n';
 import './overview.less';
 
 /** 单个监控采样点的数据结构，与后端 /api/monitor/* 返回保持一致 */
@@ -151,6 +152,7 @@ function formatTimeLabel(ts: number, range: MetricsRange): string {
  * 总览页组件
  */
 export default function OverviewPage() {
+  const { t } = useLang();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState<Overview | null>(null);
@@ -188,7 +190,7 @@ export default function OverviewPage() {
       const res = await get<Overview>('/api/overview');
       setData(res);
     } catch (e: any) {
-      const msg = e?.message || '加载失败';
+      const msg = e?.message || t('加载失败');
       setError(msg);
       showToast(msg, 'error');
     } finally {
@@ -310,7 +312,7 @@ export default function OverviewPage() {
           <div className="overview__error">
             <p>{error}</p>
             <button className="btn btn--primary" onClick={load}>
-              重试
+              {t('重试')}
             </button>
           </div>
         </Card>
@@ -327,7 +329,7 @@ export default function OverviewPage() {
     { label: '镜像', value: data.images, color: 'indigo' },
     { label: '数据卷', value: data.volumes, color: 'indigo' },
     { label: '网络', value: data.networks, color: 'indigo' },
-  ];
+  ].map((s) => ({ ...s, label: t(s.label) }));
 
   const engine = [
     { label: '引擎名称', value: data.name },
@@ -336,17 +338,17 @@ export default function OverviewPage() {
     { label: '操作系统', value: data.os },
     { label: '架构', value: data.architecture },
     { label: '内核', value: data.kernelVersion },
-    { label: 'CPU', value: `${data.nCPU} 核` },
+    { label: 'CPU', value: t('{{n}} 核', { n: data.nCPU }) },
     { label: '内存', value: formatGB(data.memTotal) },
     { label: '数据目录', value: data.dockerRootDir },
-  ];
+  ].map((e) => ({ ...e, label: t(e.label) }));
 
   // ---- 监控数据换算 ----
   // 曲线数据源：10m 用本地实时缓冲，长跨度用历史趋势；两者结构兼容 ChartPoint
   const chartData: ChartPoint[] = range === '10m' ? hist : rangeHist;
   const cpuSeries: SeriesData = { name: 'CPU', color: 'var(--primary, #6366f1)', data: chartData.map((p) => p.cpu.percent) };
-  const memSeries: SeriesData = { name: '内存', color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
-  const diskSeries: SeriesData = { name: '磁盘', color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
+  const memSeries: SeriesData = { name: t('内存'), color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
+  const diskSeries: SeriesData = { name: t('磁盘'), color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
 
   // X 轴时间标签：10m 用 HH:MM:SS，长跨度用 MM-DD HH:mm
   const timeLabels = chartData.map((p) => formatTimeLabel(p.timestamp, range));
@@ -364,7 +366,7 @@ export default function OverviewPage() {
     {
       label: 'CPU',
       value: now ? formatPercent(now.cpu.percent) : '--',
-      extra: now ? `${now.cpu.cores} 核` : '',
+      extra: now ? t('{{n}} 核', { n: now.cpu.cores }) : '',
       percent: now ? now.cpu.percent : undefined,
     },
     {
@@ -382,12 +384,12 @@ export default function OverviewPage() {
     {
       label: '容器',
       value: now ? `${now.containers.running} / ${now.containers.total}` : '--',
-      extra: now ? '运行中 / 总数' : '',
+      extra: now ? t('运行中 / 总数') : '',
     },
     {
       label: '镜像',
       value: now ? String(now.images) : '--',
-      extra: '镜像数量',
+      extra: t('镜像数量'),
     },
   ];
 
@@ -416,26 +418,26 @@ export default function OverviewPage() {
 
   return (
     <div className="overview-page">
-      <h1 className="overview-page__title">总览</h1>
+      <h1 className="overview-page__title">{t('总览')}</h1>
 
       {showQuickStart && (
         <Card className="ov-quickstart">
           <div className="ov-quickstart__head">
             <div>
-              <div className="ov-quickstart__title">快速开始</div>
-              <div className="ov-quickstart__sub">环境初步就绪，带你用四步跑通首个应用</div>
+              <div className="ov-quickstart__title">{t('快速开始')}</div>
+              <div className="ov-quickstart__sub">{t('环境初步就绪，带你用四步跑通首个应用')}</div>
             </div>
             <button className="ov-quickstart__dismiss" onClick={() => { setQsDismissed(true); localStorage.setItem('quickstart_dismissed', '1'); }}>
-              不再显示
+              {t('不再显示')}
             </button>
           </div>
           <div className="ov-quickstart__steps">
             {quickStartSteps.map((step) => (
               <div key={step.title} className="ov-quickstart__step">
-                <div className="ov-quickstart__step-title">{step.title}</div>
-                <div className="ov-quickstart__step-desc">{step.desc}</div>
+                <div className="ov-quickstart__step-title">{t(step.title)}</div>
+                <div className="ov-quickstart__step-desc">{t(step.desc)}</div>
                 <button className="btn btn--primary btn--sm" onClick={() => navigate(step.to)}>
-                  前往
+                  {t('前往')}
                 </button>
               </div>
             ))}
@@ -467,7 +469,7 @@ export default function OverviewPage() {
         ) : (
           <div className="overview-alerts overview-alerts--ok">
             <span className="overview-alert__dot" />
-            <span className="overview-alert__message">资源占用正常</span>
+            <span className="overview-alert__message">{t('资源占用正常')}</span>
           </div>
         )}
       </div>
@@ -475,15 +477,15 @@ export default function OverviewPage() {
       {/* 资源监控区 */}
       <div className="overview__monitor">
         <Card
-          title="资源监控"
+          title={t('资源监控')}
           extra={
             <button
               type="button"
               onClick={() => download('/api/system/grafana-dashboard', 'dockermanager-grafana-dashboard.json')}
               style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
-              title="导出可导入 Grafana 的 Dashboard JSON（引用 /metrics 暴露的 dm_* 指标）"
+              title={t('导出可导入 Grafana 的 Dashboard JSON（引用 /metrics 暴露的 dm_* 指标）')}
             >
-              导出 Grafana
+              {t('导出 Grafana')}
             </button>
           }
         >
@@ -507,7 +509,7 @@ export default function OverviewPage() {
                     fontWeight: active ? 600 : 400,
                   }}
                 >
-                  {opt.label}
+                  {t(opt.label)}
                 </button>
               );
             })}
@@ -517,7 +519,7 @@ export default function OverviewPage() {
               const pct = (m as { percent?: number }).percent;
               return (
                 <div key={m.label} className="monitor__now-item">
-                  <div className="monitor__now-label">{m.label}</div>
+                  <div className="monitor__now-label">{t(m.label)}</div>
                   <div className="monitor__now-value">{m.value}</div>
                   {pct !== undefined && (
                     <div className="ov-monitor__bar">
@@ -546,7 +548,7 @@ export default function OverviewPage() {
           {/* 各磁盘分区使用情况 */}
           {diskPartitions.length > 0 && (
             <div className="monitor__disks">
-              <div className="monitor__disks-title">磁盘分区</div>
+              <div className="monitor__disks-title">{t('磁盘分区')}</div>
               <div className="monitor__disks-grid">
                 {diskPartitions.map((d) => (
                   <div className="monitor__disk" key={d.mount}>
@@ -569,7 +571,7 @@ export default function OverviewPage() {
                     </div>
                     <div className="monitor__disk-meta">
                       <span className="monitor__disk-used">{formatGB(d.used)} / {formatGB(d.total)}</span>
-                      <span className="monitor__disk-free">可用 {formatGB(d.free)}</span>
+                      <span className="monitor__disk-free">{t('可用 {{v}}', { v: formatGB(d.free) })}</span>
                     </div>
                   </div>
                 ))}
@@ -602,7 +604,7 @@ export default function OverviewPage() {
                       />
                     </div>
                     <div className="monitor__disk-meta">
-                      <span className="monitor__disk-used">显存 {formatGB(g.memUsed * 1024 * 1024)} / {formatGB(g.memTotal * 1024 * 1024)}</span>
+                      <span className="monitor__disk-used">{t('显存 {{a}} / {{b}}', { a: formatGB(g.memUsed * 1024 * 1024), b: formatGB(g.memTotal * 1024 * 1024) })}</span>
                       <span className="monitor__disk-free">{g.temperature}°C</span>
                     </div>
                   </div>
@@ -615,7 +617,7 @@ export default function OverviewPage() {
 
       {/* 容器资源占用看板 */}
       <Card
-        title="容器资源占用"
+        title={t('容器资源占用')}
         extra={
           <div style={{ display: 'flex', gap: 6 }}>
             <button
@@ -623,32 +625,32 @@ export default function OverviewPage() {
               className={`ov-top__tab${topSort === 'cpu' ? ' ov-top__tab--active' : ''}`}
               onClick={() => setTopSort('cpu')}
             >
-              按 CPU
+              {t('按 CPU')}
             </button>
             <button
               type="button"
               className={`ov-top__tab${topSort === 'mem' ? ' ov-top__tab--active' : ''}`}
               onClick={() => setTopSort('mem')}
             >
-              按内存
+              {t('按内存')}
             </button>
           </div>
         }
       >
         {topLoading && topStats.length === 0 ? (
-          <div className="ov-top__tip">加载容器资源统计中…</div>
+          <div className="ov-top__tip">{t('加载容器资源统计中…')}</div>
         ) : topStats.length === 0 ? (
-          <div className="ov-top__tip">当前无运行中容器</div>
+          <div className="ov-top__tip">{t('当前无运行中容器')}</div>
         ) : (
           <table className="data-table">
             <thead>
               <tr>
-                <th>容器</th>
-                <th style={{ width: 90 }}>状态</th>
+                <th>{t('容器')}</th>
+                <th style={{ width: 90 }}>{t('状态')}</th>
                 <th style={{ width: 180 }}>CPU</th>
-                <th style={{ width: 180 }}>内存</th>
-                <th style={{ width: 120 }}>内存使用</th>
-                <th style={{ width: 150 }}>网络 IO</th>
+                <th style={{ width: 180 }}>{t('内存')}</th>
+                <th style={{ width: 120 }}>{t('内存使用')}</th>
+                <th style={{ width: 150 }}>{t('网络 IO')}</th>
               </tr>
             </thead>
             <tbody>
@@ -664,7 +666,7 @@ export default function OverviewPage() {
                   </td>
                   <td>
                     <span className={`ov-top__state ov-top__state--${c.state === 'running' ? 'running' : 'stopped'}`}>
-                      {c.state === 'running' ? '运行中' : '已停止'}
+                      {c.state === 'running' ? t('运行中') : t('已停止')}
                     </span>
                   </td>
                   <td>
@@ -687,7 +689,7 @@ export default function OverviewPage() {
                   </td>
                   <td className="ov-top__mem">{c.memUsageMB} / {c.memLimitMB} MB</td>
                   <td className="ov-top__net">
-                    收 {c.netRxMB} MB / 发 {c.netTxMB} MB
+                    {t('收 {{rx}} MB / 发 {{tx}} MB', { rx: c.netRxMB, tx: c.netTxMB })}
                   </td>
                 </tr>
               ))}
@@ -696,10 +698,10 @@ export default function OverviewPage() {
         )}
       </Card>
 
-      <Card title="引擎信息">
+      <Card title={t('引擎信息')}>
         <div className="overview__engine-status">
           <span className="overview__engine-dot" />
-          Docker 引擎运行中
+          {t('Docker 引擎运行中')}
         </div>
         <div className="overview__engine">
           {engine.map((e) => (

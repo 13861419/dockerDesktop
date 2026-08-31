@@ -663,7 +663,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 ### 24.1 System Settings (`/settings`)
 
 - **Theme**: switch light / dark.
-- **Language**: switch the UI language.
+- **Language**: switch the UI language (Chinese / English) in the "About" card → "Interface Language". The preference takes effect immediately and is stored in the browser. v0.6.0 ships an i18n skeleton with an English pack covering the core layer (navigation / login / common components / Overview / Containers / Images / Settings); untranslated pages automatically fall back to Chinese.
 - **Users & passwords**: admins can add / remove users and change passwords (linked to login auth).
 - **Role management (RBAC)**: admins can create custom roles with per-action whitelists (14 resource-domain permissions in 6 groups: containers / images / volumes / networks / compose / self-heal); built-in admin / user / auditor are locked, the operator permission set is adjustable; roles still in use cannot be deleted. Role permissions apply to the resource domain only — user management, system settings, engine switching, etc. always require an admin. Role members see exactly the action buttons their permissions allow (unauthorized buttons are hidden); high-risk entry points such as container terminals are granted by the same permission set.
 

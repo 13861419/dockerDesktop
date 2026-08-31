@@ -78,6 +78,10 @@ const FAQ_ITEMS: FaqItem[] = [
     q: '安全基线扫描能自动修复吗？',
     a: '「安全基线」页（/policy）内置 6 项只读检查。内存 / CPU / 重启策略违规支持在线一键修复（修复后自动复检）；特权模式、敏感挂载需重建容器。开启审批流后，非管理员提交的修复会转入审批中心。',
   },
+  {
+    q: '界面支持哪些语言？如何切换？',
+    a: '「设置 → 关于 → 界面语言」可在中文 / English 间一键切换，偏好即时生效并记住（存于浏览器本地）。当前版本已覆盖导航、登录、公共组件与总览 / 容器 / 镜像 / 设置等核心页面，其余页面暂以中文显示，后续版本持续补齐。',
+  },
 ];
 
 /** 功能速查表：页面路径 -> 用途 */
@@ -107,7 +111,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/swarm', name: 'Swarm', desc: '集群服务查看' },
   { path: '/backups', name: '备份恢复', desc: '数据卷 / Compose / 站点备份' },
   { path: '/databases', name: '数据库', desc: 'MySQL / PostgreSQL / Redis 可视化' },
-  { path: '/settings', name: '设置', desc: '账号、角色管理（RBAC）、备份、AI 配置、系统参数、用户管理' },
+  { path: '/settings', name: '设置', desc: '账号、角色管理（RBAC）、界面语言切换、备份、AI 配置、系统参数、用户管理' },
   { path: '/logs', name: '日志聚合', desc: '跨容器日志检索与导出' },
   { path: '/operation-logs', name: '操作日志', desc: '全量操作审计' },
   { path: '/notifications', name: '告警中心', desc: '告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、记录与 AI 诊断' },

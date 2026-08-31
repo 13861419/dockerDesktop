@@ -2,6 +2,7 @@
  * 空状态 / 错误态 / 搜索无结果 通用组件
  */
 import React from 'react';
+import { useLang } from '../i18n';
 import './Empty.less';
 
 type EmptyKind = 'empty' | 'error' | 'search';
@@ -46,12 +47,13 @@ export default function Empty({
   description,
   action,
 }: EmptyProps) {
+  const { t } = useLang();
   return (
     <div className={`empty empty--${kind}`}>
       <div className="empty__icon" aria-hidden="true">
         {ICONS[kind]}
       </div>
-      <div className="empty__title">{title}</div>
+      <div className="empty__title">{t(title)}</div>
       {description && <div className="empty__desc">{description}</div>}
       {action && <div className="empty__action">{action}</div>}
     </div>

@@ -9,6 +9,7 @@ import { useToast } from './Toast';
 import { post, get } from '../api/client';
 import { clearToken, isAdmin } from '../api/auth';
 import GlobalSearch from './GlobalSearch';
+import { useLang } from '../i18n';
 import './Layout.less';
 
 interface NavItem {
@@ -445,6 +446,7 @@ const NAV_ITEMS: NavItem[] = [
  * 主布局
  */
 export default function Layout() {
+  const { t } = useLang();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -481,7 +483,7 @@ export default function Layout() {
       // 忽略登出接口错误，确保本地清理与跳转始终执行
     }
     clearToken();
-    showToast('已退出登录', 'info');
+    showToast(t('已退出登录'), 'info');
     navigate('/login', { replace: true });
   }
 
@@ -491,7 +493,7 @@ export default function Layout() {
       <button
         className="sidebar-toggle"
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        aria-label="切换菜单"
+        aria-label={t('切换菜单')}
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M3 12h18M3 6h18M3 18h18" />
@@ -513,7 +515,7 @@ export default function Layout() {
           </div>
           <div className="sidebar__title">
             <span className="sidebar__name">Docker</span>
-            <span className="sidebar__sub">管理面板</span>
+            <span className="sidebar__sub">{t('管理面板')}</span>
           </div>
         </div>
 
@@ -527,9 +529,9 @@ export default function Layout() {
               onClick={() => setSidebarOpen(false)}
             >
               <span className="nav-item__icon">{item.icon}</span>
-              <span className="nav-item__label">{item.label}</span>
+              <span className="nav-item__label">{t(item.label)}</span>
               {item.to === '/approvals' && approvalPending > 0 && (
-                <span className="nav-item__badge" title={`${approvalPending} 条待审批`}>
+                <span className="nav-item__badge" title={t('{{n}} 条待审批', { n: approvalPending })}>
                   {approvalPending > 99 ? '99+' : approvalPending}
                 </span>
               )}
@@ -541,23 +543,23 @@ export default function Layout() {
           <div className="sidebar__conn">
             <button
               className="nav-item"
-              onClick={() => showToast('Docker 连接正常', 'info')}
-              title="连接状态"
+              onClick={() => showToast(t('Docker 连接正常'), 'info')}
+              title={t('连接状态')}
             >
               <span className="nav-item__icon">
                 <span className="conn-dot" />
               </span>
-              <span className="nav-item__label">已连接</span>
+              <span className="nav-item__label">{t('已连接')}</span>
             </button>
           </div>
-          <button className="nav-item nav-item--logout" onClick={handleLogout} title="退出登录">
+          <button className="nav-item nav-item--logout" onClick={handleLogout} title={t('退出登录')}>
             <span className="nav-item__icon">
               <svg {...iconProps}>
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <path d="m16 17 5-5-5-5M21 12H9" />
               </svg>
             </span>
-            <span className="nav-item__label">退出登录</span>
+            <span className="nav-item__label">{t('退出登录')}</span>
           </button>
         </div>
       </aside>
@@ -566,7 +568,7 @@ export default function Layout() {
       <main className="main">
         <div className="main__content">
           <div className="main__toolbar">
-            <div className="main__title">Docker 管理面板</div>
+            <div className="main__title">{t('Docker 管理面板')}</div>
             <GlobalSearch />
           </div>
           <Outlet />

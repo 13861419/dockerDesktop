@@ -13,6 +13,7 @@ import RequireAdmin from './components/RequireAdmin';
 import { ToastProvider } from './components/Toast';
 import { PageLoading } from './components/Loading';
 import ErrorBoundary from './components/ErrorBoundary';
+import { I18nProvider } from './i18n';
 
 // ---- 路由级懒加载：各页面独立 chunk，进入路由时才加载 ----
 const LoginPage = lazy(() => import('./pages/login'));
@@ -70,7 +71,8 @@ function PageSuspense({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ErrorBoundary>
-      <ToastProvider>
+      <I18nProvider>
+        <ToastProvider>
         <BrowserRouter>
         <Routes>
           {/* 登录页：独立页面，无需 Layout 与鉴权 */}
@@ -422,8 +424,9 @@ export default function App() {
             </Route>
           </Route>
         </Routes>
-      </BrowserRouter>
-      </ToastProvider>
+        </BrowserRouter>
+        </ToastProvider>
+      </I18nProvider>
     </ErrorBoundary>
   );
 }

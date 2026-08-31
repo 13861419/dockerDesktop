@@ -70,11 +70,19 @@ test('采集全部页面截图', async ({ page }) => {
   test.setTimeout(600_000);
   await login(page);
 
+  // 每页独立 Page（同一 Context 共享登录态）：避免单 Page 累积 30 次整页截图导致渲染进程崩溃
   for (const [name, path] of ROUTES) {
-    await page.goto(path);
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForTimeout(1000);
-    await page.screenshot({ path: `../images/${name}.png`, fullPage: true });
+    const p = await page.context().newPage();
+    try {
+      await p.goto(path, { waitUntil: 'domcontentloaded' });
+      // 轮询型页面（监控/容器统计）networkidle 永不触发，固定等待渲染稳定即可
+      await p.waitForTimeout(2500);
+      await p.screenshot({ path: `../images/${name}.png`, fullPage: true, timeout: 20_000 });
+    } catch (e) {
+      console.warn(`[capture] skip ${name}: ${(e as Error).message.split('\n')[0]}`);
+    } finally {
+      await p.close();
+    }
   }
 
   for (const [target, source] of COPIES) {

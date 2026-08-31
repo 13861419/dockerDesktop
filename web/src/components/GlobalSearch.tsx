@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get } from '../api/client';
+import { useLang } from '../i18n';
 import './GlobalSearch.less';
 
 /** 单组最多展示条数，超出则显示“更多…” */
@@ -42,6 +43,7 @@ const GROUPS: {
  * 全局搜索
  */
 export default function GlobalSearch() {
+  const { t } = useLang();
   const navigate = useNavigate();
   // 输入关键字
   const [keyword, setKeyword] = useState('');
@@ -219,10 +221,10 @@ export default function GlobalSearch() {
     return (
       <div className="global-search__group" key={group.key}>
         <div className="global-search__group-title">
-          <span>{group.title}（{items.length}）</span>
+          <span>{t(group.title)}（{items.length}）</span>
           {hasMore && (
             <button className="global-search__more" onClick={() => go(group.route)}>
-              更多…
+              {t('更多…')}
             </button>
           )}
         </div>
@@ -262,7 +264,7 @@ export default function GlobalSearch() {
           className="global-search__input"
           type="text"
           value={keyword}
-          placeholder="搜索容器/镜像/卷/网络/Compose..."
+          placeholder={t('搜索容器/镜像/卷/网络/Compose...')}
           onChange={(e) => setKeyword(e.target.value)}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
@@ -270,7 +272,7 @@ export default function GlobalSearch() {
         {keyword && (
           <button
             className="global-search__clear"
-            aria-label="清空搜索"
+            aria-label={t('清空搜索')}
             onClick={() => reset()}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -285,19 +287,19 @@ export default function GlobalSearch() {
           {loading && (
             <div className="global-search__status">
               <span className="global-search__spinner" />
-              搜索中…
+              {t('搜索中…')}
             </div>
           )}
           {!loading && error && (
-            <div className="global-search__status">搜索失败：{error}</div>
+            <div className="global-search__status">{t('搜索失败：{{msg}}', { msg: error })}</div>
           )}
           {!loading && !error && query.trim() && !hasRows && (
-            <div className="global-search__status">无匹配结果</div>
+            <div className="global-search__status">{t('无匹配结果')}</div>
           )}
           {!loading && !error && hasRows && (
             <>
               {GROUPS.map(renderGroup)}
-              <div className="global-search__hint">↑↓ 选择 · Enter 跳转 · Esc 关闭</div>
+              <div className="global-search__hint">{t('↑↓ 选择 · Enter 跳转 · Esc 关闭')}</div>
             </>
           )}
         </div>

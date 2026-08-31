@@ -5,6 +5,7 @@
  */
 import Modal from './Modal';
 import Button from './Button';
+import { useLang } from '../i18n';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -31,6 +32,7 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useLang();
   return (
     <Modal
       open={open}
@@ -40,10 +42,10 @@ export default function ConfirmDialog({
       footer={
         <>
           <Button variant="secondary" onClick={onCancel} disabled={loading}>
-            取消
+            {t('取消')}
           </Button>
           <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>
-            {confirmText}
+            {t(confirmText)}
           </Button>
         </>
       }

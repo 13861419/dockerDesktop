@@ -19,6 +19,7 @@ import type {
   SystemConfigExport,
   SystemConfigImportResponse,
 } from '../types';
+import { useLang } from '../i18n';
 import './settings.less';
 
 interface UserItem {
@@ -131,6 +132,7 @@ function formatDate(ts: number): string {
  * 系统设置页
  */
 export default function SettingsPage() {
+  const { t, lang, setLang } = useLang();
   const { showToast } = useToast();
   const { theme, setTheme } = useTheme();
   const location = useLocation();
@@ -195,38 +197,38 @@ export default function SettingsPage() {
     setDbBackupBusy(true);
     try {
       await post('/api/sqlite-backups', { reason: 'manual' });
-      showToast('备份已创建', 'success');
+      showToast(t('备份已创建'), 'success');
       await loadDbBackups();
     } catch (e: any) {
-      showToast(e?.message || '备份失败', 'error');
+      showToast(e?.message || t('备份失败'), 'error');
     } finally {
       setDbBackupBusy(false);
     }
   }
 
   async function handleSqliteRestore(file: string) {
-    if (!confirm(`确定用该备份恢复面板数据库吗？当前数据将被覆盖，建议恢复后重启面板。`)) return;
+    if (!confirm(t('确定用该备份恢复面板数据库吗？当前数据将被覆盖，建议恢复后重启面板。'))) return;
     setDbBackupBusy(true);
     try {
       const r = await post<{ ok: boolean; message: string }>(`/api/sqlite-backups/${encodeURIComponent(file)}/restore`, {});
-      showToast(r.message || '恢复完成', 'success');
+      showToast(r.message || t('恢复完成'), 'success');
       await load();
     } catch (e: any) {
-      showToast(e?.message || '恢复失败', 'error');
+      showToast(e?.message || t('恢复失败'), 'error');
     } finally {
       setDbBackupBusy(false);
     }
   }
 
   async function handleSqliteDelete(file: string) {
-    if (!confirm(`确定删除备份 ${file} 吗？`)) return;
+    if (!confirm(t('确定删除备份 {{file}} 吗？', { file }))) return;
     setDbBackupBusy(true);
     try {
       await del(`/api/sqlite-backups/${encodeURIComponent(file)}`);
-      showToast('已删除', 'info');
+      showToast(t('已删除'), 'info');
       await loadDbBackups();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDbBackupBusy(false);
     }
@@ -257,7 +259,7 @@ export default function SettingsPage() {
       setRoles(r?.roles || []);
       setPermCatalog(pc?.permissions || []);
     } catch (e: any) {
-      showToast(e?.message || '加载设置失败', 'error');
+      showToast(e?.message || t('加载设置失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -292,16 +294,16 @@ export default function SettingsPage() {
       payload[item.key] = edited;
     }
     if (!Object.keys(payload).length) {
-      showToast('没有需要保存的修改', 'error');
+      showToast(t('没有需要保存的修改'), 'error');
       return;
     }
     setKvSaving(true);
     try {
       await put('/api/settings', payload);
-      showToast('系统参数已保存');
+      showToast(t('系统参数已保存'));
       loadKvSettings();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setKvSaving(false);
     }
@@ -311,10 +313,10 @@ export default function SettingsPage() {
   async function handleResetKv(item: SettingItem) {
     try {
       await del(`/api/settings/${encodeURIComponent(item.key)}`);
-      showToast(`${item.label} 已恢复默认`);
+      showToast(t('{{v1}} 已恢复默认', { v1: item.label }));
       loadKvSettings();
     } catch (e: any) {
-      showToast(e?.message || '恢复默认失败', 'error');
+      showToast(e?.message || t('恢复默认失败'), 'error');
     }
   }
 
@@ -327,7 +329,7 @@ export default function SettingsPage() {
       const info = await get<UpdateInfo>('/api/system/update-check');
       setUpdateInfo(info);
     } catch (e: any) {
-      setUpdateInfo({ available: false, error: e?.message || '检查失败' });
+      setUpdateInfo({ available: false, error: e?.message || t('检查失败') });
     } finally {
       setCheckingUpdate(false);
     }
@@ -338,26 +340,26 @@ export default function SettingsPage() {
    */
   async function handleCreateUser() {
     if (currentRole !== 'admin') {
-      showToast('仅管理员可创建用户', 'error');
+      showToast(t('仅管理员可创建用户'), 'error');
       return;
     }
     if (!newUsername.trim()) {
-      showToast('请输入用户名', 'error');
+      showToast(t('请输入用户名'), 'error');
       return;
     }
     if (newPassword.length < 6) {
-      showToast('密码至少 6 位', 'error');
+      showToast(t('密码至少 6 位'), 'error');
       return;
     }
     setCreating(true);
     try {
       await post('/api/system/users', { username: newUsername.trim(), password: newPassword, role: newRole });
-      showToast('用户已创建');
+      showToast(t('用户已创建'));
       setNewUsername('');
       setNewPassword('');
       load();
     } catch (e: any) {
-      showToast(e?.message || '创建用户失败', 'error');
+      showToast(e?.message || t('创建用户失败'), 'error');
     } finally {
       setCreating(false);
     }
@@ -369,19 +371,19 @@ export default function SettingsPage() {
    */
   async function handleDeleteUser(username: string) {
     if (currentRole !== 'admin') {
-      showToast('仅管理员可删除用户', 'error');
+      showToast(t('仅管理员可删除用户'), 'error');
       return;
     }
     if (username === currentUser) {
-      showToast('不能删除当前登录用户', 'error');
+      showToast(t('不能删除当前登录用户'), 'error');
       return;
     }
     try {
       await del(`/api/system/users/${encodeURIComponent(username)}`);
-      showToast('用户已删除');
+      showToast(t('用户已删除'));
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除用户失败', 'error');
+      showToast(e?.message || t('删除用户失败'), 'error');
     }
   }
 
@@ -406,7 +408,7 @@ export default function SettingsPage() {
   async function handleSaveRole() {
     if (!roleEditing) return;
     if (!roleEditing.name.trim()) {
-      showToast('请输入角色名', 'error');
+      showToast(t('请输入角色名'), 'error');
       return;
     }
     setRoleSaving(true);
@@ -415,15 +417,15 @@ export default function SettingsPage() {
         await put(`/api/roles/${encodeURIComponent(roleEditing.name)}`, {
           permissions: roleEditing.permissions,
         });
-        showToast('角色权限已更新');
+        showToast(t('角色权限已更新'));
       } else {
         await post('/api/roles', { name: roleEditing.name.trim(), permissions: roleEditing.permissions });
-        showToast('角色已创建');
+        showToast(t('角色已创建'));
       }
       setRoleEditing(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '保存角色失败', 'error');
+      showToast(e?.message || t('保存角色失败'), 'error');
     } finally {
       setRoleSaving(false);
     }
@@ -433,10 +435,10 @@ export default function SettingsPage() {
   async function handleDeleteRole(name: string) {
     try {
       await del(`/api/roles/${encodeURIComponent(name)}`);
-      showToast('角色已删除');
+      showToast(t('角色已删除'));
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除角色失败', 'error');
+      showToast(e?.message || t('删除角色失败'), 'error');
     }
   }
 
@@ -444,15 +446,15 @@ export default function SettingsPage() {
   const [backingUp, setBackingUp] = useState(false);
   async function handleBackup() {
     if (currentRole !== 'admin') {
-      showToast('仅管理员可导出备份', 'error');
+      showToast(t('仅管理员可导出备份'), 'error');
       return;
     }
     setBackingUp(true);
     try {
       await download('/api/system/backup', 'docker-manager-backup.db');
-      showToast('数据库备份已导出');
+      showToast(t('数据库备份已导出'));
     } catch (e: any) {
-      showToast(e?.message || '备份失败', 'error');
+      showToast(e?.message || t('备份失败'), 'error');
     } finally {
       setBackingUp(false);
     }
@@ -463,12 +465,12 @@ export default function SettingsPage() {
   const [restoring, setRestoring] = useState(false);
   async function handleRestoreFile(file: File) {
     if (currentRole !== 'admin') {
-      showToast('仅管理员可恢复数据', 'error');
+      showToast(t('仅管理员可恢复数据'), 'error');
       return;
     }
     if (!file) return;
     const confirmed = window.confirm(
-      `确定要使用 "${file.name}" 恢复数据吗？\n将覆盖当前全部用户与面板数据，此操作不可撤销。`,
+      t('确定要使用 "{{v1}}" 恢复数据吗？\n将覆盖当前全部用户与面板数据，此操作不可撤销。', { v1: file.name }),
     );
     if (!confirmed) return;
     setRestoring(true);
@@ -484,18 +486,18 @@ export default function SettingsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error || '恢复失败');
+        throw new Error(data?.error || t('恢复失败'));
       }
-      showToast(`数据库恢复成功，共 ${data?.users ?? '?'} 个用户`);
+      showToast(t('数据库恢复成功，共 {{v1}} 个用户', { v1: data?.users ?? '?' }));
       // 恢复后重新加载页面数据
       load();
       setTimeout(() => {
-        if (window.confirm('恢复成功，是否立即刷新页面以应用数据？')) {
+        if (window.confirm(t('恢复成功，是否立即刷新页面以应用数据？'))) {
           window.location.reload();
         }
       }, 500);
     } catch (e: any) {
-      showToast(e?.message || '恢复失败', 'error');
+      showToast(e?.message || t('恢复失败'), 'error');
     } finally {
       setRestoring(false);
       if (restoreInput) restoreInput.value = '';
@@ -507,15 +509,15 @@ export default function SettingsPage() {
    */
   async function handleChangePassword() {
     if (!currentUser) {
-      showToast('未获取到当前用户', 'error');
+      showToast(t('未获取到当前用户'), 'error');
       return;
     }
     if (!oldPassword) {
-      showToast('请输入原密码', 'error');
+      showToast(t('请输入原密码'), 'error');
       return;
     }
     if (chgPassword.length < 6) {
-      showToast('新密码至少 6 位', 'error');
+      showToast(t('新密码至少 6 位'), 'error');
       return;
     }
     setChanging(true);
@@ -525,13 +527,13 @@ export default function SettingsPage() {
         oldPassword,
         newPassword: chgPassword,
       });
-      showToast('密码已修改');
+      showToast(t('密码已修改'));
       setOldPassword('');
       setChgPassword('');
       // 若处于强制改密模式，改密成功后解除
       setForceChange(false);
     } catch (e: any) {
-      showToast(e?.message || '修改密码失败', 'error');
+      showToast(e?.message || t('修改密码失败'), 'error');
     } finally {
       setChanging(false);
     }
@@ -590,7 +592,7 @@ export default function SettingsPage() {
    */
   async function handleExport() {
     if (!cfgCanManage) {
-      showToast('仅管理员可导出配置', 'error');
+      showToast(t('仅管理员可导出配置'), 'error');
       return;
     }
     setExporting(true);
@@ -598,12 +600,12 @@ export default function SettingsPage() {
       const data = await get<SystemConfigExport>('/api/system/config/export', {
         includeSecrets: exportIncludeSecrets ? 1 : 0,
       });
-      if (!data) throw new Error('导出数据为空');
+      if (!data) throw new Error(t('导出数据为空'));
       downloadJson(data, configFileName());
-      showToast('配置已导出');
+      showToast(t('配置已导出'));
       setExportOpen(false);
     } catch (e: any) {
-      showToast(e?.message || '导出失败', 'error');
+      showToast(e?.message || t('导出失败'), 'error');
     } finally {
       setExporting(false);
     }
@@ -614,7 +616,7 @@ export default function SettingsPage() {
    */
   function openImport() {
     if (!cfgCanManage) {
-      showToast('仅管理员可导入配置', 'error');
+      showToast(t('仅管理员可导入配置'), 'error');
       return;
     }
     setImportText('');
@@ -635,7 +637,7 @@ export default function SettingsPage() {
       setImportText(text);
       setImportTextError('');
     } catch {
-      setImportTextError('读取文件失败，请重试');
+      setImportTextError(t('读取文件失败，请重试'));
     }
   }
 
@@ -651,10 +653,10 @@ export default function SettingsPage() {
       if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
         return obj;
       }
-      setImportTextError('JSON 必须是对象（完整导出或 data 子对象）');
+      setImportTextError(t('JSON 必须是对象（完整导出或 data 子对象）'));
       return null;
     } catch {
-      setImportTextError('JSON 格式不正确，请检查后重试');
+      setImportTextError(t('JSON 格式不正确，请检查后重试'));
       return null;
     }
   }
@@ -664,20 +666,19 @@ export default function SettingsPage() {
    */
   async function handleImportSubmit() {
     if (!cfgCanManage) {
-      showToast('仅管理员可导入配置', 'error');
+      showToast(t('仅管理员可导入配置'), 'error');
       return;
     }
     if (!importText.trim()) {
-      setImportTextError('请粘贴 JSON 或选择 JSON 文件');
+      setImportTextError(t('请粘贴 JSON 或选择 JSON 文件'));
       return;
     }
     const parsed = parseImportText();
     if (!parsed) return;
 
+    const strategyText = conflict === 'skip' ? t('跳过已存在') : conflict === 'overwrite' ? t('覆盖已存在') : t('出错即回滚');
     const confirmed = window.confirm(
-      '导入将写入/覆盖面板配置（冲突策略：' +
-        (conflict === 'skip' ? '跳过已存在' : conflict === 'overwrite' ? '覆盖已存在' : '出错即回滚') +
-        '）。\n若来源导出为脱敏版本，敏感字段（通知渠道密钥、云端/数据库口令）将为占位空值，需在导入后重新填写。确定继续？',
+      t('导入将写入/覆盖面板配置（冲突策略：{{strategy}}）。\n若来源导出为脱敏版本，敏感字段（通知渠道密钥、云端/数据库口令）将为占位空值，需在导入后重新填写。确定继续？', { strategy: strategyText }),
     );
     if (!confirmed) return;
 
@@ -688,9 +689,9 @@ export default function SettingsPage() {
         conflict,
       });
       setImportResult(res);
-      showToast('配置导入成功');
+      showToast(t('配置导入成功'));
     } catch (e: any) {
-      showToast(e?.message || '导入失败', 'error');
+      showToast(e?.message || t('导入失败'), 'error');
     } finally {
       setImporting(false);
     }
@@ -700,66 +701,66 @@ export default function SettingsPage() {
     <table className="settings-table">
       <tbody>
         <tr>
-          <td>主机名</td>
+          <td>{t('主机名')}</td>
           <td>{settings.engine.name || '-'}</td>
         </tr>
         <tr>
-          <td>操作系统</td>
+          <td>{t('操作系统')}</td>
           <td>{settings.engine.os || '-'}</td>
         </tr>
         <tr>
-          <td>架构</td>
+          <td>{t('架构')}</td>
           <td>{settings.engine.arch || '-'}</td>
         </tr>
         <tr>
-          <td>CPU 核数</td>
+          <td>{t('CPU 核数')}</td>
           <td>{settings.engine.cpu ?? '-'}</td>
         </tr>
         <tr>
-          <td>内存</td>
+          <td>{t('内存')}</td>
           <td>{formatBytes(settings.engine.mem)}</td>
         </tr>
         <tr>
-          <td>Docker 版本</td>
+          <td>{t('Docker 版本')}</td>
           <td>{settings.engine.dockerVersion || '-'}</td>
         </tr>
         <tr>
-          <td>API 版本</td>
+          <td>{t('API 版本')}</td>
           <td>{settings.engine.apiVersion || '-'}</td>
         </tr>
         <tr>
-          <td>容器总数</td>
+          <td>{t('容器总数')}</td>
           <td>{settings.engine.containers ?? '-'}</td>
         </tr>
         <tr>
-          <td>运行中容器</td>
+          <td>{t('运行中容器')}</td>
           <td>{settings.engine.running ?? '-'}</td>
         </tr>
         <tr>
-          <td>镜像数</td>
+          <td>{t('镜像数')}</td>
           <td>{settings.engine.images ?? '-'}</td>
         </tr>
       </tbody>
     </table>
   ) : (
-    <div className="settings-empty">无法获取 Docker 引擎信息（引擎可能未连接）。</div>
+    <div className="settings-empty">{t('无法获取 Docker 引擎信息（引擎可能未连接）。')}</div>
   );
 
   if (loading) {
-    return <div className="settings-page">加载中...</div>;
+    return <div className="settings-page">{t('加载中...')}</div>;
   }
 
   return (
     <div className="settings-page">
       {/* 账号管理 */}
-      <Card title="账号管理">
+      <Card title={t('账号管理')}>
         <table className="settings-table">
           <thead>
             <tr>
-              <th>用户名</th>
-              <th>角色</th>
-              <th>创建时间</th>
-              <th style={{ width: 100 }}>操作</th>
+              <th>{t('用户名')}</th>
+              <th>{t('角色')}</th>
+              <th>{t('创建时间')}</th>
+              <th style={{ width: 100 }}>{t('操作')}</th>
             </tr>
           </thead>
           <tbody>
@@ -768,11 +769,11 @@ export default function SettingsPage() {
                 <td>
                   {u.username}
                   {u.username === currentUser ? (
-                    <span className="settings-current">当前</span>
+                    <span className="settings-current">{t('当前')}</span>
                   ) : null}
                 </td>
                 {/* 角色列：内置角色显示中文名，自定义角色显示角色名 */}
-                <td>{roleLabel(u.role)}</td>
+                <td>{t(roleLabel(u.role))}</td>
                 <td>{formatDate(u.createdAt)}</td>
                 <td>
                   <Button
@@ -781,7 +782,7 @@ export default function SettingsPage() {
                     onClick={() => handleDeleteUser(u.username)}
                     disabled={u.username === currentUser}
                   >
-                    删除
+                    {t('删除')}
                   </Button>
                 </td>
               </tr>
@@ -791,34 +792,34 @@ export default function SettingsPage() {
 
         {/* 新增用户 */}
         <div className="settings-section">
-          <div className="settings-section__title">新增用户</div>
+          <div className="settings-section__title">{t('新增用户')}</div>
           <div className="settings-form">
-            <Field label="用户名" required>
+            <Field label={t('用户名')} required>
               <Input
                 value={newUsername}
                 onChange={(e) => setNewUsername(e.target.value)}
-                placeholder="请输入用户名"
+                placeholder={t('请输入用户名')}
               />
             </Field>
-            <Field label="密码" required>
+            <Field label={t('密码')} required>
               <Input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="至少 6 位"
+                placeholder={t('至少 6 位')}
                 disabled={currentRole !== 'admin'}
               />
             </Field>
-            <Field label="角色">
+            <Field label={t('角色')}>
               <select className="settings-select" value={newRole} onChange={(e) => setNewRole(e.target.value)} disabled={currentRole !== 'admin'}>
                 {roles.map((r) => (
-                  <option key={r.name} value={r.name}>{roleLabel(r.name)}</option>
+                  <option key={r.name} value={r.name}>{t(roleLabel(r.name))}</option>
                 ))}
               </select>
             </Field>
             <div className="settings-form__actions">
               <Button variant="primary" size="sm" onClick={handleCreateUser} loading={creating}>
-                创建用户
+                {t('创建用户')}
               </Button>
             </div>
           </div>
@@ -827,31 +828,31 @@ export default function SettingsPage() {
         {/* 修改密码 */}
         {forceChange && (
           <div className="settings-force-banner">
-            <strong>请设置新密码</strong> 当前仍在使用默认密码，为安全起见请修改后再继续操作。
+            <strong>{t('请设置新密码')}</strong> {t('当前仍在使用默认密码，为安全起见请修改后再继续操作。')}
           </div>
         )}
         <div className="settings-section">
-          <div className="settings-section__title">修改当前用户密码</div>
+          <div className="settings-section__title">{t('修改当前用户密码')}</div>
           <div className="settings-form">
-            <Field label="原密码">
+            <Field label={t('原密码')}>
               <Input
                 type="password"
                 value={oldPassword}
                 onChange={(e) => setOldPassword(e.target.value)}
-                placeholder="请输入原密码"
+                placeholder={t('请输入原密码')}
               />
             </Field>
-            <Field label="新密码" required>
+            <Field label={t('新密码')} required>
               <Input
                 type="password"
                 value={chgPassword}
                 onChange={(e) => setChgPassword(e.target.value)}
-                placeholder="至少 6 位"
+                placeholder={t('至少 6 位')}
               />
             </Field>
             <div className="settings-form__actions">
               <Button variant="primary" size="sm" onClick={handleChangePassword} loading={changing}>
-                修改密码
+                {t('修改密码')}
               </Button>
             </div>
           </div>
@@ -859,51 +860,51 @@ export default function SettingsPage() {
       </Card>
 
       {/* 角色管理（RBAC） */}
-      <Card title="角色管理">
+      <Card title={t('角色管理')}>
         <div className="settings-section">
           <div className="settings-section__title">
-            角色列表
+            {t('角色列表')}
             {currentRole === 'admin' && (
               <Button variant="primary" size="sm" style={{ marginLeft: 12 }} onClick={beginCreateRole}>
-                新建角色
+                {t('新建角色')}
               </Button>
             )}
           </div>
           <table className="settings-table">
             <thead>
               <tr>
-                <th>角色名</th>
-                <th>类型</th>
-                <th>权限</th>
-                <th>操作</th>
+                <th>{t('角色名')}</th>
+                <th>{t('类型')}</th>
+                <th>{t('权限')}</th>
+                <th>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
               {roles.map((r) => (
                 <tr key={r.name}>
-                  <td>{roleLabel(r.name)}</td>
-                  <td>{r.system ? '内置' : '自定义'}</td>
+                  <td>{t(roleLabel(r.name))}</td>
+                  <td>{r.system ? t('内置') : t('自定义')}</td>
                   <td>
                     {r.permissions.includes('*')
-                      ? '全部权限'
+                      ? t('全部权限')
                       : r.permissions.length === 0
-                        ? '只读'
-                        : `${r.permissions.length} 项：${r.permissions.join('、')}`}
+                        ? t('只读')
+                        : t('{{v1}} 项：{{v2}}', { v1: r.permissions.length, v2: r.permissions.join('、') })}
                   </td>
                   <td>
                     {currentRole === 'admin' && (r.system ? r.name === 'operator' : true) ? (
                       <span>
                         <Button variant="ghost" size="sm" onClick={() => beginEditRole(r)}>
-                          编辑
+                          {t('编辑')}
                         </Button>
                         {!r.system && (
                           <Button variant="ghost" size="sm" onClick={() => handleDeleteRole(r.name)}>
-                            删除
+                            {t('删除')}
                           </Button>
                         )}
                       </span>
                     ) : (
-                      <span className="settings-current">固定</span>
+                      <span className="settings-current">{t('固定')}</span>
                     )}
                   </td>
                 </tr>
@@ -916,13 +917,13 @@ export default function SettingsPage() {
         {roleEditing && (
           <div className="settings-section">
             <div className="settings-section__title">
-              {roles.some((r) => r.name === roleEditing.name) ? `编辑角色：${roleLabel(roleEditing.name)}` : '新建角色'}
+              {roles.some((r) => r.name === roleEditing.name) ? t('编辑角色：{{v1}}', { v1: roleLabel(roleEditing.name) }) : t('新建角色')}
             </div>
             <div className="settings-form">
-              <Field label="角色名" required>
+              <Field label={t('角色名')} required>
                 <Input
                   value={roleEditing.name}
-                  placeholder="2-40 位中英文、数字、下划线或连字符"
+                  placeholder={t('2-40 位中英文、数字、下划线或连字符')}
                   disabled={roles.some((r) => r.name === roleEditing.name)}
                   onChange={(e) => setRoleEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
                 />
@@ -947,45 +948,45 @@ export default function SettingsPage() {
               ))}
               <div className="settings-form__actions">
                 <Button variant="primary" size="sm" loading={roleSaving} onClick={handleSaveRole}>
-                  保存角色
+                  {t('保存角色')}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setRoleEditing(null)}>
-                  取消
+                  {t('取消')}
                 </Button>
               </div>
             </div>
           </div>
         )}
         <p className="settings-backup__desc">
-          说明：角色权限仅作用于资源管理域（容器 / 镜像 / 卷 / 网络 / 编排）；用户管理、系统设置、引擎切换等系统级操作始终需要管理员。
-          若开启「高危操作审批流」，未获授权的角色可提交审批，由管理员批准后执行。
+          {t('说明：角色权限仅作用于资源管理域（容器 / 镜像 / 卷 / 网络 / 编排）；用户管理、系统设置、引擎切换等系统级操作始终需要管理员。')}
+          {t('若开启「高危操作审批流」，未获授权的角色可提交审批，由管理员批准后执行。')}
         </p>
       </Card>
 
       {/* 数据备份与恢复 */}
-      <Card title="数据备份与恢复">
+      <Card title={t('数据备份与恢复')}>
         <div className="settings-section">
-          <div className="settings-section__title">数据库备份</div>
+          <div className="settings-section__title">{t('数据库备份')}</div>
           <div className="settings-backup">
             <p className="settings-backup__desc">
-              备份面板数据（用户、镜像源、操作日志等），导出为 SQLite 数据库文件。
+              {t('备份面板数据（用户、镜像源、操作日志等），导出为 SQLite 数据库文件。')}
             </p>
             <div className="settings-backup__actions">
               <Button variant="primary" size="sm" onClick={handleBackup} loading={backingUp} disabled={currentRole !== 'admin'}>
-                导出备份
+                {t('导出备份')}
               </Button>
             </div>
           </div>
         </div>
         <div className="settings-section">
-          <div className="settings-section__title">恢复备份</div>
+          <div className="settings-section__title">{t('恢复备份')}</div>
           <div className="settings-backup">
             <p className="settings-backup__desc">
-              从备份文件恢复面板数据。注意：恢复会覆盖当前全部数据，且需刷新页面后生效。
+              {t('从备份文件恢复面板数据。注意：恢复会覆盖当前全部数据，且需刷新页面后生效。')}
             </p>
             <div className="settings-backup__actions">
               <Button variant="danger" size="sm" loading={restoring} onClick={() => restoreInput?.click()} disabled={currentRole !== 'admin'}>
-                {restoring ? '恢复中…' : '选择备份文件并恢复'}
+                {restoring ? t('恢复中…') : t('选择备份文件并恢复')}
               </Button>
               <input
                 ref={(el) => setRestoreInput(el)}
@@ -1004,24 +1005,24 @@ export default function SettingsPage() {
 
       {/* 面板数据库备份管理（服务端快照） */}
       {currentRole === 'admin' && (
-        <Card title="面板数据库备份管理">
+        <Card title={t('面板数据库备份管理')}>
           <p className="settings-backup__desc">
-            对面板自身数据库做一致性快照（保存在数据目录 db-backups/ 下），支持一键恢复；保留份数由系统参数「面板数据库备份保留份数」控制，
-            也可在计划任务中新建「数据库备份」类型实现定时自动备份。
+            {t('对面板自身数据库做一致性快照（保存在数据目录 db-backups/ 下），支持一键恢复；保留份数由系统参数「面板数据库备份保留份数」控制，')}
+            {t('也可在计划任务中新建「数据库备份」类型实现定时自动备份。')}
           </p>
           <div className="settings-backup__actions" style={{ marginBottom: 12 }}>
             <Button variant="primary" size="sm" onClick={handleSqliteBackup} loading={dbBackupBusy}>
-              立即备份
+              {t('立即备份')}
             </Button>
           </div>
           {dbBackups.length > 0 ? (
             <table className="settings-table">
               <thead>
                 <tr>
-                  <th>备份文件</th>
-                  <th style={{ width: '14%' }}>大小</th>
-                  <th style={{ width: '22%' }}>时间</th>
-                  <th style={{ width: '26%' }}>操作</th>
+                  <th>{t('备份文件')}</th>
+                  <th style={{ width: '14%' }}>{t('大小')}</th>
+                  <th style={{ width: '22%' }}>{t('时间')}</th>
+                  <th style={{ width: '26%' }}>{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1033,17 +1034,17 @@ export default function SettingsPage() {
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         <Button variant="primary" size="sm" disabled={dbBackupBusy} onClick={() => handleSqliteRestore(b.file)}>
-                          恢复
+                          {t('恢复')}
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
                           onClick={() => download(`/api/sqlite-backups/${encodeURIComponent(b.file)}/download`, b.file)}
                         >
-                          下载
+                          {t('下载')}
                         </Button>
                         <Button variant="danger" size="sm" disabled={dbBackupBusy} onClick={() => handleSqliteDelete(b.file)}>
-                          删除
+                          {t('删除')}
                         </Button>
                       </div>
                     </td>
@@ -1052,16 +1053,16 @@ export default function SettingsPage() {
               </tbody>
             </table>
           ) : (
-            <p className="settings-backup__desc">暂无备份文件。</p>
+            <p className="settings-backup__desc">{t('暂无备份文件。')}</p>
           )}
         </Card>
       )}
 
       {/* 配置导入/导出 */}
-      <Card title="配置导入导出">
+      <Card title={t('配置导入导出')}>
         <p className="settings-backup__desc">
-          以 JSON 格式导出/导入面板配置（引擎/模板/计划任务/站点/告警/通知渠道/云端备份/数据库实例/镜像源/设置/账号），
-          用于迁移到另一台机器；与"数据备份与恢复"（全库二进制快照）互补。
+          {t('以 JSON 格式导出/导入面板配置（引擎/模板/计划任务/站点/告警/通知渠道/云端备份/数据库实例/镜像源/设置/账号），')}
+          {t('用于迁移到另一台机器；与"数据备份与恢复"（全库二进制快照）互补。')}
         </p>
         <div className="settings-backup__actions">
           <Button
@@ -1070,7 +1071,7 @@ export default function SettingsPage() {
             onClick={() => setExportOpen(true)}
             disabled={!cfgCanManage}
           >
-            导出配置
+            {t('导出配置')}
           </Button>
           <Button
             variant="secondary"
@@ -1078,33 +1079,33 @@ export default function SettingsPage() {
             onClick={openImport}
             disabled={!cfgCanManage}
           >
-            导入配置
+            {t('导入配置')}
           </Button>
         </div>
       </Card>
 
       {/* 系统参数（配置中心） */}
       {kvItems.length > 0 && (
-        <Card title="系统参数">
+        <Card title={t('系统参数')}>
           {(['runtime', 'security', 'retention', 'notification', 'general'] as SettingItem['group'][])
             .map((group) => ({ group, items: kvItems.filter((s) => s.group === group) }))
             .filter((g) => g.items.length > 0)
             .map(({ group, items }) => (
               <div className="settings-section" key={group}>
-                <div className="settings-section__title">{KV_GROUP_LABELS[group]}</div>
+                <div className="settings-section__title">{t(KV_GROUP_LABELS[group])}</div>
                 {items.map((item) => (
                   <div className="settings-kv" key={item.key}>
                     <div className="settings-kv__info">
                       <div className="settings-kv__label">
                         {item.label}
-                        {item.source === 'db' && <span className="settings-kv__badge">自定义</span>}
-                        {item.readonly && <span className="settings-kv__badge settings-kv__badge--muted">只读</span>}
+                        {item.source === 'db' && <span className="settings-kv__badge">{t('自定义')}</span>}
+                        {item.readonly && <span className="settings-kv__badge settings-kv__badge--muted">{t('只读')}</span>}
                       </div>
                       {item.hint && <div className="settings-kv__hint">{item.hint}</div>}
                     </div>
                     <div className="settings-kv__control">
                       {item.type === 'secret' ? (
-                        <span className="settings-kv__value">{item.configured ? '已配置' : '未配置'}</span>
+                        <span className="settings-kv__value">{item.configured ? t('已配置') : t('未配置')}</span>
                       ) : (
                         <Input
                           className="settings-kv__input"
@@ -1118,7 +1119,7 @@ export default function SettingsPage() {
                       )}
                       {currentRole === 'admin' && !item.readonly && (
                         <Button variant="ghost" size="sm" onClick={() => handleResetKv(item)}>
-                          恢复默认
+                          {t('恢复默认')}
                         </Button>
                       )}
                     </div>
@@ -1129,7 +1130,7 @@ export default function SettingsPage() {
           {currentRole === 'admin' && (
             <div className="settings-backup__actions">
               <Button variant="primary" size="sm" onClick={handleSaveKv} loading={kvSaving}>
-                保存修改
+                {t('保存修改')}
               </Button>
             </div>
           )}
@@ -1137,25 +1138,25 @@ export default function SettingsPage() {
       )}
 
       {/* 关于 / 引擎信息 */}
-      <Card title="关于">
+      <Card title={t('关于')}>
         <div className="settings-info">
           <div className="settings-info__row">
-            <span>面板版本</span>
+            <span>{t('面板版本')}</span>
             <span>
               v{settings?.version || '-'}
               {updateInfo?.available && (
                 <span style={{ marginLeft: 8, color: '#f59e0b', fontSize: 12 }}>
-                  (最新版 v{updateInfo.latest})
+                  {t('(最新版 v')}{updateInfo.latest})
                 </span>
               )}
             </span>
           </div>
           <div className="settings-info__row">
-            <span>服务端口</span>
+            <span>{t('服务端口')}</span>
             <span>{settings?.port ?? '-'}</span>
           </div>
           <div className="settings-info__row">
-            <span>更新检查</span>
+            <span>{t('更新检查')}</span>
             <span>
               <Button
                 variant="ghost"
@@ -1163,7 +1164,7 @@ export default function SettingsPage() {
                 onClick={handleCheckUpdate}
                 loading={checkingUpdate}
               >
-                {updateInfo?.available ? '有新版本可用' : updateInfo ? '已是最新版' : '检查更新'}
+                {updateInfo?.available ? t('有新版本可用') : updateInfo ? t('已是最新版') : t('检查更新')}
               </Button>
               {updateInfo?.available && updateInfo.url && (
                 <a
@@ -1172,7 +1173,7 @@ export default function SettingsPage() {
                   rel="noopener noreferrer"
                   style={{ marginLeft: 8, fontSize: 12, color: '#3b82f6' }}
                 >
-                  前往下载
+                  {t('前往下载')}
                 </a>
               )}
               {updateInfo?.error && (
@@ -1186,10 +1187,10 @@ export default function SettingsPage() {
 
         {/* 外观 / 主题切换 */}
         <div className="settings-section">
-          <div className="settings-section__title">外观</div>
+          <div className="settings-section__title">{t('外观')}</div>
           <div className="settings-theme">
             <span className="settings-theme__label">
-              当前主题：{theme === 'dark' ? '深色' : '浅色'}
+              {t('当前主题：')}{theme === 'dark' ? t('深色') : t('浅色')}
             </span>
             <div className="settings-theme__actions">
               <Button
@@ -1197,34 +1198,60 @@ export default function SettingsPage() {
                 size="sm"
                 onClick={() => setTheme('light')}
               >
-                浅色
+                {t('浅色')}
               </Button>
               <Button
                 variant={theme === 'dark' ? 'primary' : 'ghost'}
                 size="sm"
                 onClick={() => setTheme('dark')}
               >
-                深色
+                {t('深色')}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* 界面语言切换 */}
+        <div className="settings-section">
+          <div className="settings-section__title">{t('界面语言')}</div>
+          <div className="settings-theme">
+            <span className="settings-theme__label">
+              {t('当前语言：{{v}}', { v: lang === 'zh' ? t('中文') : 'English' })}
+            </span>
+            <div className="settings-theme__actions">
+              <Button
+                variant={lang === 'zh' ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => setLang('zh')}
+              >
+                {t('中文')}
+              </Button>
+              <Button
+                variant={lang === 'en' ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => setLang('en')}
+              >
+                English
               </Button>
             </div>
           </div>
         </div>
       </Card>
 
-      <Card title="Docker 引擎信息">{engineEl}</Card>
+      <Card title={t('Docker 引擎信息')}>{engineEl}</Card>
 
       {/* 导出配置弹窗：选择是否包含敏感字段 */}
       <Modal
         open={exportOpen}
-        title="导出面板配置"
+        title={t('导出面板配置')}
         onClose={() => setExportOpen(false)}
         footer={
           <>
             <Button variant="ghost" onClick={() => setExportOpen(false)} disabled={exporting}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" onClick={handleExport} loading={exporting}>
-              导出
+              {t('导出')}
             </Button>
           </>
         }
@@ -1238,16 +1265,16 @@ export default function SettingsPage() {
                 onChange={(e) => setExportIncludeSecrets(e.target.checked)}
                 disabled={exporting}
               />
-              <span>包含敏感字段</span>
+              <span>{t('包含敏感字段')}</span>
             </label>
             {exportIncludeSecrets && (
               <p className="settings-config__warn">
-                注意：选择后将把通知渠道密钥、云端备份口令、数据库口令以<b>明文</b>写入导出文件，请妥善保管。
+                {t('注意：选择后将把通知渠道密钥、云端备份口令、数据库口令以')}<b>{t('明文')}</b>{t('写入导出文件，请妥善保管。')}
               </p>
             )}
             {!exportIncludeSecrets && (
               <p className="settings-config__hint">
-                不包含敏感字段时，相关口令会以"已设置"占位导出（无明文），导入后需重新填写。
+                {t('不包含敏感字段时，相关口令会以"已设置"占位导出（无明文），导入后需重新填写。')}
               </p>
             )}
           </div>
@@ -1257,16 +1284,16 @@ export default function SettingsPage() {
       {/* 导入配置弹窗：粘贴/选择 JSON + 冲突策略 + 结果 */}
       <Modal
         open={importOpen}
-        title="导入面板配置"
+        title={t('导入面板配置')}
         onClose={() => setImportOpen(false)}
         width={600}
         footer={
           <>
             <Button variant="ghost" onClick={() => setImportOpen(false)} disabled={importing}>
-              关闭
+              {t('关闭')}
             </Button>
             <Button variant="danger" onClick={handleImportSubmit} loading={importing} disabled={!cfgCanManage}>
-              导入
+              {t('导入')}
             </Button>
           </>
         }
@@ -1274,7 +1301,7 @@ export default function SettingsPage() {
         <div className="settings-config">
           <div className="settings-config__row">
             <Button variant="ghost" size="sm" onClick={() => importFileRef.current?.click()} disabled={importing}>
-              选择 JSON 文件
+              {t('选择 JSON 文件')}
             </Button>
             <input
               ref={importFileRef}
@@ -1286,9 +1313,9 @@ export default function SettingsPage() {
                 e.target.value = '';
               }}
             />
-            <span className="settings-config__hint">也可直接在下方粘贴 JSON 内容</span>
+            <span className="settings-config__hint">{t('也可直接在下方粘贴 JSON 内容')}</span>
           </div>
-          <Field label="配置 JSON" error={importTextError} hint={importTextError ? undefined : '支持完整导出对象（含 data 字段）或 data 子对象'}>
+          <Field label={t('配置 JSON')} error={importTextError} hint={importTextError ? undefined : t('支持完整导出对象（含 data 字段）或 data 子对象')}>
             <TextArea
               value={importText}
               onChange={(e) => {
@@ -1301,11 +1328,11 @@ export default function SettingsPage() {
               style={{ minHeight: 180 }}
             />
           </Field>
-          <Field label="冲突策略">
+          <Field label={t('冲突策略')}>
             <Select value={conflict} onChange={(e) => setConflict(e.target.value as ConfigImportConflict)} disabled={importing}>
-              <option value="overwrite">覆盖已存在</option>
-              <option value="skip">跳过已存在</option>
-              <option value="error">出错即回滚</option>
+              <option value="overwrite">{t('覆盖已存在')}</option>
+              <option value="skip">{t('跳过已存在')}</option>
+              <option value="error">{t('出错即回滚')}</option>
             </Select>
           </Field>
         </div>
@@ -1313,7 +1340,7 @@ export default function SettingsPage() {
         {/* 导入结果统计 */}
         {importResult && (
           <div className="settings-config__result">
-            <div className="settings-config__result-title">导入结果（策略：{importResult.conflict === 'skip' ? '跳过' : importResult.conflict === 'overwrite' ? '覆盖' : '出错回滚'}）</div>
+            <div className="settings-config__result-title">{t('导入结果（策略：{{strategy}}）', { strategy: importResult.conflict === 'skip' ? t('跳过') : importResult.conflict === 'overwrite' ? t('覆盖') : t('出错回滚') })}</div>
             <div className="settings-config__result-grid">
               {Object.entries(importResult.imported || {}).map(([key, count]) => (
                 <div className="settings-config__result-item" key={key}>

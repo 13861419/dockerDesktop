@@ -2,15 +2,17 @@
  * 骨架屏 / 加载状态组件
  */
 import './Loading.less';
+import { useLang } from '../i18n';
 
 /**
  * 页面级加载态
  */
 export function PageLoading() {
+  const { t } = useLang();
   return (
     <div className="loading-page">
       <div className="loading-spinner" />
-      <span>加载中...</span>
+      <span>{t('加载中...')}</span>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { get, post, del } from '../api/client';
 import { getToken, canOperate } from '../api/auth';
 import { useCanManage } from '../hooks/useCanManage';
 import { ImageItem } from '../types';
+import { useLang, translateNow } from '../i18n';
 import './images.less';
 
 /** 将字节数格式化为人类可读大小 */
@@ -58,7 +59,7 @@ async function downloadImage(name: string): Promise<void> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let message = `镜像导出失败 (${res.status})`;
+    let message = translateNow('镜像导出失败 ({{v1}})', { v1: res.status });
     try {
       const data = JSON.parse(text);
       message = data?.error || message;
@@ -135,6 +136,7 @@ const suggestStatStyle: React.CSSProperties = {
  * 镜像列表页组件
  */
 export default function ImagesPage() {
+  const { t } = useLang();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const { hasPerm } = useCanManage();
@@ -244,8 +246,8 @@ export default function ImagesPage() {
       setImages(data || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '拉取镜像列表失败');
-      showToast(e?.message || '拉取镜像列表失败', 'error');
+      setLoadError(e?.message || t('拉取镜像列表失败'));
+      showToast(e?.message || t('拉取镜像列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -295,25 +297,25 @@ export default function ImagesPage() {
 
   const handlePull = useCallback(async () => {
     if (!canPull) {
-      showToast('缺少镜像拉取权限', 'error');
+      showToast(t('缺少镜像拉取权限'), 'error');
       setPullOpen(false);
       return;
     }
     const ref = pullRef.trim();
     if (!ref) {
-      showToast('请输入镜像名称', 'error');
+      showToast(t('请输入镜像名称'), 'error');
       return;
     }
     setPulling(true);
     try {
       await post('/api/images/pull', { ref, source: pullSource || undefined });
-      showToast('镜像拉取成功');
+      showToast(t('镜像拉取成功'));
       setPullOpen(false);
       setPullRef('');
       setPullSource('');
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '镜像拉取失败', 'error');
+      showToast(e?.message || t('镜像拉取失败'), 'error');
     } finally {
       setPulling(false);
     }
@@ -326,14 +328,14 @@ export default function ImagesPage() {
     try {
       const resp = await del<{ approvalPending?: boolean }>(imageDeleteUrl(name));
       if (resp?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
       } else {
-        showToast('镜像删除成功');
+        showToast(t('镜像删除成功'));
       }
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '镜像删除失败', 'error');
+      showToast(e?.message || t('镜像删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -407,21 +409,21 @@ export default function ImagesPage() {
         { names: [...batchSelection] }
       );
       if (res?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
       } else {
         const failedCount = res?.failed?.length || 0;
         const deletedCount = res?.deleted?.length || 0;
         if (failedCount > 0) {
-          showToast(`批量删除完成：成功 ${deletedCount} 个，失败 ${failedCount} 个`, 'error');
+          showToast(t('批量删除完成：成功 {{deletedCount}} 个，失败 {{failedCount}} 个', { deletedCount, failedCount }), 'error');
         } else {
-          showToast(`成功删除 ${deletedCount} 个镜像`);
+          showToast(t('成功删除 {{deletedCount}} 个镜像', { deletedCount }));
         }
       }
       setBatchConfirmOpen(false);
       setBatchSelection(new Set());
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '批量删除镜像失败', 'error');
+      showToast(e?.message || t('批量删除镜像失败'), 'error');
     } finally {
       setBatchDeleting(false);
     }
@@ -433,7 +435,7 @@ export default function ImagesPage() {
   const handleSearch = useCallback(async () => {
     const term = searchTerm.trim();
     if (!term) {
-      showToast('请输入搜索关键字', 'error');
+      showToast(t('请输入搜索关键字'), 'error');
       return;
     }
     setSearching(true);
@@ -441,7 +443,7 @@ export default function ImagesPage() {
       const data = await post<{ ok: boolean; results: any[] }>('/api/images/search', { term });
       setSearchResults(data?.results || []);
     } catch (e: any) {
-      showToast(e?.message || '镜像搜索失败', 'error');
+      showToast(e?.message || t('镜像搜索失败'), 'error');
       setSearchResults([]);
     } finally {
       setSearching(false);
@@ -465,17 +467,17 @@ export default function ImagesPage() {
   const handlePullResult = useCallback(
     async (name: string) => {
       if (!canManage) {
-        showToast('仅管理员可拉取镜像', 'error');
+        showToast(t('仅管理员可拉取镜像'), 'error');
         return;
       }
       setPullResultRef(name);
       try {
         // 不传 source，由后端自动使用默认启用镜像源
         await post('/api/images/pull', { ref: name });
-        showToast(`镜像 ${name} 拉取成功`);
+        showToast(t('镜像 {{name}} 拉取成功', { name }));
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || '镜像拉取失败', 'error');
+        showToast(e?.message || t('镜像拉取失败'), 'error');
       } finally {
         setPullResultRef('');
       }
@@ -489,15 +491,15 @@ export default function ImagesPage() {
       // all=false：仅清理悬空镜像（dangling）
       const res = await post<any>('/api/images/prune', { all: false });
       if (res?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
       } else {
         const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
-        showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+        showToast(freed ? t('清理完成，释放 {{freed}}', { freed }) : t('清理完成'));
       }
       setPruneOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '清理失败', 'error');
+      showToast(e?.message || t('清理失败'), 'error');
     } finally {
       setPruning(false);
     }
@@ -511,15 +513,15 @@ export default function ImagesPage() {
     try {
       const res = await post<any>('/api/images/prune', { all: true });
       if (res?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
       } else {
         const freed = res?.spaceReclaimed != null ? formatSize(res.spaceReclaimed) : '';
-        showToast(freed ? `清理完成，释放 ${freed}` : '清理完成');
+        showToast(freed ? t('清理完成，释放 {{freed}}', { freed }) : t('清理完成'));
       }
       setPruneAllOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '清理失败', 'error');
+      showToast(e?.message || t('清理失败'), 'error');
     } finally {
       setPruningAll(false);
     }
@@ -534,7 +536,7 @@ export default function ImagesPage() {
    */
   const openTag = useCallback((img: ImageItem) => {
     if (!canManage) {
-      showToast('仅管理员可给镜像打标签', 'error');
+      showToast(t('仅管理员可给镜像打标签'), 'error');
       return;
     }
     const base = (img.RepoTags?.[0] || '').split('@')[0];
@@ -559,27 +561,27 @@ export default function ImagesPage() {
   const handleTag = useCallback(async () => {
     if (!tagTarget) return;
     if (!canManage) {
-      showToast('仅管理员可给镜像打标签', 'error');
+      showToast(t('仅管理员可给镜像打标签'), 'error');
       setTagTarget(null);
       return;
     }
     const repo = tagRepo.trim();
     const tag = tagTag.trim() || 'latest';
     if (!repo) {
-      showToast('请输入仓库名', 'error');
+      showToast(t('请输入仓库名'), 'error');
       return;
     }
     const name = tagTarget.RepoTags?.[0] || tagTarget.Id;
     setTagging(true);
     try {
       await post('/api/images/tag', { name, repo, tag });
-      showToast('镜像打标签成功');
+      showToast(t('镜像打标签成功'));
       setTagTarget(null);
       setTagRepo('');
       setTagTag('');
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '镜像打标签失败', 'error');
+      showToast(e?.message || t('镜像打标签失败'), 'error');
     } finally {
       setTagging(false);
     }
@@ -595,9 +597,9 @@ export default function ImagesPage() {
       setExportingName(name);
       try {
         await downloadImage(name);
-        showToast('镜像导出已开始');
+        showToast(t('镜像导出已开始'));
       } catch (e: any) {
-        showToast(e?.message || '镜像导出失败', 'error');
+        showToast(e?.message || t('镜像导出失败'), 'error');
       } finally {
         setExportingName('');
       }
@@ -613,7 +615,7 @@ export default function ImagesPage() {
   const openTransfer = useCallback(
     async (img: ImageItem) => {
       if (!canOperate()) {
-        showToast('仅运维或管理员可迁移镜像', 'error');
+        showToast(t('仅运维或管理员可迁移镜像'), 'error');
         return;
       }
       const name = img.RepoTags?.[0] || img.Id;
@@ -634,7 +636,7 @@ export default function ImagesPage() {
         const others = list.filter((e) => e.id !== (cur?.id || list[0]?.id));
         setTransferTargetId(others[0]?.id || '');
       } catch (e: any) {
-        showToast(e?.message || '加载引擎列表失败', 'error');
+        showToast(e?.message || t('加载引擎列表失败'), 'error');
       }
     },
     [showToast],
@@ -646,16 +648,16 @@ export default function ImagesPage() {
   const handleTransfer = useCallback(async () => {
     if (!transferTarget) return;
     if (!canOperate()) {
-      showToast('仅运维或管理员可迁移镜像', 'error');
+      showToast(t('仅运维或管理员可迁移镜像'), 'error');
       setTransferTarget(null);
       return;
     }
     if (!transferSourceId || !transferTargetId) {
-      showToast('请选择源引擎与目标引擎', 'error');
+      showToast(t('请选择源引擎与目标引擎'), 'error');
       return;
     }
     if (transferSourceId === transferTargetId) {
-      showToast('源引擎与目标引擎不能相同', 'error');
+      showToast(t('源引擎与目标引擎不能相同'), 'error');
       return;
     }
     const name = transferTarget.RepoTags?.[0] || transferTarget.Id;
@@ -668,13 +670,13 @@ export default function ImagesPage() {
         tag: transferTag.trim() || undefined,
       });
       if (!data?.ok) {
-        throw new Error(data?.error || '镜像迁移失败');
+        throw new Error(data?.error || t('镜像迁移失败'));
       }
-      showToast(`镜像迁移成功（${data?.loaded || name}）`);
+      showToast(t('镜像迁移成功（{{v1}}）', { v1: data?.loaded || name }));
       setTransferTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '镜像迁移失败', 'error');
+      showToast(e?.message || t('镜像迁移失败'), 'error');
     } finally {
       setTransferring(false);
     }
@@ -685,12 +687,12 @@ export default function ImagesPage() {
    */
   const handleImport = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可导入镜像', 'error');
+      showToast(t('仅管理员可导入镜像'), 'error');
       setImportOpen(false);
       return;
     }
     if (!importFile) {
-      showToast('请先选择要导入的 .tar 镜像文件', 'error');
+      showToast(t('请先选择要导入的 .tar 镜像文件'), 'error');
       return;
     }
     setImporting(true);
@@ -712,14 +714,14 @@ export default function ImagesPage() {
         /* 忽略非 JSON 响应体 */
       }
       if (!res.ok) {
-        throw new Error(data?.error || `镜像导入失败 (${res.status})`);
+        throw new Error(data?.error || t('镜像导入失败 ({{v1}})', { v1: res.status }));
       }
-      showToast('镜像导入成功');
+      showToast(t('镜像导入成功'));
       setImportOpen(false);
       setImportFile(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '镜像导入失败', 'error');
+      showToast(e?.message || t('镜像导入失败'), 'error');
     } finally {
       setImporting(false);
     }
@@ -731,7 +733,7 @@ export default function ImagesPage() {
    */
   const openPush = useCallback((img: ImageItem) => {
     if (!canManage) {
-      showToast('仅管理员可推送镜像', 'error');
+      showToast(t('仅管理员可推送镜像'), 'error');
       return;
     }
     setPushName(img.RepoTags?.[0] || img.Id);
@@ -746,13 +748,13 @@ export default function ImagesPage() {
   const handlePush = useCallback(async () => {
     if (!pushTarget) return;
     if (!canManage) {
-      showToast('仅管理员可推送镜像', 'error');
+      showToast(t('仅管理员可推送镜像'), 'error');
       setPushTarget(null);
       return;
     }
     const name = pushName.trim();
     if (!name) {
-      showToast('请输入推送目标仓库名', 'error');
+      showToast(t('请输入推送目标仓库名'), 'error');
       return;
     }
     setPushing(true);
@@ -764,13 +766,13 @@ export default function ImagesPage() {
             ? { username: pushUsername, password: pushPassword }
             : undefined,
       });
-      showToast('镜像推送成功');
+      showToast(t('镜像推送成功'));
       setPushTarget(null);
       setPushName('');
       setPushUsername('');
       setPushPassword('');
     } catch (e: any) {
-      showToast(e?.message || '镜像推送失败', 'error');
+      showToast(e?.message || t('镜像推送失败'), 'error');
     } finally {
       setPushing(false);
     }
@@ -847,7 +849,7 @@ export default function ImagesPage() {
       {/* 镜像优化建议卡片 */}
       {suggestions && (
         <div style={{ marginBottom: 16 }}>
-          <Card title="镜像优化建议">
+          <Card title={t('镜像优化建议')}>
             <div
               style={{
                 display: 'grid',
@@ -857,19 +859,19 @@ export default function ImagesPage() {
               }}
             >
               <div style={suggestStatStyle}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>总镜像数</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{t('总镜像数')}</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {suggestions.totalCount}
                 </div>
               </div>
               <div style={suggestStatStyle}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>总大小</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{t('总大小')}</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {formatSize(suggestions.totalSize)}
                 </div>
               </div>
               <div style={suggestStatStyle}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>悬空镜像</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{t('悬空镜像')}</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {suggestions.danglingCount}
                 </div>
@@ -877,23 +879,23 @@ export default function ImagesPage() {
               <div
                 style={{ ...suggestStatStyle, cursor: 'pointer' }}
                 onClick={() => setUnusedOpen(true)}
-                title="点击查看未使用镜像详情"
+                title={t('点击查看未使用镜像详情')}
               >
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>未使用镜像</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{t('未使用镜像')}</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--primary)' }}>
                   {suggestions.unused.length}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>点击查看详情</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>{t('点击查看详情')}</div>
               </div>
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
-              Top 5 大镜像
+              {t('Top 5 大镜像')}
             </div>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>镜像</th>
-                  <th>大小</th>
+                  <th>{t('镜像')}</th>
+                  <th>{t('大小')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -904,7 +906,7 @@ export default function ImagesPage() {
                         {img.tags[0] || '<none>'}
                       </div>
                       {img.tags.length > 1 && (
-                        <div className="name-sub">+{img.tags.length - 1} 个标签</div>
+                        <div className="name-sub">{t('+{{n}} 个标签', { n: img.tags.length - 1 })}</div>
                       )}
                     </td>
                     <td>{formatSize(img.size)}</td>
@@ -914,10 +916,10 @@ export default function ImagesPage() {
             </table>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
               <Button variant="secondary" onClick={openCatManage} disabled={!canManage}>
-                按分类管理
+                {t('按分类管理')}
               </Button>
               <Button variant="danger" onClick={() => setPruneAllOpen(true)} disabled={!canPruneImage}>
-                一键清理未使用镜像
+                {t('一键清理未使用镜像')}
               </Button>
             </div>
           </Card>
@@ -925,12 +927,12 @@ export default function ImagesPage() {
       )}
 
       <Card
-        title="镜像"
+        title={t('镜像')}
         extra={
           <div className="toolbar">
             <input
               className="input images-search"
-              placeholder="搜索镜像名或 ID"
+              placeholder={t('搜索镜像名或 ID')}
               value={keyword}
               onChange={(e) => {
                 setKeyword(e.target.value);
@@ -938,19 +940,19 @@ export default function ImagesPage() {
               }}
             />
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPruneImage}>
-              清理悬空镜像
+              {t('清理悬空镜像')}
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={!canManage}>
-              导入镜像
+              {t('导入镜像')}
             </Button>
             <Button variant="secondary" onClick={openSearch}>
-              搜索镜像
+              {t('搜索镜像')}
             </Button>
             <Button variant="primary" onClick={() => setPullOpen(true)} disabled={!canPull}>
-              拉取镜像
+              {t('拉取镜像')}
             </Button>
           </div>
         }
@@ -960,33 +962,33 @@ export default function ImagesPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取镜像列表失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('拉取镜像列表失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchImages}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : sortedImages.length === 0 ? (
           <Empty
             kind={keyword ? 'search' : 'empty'}
-            title={keyword ? '未找到匹配镜像' : '暂无镜像'}
-            description={keyword ? '尝试更换搜索关键字' : '点击右上角'}
+            title={keyword ? t('未找到匹配镜像') : t('暂无镜像')}
+            description={keyword ? t('尝试更换搜索关键字') : t('点击右上角')}
           />
         ) : (
           <>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>仓库标签</th>
-                  <th>镜像ID</th>
-                  <th className="th-sort" onClick={toggleSizeSort} title="点击按大小排序">
-                    大小 {sizeSort === 'asc' ? '↑' : sizeSort === 'desc' ? '↓' : ''}
+                  <th>{t('仓库标签')}</th>
+                  <th>{t('镜像ID')}</th>
+                  <th className="th-sort" onClick={toggleSizeSort} title={t('点击按大小排序')}>
+                    {t('大小')} {sizeSort === 'asc' ? '↑' : sizeSort === 'desc' ? '↓' : ''}
                   </th>
-                  <th>构建时间</th>
-                  <th>拉取时间</th>
-                  <th className="col-actions">操作</th>
+                  <th>{t('构建时间')}</th>
+                  <th>{t('拉取时间')}</th>
+                  <th className="col-actions">{t('操作')}</th>
                 </tr>
               </thead>
             <tbody>
@@ -997,7 +999,7 @@ export default function ImagesPage() {
                       {displayName(img)}
                     </div>
                     {img.RepoTags && img.RepoTags.length > 1 && (
-                      <div className="name-sub">+{img.RepoTags.length - 1} 个标签</div>
+                      <div className="name-sub">{t('+{{n}} 个标签', { n: img.RepoTags.length - 1 })}</div>
                     )}
                   </td>
                   <td className="col-mono">{img.Id.slice(0, 12)}</td>
@@ -1007,7 +1009,7 @@ export default function ImagesPage() {
                   <td className="col-actions">
                     <div className="row-actions">
                       <Button variant="ghost" size="sm" onClick={() => goDetail(img)}>
-                        详情
+                        {t('详情')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -1015,7 +1017,7 @@ export default function ImagesPage() {
                         loading={exportingName === (img.RepoTags?.[0] || img.Id)}
                         onClick={() => handleExport(img)}
                       >
-                        导出
+                        {t('导出')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -1023,16 +1025,16 @@ export default function ImagesPage() {
                         disabled={!canOperate()}
                         onClick={() => openTransfer(img)}
                       >
-                        迁移
+                        {t('迁移')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openTag(img)} disabled={!canManage}>
-                        打标签
+                        {t('打标签')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openPush(img)} disabled={!canManage}>
-                        推送
+                        {t('推送')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)}>
-                        删除
+                        {t('删除')}
                       </Button>
                     </div>
                   </td>
@@ -1045,7 +1047,7 @@ export default function ImagesPage() {
           <div className="images__pagination">
             <div className="images__pagination-left">
               <span className="images__pagination-size">
-                每页
+                {t('每页')}
                 <Select
                   className="images__pagesize"
                   value={String(pageSize)}
@@ -1057,10 +1059,10 @@ export default function ImagesPage() {
                     </option>
                   ))}
                 </Select>
-                条
+                {t('条')}
               </span>
               <span className="images__pagination-info">
-                共 {sortedImages.length} 条，当前第 {pageStart}-{pageEnd} 条
+                {t('共 {{total}} 条，当前第 {{start}}-{{end}} 条', { total: sortedImages.length, start: pageStart, end: pageEnd })}
               </span>
             </div>
             <div className="images__pagination-controls">
@@ -1069,7 +1071,7 @@ export default function ImagesPage() {
                 disabled={safePage <= 1}
                 onClick={() => setPage(safePage - 1)}
               >
-                上一页
+                {t('上一页')}
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <button
@@ -1085,7 +1087,7 @@ export default function ImagesPage() {
                 disabled={safePage >= totalPages}
                 onClick={() => setPage(safePage + 1)}
               >
-                下一页
+                {t('下一页')}
               </button>
               <span className="images__page-jump">
                 <Input
@@ -1093,7 +1095,7 @@ export default function ImagesPage() {
                   type="number"
                   min={1}
                   max={totalPages}
-                  placeholder="页码"
+                  placeholder={t('页码')}
                   value={pageJump}
                   onChange={(e) => setPageJump(e.target.value)}
                   onKeyDown={(e) => {
@@ -1101,7 +1103,7 @@ export default function ImagesPage() {
                   }}
                 />
                 <Button variant="ghost" size="sm" onClick={handlePageJump}>
-                  跳转
+                  {t('跳转')}
                 </Button>
               </span>
             </div>
@@ -1113,16 +1115,16 @@ export default function ImagesPage() {
       {/* 搜索镜像弹窗 */}
       <Modal
         open={searchOpen}
-        title="搜索镜像"
+        title={t('搜索镜像')}
         width={720}
         onClose={() => !searching && setSearchOpen(false)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setSearchOpen(false)} disabled={searching}>
-              关闭
+              {t('关闭')}
             </Button>
             <Button onClick={handleSearch} loading={searching}>
-              搜索
+              {t('搜索')}
             </Button>
           </>
         }
@@ -1132,7 +1134,7 @@ export default function ImagesPage() {
             <Input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="输入镜像关键字，如 nginx"
+              placeholder={t('输入镜像关键字，如 nginx')}
               onKeyDown={(e) => {
                 // 回车触发搜索
                 if (e.key === 'Enter' && !searching) handleSearch();
@@ -1140,22 +1142,22 @@ export default function ImagesPage() {
               autoFocus
             />
             <Button onClick={handleSearch} loading={searching}>
-              搜索
+              {t('搜索')}
             </Button>
           </div>
           {searching ? (
-            <div className="search-modal__tip">搜索中，请稍候…</div>
+            <div className="search-modal__tip">{t('搜索中，请稍候…')}</div>
           ) : searchTerm.trim() && searchResults.length === 0 ? (
-            <Empty title="未找到镜像" description="尝试更换搜索关键字后重试" />
+            <Empty title={t('未找到镜像')} description={t('尝试更换搜索关键字后重试')} />
           ) : searchResults.length > 0 ? (
             <table className="data-table search-table">
               <thead>
                 <tr>
-                  <th>镜像名称</th>
-                  <th>描述</th>
-                  <th>星数</th>
-                  <th>官方</th>
-                  <th className="col-actions">操作</th>
+                  <th>{t('镜像名称')}</th>
+                  <th>{t('描述')}</th>
+                  <th>{t('星数')}</th>
+                  <th>{t('官方')}</th>
+                  <th className="col-actions">{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1165,13 +1167,13 @@ export default function ImagesPage() {
                       <div className="name-main" title={r.name}>
                         {r.name}
                       </div>
-                      {r.is_automated && <div className="name-sub">自动构建</div>}
+                      {r.is_automated && <div className="name-sub">{t('自动构建')}</div>}
                     </td>
                     <td className="search-desc" title={r.description}>
                       {r.description || '-'}
                     </td>
                     <td className="col-mono">{r.star_count ?? 0}</td>
-                    <td>{r.is_official ? '官方' : '-'}</td>
+                    <td>{r.is_official ? t('官方') : '-'}</td>
                     <td className="col-actions">
                       <div className="row-actions">
                         <Button
@@ -1181,7 +1183,7 @@ export default function ImagesPage() {
                           disabled={!canPull}
                           onClick={() => handlePullResult(r.name)}
                         >
-                          拉取
+                          {t('拉取')}
                         </Button>
                       </div>
                     </td>
@@ -1190,7 +1192,7 @@ export default function ImagesPage() {
               </tbody>
             </table>
           ) : (
-            <div className="search-modal__tip">输入关键字后点击“搜索”查看结果。</div>
+            <div className="search-modal__tip">{t('输入关键字后点击“搜索”查看结果。')}</div>
           )}
         </div>
       </Modal>
@@ -1198,30 +1200,30 @@ export default function ImagesPage() {
       {/* 拉取镜像弹窗 */}
       <Modal
         open={pullOpen}
-        title="拉取镜像"
+        title={t('拉取镜像')}
         onClose={() => setPullOpen(false)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPullOpen(false)} disabled={pulling}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handlePull} loading={pulling} disabled={!canPull}>
-              拉取
+              {t('拉取')}
             </Button>
           </>
         }
       >
-        <Field label="镜像名称" required hint="例如：nginx:latest 或 docker.io/library/nginx">
+        <Field label={t('镜像名称')} required hint={t('例如：nginx:latest 或 docker.io/library/nginx')}>
           <Input
             value={pullRef}
             onChange={(e) => setPullRef(e.target.value)}
-            placeholder="镜像名称"
+            placeholder={t('镜像名称')}
             autoFocus
           />
         </Field>
-        <Field label="镜像源" hint="留空则使用后端默认镜像源">
+        <Field label={t('镜像源')} hint={t('留空则使用后端默认镜像源')}>
           <Select value={pullSource} onChange={(e) => setPullSource(e.target.value)}>
-            <option value="">使用默认镜像源</option>
+            <option value="">{t('使用默认镜像源')}</option>
             {sources
               .filter((s) => s.enabled !== false)
               .map((s) => (
@@ -1232,30 +1234,30 @@ export default function ImagesPage() {
           </Select>
         </Field>
         <div className="pull-source-hint">
-          配置了镜像源（设置 → 镜像中心 → 镜像源）时，拉取会自动带上源前缀以加速访问。
+          {t('配置了镜像源（设置 → 镜像中心 → 镜像源）时，拉取会自动带上源前缀以加速访问。')}
         </div>
       </Modal>
 
       {/* 打标签弹窗 */}
       <Modal
         open={!!tagTarget}
-        title={tagTarget ? `给镜像打标签` : '打标签'}
+        title={tagTarget ? t('给镜像打标签') : t('打标签')}
         onClose={() => !tagging && setTagTarget(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setTagTarget(null)} disabled={tagging}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleTag} loading={tagging} disabled={!canManage}>
-              确认
+              {t('确认')}
             </Button>
           </>
         }
       >
         {tagTarget && (
           <>
-            <Field label="原镜像" hint={displayName(tagTarget)} />
-            <Field label="仓库名" required hint="例如：myrepo/myimage">
+            <Field label={t('原镜像')} hint={displayName(tagTarget)} />
+            <Field label={t('仓库名')} required hint={t('例如：myrepo/myimage')}>
               <Input
                 value={tagRepo}
                 onChange={(e) => setTagRepo(e.target.value)}
@@ -1263,7 +1265,7 @@ export default function ImagesPage() {
                 autoFocus
               />
             </Field>
-            <Field label="标签" hint="留空默认 latest">
+            <Field label={t('标签')} hint={t('留空默认 latest')}>
               <Input
                 value={tagTag}
                 onChange={(e) => setTagTag(e.target.value)}
@@ -1277,7 +1279,7 @@ export default function ImagesPage() {
       {/* 导入镜像弹窗 */}
       <Modal
         open={importOpen}
-        title="导入镜像"
+        title={t('导入镜像')}
         onClose={() => !importing && setImportOpen(false)}
         footer={
           <>
@@ -1286,15 +1288,15 @@ export default function ImagesPage() {
               onClick={() => setImportOpen(false)}
               disabled={importing}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleImport} loading={importing} disabled={!canManage}>
-              导入
+              {t('导入')}
             </Button>
           </>
         }
       >
-        <Field label="镜像 tar 文件" required hint="选择 docker save 导出的 .tar 文件（最大 1GB）">
+        <Field label={t('镜像 tar 文件')} required hint={t('选择 docker save 导出的 .tar 文件（最大 1GB）')}>
           <input
             type="file"
             accept=".tar,.tar.gz"
@@ -1307,23 +1309,23 @@ export default function ImagesPage() {
       {/* 推送镜像弹窗 */}
       <Modal
         open={!!pushTarget}
-        title={pushTarget ? `推送镜像` : '推送镜像'}
+        title={pushTarget ? t('推送镜像') : t('推送镜像')}
         onClose={() => !pushing && setPushTarget(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPushTarget(null)} disabled={pushing}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handlePush} loading={pushing} disabled={!canManage}>
-              推送
+              {t('推送')}
             </Button>
           </>
         }
       >
         {pushTarget && (
           <>
-            <Field label="原镜像" hint={displayName(pushTarget)} />
-            <Field label="推送目标（仓库名:标签）" required hint="例如：registry.example.com/myrepo/myimage:v1">
+            <Field label={t('原镜像')} hint={displayName(pushTarget)} />
+            <Field label={t('推送目标（仓库名:标签）')} required hint={t('例如：registry.example.com/myrepo/myimage:v1')}>
               <Input
                 value={pushName}
                 onChange={(e) => setPushName(e.target.value)}
@@ -1331,19 +1333,19 @@ export default function ImagesPage() {
                 autoFocus
               />
             </Field>
-            <Field label="Registry 用户名（可选）" hint="私有仓库需要认证时填写">
+            <Field label={t('Registry 用户名（可选）')} hint={t('私有仓库需要认证时填写')}>
               <Input
                 value={pushUsername}
                 onChange={(e) => setPushUsername(e.target.value)}
-                placeholder="用户名"
+                placeholder={t('用户名')}
               />
             </Field>
-            <Field label="Registry 密码（可选）">
+            <Field label={t('Registry 密码（可选）')}>
               <Input
                 type="password"
                 value={pushPassword}
                 onChange={(e) => setPushPassword(e.target.value)}
-                placeholder="密码"
+                placeholder={t('密码')}
               />
             </Field>
           </>
@@ -1353,7 +1355,7 @@ export default function ImagesPage() {
       {/* 跨引擎迁移镜像弹窗 */}
       <Modal
         open={!!transferTarget}
-        title={transferTarget ? `迁移镜像` : '迁移镜像'}
+        title={transferTarget ? t('迁移镜像') : t('迁移镜像')}
         onClose={() => !transferring && setTransferTarget(null)}
         footer={
           <>
@@ -1362,52 +1364,52 @@ export default function ImagesPage() {
               onClick={() => setTransferTarget(null)}
               disabled={transferring}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleTransfer} loading={transferring} disabled={!canOperate()}>
-              迁移
+              {t('迁移')}
             </Button>
           </>
         }
       >
         {transferTarget && (
           <>
-            <Field label="原镜像" hint={displayName(transferTarget)} />
-            <Field label="源引擎" required hint="当前镜像所在引擎">
+            <Field label={t('原镜像')} hint={displayName(transferTarget)} />
+            <Field label={t('源引擎')} required hint={t('当前镜像所在引擎')}>
               <Select
                 value={transferSourceId}
                 onChange={(e) => setTransferSourceId(e.target.value)}
               >
                 <option value="" disabled>
-                  请选择源引擎
+                  {t('请选择源引擎')}
                 </option>
                 {engineList.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.name}
-                    {e.isCurrent ? '（当前）' : ''}
+                    {e.isCurrent ? t('（当前）') : ''}
                   </option>
                 ))}
               </Select>
             </Field>
-            <Field label="目标引擎" required hint="镜像将被迁移到此引擎">
+            <Field label={t('目标引擎')} required hint={t('镜像将被迁移到此引擎')}>
               <Select
                 value={transferTargetId}
                 onChange={(e) => setTransferTargetId(e.target.value)}
               >
                 <option value="" disabled>
-                  请选择目标引擎
+                  {t('请选择目标引擎')}
                 </option>
                 {engineList
                   .filter((e) => e.id !== transferSourceId)
                   .map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.name}
-                      {e.isCurrent ? '（当前）' : ''}
+                      {e.isCurrent ? t('（当前）') : ''}
                     </option>
                   ))}
               </Select>
             </Field>
-            <Field label="目标标签" hint="留空默认沿用源镜像标签">
+            <Field label={t('目标标签')} hint={t('留空默认沿用源镜像标签')}>
               <Input
                 value={transferTag}
                 onChange={(e) => setTransferTag(e.target.value)}
@@ -1421,9 +1423,9 @@ export default function ImagesPage() {
       {/* 删除镜像确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除镜像"
-        message={`确定要删除镜像 "${deleteTarget ? displayName(deleteTarget) : ''}" 吗？此操作不可恢复。`}
-        confirmText="删除"
+        title={t('删除镜像')}
+        message={t('确定要删除镜像 "{{v1}}" 吗？此操作不可恢复。', { v1: deleteTarget ? displayName(deleteTarget) : '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -1433,9 +1435,9 @@ export default function ImagesPage() {
       {/* 清理悬空镜像确认框 */}
       <ConfirmDialog
         open={pruneOpen}
-        title="清理悬空镜像"
-        message="确定要清理所有悬空镜像（无标签且未被引用）吗？此操作不可恢复。"
-        confirmText="清理"
+        title={t('清理悬空镜像')}
+        message={t('确定要清理所有悬空镜像（无标签且未被引用）吗？此操作不可恢复。')}
+        confirmText={t('清理')}
         danger
         loading={pruning}
         onConfirm={handlePrune}
@@ -1445,9 +1447,9 @@ export default function ImagesPage() {
       {/* 一键清理未使用镜像确认框 */}
       <ConfirmDialog
         open={pruneAllOpen}
-        title="一键清理未使用镜像"
-        message="确定要清理所有未被容器使用的镜像吗？将删除全部未使用镜像（含非悬空镜像），此操作不可恢复。"
-        confirmText="清理"
+        title={t('一键清理未使用镜像')}
+        message={t('确定要清理所有未被容器使用的镜像吗？将删除全部未使用镜像（含非悬空镜像），此操作不可恢复。')}
+        confirmText={t('清理')}
         danger
         loading={pruningAll}
         onConfirm={handlePruneAll}
@@ -1457,25 +1459,25 @@ export default function ImagesPage() {
       {/* 未使用镜像详情弹窗 */}
       <Modal
         open={unusedOpen}
-        title="未使用镜像详情"
+        title={t('未使用镜像详情')}
         width={680}
         onClose={() => setUnusedOpen(false)}
         footer={
           <Button variant="secondary" onClick={() => setUnusedOpen(false)}>
-            关闭
+            {t('关闭')}
           </Button>
         }
       >
         {!suggestions || suggestions.unused.length === 0 ? (
-          <Empty title="暂无未使用镜像" description="没有超过 30 天未使用的镜像" />
+          <Empty title={t('暂无未使用镜像')} description={t('没有超过 30 天未使用的镜像')} />
         ) : (
           <table className="data-table">
             <thead>
               <tr>
-                <th>镜像</th>
-                <th>大小</th>
-                <th>最近拉取</th>
-                <th>未使用天数</th>
+                <th>{t('镜像')}</th>
+                <th>{t('大小')}</th>
+                <th>{t('最近拉取')}</th>
+                <th>{t('未使用天数')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1488,7 +1490,7 @@ export default function ImagesPage() {
                   </td>
                   <td>{formatSize(img.size)}</td>
                   <td>{formatTime(img.lastPullAt)}</td>
-                  <td>{img.daysSincePull} 天</td>
+                  <td>{t('{{n}} 天', { n: img.daysSincePull })}</td>
                 </tr>
               ))}
             </tbody>
@@ -1499,13 +1501,13 @@ export default function ImagesPage() {
       {/* 按分类管理镜像弹窗（悬空 / 未使用 / 使用中，支持勾选批量删除） */}
       <Modal
         open={catOpen}
-        title="按分类管理镜像"
+        title={t('按分类管理镜像')}
         width={820}
         onClose={() => !batchDeleting && closeCatManage()}
         footer={
           <>
             <Button variant="secondary" onClick={closeCatManage} disabled={batchDeleting}>
-              关闭
+              {t('关闭')}
             </Button>
             {!canDeleteImage ? null : (
               <Button
@@ -1513,14 +1515,14 @@ export default function ImagesPage() {
                 disabled={selectedInCategory === 0}
                 onClick={() => setBatchConfirmOpen(true)}
               >
-                批量删除已选 ({selectedInCategory})
+                {t('批量删除已选 (')}{selectedInCategory})
               </Button>
             )}          </>
         }
       >
         {!categorized ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-            正在加载镜像分类数据…
+            {t('正在加载镜像分类数据…')}
           </div>
         ) : (
           <>
@@ -1532,34 +1534,34 @@ export default function ImagesPage() {
                   { key: 'unused', label: '未使用', list: 'unused', danger: true },
                   { key: 'active', label: '使用中', list: 'active', danger: false },
                 ] as { key: ImageCategory; label: string; list: 'dangling' | 'unused' | 'active'; danger: boolean }[]
-              ).map((t) => {
-                const list = categorized[t.list] || [];
+              ).map((cat) => {
+                const list = categorized[cat.list] || [];
                 return (
                   <button
-                    key={t.key}
-                    className={`cat-tab ${catTab === t.key ? 'cat-tab--active' : ''}`}
+                    key={cat.key}
+                    className={`cat-tab ${catTab === cat.key ? 'cat-tab--active' : ''}`}
                     style={{
                       padding: '6px 14px',
                       borderRadius: 6,
                       border:
-                        catTab === t.key ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                      background: catTab === t.key ? 'var(--primary-weak, rgba(0,122,255,.12))' : 'transparent',
-                      color: t.danger ? 'var(--danger, #e5484d)' : 'var(--text-primary)',
+                        catTab === cat.key ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                      background: catTab === cat.key ? 'var(--primary-weak, rgba(0,122,255,.12))' : 'transparent',
+                      color: cat.danger ? 'var(--danger, #e5484d)' : 'var(--text-primary)',
                       cursor: 'pointer',
                     }}
                     onClick={() => {
-                      setCatTab(t.key);
+                      setCatTab(cat.key);
                       setBatchSelection(new Set());
                     }}
                   >
-                    {t.label} ({list.length})
+                    {t(cat.label)} ({list.length})
                   </button>
                 );
               })}
             </div>
 
             {currentCategoryList.length === 0 ? (
-              <Empty kind="empty" title="该分类暂无镜像" description="此分类下没有可管理的镜像" />
+              <Empty kind="empty" title={t('该分类暂无镜像')} description={t('此分类下没有可管理的镜像')} />
             ) : (
               <table className="data-table">
                 <thead>
@@ -1571,10 +1573,10 @@ export default function ImagesPage() {
                         onChange={toggleSelectAll}
                       />
                     </th>
-                    <th>镜像</th>
-                    <th>大小</th>
-                    <th>标签数</th>
-                    {catTab === 'active' ? <th>引用容器</th> : <th>构建时间</th>}
+                    <th>{t('镜像')}</th>
+                    <th>{t('大小')}</th>
+                    <th>{t('标签数')}</th>
+                    {catTab === 'active' ? <th>{t('引用容器')}</th> : <th>{t('构建时间')}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1594,12 +1596,12 @@ export default function ImagesPage() {
                           <div className="name-main" title={c.tags.join(', ') || '<none>'}>
                             {c.tags[0] || `<none> (${c.id.slice(0, 12)})`}
                           </div>
-                          {c.tags.length > 1 && <div className="name-sub">+{c.tags.length - 1} 个标签</div>}
+                          {c.tags.length > 1 && <div className="name-sub">{t('+{{n}} 个标签', { n: c.tags.length - 1 })}</div>}
                         </td>
                         <td>{formatSize(c.size)}</td>
                         <td>{c.tags.length}</td>
                         {catTab === 'active' ? (
-                          <td>{c.relatedCount} 个容器</td>
+                          <td>{t('{{n}} 个容器', { n: c.relatedCount })}</td>
                         ) : (
                           <td>{formatTime(c.created)}</td>
                         )}
@@ -1616,9 +1618,9 @@ export default function ImagesPage() {
       {/* 批量删除镜像确认框 */}
       <ConfirmDialog
         open={batchConfirmOpen}
-        title="批量删除镜像"
-        message={`确定要删除已勾选的 ${selectedInCategory} 个镜像吗？此操作不可恢复。`}
-        confirmText="删除"
+        title={t('批量删除镜像')}
+        message={t('确定要删除已勾选的 {{selectedInCategory}} 个镜像吗？此操作不可恢复。', { selectedInCategory })}
+        confirmText={t('删除')}
         danger
         loading={batchDeleting}
         onConfirm={handleBatchDelete}
