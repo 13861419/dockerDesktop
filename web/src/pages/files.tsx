@@ -18,6 +18,7 @@ import { get, post, download } from '../api/client';
 import { getToken } from '../api/auth';
 import { useCanManage } from '../hooks/useCanManage';
 import { ContainerFileItem } from '../types';
+import { translateNow as t } from '../i18n';
 import './files.less';
 
 /** 容器下拉选项（来自 /api/containers?all=true） */
@@ -116,7 +117,7 @@ export default function FilesPage() {
       const data = await get<ContainerOption[]>('/api/containers', { all: true });
       setContainers(data || []);
     } catch (e: any) {
-      showToast(e?.message || '获取容器列表失败', 'error');
+      showToast(e?.message || t('获取容器列表失败'), 'error');
     }
   }, [showToast]);
 
@@ -141,9 +142,9 @@ export default function FilesPage() {
         setItems((data?.items as ContainerFileItem[]) || []);
       } catch (e: any) {
         // 后端会返回"请先启动容器"等错误，捕获后 toast 展示并清空列表
-        showToast(e?.message || '加载文件列表失败', 'error');
+        showToast(e?.message || t('加载文件列表失败'), 'error');
         setItems([]);
-        setErrorMsg(e?.message || '加载文件列表失败');
+        setErrorMsg(e?.message || t('加载文件列表失败'));
       } finally {
         setLoading(false);
       }
@@ -206,7 +207,7 @@ export default function FilesPage() {
       const data = await get<PreviewData>(`/api/files/${selectedId}/read`, { path });
       setPreview({ content: data?.content ?? '', truncated: !!data?.truncated });
     } catch (e: any) {
-      showToast(e?.message || '预览失败', 'error');
+      showToast(e?.message || t('预览失败'), 'error');
     } finally {
       setPreviewLoading(false);
     }
@@ -224,9 +225,9 @@ export default function FilesPage() {
         `/api/files/${selectedId}/download?path=${encodeURIComponent(path)}`,
         item.name
       );
-      showToast('已开始下载');
+      showToast(t('已开始下载'));
     } catch (e: any) {
-      showToast(e?.message || '下载失败', 'error');
+      showToast(e?.message || t('下载失败'), 'error');
     }
   };
 
@@ -239,7 +240,7 @@ export default function FilesPage() {
     if (!selectedId) return;
     // 服务端角色未确认前（checking）也不放行写操作，避免误信被篡改的本地 role
     if (!canManage || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可上传文件', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可上传文件'), 'error');
       if (uploadRef.current) uploadRef.current.value = '';
       return;
     }
@@ -259,7 +260,7 @@ export default function FilesPage() {
         { method: 'POST', headers, body: file }
       );
       if (!resp.ok) {
-        let msg = `上传失败 (${resp.status})`;
+        let msg = t('上传失败 ({{v1}})', { v1: resp.status });
         try {
           const data = await resp.json();
           msg = data?.error || data?.message || msg;
@@ -268,10 +269,10 @@ export default function FilesPage() {
         }
         throw new Error(msg);
       }
-      showToast(`已上传 ${file.name}`);
+      showToast(t('已上传 {{v1}}', { v1: file.name }));
       loadFiles(selectedId, currentPath());
     } catch (e: any) {
-      showToast(e?.message || '上传失败', 'error');
+      showToast(e?.message || t('上传失败'), 'error');
     } finally {
       setUploading(false);
       // 重置 input，允许重复选择同一文件
@@ -285,12 +286,12 @@ export default function FilesPage() {
   const handleMkdir = async () => {
     if (!selectedId) return;
     if (!canManage || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可新建目录', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可新建目录'), 'error');
       return;
     }
     const name = mkdirName.trim();
     if (!name) {
-      showToast('请输入目录名', 'error');
+      showToast(t('请输入目录名'), 'error');
       return;
     }
     setCreatingDir(true);
@@ -298,12 +299,12 @@ export default function FilesPage() {
       await post(`/api/files/${selectedId}/mkdir`, {
         path: joinPath(currentPath(), name),
       });
-      showToast('目录创建成功');
+      showToast(t('目录创建成功'));
       setMkdirOpen(false);
       setMkdirName('');
       loadFiles(selectedId, currentPath());
     } catch (e: any) {
-      showToast(e?.message || '创建目录失败', 'error');
+      showToast(e?.message || t('创建目录失败'), 'error');
     } finally {
       setCreatingDir(false);
     }
@@ -324,16 +325,16 @@ export default function FilesPage() {
   const handleRename = async () => {
     if (!selectedId || !renameTarget) return;
     if (!canManage || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可重命名', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可重命名'), 'error');
       return;
     }
     const newName = renameValue.trim();
     if (!newName) {
-      showToast('新名称不能为空', 'error');
+      showToast(t('新名称不能为空'), 'error');
       return;
     }
     if (newName === renameTarget.item.name) {
-      showToast('名称未发生变化', 'error');
+      showToast(t('名称未发生变化'), 'error');
       return;
     }
     setRenaming(true);
@@ -342,11 +343,11 @@ export default function FilesPage() {
         path: renameTarget.path,
         newName,
       });
-      showToast('重命名成功');
+      showToast(t('重命名成功'));
       setRenameTarget(null);
       loadFiles(selectedId, currentPath());
     } catch (e: any) {
-      showToast(e?.message || '重命名失败', 'error');
+      showToast(e?.message || t('重命名失败'), 'error');
     } finally {
       setRenaming(false);
     }
@@ -358,7 +359,7 @@ export default function FilesPage() {
   const handleDelete = async () => {
     if (!selectedId || !deleteTarget) return;
     if (!canManage || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可删除文件', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可删除文件'), 'error');
       setDeleteTarget(null);
       return;
     }
@@ -368,11 +369,11 @@ export default function FilesPage() {
         path: deleteTarget.path,
         recursive: deleteTarget.item.type === 'dir',
       });
-      showToast(`${deleteTarget.item.name} 已删除`);
+      showToast(t('{{v1}} 已删除', { v1: deleteTarget.item.name }));
       setDeleteTarget(null);
       loadFiles(selectedId, currentPath());
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -433,7 +434,7 @@ export default function FilesPage() {
   return (
     <div className="page">
       <Card
-        title="文件管理"
+        title={t('文件管理')}
         extra={
           <div className="files-toolbar">
             <Select
@@ -441,10 +442,10 @@ export default function FilesPage() {
               value={selectedId}
               onChange={(e) => handleSelectContainer(e.target.value)}
             >
-              <option value="">选择容器</option>
+              <option value="">{t('选择容器')}</option>
               {containers.map((c) => (
                 <option key={c.Id} value={c.Id}>
-                  {containerName(c)}（{c.Image || '未知镜像'}）
+                  {containerName(c)}（{c.Image || t('未知镜像')}）
                 </option>
               ))}
             </Select>
@@ -456,7 +457,7 @@ export default function FilesPage() {
                   onClick={() => uploadRef.current?.click()}
                   disabled={!canManage}
                 >
-                  上传
+                  {t('上传')}
                 </Button>
                 <Button
                   variant="secondary"
@@ -464,14 +465,14 @@ export default function FilesPage() {
                   onClick={() => setMkdirOpen(true)}
                   disabled={!canManage}
                 >
-                  新建目录
+                  {t('新建目录')}
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => loadFiles(selectedId, currentPath())}
                 >
-                  刷新
+                  {t('刷新')}
                 </Button>
               </>
             )}
@@ -479,7 +480,7 @@ export default function FilesPage() {
         }
       >
         {!selectedId ? (
-          <Empty title="请选择容器" description="从上方下拉列表选择一个容器后，即可浏览其内部文件" />
+          <Empty title={t('请选择容器')} description="从上方下拉列表选择一个容器后，即可浏览其内部文件" />
         ) : (
           <>
             {/* 面包屑导航 */}
@@ -490,9 +491,9 @@ export default function FilesPage() {
                   <button
                     className={`files-breadcrumb__crumb ${i === crumbs.length - 1 ? 'files-breadcrumb__crumb--current' : ''}`}
                     onClick={() => navigateCrumb(i)}
-                    title={c === ROOT_NAME ? '根目录' : c}
+                    title={c === ROOT_NAME ? t('根目录') : c}
                   >
-                    {c === ROOT_NAME ? '根目录' : c}
+                    {c === ROOT_NAME ? t('根目录') : c}
                   </button>
                 </React.Fragment>
               ))}
@@ -503,7 +504,7 @@ export default function FilesPage() {
             ) : errorMsg ? (
               <Empty
                 kind="error"
-                title="加载失败"
+                title={t('加载失败')}
                 description={errorMsg}
                 action={
                   <Button
@@ -511,13 +512,13 @@ export default function FilesPage() {
                     size="sm"
                     onClick={() => loadFiles(selectedId, currentPath())}
                   >
-                    重试
+                    {t('重试')}
                   </Button>
                 }
               />
             ) : items.length === 0 ? (
               <Empty
-                title="目录为空"
+                title={t('目录为空')}
                 description="该目录下暂无文件，可点击上方「上传」或「新建目录」"
               />
             ) : (
@@ -525,10 +526,10 @@ export default function FilesPage() {
                 <table className="data-table files-table">
                   <thead>
                     <tr>
-                      <th className="files-col-name">名称</th>
-                      <th className="files-col-size">大小</th>
-                      <th className="files-col-mtime">修改时间</th>
-                      <th className="col-actions">操作</th>
+                      <th className="files-col-name">{t('名称')}</th>
+                      <th className="files-col-size">{t('大小')}</th>
+                      <th className="files-col-mtime">{t('修改时间')}</th>
+                      <th className="col-actions">{t('操作')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -540,7 +541,7 @@ export default function FilesPage() {
                             <button
                               className={`files-name ${isDir ? 'files-name--dir' : ''}`}
                               onClick={() => isDir && enterDir(item.name)}
-                              title={isDir ? `进入 ${item.name}` : item.name}
+                              title={isDir ? t('进入 {{v1}}', { v1: item.name }) : item.name}
                             >
                               {renderIcon(item.type)}
                               <span className="files-name__text">{item.name}</span>
@@ -553,10 +554,10 @@ export default function FilesPage() {
                               {!isDir && (
                                 <>
                                   <Button variant="ghost" size="sm" onClick={() => handlePreview(item)}>
-                                    预览
+                                    {t('预览')}
                                   </Button>
                                   <Button variant="ghost" size="sm" onClick={() => handleDownload(item)}>
-                                    下载
+                                    {t('下载')}
                                   </Button>
                                 </>
                               )}
@@ -566,7 +567,7 @@ export default function FilesPage() {
                                 onClick={() => openRename(item)}
                                 disabled={!canManage}
                               >
-                                重命名
+                                {t('重命名')}
                               </Button>
                               <Button
                                 variant="danger"
@@ -579,7 +580,7 @@ export default function FilesPage() {
                                   })
                                 }
                               >
-                                删除
+                                {t('删除')}
                               </Button>
                             </div>
                           </td>
@@ -597,7 +598,7 @@ export default function FilesPage() {
       {/* 预览弹窗 */}
       <Modal
         open={preview !== null || previewLoading}
-        title={`预览 ${previewName}`}
+        title={t('预览 {{previewName}}', { previewName })}
         onClose={() => {
           setPreview(null);
           setPreviewName('');
@@ -605,18 +606,18 @@ export default function FilesPage() {
         width={720}
       >
         {previewLoading ? (
-          <div className="files-preview__loading">文件内容加载中...</div>
+          <div className="files-preview__loading">{t('文件内容加载中...')}</div>
         ) : preview ? (
           <div className="files-preview">
             {preview.truncated && (
               <div className="files-preview__truncated">
-                文件较大，已截断显示前一部分。如需完整内容，请使用「下载」。
+                {t('文件较大，已截断显示前一部分。如需完整内容，请使用「下载」。')}
               </div>
             )}
             <pre className="files-preview__content">{preview.content}</pre>
           </div>
         ) : (
-          <div className="files-preview__loading">无内容</div>
+          <div className="files-preview__loading">{t('无内容')}</div>
         )}
       </Modal>
 
@@ -634,7 +635,7 @@ export default function FilesPage() {
       {/* 新建目录弹窗 */}
       <Modal
         open={mkdirOpen}
-        title="新建目录"
+        title={t('新建目录')}
         onClose={() => !creatingDir && setMkdirOpen(false)}
         width={440}
         footer={
@@ -645,17 +646,17 @@ export default function FilesPage() {
               onClick={() => setMkdirOpen(false)}
               disabled={creatingDir}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={creatingDir} onClick={handleMkdir}>
-              创建
+              {t('创建')}
             </Button>
           </div>
         }
       >
-        <Field label="目录名" required hint={`将在 ${currentPath()} 下创建`}>
+        <Field label={t('目录名')} required hint={t('将在 {{v1}} 下创建', { v1: currentPath() })}>
           <Input
-            placeholder="新目录名称"
+            placeholder={t('新目录名称')}
             value={mkdirName}
             onChange={(e) => setMkdirName(e.target.value)}
             autoFocus
@@ -670,7 +671,7 @@ export default function FilesPage() {
       {/* 重命名弹窗 */}
       <Modal
         open={!!renameTarget}
-        title="重命名"
+        title={t('重命名')}
         onClose={() => !renaming && setRenameTarget(null)}
         width={440}
         footer={
@@ -681,17 +682,17 @@ export default function FilesPage() {
               onClick={() => setRenameTarget(null)}
               disabled={renaming}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={renaming} onClick={handleRename}>
-              重命名
+              {t('重命名')}
             </Button>
           </div>
         }
       >
-        <Field label="新名称" required>
+        <Field label={t('新名称')} required>
           <Input
-            placeholder="新文件/目录名称"
+            placeholder={t('新文件/目录名称')}
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             autoFocus
@@ -706,13 +707,13 @@ export default function FilesPage() {
       {/* 删除确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除文件"
+        title={t('删除文件')}
         message={
           deleteTarget?.item.type === 'dir'
-            ? `确定要递归删除目录「${deleteTarget.item.name}」及其全部内容吗？此操作不可撤销。`
-            : `确定要删除文件「${deleteTarget?.item.name || ''}」吗？此操作不可撤销。`
+            ? t('确定要递归删除目录「{{v1}}」及其全部内容吗？此操作不可撤销。', { v1: deleteTarget.item.name })
+            : t('确定要删除文件「{{v1}}」吗？此操作不可撤销。', { v1: deleteTarget?.item.name || '' })
         }
-        confirmText="删除"
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}

@@ -16,6 +16,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input } from '../components/Form';
 import { SwarmStatus, SwarmServiceItem } from '../types';
+import { translateNow as t } from '../i18n';
 import './swarm.less';
 
 /** Swarm 节点精简结构（对齐 /api/swarm/status 返回） */
@@ -103,15 +104,15 @@ export default function SwarmPage() {
         const svcRes = await get<ServicesResponse>('/api/swarm/services');
         setServices(svcRes?.services || []);
         if (!svcRes?.ok) {
-          showToast(svcRes?.error === 'swarm-not-enabled' ? 'Swarm 未启用' : (svcRes?.error || '获取服务列表失败'), 'error');
+          showToast(svcRes?.error === 'swarm-not-enabled' ? t('Swarm 未启用') : (svcRes?.error || t('获取服务列表失败')), 'error');
         }
       } else {
         setServices([]);
       }
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '获取 Swarm 状态失败');
-      showToast(e?.message || '获取 Swarm 状态失败', 'error');
+      setLoadError(e?.message || t('获取 Swarm 状态失败'));
+      showToast(e?.message || t('获取 Swarm 状态失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -127,7 +128,7 @@ export default function SwarmPage() {
    */
   function openScale(svc: SwarmServiceItem) {
     if (!canManage) {
-      showToast('仅管理员可缩放服务', 'error');
+      showToast(t('仅管理员可缩放服务'), 'error');
       return;
     }
     setScaleTarget({ id: svc.id, name: svc.name, replicas: svc.desired ?? svc.runningTasks });
@@ -140,14 +141,14 @@ export default function SwarmPage() {
   async function confirmScale() {
     if (!scaleTarget) return;
     if (!canManage) {
-      showToast('仅管理员可缩放服务', 'error');
+      showToast(t('仅管理员可缩放服务'), 'error');
       setScaleTarget(null);
       return;
     }
     const replicas = Number(scaleValue.trim());
     // 校验目标副本数：须为非负整数
     if (!Number.isInteger(replicas) || replicas < 0) {
-      showToast('请输入有效的非负整数副本数', 'error');
+      showToast(t('请输入有效的非负整数副本数'), 'error');
       return;
     }
     setScaling(true);
@@ -156,15 +157,15 @@ export default function SwarmPage() {
         replicas,
       });
       if (!res?.ok) {
-        showToast(res?.error || '缩放服务失败', 'error');
+        showToast(res?.error || t('缩放服务失败'), 'error');
         setScaleTarget(null);
         return;
       }
-      showToast(`已将 ${scaleTarget.name} 缩放到 ${replicas} 副本`);
+      showToast(t('已将 {{v1}} 缩放到 {{replicas}} 副本', { v1: scaleTarget.name, replicas }));
       setScaleTarget(null);
       load();
     } catch (e: any) {
-      showToast(`缩放失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('缩放失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setScaling(false);
     }
@@ -176,7 +177,7 @@ export default function SwarmPage() {
    */
   function openDelete(svc: SwarmServiceItem) {
     if (!canManage) {
-      showToast('仅管理员可删除服务', 'error');
+      showToast(t('仅管理员可删除服务'), 'error');
       return;
     }
     setDeleteTarget({ id: svc.id, name: svc.name });
@@ -187,7 +188,7 @@ export default function SwarmPage() {
    */
   async function confirmDelete() {
     if (!canManage) {
-      showToast('仅管理员可删除服务', 'error');
+      showToast(t('仅管理员可删除服务'), 'error');
       setDeleteTarget(null);
       return;
     }
@@ -196,15 +197,15 @@ export default function SwarmPage() {
     try {
       const res = await del<{ ok: boolean; error?: string }>(`/api/swarm/services/${deleteTarget.id}`);
       if (!res?.ok) {
-        showToast(res?.error || '删除服务失败', 'error');
+        showToast(res?.error || t('删除服务失败'), 'error');
         setDeleteTarget(null);
         return;
       }
-      showToast(`已删除服务 ${deleteTarget.name}`);
+      showToast(t('已删除服务 {{v1}}', { v1: deleteTarget.name }));
       setDeleteTarget(null);
       load();
     } catch (e: any) {
-      showToast(`删除失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('删除失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     } finally {
       setDeleting(false);
     }
@@ -225,13 +226,13 @@ export default function SwarmPage() {
    * @param mode 服务模式（global/replicated）
    */
   function renderMode(mode: string): string {
-    return mode === 'global' ? '全局' : '副本';
+    return mode === 'global' ? t('全局') : t('副本');
   }
 
   if (loading) {
     return (
       <div className="swarm-page">
-        <h1 className="swarm-page__title">Swarm 服务</h1>
+        <h1 className="swarm-page__title">{t('Swarm 服务')}</h1>
         <SkeletonRows rows={1} />
       </div>
     );
@@ -241,37 +242,37 @@ export default function SwarmPage() {
 
   return (
     <div className="swarm-page">
-      <h1 className="swarm-page__title">Swarm 服务</h1>
+      <h1 className="swarm-page__title">{t('Swarm 服务')}</h1>
 
       {/* 顶部 Swarm 状态条 */}
       <Card className="swarm-status">
         <div className="swarm-status__row">
           <div className="swarm-status__item">
-            <span className="swarm-status__label">集群状态</span>
+            <span className="swarm-status__label">{t('集群状态')}</span>
             <span className={`swarm-status__value swarm-status__badge ${enabled ? 'swarm-status__badge--on' : 'swarm-status__badge--off'}`}>
               <span className="swarm-status__dot" />
-              {enabled ? '已启用' : '未启用'}
+              {enabled ? t('已启用') : t('未启用')}
             </span>
           </div>
           <div className="swarm-status__item">
-            <span className="swarm-status__label">节点状态</span>
+            <span className="swarm-status__label">{t('节点状态')}</span>
             <span className="swarm-status__value">{status?.localNodeState || '-'}</span>
           </div>
           <div className="swarm-status__item">
-            <span className="swarm-status__label">集群节点</span>
+            <span className="swarm-status__label">{t('集群节点')}</span>
             <span className="swarm-status__value">{nodes.length}</span>
           </div>
           <div className="swarm-status__item">
-            <span className="swarm-status__label">管理节点</span>
+            <span className="swarm-status__label">{t('管理节点')}</span>
             <span className="swarm-status__value">{typeof status?.managers === 'number' ? status.managers : '-'}</span>
           </div>
           <div className="swarm-status__item">
-            <span className="swarm-status__label">本节点 ID</span>
+            <span className="swarm-status__label">{t('本节点 ID')}</span>
             <span className="swarm-status__value swarm-status__value--mono">{status?.nodeID || '-'}</span>
           </div>
           <div className="swarm-status__item swarm-status__item--right">
             <Button variant="secondary" size="sm" onClick={load}>
-              刷新
+              {t('刷新')}
             </Button>
           </div>
         </div>
@@ -282,7 +283,7 @@ export default function SwarmPage() {
         <Card>
           <Empty
             kind="empty"
-            title="Swarm 集群未启用"
+            title={t('Swarm 集群未启用')}
             description="当前 Docker 引擎未启用 Swarm 模式。请先在 Docker 中初始化或加入 Swarm 集群后，再回到此页面查看与管理服务。"
           />
         </Card>
@@ -290,31 +291,31 @@ export default function SwarmPage() {
         <Card>
           <Empty
             kind="error"
-            title="加载 Swarm 服务失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('加载 Swarm 服务失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={load}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         </Card>
       ) : (
-        <Card title={`服务列表（${services.length}）`}>
+        <Card title={t('服务列表（{{v1}}）', { v1: services.length })}>
           {services.length === 0 ? (
-            <Empty kind="empty" title="暂无服务" description="当前 Swarm 集群中尚未部署任何服务" />
+            <Empty kind="empty" title={t('暂无服务')} description="当前 Swarm 集群中尚未部署任何服务" />
           ) : (
             <div className="swarm-table">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>服务名</th>
-                    <th>镜像</th>
-                    <th>模式</th>
-                    <th>期望副本</th>
-                    <th>运行副本</th>
-                    <th>更新时间</th>
-                    <th className="col-actions">操作</th>
+                    <th>{t('服务名')}</th>
+                    <th>{t('镜像')}</th>
+                    <th>{t('模式')}</th>
+                    <th>{t('期望副本')}</th>
+                    <th>{t('运行副本')}</th>
+                    <th>{t('更新时间')}</th>
+                    <th className="col-actions">{t('操作')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -341,9 +342,9 @@ export default function SwarmPage() {
                             size="sm"
                             onClick={() => openScale(svc)}
                             disabled={!canManage || svc.mode === 'global'}
-                            title={svc.mode === 'global' ? '全局模式服务不支持缩放副本数' : '调整副本数'}
+                            title={svc.mode === 'global' ? t('全局模式服务不支持缩放副本数') : t('调整副本数')}
                           >
-                            缩放
+                            {t('缩放')}
                           </Button>
                           <Button
                             variant="danger"
@@ -351,7 +352,7 @@ export default function SwarmPage() {
                             onClick={() => openDelete(svc)}
                             disabled={!canManage}
                           >
-                            删除
+                            {t('删除')}
                           </Button>
                         </div>
                       </td>
@@ -367,26 +368,26 @@ export default function SwarmPage() {
       {/* 缩放弹窗 */}
       <Modal
         open={!!scaleTarget}
-        title={`缩放服务${scaleTarget ? `「${scaleTarget.name}」` : ''}`}
+        title={t('缩放服务{{v1}}', { v1: scaleTarget ? t('「{{name}}」', { name: scaleTarget.name }) : '' })}
         onClose={() => !scaling && setScaleTarget(null)}
         width={440}
         footer={
           <div className="swarm-modal__footer">
             <Button variant="ghost" size="md" onClick={() => setScaleTarget(null)} disabled={scaling}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={scaling} onClick={confirmScale}>
-              确定缩放
+              {t('确定缩放')}
             </Button>
           </div>
         }
       >
-        <Field label="目标副本数" required hint="输入服务期望运行的副本数量（非负整数），立即生效。">
+        <Field label={t('目标副本数')} required hint={t('输入服务期望运行的副本数量（非负整数），立即生效。')}>
           <Input
             type="number"
             min={0}
             step={1}
-            placeholder="如 3"
+            placeholder={t('如 3')}
             value={scaleValue}
             onChange={(e) => setScaleValue(e.target.value)}
             autoFocus
@@ -398,9 +399,9 @@ export default function SwarmPage() {
       {/* 删除确认对话框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除服务"
-        message={`确定要删除服务「${deleteTarget?.name || ''}」吗？删除后其下所有任务将被停止，此操作不可撤销。`}
-        confirmText="删除"
+        title={t('删除服务')}
+        message={t('确定要删除服务「{{v1}}」吗？删除后其下所有任务将被停止，此操作不可撤销。', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={confirmDelete}

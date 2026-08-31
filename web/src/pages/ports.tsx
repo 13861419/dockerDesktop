@@ -14,6 +14,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get } from '../api/client';
+import { translateNow as t } from '../i18n';
 import './ports.less';
 
 /** 单条端口映射记录（/api/ports/map 返回） */
@@ -76,7 +77,7 @@ export default function Ports() {
       const resp = await get<PortsMapResponse>('/api/ports/map');
       setData(resp);
     } catch (e: any) {
-      showToast(e?.message || '加载端口地图失败', 'error');
+      showToast(e?.message || t('加载端口地图失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -117,51 +118,51 @@ export default function Ports() {
     <div className="ports-page">
       <div className="ports-page__toolbar">
         <Button variant="secondary" size="sm" onClick={load} loading={loading}>
-          刷新
+          {t('刷新')}
         </Button>
         <input
           className="ports-page__search"
-          placeholder="过滤端口号 / 容器名 / 引擎名"
+          placeholder={t('过滤端口号 / 容器名 / 引擎名')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
 
       {loading && !data ? (
-        <Card title="端口地图">
+        <Card title={t('端口地图')}>
           <SkeletonRows rows={4} />
         </Card>
       ) : !data ? (
-        <Empty kind="error" title="加载失败" description="无法获取端口地图数据" />
+        <Empty kind="error" title={t('加载失败')} description="无法获取端口地图数据" />
       ) : (
         <>
           {/* 摘要 */}
           <div className="ports-page__summary">
             <div className="ports-summary-card">
               <div className="ports-summary-card__value">{data.summary.hostPortCount}</div>
-              <div className="ports-summary-card__label">宿主端口数</div>
+              <div className="ports-summary-card__label">{t('宿主端口数')}</div>
             </div>
             <div className="ports-summary-card">
               <div className="ports-summary-card__value">{data.summary.entryCount}</div>
-              <div className="ports-summary-card__label">映射条目</div>
+              <div className="ports-summary-card__label">{t('映射条目')}</div>
             </div>
             <div className={`ports-summary-card ${data.summary.conflictCount > 0 ? 'ports-summary-card--bad' : ''}`}>
               <div className="ports-summary-card__value">{data.summary.conflictCount}</div>
-              <div className="ports-summary-card__label">端口冲突</div>
+              <div className="ports-summary-card__label">{t('端口冲突')}</div>
             </div>
             {data.engines.filter((e) => !e.online).length > 0 && (
               <div className="ports-summary-card ports-summary-card--warn">
                 <div className="ports-summary-card__value">{data.engines.filter((e) => !e.online).length}</div>
-                <div className="ports-summary-card__label">离线引擎</div>
+                <div className="ports-summary-card__label">{t('离线引擎')}</div>
               </div>
             )}
           </div>
 
           {/* 端口分布条形图 */}
-          <Card title="端口分布（0-65535 均分 32 桶）">
+          <Card title={t('端口分布（0-65535 均分 32 桶）')}>
             <div className="ports-chart">
               {buckets.map((n, i) => (
-                <div key={i} className="ports-chart__col" title={`${i * 2048}-${(i + 1) * 2048 - 1}：${n} 个端口`}>
+                <div key={i} className="ports-chart__col" title={t('{{v1}}-{{v2}}：{{n}} 个端口', { v1: i * 2048, v2: (i + 1) * 2048 - 1, n })}>
                   <div className="ports-chart__bar" style={{ height: `${(n / maxBucket) * 100}%` }} />
                 </div>
               ))}
@@ -170,7 +171,7 @@ export default function Ports() {
 
           {/* 冲突高亮 */}
           {data.conflicts.length > 0 && (
-            <Card title="端口冲突（同引擎多容器争抢）">
+            <Card title={t('端口冲突（同引擎多容器争抢）')}>
               <div className="ports-conflicts">
                 {data.conflicts.map((g) => (
                   <div key={`${g.hostPort}/${g.protocol}`} className="ports-conflict">
@@ -189,18 +190,18 @@ export default function Ports() {
           )}
 
           {/* 占用明细 */}
-          <Card title={`端口占用明细（${filtered.length}）`}>
+          <Card title={t('端口占用明细（{{v1}}）', { v1: filtered.length })}>
             {filtered.length === 0 ? (
-              <Empty kind="search" title={filter ? '无匹配的端口' : '暂无端口映射'} />
+              <Empty kind="search" title={filter ? t('无匹配的端口') : t('暂无端口映射')} />
             ) : (
               <table className="ports-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '14%' }}>宿主端口</th>
-                    <th style={{ width: '16%' }}>引擎</th>
-                    <th style={{ width: '30%' }}>占用容器</th>
-                    <th style={{ width: '14%' }}>状态</th>
-                    <th>操作</th>
+                    <th style={{ width: '14%' }}>{t('宿主端口')}</th>
+                    <th style={{ width: '16%' }}>{t('引擎')}</th>
+                    <th style={{ width: '30%' }}>{t('占用容器')}</th>
+                    <th style={{ width: '14%' }}>{t('状态')}</th>
+                    <th>{t('操作')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -233,14 +234,14 @@ export default function Ports() {
                         </td>
                         <td>
                           {g.conflict ? (
-                            <span className="ports-badge ports-badge--conflict">冲突</span>
+                            <span className="ports-badge ports-badge--conflict">{t('冲突')}</span>
                           ) : g.crossEngine ? (
-                            <span className="ports-badge ports-badge--cross">跨引擎重复</span>
+                            <span className="ports-badge ports-badge--cross">{t('跨引擎重复')}</span>
                           ) : (
-                            <span className="ports-badge ports-badge--ok">正常</span>
+                            <span className="ports-badge ports-badge--ok">{t('正常')}</span>
                           )}
                         </td>
-                        <td className="ports-table__ops">{isOpen ? '收起' : '展开'}</td>
+                        <td className="ports-table__ops">{isOpen ? t('收起') : t('展开')}</td>
                       </tr>
                     );
                   })}

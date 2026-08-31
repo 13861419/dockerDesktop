@@ -14,6 +14,7 @@ import Button from '../components/Button';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Select } from '../components/Form';
 import LineChart from '../components/LineChart';
+import { translateNow as t } from '../i18n';
 import './events.less';
 
 /** 单个 Docker 事件 */
@@ -196,7 +197,7 @@ export default function EventsPage() {
       setLoadError('');
     } catch (e: any) {
       // 失败时保持空列表（WebSocket 仍会推送新事件），并记录错误供错误态展示
-      setLoadError(e?.message || '加载事件失败');
+      setLoadError(e?.message || t('加载事件失败'));
     } finally {
       setLoading(false);
     }
@@ -220,7 +221,7 @@ export default function EventsPage() {
       const data = await get<EventStatsResponse>('/api/events/stats', params);
       setStats(data || { byType: [], byAction: [], timeline: [] });
     } catch (e: any) {
-      showToast(e?.message || '加载事件统计失败', 'error');
+      showToast(e?.message || t('加载事件统计失败'), 'error');
     } finally {
       setStatsLoading(false);
     }
@@ -392,7 +393,7 @@ export default function EventsPage() {
         historyOffsetRef.current = (reset ? 0 : historyOffsetRef.current) + list.length;
         setHasMore(list.length >= HISTORY_PAGE);
       } catch (e: any) {
-        showToast(e?.message || '加载历史失败', 'error');
+        showToast(e?.message || t('加载历史失败'), 'error');
       } finally {
         setHistoryLoading(false);
       }
@@ -406,14 +407,14 @@ export default function EventsPage() {
    */
   const handleExport = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可导出事件历史', 'error');
+      showToast(t('仅管理员可导出事件历史'), 'error');
       return;
     }
     try {
       await download('/api/events/history/export', 'docker-events.csv');
-      showToast('已开始导出事件历史');
+      showToast(t('已开始导出事件历史'));
     } catch (e: any) {
-      showToast(e?.message || '导出失败', 'error');
+      showToast(e?.message || t('导出失败'), 'error');
     }
   }, [canManage, showToast]);
 
@@ -422,7 +423,7 @@ export default function EventsPage() {
    */
   const confirmClearHistory = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可清空事件历史', 'error');
+      showToast(t('仅管理员可清空事件历史'), 'error');
       setClearTarget(false);
       return;
     }
@@ -434,9 +435,9 @@ export default function EventsPage() {
         setHasMore(false);
       }
       setClearTarget(false);
-      showToast('事件历史已清空');
+      showToast(t('事件历史已清空'));
     } catch (e: any) {
-      showToast(e?.message || '清空失败', 'error');
+      showToast(e?.message || t('清空失败'), 'error');
     }
   }, [canManage, mode, showToast]);
 
@@ -464,14 +465,14 @@ export default function EventsPage() {
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">事件流</h1>
-        <p className="page__desc">实时查看 Docker 引擎事件（容器 / 镜像 / 数据卷 / 网络 等）</p>
+        <h1 className="page__title">{t('事件流')}</h1>
+        <p className="page__desc">{t('实时查看 Docker 引擎事件（容器 / 镜像 / 数据卷 / 网络 等）')}</p>
       </div>
 
       <Card>
         <div className="events-stats">
           <div className="events-stats__head">
-            <div className="events-stats__title">事件统计</div>
+            <div className="events-stats__title">{t('事件统计')}</div>
             <div className="events-stats__controls">
               <div className="events-stats__ranges">
                 {(Object.keys(RANGE_PRESETS) as RangeKey[]).map((key) => (
@@ -481,19 +482,19 @@ export default function EventsPage() {
                     size="sm"
                     onClick={() => setRangeKey(key)}
                   >
-                    {key === '24h' ? '近24小时' : key === '7d' ? '近7天' : '近30天'}
+                    {key === '24h' ? t('近24小时') : key === '7d' ? t('近7天') : t('近30天')}
                   </Button>
                 ))}
               </div>
               <div className="events-stats__bucket">
-                <span>粒度</span>
+                <span>{t('粒度')}</span>
                 <Select
                   value={statsBucket}
                   onChange={(e) => setStatsBucket(e.target.value as 'hour' | 'day')}
                   style={{ minWidth: 90 }}
                 >
-                  <option value="hour">按小时</option>
-                  <option value="day">按天</option>
+                  <option value="hour">{t('按小时')}</option>
+                  <option value="day">{t('按天')}</option>
                 </Select>
               </div>
             </div>
@@ -502,27 +503,27 @@ export default function EventsPage() {
           <div className="events-stats__body">
             <div className="events-stats__chart">
               {statsLoading && !stats ? (
-                <div className="empty" style={{ padding: '40px 0' }}>统计加载中...</div>
+                <div className="empty" style={{ padding: '40px 0' }}>{t('统计加载中...')}</div>
               ) : chartData.data.length === 0 ? (
-                <div className="empty" style={{ padding: '40px 0' }}>当前时间范围内暂无统计</div>
+                <div className="empty" style={{ padding: '40px 0' }}>{t('当前时间范围内暂无统计')}</div>
               ) : (
                 <LineChart
-                  series={[{ name: '事件数', color: '#6366f1', data: chartData.data }]}
+                  series={[{ name: t('事件数'), color: '#6366f1', data: chartData.data }]}
                   labels={chartData.labels}
                   height={180}
                   unit="条"
                 />
               )}
               <div className="events-stats__total">
-                合计事件数：<strong>{chartData.total}</strong> 条
+                {t('合计事件数：')}<strong>{chartData.total}</strong> 条
               </div>
             </div>
 
             <div className="events-stats__side">
               <div className="events-stats__section">
-                <div className="events-stats__section-title">按类型分布</div>
+                <div className="events-stats__section-title">{t('按类型分布')}</div>
                 {typeTotal === 0 ? (
-                  <div className="events-stats__empty">暂无数据</div>
+                  <div className="events-stats__empty">{t('暂无数据')}</div>
                 ) : (
                   <div className="events-stats__types">
                     {(stats?.byType || []).map((item) => {
@@ -554,9 +555,9 @@ export default function EventsPage() {
               </div>
 
               <div className="events-stats__section">
-                <div className="events-stats__section-title">Top 动作</div>
+                <div className="events-stats__section-title">{t('Top 动作')}</div>
                 {topActions.length === 0 ? (
-                  <div className="events-stats__empty">暂无数据</div>
+                  <div className="events-stats__empty">{t('暂无数据')}</div>
                 ) : (
                   <div className="events-stats__actions">
                     {topActions.map((item) => (
@@ -583,29 +584,29 @@ export default function EventsPage() {
 
       <Card>
         <div className="events-toolbar">
-          <span className="events-toolbar__title">事件</span>
+          <span className="events-toolbar__title">{t('事件')}</span>
           <div className="events-toolbar__filters">
             <div className="events-toolbar__filter">
-              <span>类型</span>
+              <span>{t('类型')}</span>
               <Select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
                 style={{ minWidth: 120 }}
               >
-                <option value="all">全部</option>
+                <option value="all">{t('全部')}</option>
                 {types.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </Select>
             </div>
             <div className="events-toolbar__filter">
-              <span>动作</span>
+              <span>{t('动作')}</span>
               <Select
                 value={actionFilter}
                 onChange={(e) => setActionFilter(e.target.value)}
                 style={{ minWidth: 140 }}
               >
-                <option value="all">全部</option>
+                <option value="all">{t('全部')}</option>
                 {actions.map((a) => (
                   <option key={a} value={a}>{a}</option>
                 ))}
@@ -617,45 +618,45 @@ export default function EventsPage() {
                 checked={autoScroll}
                 onChange={(e) => setAutoScroll(e.target.checked)}
               />
-              <span>自动置顶</span>
+              <span>{t('自动置顶')}</span>
             </label>
             <Button variant={mode === 'live' ? 'primary' : 'ghost'} size="sm" onClick={() => mode !== 'live' && switchMode('live')}>
-              实时
+              {t('实时')}
             </Button>
             <Button variant={mode === 'history' ? 'primary' : 'ghost'} size="sm" onClick={() => mode !== 'history' && switchMode('history')}>
-              历史
+              {t('历史')}
             </Button>
             {mode === 'history' && canManage && (
               <>
-                <Button variant="ghost" size="sm" onClick={handleExport}>导出</Button>
-                <Button variant="ghost" size="sm" onClick={() => setClearTarget(true)}>清空历史</Button>
+                <Button variant="ghost" size="sm" onClick={handleExport}>{t('导出')}</Button>
+                <Button variant="ghost" size="sm" onClick={() => setClearTarget(true)}>{t('清空历史')}</Button>
               </>
             )}
-            <Button variant="ghost" size="sm" onClick={handleClear}>清空</Button>
+            <Button variant="ghost" size="sm" onClick={handleClear}>{t('清空')}</Button>
           </div>
           <span className={`events-status ${mode === 'history' ? 'events-status--off' : live ? 'events-status--live' : 'events-status--off'}`}>
             <span className="events-status__dot" />
-            {mode === 'history' ? '历史模式' : live ? '实时连接中' : '连接断开'}
+            {mode === 'history' ? t('历史模式') : live ? t('实时连接中') : t('连接断开')}
           </span>
         </div>
 
         <div className="events-body" ref={listRef} style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
           {loading ? (
-            <div className="empty" style={{ padding: '40px 0' }}>加载中...</div>
+            <div className="empty" style={{ padding: '40px 0' }}>{t('加载中...')}</div>
           ) : filtered.length === 0 ? (
             events.length === 0 && loadError ? (
               <Empty
                 kind="error"
-                title="加载事件失败"
+                title={t('加载事件失败')}
                 description={loadError}
                 action={
                   <Button variant="secondary" size="sm" onClick={loadInitial}>
-                    重试
+                    {t('重试')}
                   </Button>
                 }
               />
             ) : (
-              <Empty title={events.length === 0 ? '暂无事件' : '无匹配事件'} />
+              <Empty title={events.length === 0 ? t('暂无事件') : t('无匹配事件')} />
             )
           ) : (
             <div className="events-list">
@@ -686,21 +687,21 @@ export default function EventsPage() {
           {mode === 'history' && hasMore && (
             <div className="events-more">
               <Button variant="secondary" size="sm" loading={historyLoading} onClick={() => loadHistoryPage(false)}>
-                加载更多
+                {t('加载更多')}
               </Button>
             </div>
           )}
           {mode === 'history' && historyLoading && hasMore === false && filtered.length === 0 && (
-            <div className="empty" style={{ padding: '24px 0' }}>加载中...</div>
+            <div className="empty" style={{ padding: '24px 0' }}>{t('加载中...')}</div>
           )}
         </div>
       </Card>
 
       <ConfirmDialog
         open={clearTarget}
-        title="清空事件历史"
+        title={t('清空事件历史')}
         message="确定清空全部持久化的事件历史记录吗？此操作不可撤销。"
-        confirmText="清空"
+        confirmText={t('清空')}
         danger
         onConfirm={confirmClearHistory}
         onCancel={() => setClearTarget(false)}

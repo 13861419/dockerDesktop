@@ -13,6 +13,7 @@ import Empty from '../components/Empty';
 import { useToast } from '../components/Toast';
 import { get, post } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
+import { translateNow as t } from '../i18n';
 import './storage.less';
 
 /** df 概要字段（后端 /api/system/df 返回的 summary） */
@@ -64,11 +65,11 @@ interface CleanCategory {
 
 /** 清理类别列表 */
 const CLEAN_CATEGORIES: CleanCategory[] = [
-  { key: 'images', name: '未使用的镜像', desc: '清理所有未被引用的镜像（悬挂/未使用），右侧为精确可回收量' },
-  { key: 'containers', name: '已停止的容器', desc: '清理所有已停止、未被使用的容器，右侧为可回收量' },
-  { key: 'volumes', name: '未使用的数据卷', desc: '清理所有未被任何容器引用的数据卷，右侧为可回收量' },
-  { key: 'networks', name: '未使用的网络', desc: '清理所有未被任何容器引用的网络' },
-  { key: 'buildCache', name: 'Build Cache', desc: '清理全部构建缓存（含非悬空缓存），右侧为可回收量' },
+  { key: 'images', name: t('未使用的镜像'), desc: t('清理所有未被引用的镜像（悬挂/未使用），右侧为精确可回收量') },
+  { key: 'containers', name: t('已停止的容器'), desc: t('清理所有已停止、未被使用的容器，右侧为可回收量') },
+  { key: 'volumes', name: t('未使用的数据卷'), desc: t('清理所有未被任何容器引用的数据卷，右侧为可回收量') },
+  { key: 'networks', name: t('未使用的网络'), desc: t('清理所有未被任何容器引用的网络') },
+  { key: 'buildCache', name: 'Build Cache', desc: t('清理全部构建缓存（含非悬空缓存），右侧为可回收量') },
 ];
 
 /** 清理类别对应的待回收空间（优先展示后端精确可回收量，缺失时回退整类占用） */
@@ -139,7 +140,7 @@ export default function StoragePage() {
       const data = await get<DfResponse>('/api/system/df');
       setSummary(data?.summary || null);
     } catch (e: any) {
-      showToast(e?.message || '加载磁盘统计失败', 'error');
+      showToast(e?.message || t('加载磁盘统计失败'), 'error');
       setLoadError(true);
     } finally {
       setLoading(false);
@@ -184,12 +185,12 @@ export default function StoragePage() {
    */
   async function handlePrune() {
     if (!canManage || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可执行清理', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可执行清理'), 'error');
       setPruneOpen(false);
       return;
     }
     if (selected.size === 0) {
-      showToast('请至少勾选一项清理类别', 'error');
+      showToast(t('请至少勾选一项清理类别'), 'error');
       return;
     }
     setPruning(true);
@@ -210,20 +211,20 @@ export default function StoragePage() {
       Object.entries(data?.results || {}).forEach(([key, item]) => {
         if (item && item.space > 0) {
           const cat = CLEAN_CATEGORIES.find((c) => c.key === key);
-          freed.push(`${cat?.name || key} ${formatBytes(item.space)}${item.objects.length ? `（${item.objects.length} 项）` : ''}`);
+          freed.push(t('{{name}} {{space}}{{v2}}', { name: t(cat?.name || key), space: formatBytes(item.space), v2: item.objects.length ? t('（{{n}} 项）', { n: item.objects.length }) : '' }));
         }
       });
       showToast(
         freed.length
-          ? `清理完成，共释放 ${formatBytes(data?.totalSpace)}：${freed.join('；')}`
-          : `清理完成，共释放 ${formatBytes(data?.totalSpace)}`
+          ? t('清理完成，共释放 {{v1}}：{{v2}}', { v1: formatBytes(data?.totalSpace), v2: freed.join('；') })
+          : t('清理完成，共释放 {{v1}}', { v1: formatBytes(data?.totalSpace) })
       );
       setPruneOpen(false);
       setSelected(new Set());
       // 清理后刷新统计
       loadDf();
     } catch (e: any) {
-      showToast(e?.message || '清理失败', 'error');
+      showToast(e?.message || t('清理失败'), 'error');
     } finally {
       setPruning(false);
     }
@@ -234,7 +235,7 @@ export default function StoragePage() {
    */
   async function handleImagePrune() {
     if (!canManage || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可执行清理', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可执行清理'), 'error');
       setImgPruneMode(null);
       return;
     }
@@ -251,14 +252,14 @@ export default function StoragePage() {
       setImgFreed(freed);
       showToast(
         freed
-          ? `清理完成，释放 ${freed}${res?.deleted?.length ? `（${res.deleted.length} 项）` : ''}`
-          : '清理完成，未找到可清理的镜像'
+          ? t('清理完成，释放 {{freed}}{{v2}}', { freed, v2: res?.deleted?.length ? t('（{{n}} 项）', { n: res.deleted.length }) : '' })
+          : t('清理完成，未找到可清理的镜像')
       );
       setImgPruneMode(null);
       // 清理后刷新统计
       loadDf();
     } catch (e: any) {
-      showToast(e?.message || '清理失败', 'error');
+      showToast(e?.message || t('清理失败'), 'error');
     } finally {
       setImgPruning(false);
     }
@@ -267,29 +268,29 @@ export default function StoragePage() {
   return (
     <div className="storage-page">
       {/* 顶部统计卡片 */}
-      <Card title="磁盘使用统计" extra={<Button variant="secondary" size="sm" onClick={loadDf} disabled={loading}>刷新</Button>}>
+      <Card title={t('磁盘使用统计')} extra={<Button variant="secondary" size="sm" onClick={loadDf} disabled={loading}>{t('刷新')}</Button>}>
         {loading ? (
-          <div className="storage-tip">加载中…</div>
+          <div className="storage-tip">{t('加载中…')}</div>
         ) : loadError || !summary ? (
           <Empty
-            title="无法获取磁盘统计"
+            title={t('无法获取磁盘统计')}
             description="Docker 引擎可能未连接，或暂不支持 system df"
-            action={<Button size="sm" onClick={loadDf}>重试</Button>}
+            action={<Button size="sm" onClick={loadDf}>{t('重试')}</Button>}
           />
         ) : (
           <div className="storage-stats">
             <div className="storage-stat">
-              <div className="storage-stat__label">镜像</div>
+              <div className="storage-stat__label">{t('镜像')}</div>
               <div className="storage-stat__value">{summary.imagesCount ?? '-'}</div>
               <div className="storage-stat__sub">占用 {formatBytes(summary.imagesSize)}</div>
             </div>
             <div className="storage-stat">
-              <div className="storage-stat__label">容器</div>
+              <div className="storage-stat__label">{t('容器')}</div>
               <div className="storage-stat__value">{summary.containersCount ?? '-'}</div>
               <div className="storage-stat__sub">可写层 {formatBytes(summary.containersSizeRw)}</div>
             </div>
             <div className="storage-stat">
-              <div className="storage-stat__label">数据卷</div>
+              <div className="storage-stat__label">{t('数据卷')}</div>
               <div className="storage-stat__value">{summary.volumesCount ?? '-'}</div>
               <div className="storage-stat__sub">占用 {formatBytes(summary.volumesSize)}</div>
             </div>
@@ -299,29 +300,29 @@ export default function StoragePage() {
               <div className="storage-stat__sub">占用 {formatBytes(summary.buildCacheSize)}</div>
             </div>
             <div className="storage-stat">
-              <div className="storage-stat__label">总层大小</div>
+              <div className="storage-stat__label">{t('总层大小')}</div>
               <div className="storage-stat__value">{formatBytes(summary.layersSize)}</div>
-              <div className="storage-stat__sub">镜像层合计</div>
+              <div className="storage-stat__sub">{t('镜像层合计')}</div>
             </div>
             <div className="storage-stat">
-              <div className="storage-stat__label">可回收</div>
+              <div className="storage-stat__label">{t('可回收')}</div>
               <div className="storage-stat__value">{formatBytes(summary.totalReclaimable)}</div>
-              <div className="storage-stat__sub">估算可清理空间</div>
+              <div className="storage-stat__sub">{t('估算可清理空间')}</div>
             </div>
           </div>
         )}
       </Card>
 
       {/* 磁盘分区使用率（来自实时监控） */}
-      <Card title="磁盘分区使用率">
+      <Card title={t('磁盘分区使用率')}>
         {disks.length === 0 ? (
-          <div className="storage-tip">暂无分区数据</div>
+          <div className="storage-tip">{t('暂无分区数据')}</div>
         ) : (
           <div className="storage-disks">
             {disks.map((d) => (
               <div key={d.mount} className="storage-disk">
                 <div className="storage-disk__head">
-                  <span className="storage-disk__name">{d.mount || '系统盘'}</span>
+                  <span className="storage-disk__name">{d.mount || t('系统盘')}</span>
                   <span className={`storage-disk__pct ${d.percent > 90 ? 'storage-disk__pct--high' : ''}`}>
                     {d.percent?.toFixed(1)}%
                   </span>
@@ -344,32 +345,32 @@ export default function StoragePage() {
       </Card>
 
       {/* 镜像清理（按粒度选择） */}
-      <Card title="镜像清理">
+      <Card title={t('镜像清理')}>
         <div className="storage-clean">
           <div className="storage-clean__item">
             <div className="storage-clean__info">
-              <div className="storage-clean__name">清理无标签镜像（dangling）</div>
-              <div className="storage-clean__desc">仅清理无标签且未被引用的悬空镜像，风险较低</div>
+              <div className="storage-clean__name">{t('清理无标签镜像（dangling）')}</div>
+              <div className="storage-clean__desc">{t('仅清理无标签且未被引用的悬空镜像，风险较低')}</div>
             </div>
             <Button
               variant="secondary"
               disabled={!canManage || imgPruning}
               onClick={() => setImgPruneMode('dangling')}
             >
-              清理
+              {t('清理')}
             </Button>
           </div>
           <div className="storage-clean__item">
             <div className="storage-clean__info">
-              <div className="storage-clean__name">清理所有未使用镜像</div>
-              <div className="storage-clean__desc">清理所有未被容器使用的镜像（含非悬空镜像），释放更多空间</div>
+              <div className="storage-clean__name">{t('清理所有未使用镜像')}</div>
+              <div className="storage-clean__desc">{t('清理所有未被容器使用的镜像（含非悬空镜像），释放更多空间')}</div>
             </div>
             <Button
               variant="danger"
               disabled={!canManage || imgPruning}
               onClick={() => setImgPruneMode('all')}
             >
-              清理
+              {t('清理')}
             </Button>
           </div>
           {imgFreed && (
@@ -379,9 +380,9 @@ export default function StoragePage() {
       </Card>
 
       {/* 清理区块 */}
-      <Card title="清理">
+      <Card title={t('清理')}>
         {loadError || !summary ? (
-          <Empty title="暂无可清理项" description="请先完成磁盘统计加载" />
+          <Empty title={t('暂无可清理项')} description="请先完成磁盘统计加载" />
         ) : (
           <div className="storage-clean">
             {CLEAN_CATEGORIES.map((cat) => {
@@ -400,10 +401,10 @@ export default function StoragePage() {
                     <div className="storage-clean__desc">{cat.desc}</div>
                   </div>
                   <div className="storage-clean__count">
-                    {cat.key === 'buildCache' ? `${summary.buildCacheCount ?? 0} 项` : ''}
+                    {cat.key === 'buildCache' ? t('{{v1}} 项', { v1: summary.buildCacheCount ?? 0 }) : ''}
                   </div>
                   <div className="storage-clean__space">
-                    {space > 0 ? `约 ${formatBytes(space)}` : ''}
+                    {space > 0 ? t('约 {{v1}}', { v1: formatBytes(space) }) : ''}
                   </div>
                 </label>
               );
@@ -412,17 +413,17 @@ export default function StoragePage() {
             <div className="storage-clean__actions">
               <div className="storage-clean__hint">
                 {!canManage
-                  ? '仅管理员可执行一键清理'
+                  ? t('仅管理员可执行一键清理')
                   : selected.size > 0
-                    ? `已选 ${selected.size} 项`
-                    : '勾选需要清理的类别后点击一键清理'}
+                    ? t('已选 {{v1}} 项', { v1: selected.size })
+                    : t('勾选需要清理的类别后点击一键清理')}
               </div>
               <Button
                 variant="danger"
                 disabled={selected.size === 0 || !canManage}
                 onClick={() => setPruneOpen(true)}
               >
-                一键清理
+                {t('一键清理')}
               </Button>
             </div>
           </div>
@@ -432,9 +433,9 @@ export default function StoragePage() {
       {/* 一键清理二次确认 */}
       <ConfirmDialog
         open={pruneOpen}
-        title="清理所选资源"
+        title={t('清理所选资源')}
         message="确定要清理所选类别吗？此操作会移除对应的镜像、容器、卷、网络或构建缓存，且不可恢复。"
-        confirmText="清理"
+        confirmText={t('清理')}
         danger
         loading={pruning}
         onConfirm={handlePrune}
@@ -444,13 +445,13 @@ export default function StoragePage() {
       {/* 镜像清理二次确认（按粒度动态标题与提示） */}
       <ConfirmDialog
         open={!!imgPruneMode}
-        title={imgPruneMode === 'all' ? '清理所有未使用镜像' : '清理无标签镜像'}
+        title={imgPruneMode === 'all' ? t('清理所有未使用镜像') : t('清理无标签镜像')}
         message={
           imgPruneMode === 'all'
-            ? '确定要清理所有未被容器使用的镜像吗？将删除全部未使用镜像（含非悬空镜像），此操作不可恢复。'
-            : '确定要清理所有悬空镜像（无标签且未被引用）吗？此操作不可恢复。'
+            ? t('确定要清理所有未被容器使用的镜像吗？将删除全部未使用镜像（含非悬空镜像），此操作不可恢复。')
+            : t('确定要清理所有悬空镜像（无标签且未被引用）吗？此操作不可恢复。')
         }
-        confirmText="清理"
+        confirmText={t('清理')}
         danger
         loading={imgPruning}
         onConfirm={handleImagePrune}

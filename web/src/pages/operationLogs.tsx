@@ -14,6 +14,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, del, download } from '../api/client';
 import { isAdmin } from '../api/auth';
+import { translateNow as t } from '../i18n';
 import './operationLogs.less';
 
 /** 每页显示条数的可选值 */
@@ -200,7 +201,7 @@ export default function OperationLogsPage() {
       setTotalPages(data.totalPages || 1);
       setOperators(data.operators || []);
     } catch (e: any) {
-      showToast(e?.message || '加载操作日志失败', 'error');
+      showToast(e?.message || t('加载操作日志失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -259,18 +260,18 @@ export default function OperationLogsPage() {
 
   const handleClear = async () => {
     if (!canClear) {
-      showToast('仅管理员可清空操作日志', 'error');
+      showToast(t('仅管理员可清空操作日志'), 'error');
       setConfirmClear(false);
       return;
     }
     setClearing(true);
     try {
       await del('/api/operation-logs');
-      showToast('操作日志已清空', 'success');
+      showToast(t('操作日志已清空'), 'success');
       setPage(1);
       load();
     } catch (e: any) {
-      showToast(e?.message || '清空操作日志失败', 'error');
+      showToast(e?.message || t('清空操作日志失败'), 'error');
     } finally {
       setClearing(false);
       setConfirmClear(false);
@@ -283,7 +284,7 @@ export default function OperationLogsPage() {
    */
   const handleExport = async (format: 'csv' | 'json') => {
     if (total === 0) {
-      showToast('当前无日志可导出', 'info');
+      showToast(t('当前无日志可导出'), 'info');
       return;
     }
     setExporting(true);
@@ -294,9 +295,9 @@ export default function OperationLogsPage() {
         .join('&');
       const suffix = qs ? '&' + qs : '';
       await download(`/api/operation-logs/export?format=${format}${suffix}`);
-      showToast(format === 'json' ? '日志已导出为 JSON' : '日志已导出', 'success');
+      showToast(format === 'json' ? t('日志已导出为 JSON') : t('日志已导出'), 'success');
     } catch (e: any) {
-      showToast(e?.message || '导出失败', 'error');
+      showToast(e?.message || t('导出失败'), 'error');
     } finally {
       setExporting(false);
     }
@@ -308,7 +309,7 @@ export default function OperationLogsPage() {
    */
   const handleExportStats = async (groupBy: 'user' | 'day') => {
     if (statsTotal === 0) {
-      showToast('当前无数据可导出报表', 'info');
+      showToast(t('当前无数据可导出报表'), 'info');
       return;
     }
     setExportStatsLoading(true);
@@ -319,9 +320,9 @@ export default function OperationLogsPage() {
         .join('&');
       const suffix = qs ? '&' + qs : '';
       await download(`/api/operation-logs/export/stats?groupBy=${groupBy}${suffix}`);
-      showToast('统计报表已导出', 'success');
+      showToast(t('统计报表已导出'), 'success');
     } catch (e: any) {
-      showToast(e?.message || '导出报表失败', 'error');
+      showToast(e?.message || t('导出报表失败'), 'error');
     } finally {
       setExportStatsLoading(false);
     }
@@ -345,7 +346,7 @@ export default function OperationLogsPage() {
 
   return (
     <div className="logs-page">
-      <h1 className="logs-page__title">操作日志</h1>
+      <h1 className="logs-page__title">{t('操作日志')}</h1>
 
       <Card>
         <div className="logs__toolbar">
@@ -366,7 +367,7 @@ export default function OperationLogsPage() {
               value={usernameFilter}
               onChange={(e) => changeUsername(e.target.value)}
             >
-              <option value="">全部操作人</option>
+              <option value="">{t('全部操作人')}</option>
               {operators.map((u) => (
                 <option key={u} value={u}>
                   {u}
@@ -385,7 +386,7 @@ export default function OperationLogsPage() {
               ))}
             </select>
             <label className="logs__time-filter">
-              <span>时间</span>
+              <span>{t('时间')}</span>
               <input
                 type="datetime-local"
                 value={startTime}
@@ -394,7 +395,7 @@ export default function OperationLogsPage() {
                   setPage(1);
                 }}
               />
-              <span className="logs__time-sep">至</span>
+              <span className="logs__time-sep">{t('至')}</span>
               <input
                 type="datetime-local"
                 value={endTime}
@@ -408,13 +409,13 @@ export default function OperationLogsPage() {
           <div className="logs__controls">
             <span className="logs__total">共 {total} 条</span>
             <Button variant="secondary" size="sm" onClick={load}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => handleExport('csv')} disabled={total === 0 || exporting}>
-              {exporting ? '导出中...' : '导出 CSV'}
+              {exporting ? t('导出中...') : t('导出 CSV')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => handleExport('json')} disabled={total === 0 || exporting}>
-              {exporting ? '导出中...' : '导出 JSON'}
+              {exporting ? t('导出中...') : t('导出 JSON')}
             </Button>
             <select
               className="logs__type-select"
@@ -423,8 +424,8 @@ export default function OperationLogsPage() {
               disabled={exportStatsLoading}
               style={{ width: 120 }}
             >
-              <option value="user">操作者报表</option>
-              <option value="day">按天报表</option>
+              <option value="user">{t('操作者报表')}</option>
+              <option value="day">{t('按天报表')}</option>
             </select>
             <Button
               variant="secondary"
@@ -432,10 +433,10 @@ export default function OperationLogsPage() {
               onClick={() => handleExportStats(statsGroupBy)}
               disabled={total === 0 || !canClear || exportStatsLoading}
             >
-              {exportStatsLoading ? '导出中...' : '导出报表'}
+              {exportStatsLoading ? t('导出中...') : t('导出报表')}
             </Button>
             <Button variant="danger" size="sm" onClick={() => setConfirmClear(true)} disabled={total === 0 || !canClear}>
-              清空
+              {t('清空')}
             </Button>
           </div>
         </div>
@@ -445,13 +446,13 @@ export default function OperationLogsPage() {
           <div className="oplog-stats">
             <div className="oplog-stats__total">
               <span className="oplog-stats__total-num">{statsTotal}</span>
-              <span className="oplog-stats__total-label">匹配操作数</span>
+              <span className="oplog-stats__total-label">{t('匹配操作数')}</span>
             </div>
 
             <div className="oplog-stats__block">
-              <h4 className="oplog-stats__title">按目标类型</h4>
+              <h4 className="oplog-stats__title">{t('按目标类型')}</h4>
               {stats.byType.length === 0 ? (
-                <div className="oplog-stats__empty">无数据</div>
+                <div className="oplog-stats__empty">{t('无数据')}</div>
               ) : (
                 stats.byType.map((t) => (
                   <div className="oplog-stats__row" key={t.target_type || '-'}>
@@ -471,7 +472,7 @@ export default function OperationLogsPage() {
             </div>
 
             <div className="oplog-stats__block">
-              <h4 className="oplog-stats__title">按结果</h4>
+              <h4 className="oplog-stats__title">{t('按结果')}</h4>
               <div className="oplog-stats__result">
                 <div className="oplog-stats__result-item oplog-stats__result-item--ok">
                   <span className="oplog-stats__result-num">{successCount}</span>
@@ -497,9 +498,9 @@ export default function OperationLogsPage() {
             </div>
 
             <div className="oplog-stats__block">
-              <h4 className="oplog-stats__title">操作动作 TOP 10</h4>
+              <h4 className="oplog-stats__title">{t('操作动作 TOP 10')}</h4>
               {stats.byAction.length === 0 ? (
-                <div className="oplog-stats__empty">无数据</div>
+                <div className="oplog-stats__empty">{t('无数据')}</div>
               ) : (
                 <ol className="oplog-stats__action-list">
                   {stats.byAction.map((a, idx) => (
@@ -515,15 +516,15 @@ export default function OperationLogsPage() {
             </div>
 
             <div className="oplog-stats__block">
-              <h4 className="oplog-stats__title">操作者 TOP 10</h4>
+              <h4 className="oplog-stats__title">{t('操作者 TOP 10')}</h4>
               {byUserStats.length === 0 ? (
-                <div className="oplog-stats__empty">无数据</div>
+                <div className="oplog-stats__empty">{t('无数据')}</div>
               ) : (
                 byUserStats.slice(0, 10).map((u) => (
                   <div className="oplog-stats__row" key={u.username || '-'}>
                     <span
                       className="oplog-stats__row-label"
-                      title={`${u.username || 'system'}：成功 ${u.success}，失败 ${u.fail}`}
+                      title={t('{{v1}}：成功 {{v2}}，失败 {{v3}}', { v1: u.username || 'system', v2: u.success, v3: u.fail })}
                     >
                       {u.username || 'system'}
                     </span>
@@ -533,7 +534,7 @@ export default function OperationLogsPage() {
                         style={{ width: `${Math.round((u.count / maxUserCount) * 100)}%` }}
                       />
                     </div>
-                    <span className="oplog-stats__row-count" title={`成功 ${u.success}，失败 ${u.fail}`}>
+                    <span className="oplog-stats__row-count" title={t('成功 {{v1}}，失败 {{v2}}', { v1: u.success, v2: u.fail })}>
                       {u.count}
                     </span>
                   </div>
@@ -542,9 +543,9 @@ export default function OperationLogsPage() {
             </div>
 
             <div className="oplog-stats__block">
-              <h4 className="oplog-stats__title">按天趋势</h4>
+              <h4 className="oplog-stats__title">{t('按天趋势')}</h4>
               {trendStats.length === 0 ? (
-                <div className="oplog-stats__empty">无数据</div>
+                <div className="oplog-stats__empty">{t('无数据')}</div>
               ) : (
                 <ol className="oplog-stats__action-list">
                   {trendStats.map((t) => (
@@ -564,19 +565,19 @@ export default function OperationLogsPage() {
         {loading ? (
           <SkeletonRows rows={8} />
         ) : logs.length === 0 ? (
-          <Empty title="暂无操作日志" description="执行容器启停、删除镜像等操作后将在这里记录" />
+          <Empty title={t('暂无操作日志')} description="执行容器启停、删除镜像等操作后将在这里记录" />
         ) : (
           <>
             <table className="data-table logs__table">
               <thead>
                 <tr>
-                  <th>操作时间</th>
-                  <th>操作人</th>
-                  <th>操作</th>
-                  <th>类型</th>
-                  <th>目标</th>
-                  <th>详情</th>
-                  <th>结果</th>
+                  <th>{t('操作时间')}</th>
+                  <th>{t('操作人')}</th>
+                  <th>{t('操作')}</th>
+                  <th>{t('类型')}</th>
+                  <th>{t('目标')}</th>
+                  <th>{t('详情')}</th>
+                  <th>{t('结果')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -600,9 +601,9 @@ export default function OperationLogsPage() {
                     </td>
                     <td>
                       {log.success ? (
-                        <span className="logs__result logs__result--ok">成功</span>
+                        <span className="logs__result logs__result--ok">{t('成功')}</span>
                       ) : (
-                        <span className="logs__result logs__result--fail">失败</span>
+                        <span className="logs__result logs__result--fail">{t('失败')}</span>
                       )}
                     </td>
                   </tr>
@@ -612,11 +613,11 @@ export default function OperationLogsPage() {
 
             <div className="logs__pagination">
               <span className="logs__pagination-info">
-                共 {total} 条，当前第 {pageStart}-{pageEnd} 条
+                {t('共')} {total} 条，当前第 {pageStart}-{pageEnd} 条
               </span>
               <div className="logs__pagination-controls">
                 <label className="logs__page-size">
-                  每页
+                  {t('每页')}
                   <select value={pageSize} onChange={(e) => changePageSize(Number(e.target.value))}>
                     {PAGE_SIZE_OPTIONS.map((n) => (
                       <option key={n} value={n}>
@@ -624,10 +625,10 @@ export default function OperationLogsPage() {
                       </option>
                     ))}
                   </select>
-                  条
+                  {t('条')}
                 </label>
                 <button className="logs__page-btn" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
-                  上一页
+                  {t('上一页')}
                 </button>
                 {getPageItems(safePage, totalPages).map((p) =>
                   p === 0 ? (
@@ -649,7 +650,7 @@ export default function OperationLogsPage() {
                   disabled={safePage >= totalPages}
                   onClick={() => setPage(safePage + 1)}
                 >
-                  下一页
+                  {t('下一页')}
                 </button>
                 <span className="logs__page-jump">
                   <input
@@ -657,7 +658,7 @@ export default function OperationLogsPage() {
                     type="number"
                     min={1}
                     max={totalPages}
-                    placeholder="页码"
+                    placeholder={t('页码')}
                     value={pageJump}
                     onChange={(e) => setPageJump(e.target.value)}
                     onKeyDown={(e) => {
@@ -665,7 +666,7 @@ export default function OperationLogsPage() {
                     }}
                   />
                   <Button variant="ghost" size="sm" onClick={handleJump}>
-                    跳转
+                    {t('跳转')}
                   </Button>
                 </span>
               </div>
@@ -676,10 +677,10 @@ export default function OperationLogsPage() {
 
       <ConfirmDialog
         open={confirmClear}
-        title="清空操作日志"
+        title={t('清空操作日志')}
         message="确定要清空全部操作日志吗？此操作不可恢复。"
         danger
-        confirmText="清空"
+        confirmText={t('清空')}
         loading={clearing}
         onConfirm={handleClear}
         onCancel={() => setConfirmClear(false)}

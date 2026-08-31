@@ -15,6 +15,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input, Select } from '../components/Form';
+import { translateNow as t } from '../i18n';
 import './firewall.less';
 
 /** 端口放行规则 */
@@ -90,8 +91,8 @@ export default function FirewallPage() {
       setWritable(cResp?.writable ?? true);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '加载失败');
-      showToast(e?.message || '加载失败', 'error');
+      setLoadError(e?.message || t('加载失败'));
+      showToast(e?.message || t('加载失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -106,7 +107,7 @@ export default function FirewallPage() {
    */
   const openCreate = useCallback(() => {
     if (!canManage) {
-      showToast('仅管理员可开放端口', 'error');
+      showToast(t('仅管理员可开放端口'), 'error');
       return;
     }
     setForm({ port: '', proto: 'tcp', remark: '' });
@@ -119,14 +120,14 @@ export default function FirewallPage() {
    */
   const handleCreate = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可开放端口', 'error');
+      showToast(t('仅管理员可开放端口'), 'error');
       setCreateOpen(false);
       return;
     }
     const err: { port?: string } = {};
     const portNum = Number(form.port);
     if (!form.port.trim() || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
-      err.port = '请输入 1-65535 的端口号';
+      err.port = t('请输入 1-65535 的端口号');
     }
     setErrors(err);
     if (Object.keys(err).length) return;
@@ -138,11 +139,11 @@ export default function FirewallPage() {
         proto: form.proto,
         remark: form.remark.trim(),
       });
-      showToast('防火墙端口已开放');
+      showToast(t('防火墙端口已开放'));
       setCreateOpen(false);
       load();
     } catch (e: any) {
-      showToast(e?.message || '开放失败', 'error');
+      showToast(e?.message || t('开放失败'), 'error');
     } finally {
       setSaving(false);
     }
@@ -154,18 +155,18 @@ export default function FirewallPage() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canManage) {
-      showToast('仅管理员可关闭端口', 'error');
+      showToast(t('仅管理员可关闭端口'), 'error');
       setDeleteTarget(null);
       return;
     }
     setDeleting(true);
     try {
       await del(`/api/firewall/ports/${deleteTarget.id}`);
-      showToast('防火墙端口已关闭');
+      showToast(t('防火墙端口已关闭'));
       setDeleteTarget(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '关闭失败', 'error');
+      showToast(e?.message || t('关闭失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -174,13 +175,13 @@ export default function FirewallPage() {
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">防火墙</h1>
-        <p className="page__desc">管理 Windows 防火墙入站端口放行规则（基于系统 netsh）</p>
+        <h1 className="page__title">{t('防火墙')}</h1>
+        <p className="page__desc">{t('管理 Windows 防火墙入站端口放行规则（基于系统 netsh）')}</p>
       </div>
 
       {!supported ? (
         <Card>
-          <Empty title="该功能仅支持 Windows 平台" description="防火墙管理依赖 Windows 系统的 netsh advfirewall 命令。" />
+          <Empty title={t('该功能仅支持 Windows 平台')} description="防火墙管理依赖 Windows 系统的 netsh advfirewall 命令。" />
         </Card>
       ) : (
         <>
@@ -188,32 +189,32 @@ export default function FirewallPage() {
             <Card>
               <Empty
                 kind={loadError ? 'error' : 'empty'}
-                title={loadError || '需要管理员权限'}
+                title={loadError || t('需要管理员权限')}
                 description="修改 Windows 防火墙需要管理员权限，请以管理员身份运行面板服务后再执行增删操作。当前仅可查看已有规则。"
               />
             </Card>
           )}
 
           <div className="toolbar">
-            <Button onClick={openCreate} disabled={!canManage}>+ 开放端口</Button>
-            <Button variant="ghost" onClick={load}>刷新</Button>
+            <Button onClick={openCreate} disabled={!canManage}>{t('+ 开放端口')}</Button>
+            <Button variant="ghost" onClick={load}>{t('刷新')}</Button>
           </div>
 
           <Card>
             {loading ? (
               <SkeletonRows rows={4} />
             ) : ports.length === 0 ? (
-              <Empty title="暂无放行规则" description="点击「开放端口」放行一个入站 TCP/UDP 端口。" />
+              <Empty title={t('暂无放行规则')} description="点击「开放端口」放行一个入站 TCP/UDP 端口。" />
             ) : (
               <table className="table">
                 <thead>
                   <tr>
-                    <th style={{ width: '20%' }}>端口</th>
-                    <th style={{ width: '12%' }}>协议</th>
-                    <th style={{ width: '12%' }}>规则名</th>
-                    <th style={{ width: '26%' }}>备注</th>
-                    <th style={{ width: '18%' }}>创建时间</th>
-                    <th style={{ width: '12%' }}>操作</th>
+                    <th style={{ width: '20%' }}>{t('端口')}</th>
+                    <th style={{ width: '12%' }}>{t('协议')}</th>
+                    <th style={{ width: '12%' }}>{t('规则名')}</th>
+                    <th style={{ width: '26%' }}>{t('备注')}</th>
+                    <th style={{ width: '18%' }}>{t('创建时间')}</th>
+                    <th style={{ width: '12%' }}>{t('操作')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,7 +227,7 @@ export default function FirewallPage() {
                       <td className="fw-time">{formatTime(p.createdAt)}</td>
                       <td>
                         <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)} disabled={!canManage}>
-                          关闭
+                          {t('关闭')}
                         </Button>
                       </td>
                     </tr>
@@ -241,33 +242,33 @@ export default function FirewallPage() {
       {/* 新增弹窗 */}
       <Modal
         open={createOpen}
-        title="开放防火墙端口"
+        title={t('开放防火墙端口')}
         onClose={() => setCreateOpen(false)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button loading={saving} onClick={handleCreate} disabled={!canManage}>开放</Button>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>{t('取消')}</Button>
+            <Button loading={saving} onClick={handleCreate} disabled={!canManage}>{t('开放')}</Button>
           </div>
         }
       >
-        <Field label="端口号" required>
+        <Field label={t('端口号')} required>
           <Input
             value={form.port}
-            placeholder="如 8080"
+            placeholder={t('如 8080')}
             onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
           />
           {errors.port && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.port}</div>}
         </Field>
-        <Field label="协议">
+        <Field label={t('协议')}>
           <Select value={form.proto} onChange={(e) => setForm((f) => ({ ...f, proto: e.target.value }))}>
             <option value="tcp">TCP</option>
             <option value="udp">UDP</option>
           </Select>
         </Field>
-        <Field label="备注（可选）">
+        <Field label={t('备注（可选）')}>
           <Input
             value={form.remark}
-            placeholder="如：Nginx 对外服务"
+            placeholder={t('如：Nginx 对外服务')}
             onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
           />
         </Field>
@@ -276,9 +277,9 @@ export default function FirewallPage() {
       {/* 删除确认 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="关闭防火墙端口"
-        message={`确定关闭防火墙对端口 ${deleteTarget?.port}/${deleteTarget?.proto} 的入站放行吗？`}
-        confirmText="关闭"
+        title={t('关闭防火墙端口')}
+        message={t('确定关闭防火墙对端口 {{v1}}/{{v2}} 的入站放行吗？', { v1: deleteTarget?.port ?? '', v2: deleteTarget?.proto || '' })}
+        confirmText={t('关闭')}
         danger
         loading={deleting}
         onConfirm={handleDelete}

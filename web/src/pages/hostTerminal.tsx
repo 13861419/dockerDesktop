@@ -18,6 +18,7 @@ import { useCanManage } from '../hooks/useCanManage';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Select } from '../components/Form';
+import { translateNow as t } from '../i18n';
 import './hostTerminal.less';
 
 /** 连接状态 */
@@ -192,17 +193,17 @@ export default function HostTerminalPage() {
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">宿主机终端</h1>
-        <p className="page__desc">在宿主机执行 PowerShell / cmd 命令（会话式交互终端）</p>
+        <h1 className="page__title">{t('宿主机终端')}</h1>
+        <p className="page__desc">{t('在宿主机执行 PowerShell / cmd 命令（会话式交互终端）')}</p>
       </div>
 
       <Card>
         <div className="ht-toolbar">
           <span className={`ht-toolbar__state ht-toolbar__state--${connState}`}>
-            状态：{connState === 'connecting' && '连接中...'}
-            {connState === 'connected' && '已连接'}
-            {connState === 'closed' && '已断开'}
-            {connState === 'error' && '连接失败'}
+            {t('状态：')}{connState === 'connecting' && t('连接中...')}
+            {connState === 'connected' && t('已连接')}
+            {connState === 'closed' && t('已断开')}
+            {connState === 'error' && t('连接失败')}
           </span>
           <Select
             className="ht-shell"
@@ -216,9 +217,9 @@ export default function HostTerminalPage() {
             <option value="sh">sh</option>
           </Select>
           {connState === 'connected' ? (
-            <Button variant="ghost" size="sm" onClick={disconnect}>断开</Button>
+            <Button variant="ghost" size="sm" onClick={disconnect}>{t('断开')}</Button>
           ) : (
-            <Button variant="ghost" size="sm" onClick={() => connect(shell)}>连接</Button>
+            <Button variant="ghost" size="sm" onClick={() => connect(shell)}>{t('连接')}</Button>
           )}
         </div>
 
@@ -226,14 +227,14 @@ export default function HostTerminalPage() {
           <div className="ht-terminal__host" ref={hostRef} />
           {(!canManage || checking) && (
             <div className="ht-terminal__guard">
-              {checking ? '正在确认权限，请稍候...' : '当前账号无管理员权限，无法使用宿主机终端。'}
+              {checking ? t('正在确认权限，请稍候...') : t('当前账号无管理员权限，无法使用宿主机终端。')}
             </div>
           )}
         </div>
 
         <div className="ht-tip">
-          提示：在终端中输入 exit 或按 Ctrl+D 结束会话；可用方向键查看输入历史。该会话基于长驻子进程实现，
-          全屏交互类程序（如 vim / top）因非 PTY 环境可能表现受限。
+          {t('提示：在终端中输入 exit 或按 Ctrl+D 结束会话；可用方向键查看输入历史。该会话基于长驻子进程实现，')}
+          {t('全屏交互类程序（如 vim / top）因非 PTY 环境可能表现受限。')}
         </div>
       </Card>
     </div>

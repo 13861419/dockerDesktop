@@ -19,6 +19,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input } from '../components/Form';
+import { translateNow as t } from '../i18n';
 import './templates.less';
 
 /** 容器模板项（对齐 /api/templates 返回结构） */
@@ -95,8 +96,8 @@ export default function TemplatesPage() {
       setList(res || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '加载模板列表失败');
-      showToast(e?.message || '加载模板列表失败', 'error');
+      setLoadError(e?.message || t('加载模板列表失败'));
+      showToast(e?.message || t('加载模板列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -120,7 +121,7 @@ export default function TemplatesPage() {
    */
   const openCreate = useCallback(() => {
     if (!canManage) {
-      showToast('仅管理员可新建模板', 'error');
+      showToast(t('仅管理员可新建模板'), 'error');
       return;
     }
     setEditingId(null);
@@ -136,7 +137,7 @@ export default function TemplatesPage() {
   const openEdit = useCallback(
     (tpl: TemplateItem) => {
       if (!canManage) {
-        showToast('仅管理员可编辑模板', 'error');
+        showToast(t('仅管理员可编辑模板'), 'error');
         return;
       }
       setEditingId(tpl.id);
@@ -157,13 +158,13 @@ export default function TemplatesPage() {
    */
   const handleSave = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可操作模板', 'error');
+      showToast(t('仅管理员可操作模板'), 'error');
       setEditorOpen(false);
       return;
     }
     // 名称必填校验
     if (!form.name.trim()) {
-      showToast('模板名称不能为空', 'error');
+      showToast(t('模板名称不能为空'), 'error');
       return;
     }
     // config 为 JSON 文本，解析失败则拦截
@@ -171,7 +172,7 @@ export default function TemplatesPage() {
     try {
       configObj = form.config.trim() ? JSON.parse(form.config) : {};
     } catch {
-      setConfigError('config 不是合法 JSON，请检查格式');
+      setConfigError(t('config 不是合法 JSON，请检查格式'));
       return;
     }
     setSaving(true);
@@ -184,15 +185,15 @@ export default function TemplatesPage() {
       };
       if (editingId) {
         await put(`/api/templates/${editingId}`, body);
-        showToast('模板已更新');
+        showToast(t('模板已更新'));
       } else {
         await post('/api/templates', body);
-        showToast('模板已创建');
+        showToast(t('模板已创建'));
       }
       setEditorOpen(false);
       load();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setSaving(false);
     }
@@ -206,11 +207,11 @@ export default function TemplatesPage() {
     setDeleting(true);
     try {
       await del(`/api/templates/${deleteTarget.id}`);
-      showToast('模板已删除');
+      showToast(t('模板已删除'));
       setDeleteTarget(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -221,7 +222,7 @@ export default function TemplatesPage() {
    */
   const handleUse = useCallback(
     (tpl: TemplateItem) => {
-      showToast(`请在「容器」页 →「从模板创建」选择「${tpl.name}」`);
+      showToast(t('请在「容器」页 →「从模板创建」选择「{{v1}}」', { v1: tpl.name }));
     },
     [showToast],
   );
@@ -229,90 +230,90 @@ export default function TemplatesPage() {
   return (
     <div className="templates-page">
       <div className="templates-page__header">
-        <h1 className="templates-page__title">容器模板</h1>
+        <h1 className="templates-page__title">{t('容器模板')}</h1>
         <p className="templates-page__desc">
-          管理容器部署模板，可在容器页一键按模板创建容器 · 共 {filtered.length} / {list.length} 个
+          {t('管理容器部署模板，可在容器页一键按模板创建容器 · 共')} {filtered.length} / {list.length} 个
         </p>
       </div>
 
       <div className="templates-toolbar">
         <input
           className="input templates-toolbar__search"
-          placeholder="搜索名称 / 描述 / 镜像"
+          placeholder={t('搜索名称 / 描述 / 镜像')}
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
         />
         <div className="templates-toolbar__spacer" />
-        <Button onClick={openCreate} disabled={!canManage}>+ 新建模板</Button>
-        <Button variant="ghost" onClick={load}>刷新</Button>
+        <Button onClick={openCreate} disabled={!canManage}>{t('+ 新建模板')}</Button>
+        <Button variant="ghost" onClick={load}>{t('刷新')}</Button>
       </div>
 
       {loading ? (
         <SkeletonRows rows={4} />
       ) : loadError ? (
-        <Empty kind="error" title="加载模板列表失败" description={loadError} />
+        <Empty kind="error" title={t('加载模板列表失败')} description={loadError} />
       ) : filtered.length === 0 ? (
         <Empty
-          title={list.length === 0 ? '暂无模板' : '未找到匹配模板'}
+          title={list.length === 0 ? t('暂无模板') : t('未找到匹配模板')}
           description={
             list.length === 0
-              ? '点击「新建模板」创建，或在容器详情页将容器配置保存为模板。'
-              : '尝试更换搜索关键字'
+              ? t('点击「新建模板」创建，或在容器详情页将容器配置保存为模板。')
+              : t('尝试更换搜索关键字')
           }
         />
       ) : (
         <div className="templates-grid">
-          {filtered.map((t) => {
-            const expanded = expandedId === t.id;
+          {filtered.map((tp) => {
+            const expanded = expandedId === tp.id;
             return (
-              <div className="templates-card" key={t.id}>
+              <div className="templates-card" key={tp.id}>
                 <div className="templates-card__head">
                   <div className="templates-card__icon" aria-hidden="true">
-                    {initials(t.name)}
+                    {initials(tp.name)}
                   </div>
                   <div className="templates-card__meta">
-                    <div className="templates-card__name" title={t.name}>
-                      {t.name}
+                    <div className="templates-card__name" title={tp.name}>
+                      {tp.name}
                     </div>
-                    {t.image ? (
-                      <span className="templates-card__image" title={t.image}>
-                        {t.image}
+                    {tp.image ? (
+                      <span className="templates-card__image" title={tp.image}>
+                        {tp.image}
                       </span>
                     ) : (
-                      <span className="templates-card__image templates-card__image--empty">未指定镜像</span>
+                      <span className="templates-card__image templates-card__image--empty">{t('未指定镜像')}</span>
                     )}
                   </div>
                 </div>
 
-                <div className="templates-card__desc" title={t.description || ''}>
-                  {t.description || '暂无描述'}
+                <div className="templates-card__desc" title={tp.description || ''}>
+                  {tp.description || t('暂无描述')}
                 </div>
 
                 <div className="templates-card__config">
                   <button
                     type="button"
                     className="templates-card__config-toggle"
-                    onClick={() => setExpandedId(expanded ? null : t.id)}
+                    onClick={() => setExpandedId(expanded ? null : tp.id)}
                   >
                     <span>config</span>
                     <span className="templates-card__config-arrow">{expanded ? '▾' : '▸'}</span>
                   </button>
                   {expanded && (
                     <pre className="templates-card__config-body">
-                      {JSON.stringify(t.config ?? {}, null, 2)}
+                      {JSON.stringify(tp.config ?? {}, null, 2)}
                     </pre>
                   )}
                 </div>
 
                 <div className="templates-card__footer">
-                  <span className="templates-card__time">创建于 {formatTime(t.createdAt)}</span>
+                  <span className="templates-card__time">创建于 {formatTime(tp.createdAt)}</span>
                   <div className="templates-card__actions">
-                    <Button variant="ghost" size="sm" onClick={() => handleUse(t)}>使用</Button>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(t)} disabled={!canManage}>
-                      编辑
+                    <Button variant="ghost" size="sm" onClick={() => handleUse(tp)}>{t('使用')}</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(tp)} disabled={!canManage}>
+                      {t('编辑')}
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canManage}>
-                      删除
+                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(tp)} disabled={!canManage}>
+                      {t('删除')}
                     </Button>
                   </div>
                 </div>
@@ -325,43 +326,43 @@ export default function TemplatesPage() {
       {/* 新建/编辑模板弹窗 */}
       <Modal
         open={editorOpen}
-        title={editingId ? '编辑模板' : '新建模板'}
+        title={editingId ? t('编辑模板') : t('新建模板')}
         onClose={() => !saving && setEditorOpen(false)}
         width={620}
         footer={
           <div className="templates-modal__footer">
-            <Button variant="ghost" onClick={() => setEditorOpen(false)} disabled={saving}>取消</Button>
+            <Button variant="ghost" onClick={() => setEditorOpen(false)} disabled={saving}>{t('取消')}</Button>
             <Button loading={saving} onClick={handleSave} disabled={!canManage}>
-              {editingId ? '保存' : '创建'}
+              {editingId ? t('保存') : t('创建')}
             </Button>
           </div>
         }
       >
-        <Field label="模板名称" required>
+        <Field label={t('模板名称')} required>
           <Input
             value={form.name}
-            placeholder="如：Nginx 站点"
+            placeholder={t('如：Nginx 站点')}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             disabled={saving}
           />
         </Field>
-        <Field label="描述（可选）">
+        <Field label={t('描述（可选）')}>
           <Input
             value={form.description}
-            placeholder="模板用途说明"
+            placeholder={t('模板用途说明')}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             disabled={saving}
           />
         </Field>
-        <Field label="镜像（可选）">
+        <Field label={t('镜像（可选）')}>
           <Input
             value={form.image}
-            placeholder="如 nginx:latest"
+            placeholder={t('如 nginx:latest')}
             onChange={(e) => setForm((f) => ({ ...f, image: e.target.value }))}
             disabled={saving}
           />
         </Field>
-        <Field label="config（JSON）" hint="与容器导出配置的 config 结构一致">
+        <Field label="config（JSON）" hint={t('与容器导出配置的 config 结构一致')}>
           <textarea
             className="templates-config__area"
             value={form.config}
@@ -379,9 +380,9 @@ export default function TemplatesPage() {
       {/* 删除确认 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除容器模板"
-        message={`确定删除模板「${deleteTarget?.name || ''}」吗？删除后不可恢复。`}
-        confirmText="删除"
+        title={t('删除容器模板')}
+        message={t('确定删除模板「{{v1}}」吗？删除后不可恢复。', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}

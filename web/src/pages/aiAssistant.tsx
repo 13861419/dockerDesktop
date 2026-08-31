@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
 import { isAdmin } from '../api/auth';
 import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus, KnowledgeEntry, KnowledgeListResponse, AiUsageDashboard } from '../types';
+import { translateNow as t } from '../i18n';
 import './aiAssistant.less';
 
 interface ChatMsg {
@@ -34,13 +35,13 @@ function renderMarkdown(text: string, showToast?: (msg: string, type?: any) => v
         <pre className="ai-assistant__code" key={i}>
           <button
             className="ai-assistant__code-copy"
-            title="复制代码"
+            title={t('复制代码')}
             onClick={() => {
               navigator.clipboard.writeText(code);
-              showToast?.('已复制', 'success');
+              showToast?.(t('已复制'), 'success');
             }}
           >
-            复制
+            {t('复制')}
           </button>
           <code>{code}</code>
         </pre>
@@ -60,21 +61,21 @@ function renderMarkdown(text: string, showToast?: (msg: string, type?: any) => v
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  restart_container: '重启容器',
-  stop_container: '停止容器',
-  start_container: '启动容器',
-  remove_container: '删除容器',
-  remove_image: '删除镜像',
-  system_prune: '系统清理',
+  restart_container: t('重启容器'),
+  stop_container: t('停止容器'),
+  start_container: t('启动容器'),
+  remove_container: t('删除容器'),
+  remove_image: t('删除镜像'),
+  system_prune: t('系统清理'),
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: '待审批',
-  approved: '已批准',
-  rejected: '已拒绝',
-  gated: '待管理员审批',
-  executed: '已执行',
-  failed: '执行失败',
+  pending: t('待审批'),
+  approved: t('已批准'),
+  rejected: t('已拒绝'),
+  gated: t('待管理员审批'),
+  executed: t('已执行'),
+  failed: t('执行失败'),
 };
 
 /** Profile 表单初始值 */
@@ -180,7 +181,7 @@ export default function AiAssistantPage() {
       const u = await get<AiUsageResponse>('/api/ai/usage');
       setUsage(u);
     } catch (e: any) {
-      showToast(e?.message || '加载用量统计失败', 'error');
+      showToast(e?.message || t('加载用量统计失败'), 'error');
     } finally {
       setLoadingUsage(false);
     }
@@ -199,7 +200,7 @@ export default function AiAssistantPage() {
       setPendingActions(r.actions.filter((a) => a.status === 'pending'));
       setAllActions(r.actions);
     } catch (e: any) {
-      showToast(e?.message || '加载操作列表失败', 'error');
+      showToast(e?.message || t('加载操作列表失败'), 'error');
     } finally {
       setLoadingActions(false);
     }
@@ -213,56 +214,56 @@ export default function AiAssistantPage() {
   const handleApproveAction = useCallback(async (id: number) => {
     try {
       await post(`/api/ai/actions/${id}/approve`, {});
-      showToast('已批准');
+      showToast(t('已批准'));
       await loadActions();
     } catch (e: any) {
-      showToast(e?.message || '操作失败', 'error');
+      showToast(e?.message || t('操作失败'), 'error');
     }
   }, [loadActions, showToast]);
 
   const handleRejectAction = useCallback(async (id: number) => {
     try {
       await post(`/api/ai/actions/${id}/reject`, {});
-      showToast('已拒绝');
+      showToast(t('已拒绝'));
       await loadActions();
     } catch (e: any) {
-      showToast(e?.message || '操作失败', 'error');
+      showToast(e?.message || t('操作失败'), 'error');
     }
   }, [loadActions, showToast]);
 
   const handleExecuteAction = useCallback(async (id: number) => {
-    if (!confirm('确定执行此操作？')) return;
+    if (!confirm(t('确定执行此操作？'))) return;
     try {
       const r = await post<{ ok: boolean; message: string; approvalPending?: boolean; approvalId?: number }>(`/api/ai/actions/${id}/execute`, {});
       if (r.approvalPending) {
-        showToast('高危操作已转管理员审批，批准后自动执行', 'info');
+        showToast(t('高危操作已转管理员审批，批准后自动执行'), 'info');
       } else {
         showToast(r.message, r.ok ? 'success' : 'error');
       }
       await loadActions();
     } catch (e: any) {
-      showToast(e?.message || '执行失败', 'error');
+      showToast(e?.message || t('执行失败'), 'error');
     }
   }, [loadActions, showToast]);
 
   const checkLocalStatus = useCallback(async () => {
     const url = configForm.baseUrl.trim();
-    if (!url) { showToast('请先填写 Base URL', 'error'); return; }
+    if (!url) { showToast(t('请先填写 Base URL'), 'error'); return; }
     setCheckingLocal(true);
     try {
       const s = await post<AiLocalModelStatus>('/api/ai/local/status', { baseUrl: url });
       setLocalStatus(s);
-      if (s.ok) showToast(`检测成功：发现 ${s.models.length} 个模型`, 'success');
+      if (s.ok) showToast(t('检测成功：发现 {{v1}} 个模型', { v1: s.models.length }), 'success');
       else showToast(s.message, 'error');
     } catch (e: any) {
-      showToast(e?.message || '检测失败', 'error');
+      showToast(e?.message || t('检测失败'), 'error');
     } finally {
       setCheckingLocal(false);
     }
   }, [configForm.baseUrl, showToast]);
 
   const handleFileAnalyze = useCallback(async (file: File) => {
-    if (file.size > 5 * 1024 * 1024) { showToast('文件过大（最大 5MB）', 'error'); return; }
+    if (file.size > 5 * 1024 * 1024) { showToast(t('文件过大（最大 5MB）'), 'error'); return; }
     const reader = new FileReader();
     reader.onload = async () => {
       const content = String(reader.result || '');
@@ -272,7 +273,7 @@ export default function AiAssistantPage() {
         setAnalyzeResult(r);
         setShowAnalyze(true);
       } catch (e: any) {
-        showToast(e?.message || '分析失败', 'error');
+        showToast(e?.message || t('分析失败'), 'error');
       } finally {
         setAnalyzing(false);
       }
@@ -286,7 +287,7 @@ export default function AiAssistantPage() {
       const s = await get<OllamaStatus>('/api/ai/ollama/status');
       setOllamaStatus(s);
     } catch (e: any) {
-      showToast(e?.message || '获取 Ollama 状态失败', 'error');
+      showToast(e?.message || t('获取 Ollama 状态失败'), 'error');
     } finally {
       setOllamaLoading(false);
     }
@@ -298,9 +299,9 @@ export default function AiAssistantPage() {
       const r = await post<{ services: Array<{ service: string; label: string; baseUrl: string; ok: boolean; models: string[] }> }>('/api/ai/local/detect', {});
       setDetectedServices(r.services || []);
       const found = (r.services || []).filter((s) => s.ok);
-      showToast(found.length ? `发现 ${found.length} 个本地服务` : '未发现可用的本地 AI 服务', found.length ? 'success' : 'error');
+      showToast(found.length ? t('发现 {{v1}} 个本地服务', { v1: found.length }) : t('未发现可用的本地 AI 服务'), found.length ? 'success' : 'error');
     } catch (e: any) {
-      showToast(e?.message || '探测失败', 'error');
+      showToast(e?.message || t('探测失败'), 'error');
     } finally {
       setDetecting(false);
     }
@@ -314,20 +315,20 @@ export default function AiAssistantPage() {
       showToast(r.message, r.ok ? 'success' : 'error');
       if (r.ok) { setOllamaPullModel(''); loadOllamaStatus(); }
     } catch (e: any) {
-      showToast(e?.message || '拉取失败', 'error');
+      showToast(e?.message || t('拉取失败'), 'error');
     } finally {
       setOllamaPulling(false);
     }
   }, [ollamaPullModel, showToast, loadOllamaStatus]);
 
   const handleDeleteModel = useCallback(async (model: string) => {
-    if (!confirm(`确定删除模型 ${model}？`)) return;
+    if (!confirm(t('确定删除模型 {{model}}？', { model }))) return;
     try {
       const r = await post<{ ok: boolean; message: string }>('/api/ai/ollama/delete', { model });
       showToast(r.message, r.ok ? 'success' : 'error');
       if (r.ok) loadOllamaStatus();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     }
   }, [showToast, loadOllamaStatus]);
 
@@ -340,7 +341,7 @@ export default function AiAssistantPage() {
       const cs = await get<{ stats: Array<{ username: string; totalMessages: number; totalTokens: number; totalCost: number; avgTokensPerCall: number; lastActiveAt: number }> }>('/api/ai/usage/chat-stats');
       setChatStats(cs.stats || []);
     } catch (e: any) {
-      showToast(e?.message || '加载仪表盘失败', 'error');
+      showToast(e?.message || t('加载仪表盘失败'), 'error');
     } finally {
       setDashboardLoading(false);
     }
@@ -352,7 +353,7 @@ export default function AiAssistantPage() {
       const r = await get<{ items: Array<{ id: number; status: number; summary: string; snapshot: string; createdAt: number }> }>('/api/ai/inspection/list');
       setInspectionList(r.items || []);
     } catch (e: any) {
-      showToast(e?.message || '加载巡检记录失败', 'error');
+      showToast(e?.message || t('加载巡检记录失败'), 'error');
     } finally {
       setInspectionLoading(false);
     }
@@ -362,10 +363,10 @@ export default function AiAssistantPage() {
     setInspectionRunning(true);
     try {
       const r = await post<{ ok: boolean; summary: string }>('/api/ai/inspection/run', { notify });
-      showToast('巡检完成');
+      showToast(t('巡检完成'));
       await loadInspections();
     } catch (e: any) {
-      showToast(e?.message || '巡检失败', 'error');
+      showToast(e?.message || t('巡检失败'), 'error');
     } finally {
       setInspectionRunning(false);
     }
@@ -381,14 +382,14 @@ export default function AiAssistantPage() {
       setKnowledgeList(r.items);
       setKnowledgeTotal(r.total);
     } catch (e: any) {
-      showToast(e?.message || '加载知识库失败', 'error');
+      showToast(e?.message || t('加载知识库失败'), 'error');
     } finally {
       setKnowledgeLoading(false);
     }
   }, [showToast]);
 
   const handleCreateKnowledge = useCallback(async () => {
-    if (!knowledgeForm.title.trim() || !knowledgeForm.content.trim()) { showToast('标题和内容必填', 'error'); return; }
+    if (!knowledgeForm.title.trim() || !knowledgeForm.content.trim()) { showToast(t('标题和内容必填'), 'error'); return; }
     try {
       await post('/api/ai/knowledge', {
         title: knowledgeForm.title.trim(),
@@ -397,23 +398,23 @@ export default function AiAssistantPage() {
         tags: knowledgeForm.tags ? knowledgeForm.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : [],
         shared: knowledgeForm.shared,
       });
-      showToast('知识条目已创建');
+      showToast(t('知识条目已创建'));
       setShowKnowledgeForm(false);
       setKnowledgeForm({ title: '', category: 'general', content: '', tags: '', shared: false });
       loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
     } catch (e: any) {
-      showToast(e?.message || '创建失败', 'error');
+      showToast(e?.message || t('创建失败'), 'error');
     }
   }, [knowledgeForm, showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
 
   const handleDeleteKnowledge = useCallback(async (id: number) => {
-    if (!confirm('确定删除此知识条目？')) return;
+    if (!confirm(t('确定删除此知识条目？'))) return;
     try {
       await del(`/api/ai/knowledge/${id}`);
-      showToast('已删除');
+      showToast(t('已删除'));
       loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     }
   }, [showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
 
@@ -421,8 +422,8 @@ export default function AiAssistantPage() {
   const handleBatchImport = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const fileArr = Array.from(files);
-    if (fileArr.length > 100) { showToast('单次最多导入 100 个文件', 'error'); return; }
-    showToast(`正在导入 ${fileArr.length} 个文件...`, 'info');
+    if (fileArr.length > 100) { showToast(t('单次最多导入 100 个文件'), 'error'); return; }
+    showToast(t('正在导入 {{v1}} 个文件...', { v1: fileArr.length }), 'info');
     const items: Array<{ title: string; category: string; content: string; tags: string[] }> = [];
     for (const f of fileArr) {
       try {
@@ -437,13 +438,13 @@ export default function AiAssistantPage() {
         items.push({ title: f.name, category, content, tags: [ext] });
       } catch { /* 跳过无法读取的文件 */ }
     }
-    if (items.length === 0) { showToast('无可导入的文件', 'error'); return; }
+    if (items.length === 0) { showToast(t('无可导入的文件'), 'error'); return; }
     try {
       const r = await post<{ total: number; success: number; results: Array<{ ok: boolean; title: string; error?: string }> }>('/api/ai/knowledge/import', { items });
-      showToast(`导入完成：${r.success}/${r.total} 成功`);
+      showToast(t('导入完成：{{v1}}/{{v2}} 成功', { v1: r.success, v2: r.total }));
       loadKnowledge(knowledgeCategory || undefined, knowledgeKeyword || undefined);
     } catch (e: any) {
-      showToast(e?.message || '批量导入失败', 'error');
+      showToast(e?.message || t('批量导入失败'), 'error');
     }
     if (knowledgeImportRef.current) knowledgeImportRef.current.value = '';
   }, [showToast, loadKnowledge, knowledgeCategory, knowledgeKeyword]);
@@ -451,10 +452,10 @@ export default function AiAssistantPage() {
   const handleClearUsage = useCallback(async () => {
     try {
       await del('/api/ai/usage');
-      showToast('已清空用量统计');
+      showToast(t('已清空用量统计'));
       await loadUsage();
     } catch (e: any) {
-      showToast(e?.message || '清空失败', 'error');
+      showToast(e?.message || t('清空失败'), 'error');
     }
   }, [loadUsage, showToast]);
 
@@ -491,7 +492,7 @@ export default function AiAssistantPage() {
         // 恢复会话绑定的容器（与保存时一致）
         setChatContainer(s.tool === 'container' ? s.target || '' : '');
       } catch (e: any) {
-        showToast(e?.message || '加载会话失败', 'error');
+        showToast(e?.message || t('加载会话失败'), 'error');
       }
     },
     [showToast],
@@ -508,7 +509,7 @@ export default function AiAssistantPage() {
         ...list,
       ]);
     } catch (e: any) {
-      showToast(e?.message || '新建会话失败', 'error');
+      showToast(e?.message || t('新建会话失败'), 'error');
     }
   }, [showToast]);
 
@@ -542,20 +543,20 @@ export default function AiAssistantPage() {
       setMessages([]);
       messagesRef.current = [];
       setSessions((list) => list.filter((s) => s.id !== currentSessionId));
-      showToast('会话已删除');
+      showToast(t('会话已删除'));
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     }
   }, [currentSessionId, showToast, switchToNewSession]);
 
   const togglePinCurrentSession = useCallback(async () => {
-    if (currentSessionId == null) { showToast('请先选择要收藏的会话', 'error'); return; }
+    if (currentSessionId == null) { showToast(t('请先选择要收藏的会话'), 'error'); return; }
     try {
       const r = await put<{ pinned: boolean }>(`/api/ai/sessions/${currentSessionId}/pin`);
-      showToast(r.pinned ? '已收藏该会话' : '已取消收藏');
+      showToast(r.pinned ? t('已收藏该会话') : t('已取消收藏'));
       refreshSessions(sessionSearch || undefined);
     } catch (e: any) {
-      showToast(e?.message || '操作失败', 'error');
+      showToast(e?.message || t('操作失败'), 'error');
     }
   }, [currentSessionId, showToast, refreshSessions, sessionSearch]);
 
@@ -566,7 +567,7 @@ export default function AiAssistantPage() {
       const resp = await fetch(`/api/ai/sessions/${currentSessionId}/export`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!resp.ok) throw new Error('导出失败');
+      if (!resp.ok) throw new Error(t('导出失败'));
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -574,9 +575,9 @@ export default function AiAssistantPage() {
       a.download = `ai-session-${currentSessionId}.md`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('已导出为 Markdown');
+      showToast(t('已导出为 Markdown'));
     } catch (e: any) {
-      showToast(e?.message || '导出失败', 'error');
+      showToast(e?.message || t('导出失败'), 'error');
     }
   }, [currentSessionId, showToast]);
 
@@ -586,7 +587,7 @@ export default function AiAssistantPage() {
       const resp = await fetch('/api/ai/sessions/backup', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!resp.ok) throw new Error('备份失败');
+      if (!resp.ok) throw new Error(t('备份失败'));
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -594,9 +595,9 @@ export default function AiAssistantPage() {
       a.download = `ai-sessions-backup-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('已备份所有会话');
+      showToast(t('已备份所有会话'));
     } catch (e: any) {
-      showToast(e?.message || '备份失败', 'error');
+      showToast(e?.message || t('备份失败'), 'error');
     }
   }, [showToast]);
 
@@ -611,30 +612,30 @@ export default function AiAssistantPage() {
         const text = await file.text();
         const data = JSON.parse(text);
         const sessions = data.sessions || data;
-        if (!Array.isArray(sessions)) throw new Error('格式错误');
+        if (!Array.isArray(sessions)) throw new Error(t('格式错误'));
         const r = await post<{ imported: number; errors: string[] }>('/api/ai/sessions/import', { sessions });
-        showToast(`导入 ${r.imported} 个会话`);
-        if (r.errors.length) showToast(`${r.errors.length} 条跳过`, 'error');
+        showToast(t('导入 {{v1}} 个会话', { v1: r.imported }));
+        if (r.errors.length) showToast(t('{{v1}} 条跳过', { v1: r.errors.length }), 'error');
         refreshSessions();
       } catch (e: any) {
-        showToast(e?.message || '导入失败', 'error');
+        showToast(e?.message || t('导入失败'), 'error');
       }
     };
     input.click();
   }, [showToast, refreshSessions]);
 
   const clearAllSessions = useCallback(async () => {
-    if (!sessions.length) { showToast('当前没有会话', 'error'); return; }
-    if (!confirm(`确定清空全部 ${sessions.length} 个会话？此操作不可恢复。`)) return;
+    if (!sessions.length) { showToast(t('当前没有会话'), 'error'); return; }
+    if (!confirm(t('确定清空全部 {{v1}} 个会话？此操作不可恢复。', { v1: sessions.length }))) return;
     try {
       const r = await del<{ deleted: number }>('/api/ai/sessions/clear');
       setCurrentSessionId(null);
       setMessages([]);
       messagesRef.current = [];
       setSessions([]);
-      showToast(`已清空 ${r.deleted} 个会话`);
+      showToast(t('已清空 {{v1}} 个会话', { v1: r.deleted }));
     } catch (e: any) {
-      showToast(e?.message || '清空失败', 'error');
+      showToast(e?.message || t('清空失败'), 'error');
     }
   }, [sessions.length, showToast]);
 
@@ -660,7 +661,7 @@ export default function AiAssistantPage() {
       setTemplates(tplRes.templates || []);
       setTemplateCategories(catRes.categories || []);
     } catch (e: any) {
-      showToast(e?.message || '加载数据失败', 'error');
+      showToast(e?.message || t('加载数据失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -687,7 +688,7 @@ export default function AiAssistantPage() {
       const prev = messagesRef.current;
       const history = [...prev, { role: 'user' as const, content: text }]
         .slice(-40)
-        .map((m) => ({ role: m.role, content: m.error ? '(请求失败)' : m.content }));
+        .map((m) => ({ role: m.role, content: m.error ? t('(请求失败)') : m.content }));
 
       // 确保存在会话（首次发送时自动创建）
       let sessionId = currentSessionId;
@@ -737,11 +738,11 @@ export default function AiAssistantPage() {
             },
           },
         );
-        if (!fullText) replaceLastAssistant('(空回复)');
+        if (!fullText) replaceLastAssistant(t('(空回复)'));
       } catch (e: any) {
         hadError = true;
-        showToast(e?.message || 'AI 请求失败', 'error');
-        replaceLastAssistant(e?.message || '请求失败', true);
+        showToast(e?.message || t('AI 请求失败'), 'error');
+        replaceLastAssistant(e?.message || t('请求失败'), true);
       } finally {
         setSending(false);
       }
@@ -751,7 +752,7 @@ export default function AiAssistantPage() {
         const finalMsgs: ChatMsg[] = [
           ...prev,
           { role: 'user', content: text },
-          { role: 'assistant', content: fullText || '(空回复)', error: hadError || undefined },
+          { role: 'assistant', content: fullText || t('(空回复)'), error: hadError || undefined },
         ];
         await saveSession(sessionId, finalMsgs);
         // 用首条用户消息自动生成标题
@@ -772,7 +773,7 @@ export default function AiAssistantPage() {
   const onCapability = useCallback(
     (cap: AiCapability) => {
       const extra = cap.tool === 'logs' ? logsTarget : '';
-      send(cap.prompt + (extra ? `\n容器：${extra}` : ''), cap.tool, cap.tool === 'logs' ? extra : undefined);
+      send(cap.prompt + (extra ? t('\n容器：{{extra}}', { extra }) : ''), cap.tool, cap.tool === 'logs' ? extra : undefined);
     },
     [send, logsTarget],
   );
@@ -783,9 +784,9 @@ export default function AiAssistantPage() {
         const res = await put<AiProfile>(`/api/ai/profiles/${id}/default`);
         setCurrentModelId(res.id);
         setProfiles((list) => list.map((p) => ({ ...p, isDefault: p.id === id })));
-        showToast('已切换默认模型');
+        showToast(t('已切换默认模型'));
       } catch (e: any) {
-        showToast(e?.message || '切换失败', 'error');
+        showToast(e?.message || t('切换失败'), 'error');
       }
     },
     [showToast],
@@ -808,11 +809,11 @@ export default function AiAssistantPage() {
 
   const handleSaveProfile = useCallback(async () => {
     if (!configForm.name.trim() || !configForm.baseUrl.trim()) {
-      showToast('名称和端点不能为空', 'error');
+      showToast(t('名称和端点不能为空'), 'error');
       return;
     }
     if (configForm.kind === 'cloud' && !configForm.apiKey.trim() && !editing?.hasKey) {
-      showToast('云端模型需要填写 API Key', 'error');
+      showToast(t('云端模型需要填写 API Key'), 'error');
       return;
     }
     setSaving(true);
@@ -829,16 +830,16 @@ export default function AiAssistantPage() {
       if (configForm.apiKey.trim()) body.apiKey = configForm.apiKey.trim();
       if (editing) {
         await put(`/api/ai/profiles/${editing.id}`, body);
-        showToast('配置已更新');
+        showToast(t('配置已更新'));
       } else {
         await post('/api/ai/profiles', body);
-        showToast('配置已创建');
+        showToast(t('配置已创建'));
       }
       setConfigForm(EMPTY_FORM);
       setEditing(null);
       await loadAll();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setSaving(false);
     }
@@ -862,15 +863,15 @@ export default function AiAssistantPage() {
   const handleDelete = useCallback(
     async (p: AiProfile) => {
       if (profiles.length <= 1) {
-        showToast('至少保留一条配置', 'error');
+        showToast(t('至少保留一条配置'), 'error');
         return;
       }
       try {
         await del(`/api/ai/profiles/${p.id}`);
-        showToast('已删除');
+        showToast(t('已删除'));
         await loadAll();
       } catch (e: any) {
-        showToast(e?.message || '删除失败', 'error');
+        showToast(e?.message || t('删除失败'), 'error');
       }
     },
     [profiles.length, showToast, loadAll],
@@ -882,9 +883,9 @@ export default function AiAssistantPage() {
         await put(`/api/ai/profiles/${p.id}/default`);
         setCurrentModelId(p.id);
         setProfiles((list) => list.map((item) => ({ ...item, isDefault: item.id === p.id })));
-        showToast('已设为默认');
+        showToast(t('已设为默认'));
       } catch (e: any) {
-        showToast(e?.message || '操作失败', 'error');
+        showToast(e?.message || t('操作失败'), 'error');
       }
     },
     [showToast],
@@ -896,10 +897,10 @@ export default function AiAssistantPage() {
       try {
         const res = await post<{ ok: boolean; message: string }>(`/api/ai/profiles/${p.id}/test`);
         setHealthResults((r) => ({ ...r, [p.id]: { ok: res.ok, message: res.message } }));
-        showToast(res.message || (res.ok ? '连接成功' : '连接失败'), res.ok ? 'success' : 'error');
+        showToast(res.message || (res.ok ? t('连接成功') : t('连接失败')), res.ok ? 'success' : 'error');
       } catch (e: any) {
-        setHealthResults((r) => ({ ...r, [p.id]: { ok: false, message: e?.message || '测试失败' } }));
-        showToast(e?.message || '测试失败', 'error');
+        setHealthResults((r) => ({ ...r, [p.id]: { ok: false, message: e?.message || t('测试失败') } }));
+        showToast(e?.message || t('测试失败'), 'error');
       } finally {
         setTesting(false);
       }
@@ -917,11 +918,11 @@ export default function AiAssistantPage() {
         setHealthResults((r) => ({ ...r, [p.id]: { ok: res.ok, message: res.message } }));
         if (res.ok) okCount++;
       } catch (e: any) {
-        setHealthResults((r) => ({ ...r, [p.id]: { ok: false, message: e?.message || '测试失败' } }));
+        setHealthResults((r) => ({ ...r, [p.id]: { ok: false, message: e?.message || t('测试失败') } }));
       }
     }
     setTestingAll(false);
-    showToast(`健康检查完成：${okCount}/${profiles.length} 可用`);
+    showToast(t('健康检查完成：{{okCount}}/{{v2}} 可用', { okCount, v2: profiles.length }));
   }, [profiles, showToast]);
 
   const openConfigNew = useCallback(() => {
@@ -947,40 +948,40 @@ export default function AiAssistantPage() {
   return (
     <div className="ai-assistant">
       <Card
-        title="AI 模型配置中心"
+        title={t('AI 模型配置中心')}
         extra={
           <div className="ai-assistant__toolbar">
             <span className={`ai-assistant__badge ${available ? 'is-on' : 'is-off'}`}>
-              {available ? '已启用' : '未配置'}
+              {available ? t('已启用') : t('未配置')}
             </span>
             <Button size="sm" variant="ghost" onClick={openUsage}>
-              用量统计
+              {t('用量统计')}
             </Button>
             <Button size="sm" variant="ghost" onClick={openActions}>
-              待审批
+              {t('待审批')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowOllama(!showOllama); if (!showOllama) loadOllamaStatus(); }}>
-              本地模型
+              {t('本地模型')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowKnowledge(!showKnowledge); if (!showKnowledge) loadKnowledge(); }}>
-              知识库
+              {t('知识库')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowDashboard(!showDashboard); if (!showDashboard) loadDashboard(); }}>
-              用量仪表盘
+              {t('用量仪表盘')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowInspection(!showInspection); if (!showInspection) loadInspections(); }}>
-              AI 巡检
+              {t('AI 巡检')}
             </Button>
             {admin && (
               <Button size="sm" variant="primary" onClick={openConfigNew}>
-                配置模型
+                {t('配置模型')}
               </Button>
             )}
           </div>
         }
       >
         <div className="ai-assistant__topbar">
-          <Field label="当前模型">
+          <Field label={t('当前模型')}>
             <Select
               value={currentModelId ?? ''}
               onChange={(e) => {
@@ -989,7 +990,7 @@ export default function AiAssistantPage() {
               }}
             >
               <option value="" disabled>
-                {profiles.length === 0 ? '无可用配置' : '请选择'}
+                {profiles.length === 0 ? t('无可用配置') : t('请选择')}
               </option>
               {profiles.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -1000,19 +1001,19 @@ export default function AiAssistantPage() {
           </Field>
           {profiles.length === 0 && admin && (
             <Button size="sm" variant="primary" onClick={openConfigNew}>
-              立即配置
+              {t('立即配置')}
             </Button>
           )}
         </div>
 
         {!available && profiles.length === 0 ? (
           <Empty
-            title="AI 助手尚未配置"
+            title={t('AI 助手尚未配置')}
             description="添加一个模型配置后即可使用 AI 助手。"
             action={
               admin ? (
                 <Button variant="primary" onClick={openConfigNew}>
-                  添加配置
+                  {t('添加配置')}
                 </Button>
               ) : (
                 <></>
@@ -1022,7 +1023,7 @@ export default function AiAssistantPage() {
         ) : (
           <div className="ai-assistant__body">
             <div className="ai-assistant__side">
-              <div className="ai-assistant__side-title">快捷能力</div>
+              <div className="ai-assistant__side-title">{t('快捷能力')}</div>
               {capabilities.map((cap) => (
                 <div className="ai-assistant__cap" key={cap.id}>
                   <div className="ai-assistant__cap-label">
@@ -1033,7 +1034,7 @@ export default function AiAssistantPage() {
                         value={logsTarget}
                         onChange={(e: any) => setLogsTarget(e.target.value)}
                       >
-                        <option value="">选择容器…</option>
+                        <option value="">{t('选择容器…')}</option>
                         {containers
                           .filter((c) => c.State === 'running')
                           .map((c) => {
@@ -1050,7 +1051,7 @@ export default function AiAssistantPage() {
                   </div>
                   <div className="ai-assistant__cap-desc">{cap.description}</div>
                   <Button size="sm" onClick={() => onCapability(cap)}>
-                    使用
+                    {t('使用')}
                   </Button>
                 </div>
               ))}
@@ -1068,7 +1069,7 @@ export default function AiAssistantPage() {
                   }}
                 >
                   <option value="" >
-                    新建对话
+                    {t('新建对话')}
                   </option>
                   {sessions.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -1077,7 +1078,7 @@ export default function AiAssistantPage() {
                   ))}
                 </Select>
                 <Input
-                  placeholder="搜索对话..."
+                  placeholder={t('搜索对话...')}
                   value={sessionSearch}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSessionSearch(e.target.value)}
                   onKeyDown={(e: React.KeyboardEvent) => {
@@ -1087,28 +1088,28 @@ export default function AiAssistantPage() {
                 />
                 <div className="ai-assistant__list-header-actions">
                   <Button size="sm" onClick={newSession}>
-                    新建
+                    {t('新建')}
                   </Button>
                   <Button size="sm" variant={sessions.find((s) => s.id === currentSessionId)?.pinned ? 'primary' : 'ghost'} onClick={togglePinCurrentSession}>
-                    {sessions.find((s) => s.id === currentSessionId)?.pinned ? '已收藏' : '收藏'}
+                    {sessions.find((s) => s.id === currentSessionId)?.pinned ? t('已收藏') : t('收藏')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={deleteCurrentSession}>
-                    删除
+                    {t('删除')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={exportSession}>
-                    导出
+                    {t('导出')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={backupAllSessions}>
-                    备份全部
+                    {t('备份全部')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={importSessions}>
-                    导入
+                    {t('导入')}
                   </Button>
                 </div>
               </div>
               <div className="ai-assistant__list" ref={listRef}>
                 {messages.length === 0 ? (
-                  <Empty title="开始对话" description="输入问题，或点击右侧快捷能力。" />
+                  <Empty title={t('开始对话')} description="输入问题，或点击右侧快捷能力。" />
                 ) : (
                   messages.map((m, i) => (
                     <div
@@ -1121,40 +1122,40 @@ export default function AiAssistantPage() {
                           <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                             <button
                               className="ai-assistant__copy"
-                              title="复制"
+                              title={t('复制')}
                               onClick={() => {
                                 navigator.clipboard.writeText(m.content);
-                                showToast('已复制', 'success');
+                                showToast(t('已复制'), 'success');
                               }}
                             >
-                              复制
+                              {t('复制')}
                             </button>
                             {currentSessionId && (
                               <>
                                 <button
                                   className="ai-assistant__copy"
-                                  title="有用"
+                                  title={t('有用')}
                                   style={{ color: m.feedback === 'good' ? 'var(--color-success)' : undefined }}
                                   onClick={async () => {
                                     try {
                                       await put(`/api/ai/sessions/${currentSessionId}/feedback`, { messageIndex: i, feedback: 'good' });
                                       setMessages((prev) => prev.map((msg, idx) => idx === i ? { ...msg, feedback: 'good' } : msg));
-                                      showToast('已标记为有用');
-                                    } catch (e: any) { showToast(e?.message || '操作失败', 'error'); }
+                                      showToast(t('已标记为有用'));
+                                    } catch (e: any) { showToast(e?.message || t('操作失败'), 'error'); }
                                   }}
                                 >
                                   👍
                                 </button>
                                 <button
                                   className="ai-assistant__copy"
-                                  title="无用"
+                                  title={t('无用')}
                                   style={{ color: m.feedback === 'bad' ? 'var(--color-error)' : undefined }}
                                   onClick={async () => {
                                     try {
                                       await put(`/api/ai/sessions/${currentSessionId}/feedback`, { messageIndex: i, feedback: 'bad' });
                                       setMessages((prev) => prev.map((msg, idx) => idx === i ? { ...msg, feedback: 'bad' } : msg));
-                                      showToast('已标记为无用');
-                                    } catch (e: any) { showToast(e?.message || '操作失败', 'error'); }
+                                      showToast(t('已标记为无用'));
+                                    } catch (e: any) { showToast(e?.message || t('操作失败'), 'error'); }
                                   }}
                                 >
                                   👎
@@ -1177,22 +1178,22 @@ export default function AiAssistantPage() {
                     value={chatContainer}
                     onChange={(e) => setChatContainer(e.target.value)}
                     style={{ flex: 1, fontSize: 12 }}
-                    title="选择容器后，AI 将自动携带该容器的配置、资源占用与日志上下文"
+                    title={t('选择容器后，AI 将自动携带该容器的配置、资源占用与日志上下文')}
                   >
-                    <option value="">🌐 通用对话（不绑定容器）</option>
+                    <option value="">{t('🌐 通用对话（不绑定容器）')}</option>
                     {containers.map((c) => {
                       const name = (c.Names?.[0] || '').replace(/^\//, '');
                       return <option key={c.Id} value={name}>📦 {name}（{c.State}）</option>;
                     })}
                   </select>
                   {chatContainer && (
-                    <Button size="sm" variant="ghost" onClick={() => setChatContainer('')}>取消绑定</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setChatContainer('')}>{t('取消绑定')}</Button>
                   )}
                 </div>
                 <TextArea
                   className="ai-assistant__input"
                   value={input}
-                  placeholder={chatContainer ? `正在就容器 ${chatContainer} 提问…` : '输入你的 Docker 运维问题…'}
+                  placeholder={chatContainer ? t('正在就容器 {{chatContainer}} 提问…', { chatContainer }) : t('输入你的 Docker 运维问题…')}
                   onChange={(e: any) => setInput(e.target.value)}
                   onKeyDown={(e: any) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1203,10 +1204,10 @@ export default function AiAssistantPage() {
                 />
                 <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".dockerfile,Dockerfile,*.yml,*.yaml,*.log,*.txt,*.conf,*.json,*.ini,*.toml" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileAnalyze(f); e.target.value = ''; }} />
                 <Button variant="ghost" loading={analyzing} onClick={() => fileInputRef.current?.click()}>
-                  上传分析
+                  {t('上传分析')}
                 </Button>
                 <Button variant="primary" loading={sending} disabled={!input.trim()} onClick={() => send(input, chatContainer ? 'container' : undefined, chatContainer || undefined)}>
-                  发送
+                  {t('发送')}
                 </Button>
               </div>
             </div>
@@ -1219,10 +1220,10 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
           <Card
             className="ai-assistant__config"
-            title="模型配置"
+            title={t('模型配置')}
             extra={
               <Button size="sm" onClick={() => setShowConfig(false)}>
-                关闭
+                {t('关闭')}
               </Button>
             }
           >
@@ -1232,14 +1233,14 @@ export default function AiAssistantPage() {
                 className={`ai-assistant__tab ${activeTab === 'preset' ? 'is-active' : ''}`}
                 onClick={() => { setActiveTab('preset'); setEditing(null); setConfigForm(EMPTY_FORM); }}
               >
-                预设
+                {t('预设')}
               </button>
               <button
                 type="button"
                 className={`ai-assistant__tab ${activeTab === 'mine' ? 'is-active' : ''}`}
                 onClick={() => setActiveTab('mine')}
               >
-                我的配置
+                {t('我的配置')}
               </button>
             </div>
 
@@ -1247,7 +1248,7 @@ export default function AiAssistantPage() {
               <div className="ai-assistant__preset-panel">
                 {localPresets.length > 0 && (
                   <div className="ai-assistant__preset-group">
-                    <div className="ai-assistant__preset-group-title">本地</div>
+                    <div className="ai-assistant__preset-group-title">{t('本地')}</div>
                     <div className="ai-assistant__preset-grid">
                       {localPresets.map((p) => (
                         <div className="ai-assistant__preset-card" key={p.id} onClick={() => onPresetClick(p)}>
@@ -1264,7 +1265,7 @@ export default function AiAssistantPage() {
                 )}
                 {cloudPresets.length > 0 && (
                   <div className="ai-assistant__preset-group">
-                    <div className="ai-assistant__preset-group-title">云端</div>
+                    <div className="ai-assistant__preset-group-title">{t('云端')}</div>
                     <div className="ai-assistant__preset-grid">
                       {cloudPresets.map((p) => (
                         <div className="ai-assistant__preset-card" key={p.id} onClick={() => onPresetClick(p)}>
@@ -1280,7 +1281,7 @@ export default function AiAssistantPage() {
                   </div>
                 )}
                 {presets.length === 0 && (
-                  <Empty title="暂无预设" description="暂无可选的预设模型。" />
+                  <Empty title={t('暂无预设')} description="暂无可选的预设模型。" />
                 )}
               </div>
             )}
@@ -1290,35 +1291,35 @@ export default function AiAssistantPage() {
                 {editing ? (
                   <div className="ai-assistant__edit-form">
                     <div className="ai-assistant__edit-head">
-                      <span className="ai-assistant__edit-title">{editing ? '编辑配置' : '新建配置'}</span>
+                      <span className="ai-assistant__edit-title">{editing ? t('编辑配置') : t('新建配置')}</span>
                       <Button size="sm" variant="ghost" onClick={() => { setEditing(null); setConfigForm(EMPTY_FORM); }}>
-                        返回列表
+                        {t('返回列表')}
                       </Button>
                     </div>
-                    <Field label="名称" required>
+                    <Field label={t('名称')} required>
                       <Input
                         value={configForm.name}
-                        placeholder="如：GPT-4o"
+                        placeholder={t('如：GPT-4o')}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
                       />
                     </Field>
-                    <Field label="类型">
+                    <Field label={t('类型')}>
                       <Select
                         value={configForm.kind}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, kind: e.target.value as 'local' | 'cloud' }))}
                       >
-                        <option value="local">本地</option>
-                        <option value="cloud">云端</option>
+                        <option value="local">{t('本地')}</option>
+                        <option value="cloud">{t('云端')}</option>
                       </Select>
                     </Field>
                     <Field label="Provider">
                       <Input
                         value={configForm.provider}
-                        placeholder="如：openai / ollama"
+                        placeholder={t('如：openai / ollama')}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, provider: e.target.value }))}
                       />
                     </Field>
-                    <Field label="Base URL" required hint="OpenAI 兼容端点，如 https://api.openai.com/v1">
+                    <Field label="Base URL" required hint={t('OpenAI 兼容端点，如 https://api.openai.com/v1')}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <Input
                           value={configForm.baseUrl}
@@ -1326,18 +1327,18 @@ export default function AiAssistantPage() {
                           style={{ flex: 1 }}
                         />
                         <Button size="sm" variant="ghost" onClick={checkLocalStatus} disabled={checkingLocal}>
-                          {checkingLocal ? '检测中...' : '检测本地服务'}
+                          {checkingLocal ? t('检测中...') : t('检测本地服务')}
                         </Button>
                       </div>
                     </Field>
                     {localStatus && (
                       <div style={{ padding: '6px 0', fontSize: 13 }}>
                         <span className={`ai-assistant__cap-tag is-${localStatus.ok ? 'cloud' : 'off'}`}>
-                          {localStatus.ok ? '连通' : '未连通'}
+                          {localStatus.ok ? t('连通') : t('未连通')}
                         </span>
                         {localStatus.ok && localStatus.models.length > 0 && (
                           <span style={{ marginLeft: 8, opacity: 0.7 }}>
-                            模型：{localStatus.models.map((m) => m.name).join(', ')}
+                            {t('模型：')}{localStatus.models.map((m) => m.name).join(', ')}
                           </span>
                         )}
                         {!localStatus.ok && <span style={{ marginLeft: 8, opacity: 0.6 }}>{localStatus.message}</span>}
@@ -1345,11 +1346,11 @@ export default function AiAssistantPage() {
                     )}
                     {localStatus?.ok && localStatus.models.length > 0 && (
                       <div style={{ padding: '6px 0', borderTop: '1px solid var(--border-light)', marginTop: 6 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>本地模型管理</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{t('本地模型管理')}</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {localStatus.models.map((m) => (
                             <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-tertiary)', borderRadius: 6, padding: '4px 8px', fontSize: 12 }}>
-                              <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>本地</span>
+                              <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{t('本地')}</span>
                               <span>{m.name}</span>
                               <span style={{ opacity: 0.5 }}>{((m.size || 0) / 1024 / 1024 / 1024).toFixed(1)}G</span>
                             </div>
@@ -1357,32 +1358,32 @@ export default function AiAssistantPage() {
                         </div>
                       </div>
                     )}
-                    <Field label="模型" required>
+                    <Field label={t('模型')} required>
                       <Input
                         value={configForm.model}
-                        placeholder="如 gpt-4o-mini / deepseek-chat"
+                        placeholder={t('如 gpt-4o-mini / deepseek-chat')}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, model: e.target.value }))}
                       />
                     </Field>
                     <Field
                       label="API Key"
-                      hint={editing?.hasKey ? '已配置（留空表示不修改）' : configForm.kind === 'local' ? '本地模型可不填' : '必填'}
+                      hint={editing?.hasKey ? t('已配置（留空表示不修改）') : configForm.kind === 'local' ? t('本地模型可不填') : t('必填')}
                     >
                       <Input
                         type="password"
-                        placeholder={editing?.hasKey ? '••••••••（已配置）' : 'sk-...'}
+                        placeholder={editing?.hasKey ? t('••••••••（已配置）') : 'sk-...'}
                         value={configForm.apiKey}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, apiKey: e.target.value }))}
                       />
                     </Field>
-                    <Field label="超时（秒）">
+                    <Field label={t('超时（秒）')}>
                       <Input
                         type="number"
                         value={configForm.timeoutMs}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, timeoutMs: Number(e.target.value) || 60 }))}
                       />
                     </Field>
-                    <Field label="系统提示词" hint="可选，覆盖默认提示词">
+                    <Field label={t('系统提示词')} hint={t('可选，覆盖默认提示词')}>
                       <TextArea
                         value={configForm.systemPrompt}
                         onChange={(e: any) => setConfigForm((f) => ({ ...f, systemPrompt: e.target.value }))}
@@ -1390,17 +1391,17 @@ export default function AiAssistantPage() {
                     </Field>
                     <div className="ai-assistant__config-actions">
                       <Button variant="primary" loading={saving} onClick={handleSaveProfile}>
-                        保存
+                        {t('保存')}
                       </Button>
                     </div>
                   </div>
                 ) : profiles.length === 0 ? (
                   <Empty
-                    title="暂无配置"
+                    title={t('暂无配置')}
                     description="从预设中选择一个模型快速添加，或手动新建。"
                     action={
                       <Button variant="primary" size="sm" onClick={() => setActiveTab('preset')}>
-                        从预设添加
+                        {t('从预设添加')}
                       </Button>
                     }
                   />
@@ -1409,13 +1410,13 @@ export default function AiAssistantPage() {
                     <table className="ai-assistant__profiles-table">
                       <thead>
                         <tr>
-                          <th>名称</th>
-                          <th>类型</th>
+                          <th>{t('名称')}</th>
+                          <th>{t('类型')}</th>
                           <th>Provider</th>
-                          <th>模型</th>
-                          <th>默认</th>
+                          <th>{t('模型')}</th>
+                          <th>{t('默认')}</th>
                           <th>Key</th>
-                          <th>操作</th>
+                          <th>{t('操作')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1424,15 +1425,15 @@ export default function AiAssistantPage() {
                             <td className="ai-assistant__td-name">{p.name}</td>
                             <td>
                               <span className={`ai-assistant__kind-badge ai-assistant__kind-badge--${p.kind}`}>
-                                {p.kind === 'local' ? '本地' : '云端'}
+                                {p.kind === 'local' ? t('本地') : t('云端')}
                               </span>
                             </td>
                             <td>{p.provider}</td>
                             <td>{p.model}</td>
-                            <td>{p.isDefault ? '是' : '否'}</td>
+                            <td>{p.isDefault ? t('是') : t('否')}</td>
                             <td>
                               <span className={`ai-assistant__key-badge ${p.hasKey ? 'is-on' : 'is-off'}`}>
-                                {p.hasKey ? '已配置' : '无'}
+                                {p.hasKey ? t('已配置') : t('无')}
                               </span>
                             </td>
                             <td style={{ textAlign: 'center' }}>
@@ -1444,16 +1445,16 @@ export default function AiAssistantPage() {
                                   }}
                                   title={healthResults[p.id].message}
                                 >
-                                  {healthResults[p.id].ok ? '可用' : '异常'}
+                                  {healthResults[p.id].ok ? t('可用') : t('异常')}
                                 </span>
                               ) : (
-                                <span style={{ fontSize: 12, opacity: 0.35 }}>未测</span>
+                                <span style={{ fontSize: 12, opacity: 0.35 }}>{t('未测')}</span>
                               )}
                             </td>
                             <td>
                               <div className="ai-assistant__row-actions">
                                 <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}>
-                                  编辑
+                                  {t('编辑')}
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1461,11 +1462,11 @@ export default function AiAssistantPage() {
                                   onClick={() => handleDelete(p)}
                                   disabled={profiles.length <= 1}
                                 >
-                                  删除
+                                  {t('删除')}
                                 </Button>
                                 {!p.isDefault && (
                                   <Button size="sm" variant="ghost" onClick={() => handleSetDefault(p)}>
-                                    设默认
+                                    {t('设默认')}
                                   </Button>
                                 )}
                                 <Button
@@ -1474,19 +1475,19 @@ export default function AiAssistantPage() {
                                   loading={testing}
                                   onClick={() => handleTestProfile(p)}
                                 >
-                                  测试
+                                  {t('测试')}
                                 </Button>
                               </div>
                             </td>
                           </tr>
               ))}
-              <div className="ai-assistant__side-title" style={{ marginTop: 16 }}>Prompt 模板</div>
+              <div className="ai-assistant__side-title" style={{ marginTop: 16 }}>{t('Prompt 模板')}</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Button size="sm" onClick={async () => {
                   try {
                     const token = localStorage.getItem('token') || '';
                     const resp = await fetch('/api/ai/templates/export', { headers: { Authorization: `Bearer ${token}` } });
-                    if (!resp.ok) throw new Error('导出失败');
+                    if (!resp.ok) throw new Error(t('导出失败'));
                     const blob = await resp.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -1494,9 +1495,9 @@ export default function AiAssistantPage() {
                     a.download = 'ai-templates.json';
                     a.click();
                     URL.revokeObjectURL(url);
-                    showToast('已导出模板');
-                  } catch (e: any) { showToast(e?.message || '导出失败', 'error'); }
-                }}>导出</Button>
+                    showToast(t('已导出模板'));
+                  } catch (e: any) { showToast(e?.message || t('导出失败'), 'error'); }
+                }}>{t('导出')}</Button>
                 <Button size="sm" variant="ghost" onClick={async () => {
                   const input = document.createElement('input');
                   input.type = 'file';
@@ -1507,15 +1508,15 @@ export default function AiAssistantPage() {
                     try {
                       const text = await file.text();
                       const templates = JSON.parse(text);
-                      if (!Array.isArray(templates)) throw new Error('格式错误');
+                      if (!Array.isArray(templates)) throw new Error(t('格式错误'));
                       const r = await post<{ imported: number; errors: string[] }>('/api/ai/templates/import', { templates });
-                      showToast(`导入 ${r.imported} 个模板`);
-                      if (r.errors.length) showToast(`${r.errors.length} 条跳过`, 'error');
+                      showToast(t('导入 {{v1}} 个模板', { v1: r.imported }));
+                      if (r.errors.length) showToast(t('{{v1}} 条跳过', { v1: r.errors.length }), 'error');
                       loadAll();
-                    } catch (e: any) { showToast(e?.message || '导入失败', 'error'); }
+                    } catch (e: any) { showToast(e?.message || t('导入失败'), 'error'); }
                   };
                   input.click();
-                }}>导入</Button>
+                }}>{t('导入')}</Button>
               </div>
               {templateCategories.length > 0 && (
                 <Select
@@ -1523,7 +1524,7 @@ export default function AiAssistantPage() {
                   value={templateCategory}
                   onChange={(e: any) => setTemplateCategory(e.target.value)}
                 >
-                  <option value="">全部分类</option>
+                  <option value="">{t('全部分类')}</option>
                   {templateCategories.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -1531,18 +1532,18 @@ export default function AiAssistantPage() {
               )}
               {templates
                 .filter((t) => !templateCategory || t.category === templateCategory)
-                .map((t) => (
-                  <div className="ai-assistant__cap" key={t.id}>
-                    <div className="ai-assistant__cap-label">
-                      {t.name}
-                      {t.isSystem && <span className="ai-assistant__cap-tag">预置</span>}
-                    </div>
-                    <div className="ai-assistant__cap-desc">{t.category} · {t.prompt.slice(0, 40)}…</div>
-                    <Button size="sm" onClick={() => { setInput(t.prompt); }}>
-                      使用
-                    </Button>
-                  </div>
-                ))}
+.map((tp) => (
+<div className="ai-assistant__cap" key={tp.id}>
+<div className="ai-assistant__cap-label">
+{tp.name}
+{tp.isSystem && <span className="ai-assistant__cap-tag">{t('预置')}</span>}
+</div>
+<div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt.slice(0, 40)}…</div>
+<Button size="sm" onClick={() => { setInput(tp.prompt); }}>
+{t('使用')}
+</Button>
+</div>
+))}
                       </tbody>
                     </table>
                   </div>
@@ -1559,16 +1560,16 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="AI 用量统计"
+              title={t('AI 用量统计')}
               extra={
                 <div className="ai-assistant__usage-actions">
                   {admin && (
                     <Button size="sm" variant="ghost" onClick={handleClearUsage}>
-                      清空统计
+                      {t('清空统计')}
                     </Button>
                   )}
                   <Button size="sm" onClick={() => setShowUsage(false)}>
-                    关闭
+                    {t('关闭')}
                   </Button>
                 </div>
               }
@@ -1583,44 +1584,44 @@ export default function AiAssistantPage() {
                         <div className="ai-assistant__usage-card-value">
                           {formatCount(usage.summary.total)}
                         </div>
-                        <div className="ai-assistant__usage-card-label">总 Token 数</div>
+                        <div className="ai-assistant__usage-card-label">{t('总 Token 数')}</div>
                       </div>
                       <div className="ai-assistant__usage-card">
                         <div className="ai-assistant__usage-card-value">
                           {formatCount(usage.summary.totalPrompt)}
                         </div>
-                        <div className="ai-assistant__usage-card-label">输入 Token</div>
+                        <div className="ai-assistant__usage-card-label">{t('输入 Token')}</div>
                       </div>
                       <div className="ai-assistant__usage-card">
                         <div className="ai-assistant__usage-card-value">
                           {formatCount(usage.summary.totalCompletion)}
                         </div>
-                        <div className="ai-assistant__usage-card-label">输出 Token</div>
+                        <div className="ai-assistant__usage-card-label">{t('输出 Token')}</div>
                       </div>
                       <div className="ai-assistant__usage-card">
                         <div className="ai-assistant__usage-card-value">
                           {usage.summary.totalCalls}
                         </div>
                         <div className="ai-assistant__usage-card-label">
-                          调用次数（成功 {usage.summary.successCalls} / 失败 {usage.summary.failedCalls}）
+                          {t('调用次数（成功')} {usage.summary.successCalls} / 失败 {usage.summary.failedCalls}）
                         </div>
                       </div>
                     </div>
                   )}
 
-                  <div className="ai-assistant__usage-section-title">按模型分布</div>
+                  <div className="ai-assistant__usage-section-title">{t('按模型分布')}</div>
                   {usage && usage.byModel && usage.byModel.length > 0 ? (
                     <div className="ai-assistant__usage-table-wrap">
                       <table className="ai-assistant__usage-table">
                         <thead>
                           <tr>
-                            <th>模型</th>
+                            <th>{t('模型')}</th>
                             <th>Provider</th>
-                            <th>调用次数</th>
-                            <th>输入 Token</th>
-                            <th>输出 Token</th>
-                            <th>总 Token</th>
-                            <th>成功率</th>
+                            <th>{t('调用次数')}</th>
+                            <th>{t('输入 Token')}</th>
+                            <th>{t('输出 Token')}</th>
+                            <th>{t('总 Token')}</th>
+                            <th>{t('成功率')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1642,7 +1643,7 @@ export default function AiAssistantPage() {
                       </table>
                     </div>
                   ) : (
-                    <Empty title="暂无用量数据" description="使用一次 AI 对话后，这里会展示统计。" />
+                    <Empty title={t('暂无用量数据')} description="使用一次 AI 对话后，这里会展示统计。" />
                   )}
                 </>
               )}
@@ -1656,27 +1657,27 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="AI 操作审批"
+              title={t('AI 操作审批')}
               extra={
                 <div className="ai-assistant__usage-actions">
-                  <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'pending' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('pending'); loadActions('pending'); }}>待审批</span>
-                  <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'all' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('all'); loadActions('all'); }}>全部</span>
+                  <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'pending' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('pending'); loadActions('pending'); }}>{t('待审批')}</span>
+                  <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'all' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('all'); loadActions('all'); }}>{t('全部')}</span>
                   <Button size="sm" onClick={() => setShowActions(false)}>✕</Button>
                 </div>
               }
             >
               {loadingActions ? (
-                <div style={{ textAlign: 'center', padding: 16 }}><span style={{ opacity: 0.6 }}>加载中...</span></div>
+                <div style={{ textAlign: 'center', padding: 16 }}><span style={{ opacity: 0.6 }}>{t('加载中...')}</span></div>
               ) : (actionView === 'pending' ? pendingActions : allActions).length > 0 ? (
                 <div className="ai-assistant__usage-body">
                   <table className="ai-assistant__usage-table">
                     <thead>
                       <tr>
-                        <th>类型</th>
-                        <th>参数</th>
-                        <th>状态</th>
-                        <th>时间</th>
-                        <th>操作</th>
+                        <th>{t('类型')}</th>
+                        <th>{t('参数')}</th>
+                        <th>{t('状态')}</th>
+                        <th>{t('时间')}</th>
+                        <th>{t('操作')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1694,25 +1695,25 @@ export default function AiAssistantPage() {
                           <td>
                             {a.status === 'pending' && (
                               <div style={{ display: 'flex', gap: 4 }}>
-                                <Button size="sm" variant="primary" onClick={() => handleApproveAction(a.id)}>批准</Button>
-                                <Button size="sm" variant="danger" onClick={() => handleRejectAction(a.id)}>拒绝</Button>
+                                <Button size="sm" variant="primary" onClick={() => handleApproveAction(a.id)}>{t('批准')}</Button>
+                                <Button size="sm" variant="danger" onClick={() => handleRejectAction(a.id)}>{t('拒绝')}</Button>
                               </div>
                             )}
                             {a.status === 'approved' && (
-                              <Button size="sm" variant="primary" onClick={() => handleExecuteAction(a.id)}>执行</Button>
+                              <Button size="sm" variant="primary" onClick={() => handleExecuteAction(a.id)}>{t('执行')}</Button>
                             )}
                             {a.status === 'executed' && (
-                              <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 11 }}>已执行</span>
+                              <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 11 }}>{t('已执行')}</span>
                             )}
                             {a.status === 'failed' && (
-                              <span className="ai-assistant__cap-tag is-off" style={{ fontSize: 11 }}>失败</span>
+                              <span className="ai-assistant__cap-tag is-off" style={{ fontSize: 11 }}>{t('失败')}</span>
                             )}
                           </td>
                         </tr>
                         {a.result && (a.status === 'executed' || a.status === 'failed' || a.status === 'gated') && (
                           <tr key={`${a.id}-result`}>
                             <td colSpan={5} style={{ padding: '4px 12px', fontSize: 12, opacity: 0.7, background: 'var(--bg-tertiary)' }}>
-                              执行结果：{a.result}
+                              {t('执行结果：')}{a.result}
                             </td>
                           </tr>
                         )}
@@ -1722,7 +1723,7 @@ export default function AiAssistantPage() {
                   </table>
                 </div>
               ) : (
-                <Empty title="暂无操作" description="AI 建议的运维操作会出现在这里。" />
+                <Empty title={t('暂无操作')} description="AI 建议的运维操作会出现在这里。" />
               )}
             </Card>
           </div>
@@ -1734,22 +1735,22 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="本地模型管理（Ollama）"
+              title={t('本地模型管理（Ollama）')}
               extra={<Button size="sm" onClick={() => setShowOllama(false)}>✕</Button>}
             >
               <div className="ai-assistant__usage-body">
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <div style={{ fontWeight: 500, fontSize: 13 }}>本地服务探测</div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>{t('本地服务探测')}</div>
                     <Button size="sm" variant="ghost" loading={detecting} onClick={detectLocalServices} style={{ marginLeft: 'auto' }}>
-                      自动探测（Ollama/DMR/vLLM/LM Studio）
+                      {t('自动探测（Ollama/DMR/vLLM/LM Studio）')}
                     </Button>
                   </div>
                   {detectedServices.length > 0 && (
                     <div>
                       {detectedServices.map((s) => (
                         <div key={s.service} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
-                          <span className={`ai-assistant__cap-tag ${s.ok ? 'is-cloud' : 'is-off'}`}>{s.ok ? '在线' : '离线'}</span>
+                          <span className={`ai-assistant__cap-tag ${s.ok ? 'is-cloud' : 'is-off'}`}>{s.ok ? t('在线') : t('离线')}</span>
                           <span style={{ flex: 1 }}>{s.label} <span style={{ opacity: 0.5 }}>{s.baseUrl}</span></span>
                           {s.ok && s.models.length > 0 && <span style={{ opacity: 0.5 }}>{s.models.length} 个模型</span>}
                         </div>
@@ -1758,54 +1759,54 @@ export default function AiAssistantPage() {
                   )}
                 </div>
                 {ollamaLoading ? (
-                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>{t('加载中...')}</div>
                 ) : ollamaStatus ? (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                       <span className={`ai-assistant__cap-tag is-${ollamaStatus.ok ? 'cloud' : 'off'}`}>
-                        {ollamaStatus.ok ? '服务正常' : '未连接'}
+                        {ollamaStatus.ok ? t('服务正常') : t('未连接')}
                       </span>
                       {ollamaStatus.version && <span style={{ fontSize: 12, opacity: 0.6 }}>v{ollamaStatus.version}</span>}
                       <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 'auto' }}>{ollamaStatus.message}</span>
                     </div>
                     {ollamaStatus.ok && ollamaStatus.models.length > 0 && (
                       <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontWeight: 500, marginBottom: 6 }}>已安装模型</div>
+                        <div style={{ fontWeight: 500, marginBottom: 6 }}>{t('已安装模型')}</div>
                         {ollamaStatus.models.map((m) => (
                           <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-light)', fontSize: 13 }}>
-                            <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>本地</span>
+                            <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{t('本地')}</span>
                             <span style={{ flex: 1 }}>{m.name}</span>
                             <span style={{ opacity: 0.5, fontSize: 12 }}>{(m.size / 1024 / 1024 / 1024).toFixed(1)}G</span>
                             <Button size="sm" variant="ghost" onClick={() => {
                               setConfigForm(f => ({ ...f, model: m.name, baseUrl: f.baseUrl || 'http://localhost:11434/v1' }));
                               setShowOllama(false);
-                              showToast(`已选择模型 ${m.name}`, 'success');
-                            }}>使用</Button>
-                            <Button size="sm" variant="ghost" onClick={() => handleDeleteModel(m.name)}>删除</Button>
+                              showToast(t('已选择模型 {{v1}}', { v1: m.name }), 'success');
+                            }}>{t('使用')}</Button>
+                            <Button size="sm" variant="ghost" onClick={() => handleDeleteModel(m.name)}>{t('删除')}</Button>
                           </div>
                         ))}
                       </div>
                     )}
                     <div>
-                      <div style={{ fontWeight: 500, marginBottom: 6 }}>拉取新模型</div>
+                      <div style={{ fontWeight: 500, marginBottom: 6 }}>{t('拉取新模型')}</div>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <Input
                           value={ollamaPullModel}
-                          placeholder="如 llama3.2, qwen2.5:7b"
+                          placeholder={t('如 llama3.2, qwen2.5:7b')}
                           onChange={(e: any) => setOllamaPullModel(e.target.value)}
                           onKeyDown={(e: any) => { if (e.key === 'Enter') handlePullModel(); }}
                           style={{ flex: 1 }}
                         />
                         <Button variant="primary" loading={ollamaPulling} onClick={handlePullModel} disabled={!ollamaPullModel.trim()}>
-                          拉取
+                          {t('拉取')}
                         </Button>
                       </div>
                     </div>
                   </>
                 ) : (
                   <div style={{ textAlign: 'center', padding: 20 }}>
-                    <div style={{ marginBottom: 8 }}>无法连接 Ollama 服务</div>
-                    <Button size="sm" onClick={loadOllamaStatus}>重试</Button>
+                    <div style={{ marginBottom: 8 }}>{t('无法连接 Ollama 服务')}</div>
+                    <Button size="sm" onClick={loadOllamaStatus}>{t('重试')}</Button>
                   </div>
                 )}
               </div>
@@ -1819,23 +1820,23 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="运维知识库"
+              title={t('运维知识库')}
               extra={
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input type="file" ref={knowledgeImportRef} style={{ display: 'none' }} accept=".md,.txt,.yml,.yaml,.log,.conf,.json,.ini,.toml,.dockerfile" multiple onChange={(e) => handleBatchImport(e.target.files)} />
-                  <Button size="sm" onClick={() => knowledgeImportRef.current?.click()}>批量导入</Button>
+                  <Button size="sm" onClick={() => knowledgeImportRef.current?.click()}>{t('批量导入')}</Button>
                   <Button size="sm" variant="ghost" onClick={async () => {
                     try {
                       const r = await post<{ initialized: number }>('/api/ai/knowledge/init', {});
                       if (r.initialized > 0) {
-                        showToast(`初始化 ${r.initialized} 条预置知识`);
+                        showToast(t('初始化 {{v1}} 条预置知识', { v1: r.initialized }));
                         loadKnowledge();
                       } else {
-                        showToast('知识库已有内容，跳过初始化');
+                        showToast(t('知识库已有内容，跳过初始化'));
                       }
-                    } catch (e: any) { showToast(e?.message || '初始化失败', 'error'); }
-                  }}>初始化预置知识</Button>
-                  <Button size="sm" variant="primary" onClick={() => setShowKnowledgeForm(!showKnowledgeForm)}>+ 新建</Button>
+                    } catch (e: any) { showToast(e?.message || t('初始化失败'), 'error'); }
+                  }}>{t('初始化预置知识')}</Button>
+                  <Button size="sm" variant="primary" onClick={() => setShowKnowledgeForm(!showKnowledgeForm)}>{t('+ 新建')}</Button>
                   <Button size="sm" onClick={() => setShowKnowledge(false)}>✕</Button>
                 </div>
               }
@@ -1849,19 +1850,19 @@ export default function AiAssistantPage() {
                     onChange={(e) => { setKnowledgeCategory(e.target.value); loadKnowledge(e.target.value || undefined, knowledgeKeyword || undefined); }}
                     style={{ width: 120 }}
                   >
-                    <option value="">全部分类</option>
-                    <option value="general">通用</option>
+                    <option value="">{t('全部分类')}</option>
+                    <option value="general">{t('通用')}</option>
                     <option value="docker">Docker</option>
                     <option value="compose">Compose</option>
-                    <option value="network">网络</option>
-                    <option value="security">安全</option>
-                    <option value="performance">性能</option>
-                    <option value="troubleshoot">故障排查</option>
-                    <option value="monitoring">监控</option>
+                    <option value="network">{t('网络')}</option>
+                    <option value="security">{t('安全')}</option>
+                    <option value="performance">{t('性能')}</option>
+                    <option value="troubleshoot">{t('故障排查')}</option>
+                    <option value="monitoring">{t('监控')}</option>
                   </select>
                   <Input
                     value={knowledgeKeyword}
-                    placeholder="搜索知识..."
+                    placeholder={t('搜索知识...')}
                     onChange={(e: any) => setKnowledgeKeyword(e.target.value)}
                     onKeyDown={(e: any) => { if (e.key === 'Enter') loadKnowledge(knowledgeCategory || undefined, e.target.value || undefined); }}
                     style={{ flex: 1 }}
@@ -1871,35 +1872,35 @@ export default function AiAssistantPage() {
                 {showKnowledgeForm && (
                   <div style={{ background: 'var(--bg-tertiary)', borderRadius: 6, padding: 12, marginBottom: 12 }}>
                     <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                      <Input value={knowledgeForm.title} placeholder="标题" onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, title: e.target.value }))} style={{ flex: 1 }} />
+                      <Input value={knowledgeForm.title} placeholder={t('标题')} onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, title: e.target.value }))} style={{ flex: 1 }} />
                       <select className="ai-assistant__select" value={knowledgeForm.category} onChange={(e) => setKnowledgeForm((f) => ({ ...f, category: e.target.value }))}>
-                        <option value="general">通用</option><option value="docker">Docker</option><option value="compose">Compose</option>
-                        <option value="network">网络</option><option value="security">安全</option><option value="performance">性能</option>
-                        <option value="troubleshoot">故障排查</option><option value="monitoring">监控</option>
+                        <option value="general">{t('通用')}</option><option value="docker">Docker</option><option value="compose">Compose</option>
+                        <option value="network">{t('网络')}</option><option value="security">{t('安全')}</option><option value="performance">{t('性能')}</option>
+                        <option value="troubleshoot">{t('故障排查')}</option><option value="monitoring">{t('监控')}</option>
                       </select>
                     </div>
                     <textarea
                       className="ai-assistant__textarea"
                       value={knowledgeForm.content}
-                      placeholder="知识内容（支持 Markdown）"
+                      placeholder={t('知识内容（支持 Markdown）')}
                       rows={4}
                       onChange={(e) => setKnowledgeForm((f) => ({ ...f, content: e.target.value }))}
                       style={{ marginBottom: 8, fontSize: 13 }}
                     />
-                    <Input value={knowledgeForm.tags} placeholder="标签（逗号分隔）" onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, tags: e.target.value }))} style={{ marginBottom: 8 }} />
+                    <Input value={knowledgeForm.tags} placeholder={t('标签（逗号分隔）')} onChange={(e: any) => setKnowledgeForm((f) => ({ ...f, tags: e.target.value }))} style={{ marginBottom: 8 }} />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                       <input type="checkbox" id="shared" checked={knowledgeForm.shared} onChange={(e) => setKnowledgeForm((f) => ({ ...f, shared: e.target.checked }))} />
-                      <label htmlFor="shared" style={{ fontSize: 12 }}>共享给其他用户（协作知识库）</label>
+                      <label htmlFor="shared" style={{ fontSize: 12 }}>{t('共享给其他用户（协作知识库）')}</label>
                     </div>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                      <Button size="sm" onClick={() => setShowKnowledgeForm(false)}>取消</Button>
-                      <Button size="sm" variant="primary" onClick={handleCreateKnowledge}>保存</Button>
+                      <Button size="sm" onClick={() => setShowKnowledgeForm(false)}>{t('取消')}</Button>
+                      <Button size="sm" variant="primary" onClick={handleCreateKnowledge}>{t('保存')}</Button>
                     </div>
                   </div>
                 )}
                 {/* 知识列表 */}
                 {knowledgeLoading ? (
-                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>{t('加载中...')}</div>
                 ) : knowledgeList.length > 0 ? (
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8 }}>共 {knowledgeTotal} 条</div>
@@ -1908,10 +1909,10 @@ export default function AiAssistantPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                           <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{k.category}</span>
                           <span style={{ fontWeight: 500, fontSize: 13 }}>{k.title}</span>
-                          {k.shared && <span style={{ fontSize: 10, background: 'var(--color-primary)', color: '#fff', borderRadius: 3, padding: '1px 4px' }}>共享</span>}
+                          {k.shared && <span style={{ fontSize: 10, background: 'var(--color-primary)', color: '#fff', borderRadius: 3, padding: '1px 4px' }}>{t('共享')}</span>}
                           {k.owner && <span style={{ fontSize: 10, opacity: 0.5 }}>by {k.owner}</span>}
                           <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{new Date(k.updatedAt).toLocaleDateString('zh-CN')}</span>
-                          <Button size="sm" variant="ghost" onClick={() => handleDeleteKnowledge(k.id)} style={{ fontSize: 11 }}>删除</Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleDeleteKnowledge(k.id)} style={{ fontSize: 11 }}>{t('删除')}</Button>
                         </div>
                         <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>{k.content.slice(0, 200)}{k.content.length > 200 ? '...' : ''}</div>
                         {k.tags.length > 0 && (
@@ -1925,7 +1926,7 @@ export default function AiAssistantPage() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>暂无知识条目</div>
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>{t('暂无知识条目')}</div>
                 )}
               </div>
             </Card>
@@ -1938,26 +1939,26 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="AI 用量仪表盘"
+              title={t('AI 用量仪表盘')}
               extra={<Button size="sm" onClick={() => setShowDashboard(false)}>✕</Button>}
             >
               <div className="ai-assistant__usage-body">
                 {dashboardLoading ? (
-                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>{t('加载中...')}</div>
                 ) : dashboard ? (
                   <>
                     {/* 总览卡片 */}
                     <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                       <div className="ai-assistant__usage-card">
-                        <span style={{ fontSize: 11, opacity: 0.6 }}>总调用</span>
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>{t('总调用')}</span>
                         <span style={{ fontSize: 20, fontWeight: 600 }}>{dashboard.summary.totalCalls}</span>
                       </div>
                       <div className="ai-assistant__usage-card">
-                        <span style={{ fontSize: 11, opacity: 0.6 }}>总 Token</span>
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>{t('总 Token')}</span>
                         <span style={{ fontSize: 20, fontWeight: 600 }}>{(dashboard.summary.total / 1000).toFixed(1)}K</span>
                       </div>
                       <div className="ai-assistant__usage-card">
-                        <span style={{ fontSize: 11, opacity: 0.6 }}>估算成本</span>
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>{t('估算成本')}</span>
                         <span style={{ fontSize: 20, fontWeight: 600, color: dashboard.totalCost > 10 ? 'var(--color-warning)' : 'var(--color-success)' }}>${dashboard.totalCost.toFixed(4)}</span>
                       </div>
                     </div>
@@ -1976,7 +1977,7 @@ export default function AiAssistantPage() {
                     {/* 按模型分布 */}
                     {dashboard.byModel.length > 0 && (
                       <div>
-                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>模型分布</div>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>{t('模型分布')}</div>
                         {dashboard.byModel.map((m) => (
                           <div key={m.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
                             <span className="ai-assistant__cap-tag is-cloud" style={{ fontSize: 10 }}>{m.provider || 'api'}</span>
@@ -1990,7 +1991,7 @@ export default function AiAssistantPage() {
                     {/* 性能指标 */}
                     {dashboard.performance && dashboard.performance.length > 0 && (
                       <div style={{ marginTop: 16 }}>
-                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>性能指标</div>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>{t('性能指标')}</div>
                         {dashboard.performance.map((m) => (
                           <div key={m.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
                             <span style={{ flex: 1 }}>{m.model}</span>
@@ -2006,10 +2007,10 @@ export default function AiAssistantPage() {
                     {/* 聊天统计 */}
                     {chatStats.length > 0 && (
                       <div style={{ marginTop: 16 }}>
-                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>聊天统计</div>
+                        <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13 }}>{t('聊天统计')}</div>
                         {chatStats.map((s) => (
                           <div key={s.username} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border-light)' }}>
-                            <span style={{ flex: 1 }}>{s.username || '匿名'}</span>
+                            <span style={{ flex: 1 }}>{s.username || t('匿名')}</span>
                             <span style={{ opacity: 0.5 }}>{s.totalMessages} 消息</span>
                             <span style={{ opacity: 0.5 }}>{s.totalTokens} tok</span>
                             <span style={{ opacity: 0.5 }}>${s.totalCost.toFixed(4)}</span>
@@ -2020,8 +2021,8 @@ export default function AiAssistantPage() {
                   </>
                 ) : (
                   <div style={{ textAlign: 'center', padding: 20 }}>
-                    <div style={{ marginBottom: 8 }}>暂无用量数据</div>
-                    <Button size="sm" onClick={loadDashboard}>重试</Button>
+                    <div style={{ marginBottom: 8 }}>{t('暂无用量数据')}</div>
+                    <Button size="sm" onClick={loadDashboard}>{t('重试')}</Button>
                   </div>
                 )}
               </div>
@@ -2035,32 +2036,32 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="AI 定时巡检"
+              title={t('AI 定时巡检')}
               extra={
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <Button size="sm" variant="primary" loading={inspectionRunning} onClick={() => runInspectionNow(false)}>立即巡检</Button>
-                  <Button size="sm" variant="ghost" loading={inspectionRunning} onClick={() => runInspectionNow(true)}>巡检并通知</Button>
+                  <Button size="sm" variant="primary" loading={inspectionRunning} onClick={() => runInspectionNow(false)}>{t('立即巡检')}</Button>
+                  <Button size="sm" variant="ghost" loading={inspectionRunning} onClick={() => runInspectionNow(true)}>{t('巡检并通知')}</Button>
                   <Button size="sm" onClick={() => setShowInspection(false)}>✕</Button>
                 </div>
               }
             >
               <div className="ai-assistant__usage-body">
                 <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 12 }}>
-                  巡检采集全部容器运行快照并由 AI 生成摘要。可在「计划任务」中新建 <b>aiInspection</b> 类型任务实现定时巡检。
+                  {t('巡检采集全部容器运行快照并由 AI 生成摘要。可在「计划任务」中新建')} <b>aiInspection</b> 类型任务实现定时巡检。
                 </div>
                 {inspectionLoading ? (
-                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>加载中...</div>
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>{t('加载中...')}</div>
                 ) : inspectionList.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>暂无巡检记录，点击「立即巡检」开始</div>
+                  <div style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>{t('暂无巡检记录，点击「立即巡检」开始')}</div>
                 ) : (
                   inspectionList.map((r) => (
                     <div key={r.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <span style={{ fontSize: 10, borderRadius: 3, padding: '1px 6px', color: '#fff', background: r.status === 1 ? 'var(--color-error)' : 'var(--color-success)' }}>
-                          {r.status === 1 ? '存在异常' : '正常'}
+                          {r.status === 1 ? t('存在异常') : t('正常')}
                         </span>
                         <span style={{ fontSize: 11, opacity: 0.5 }}>{new Date(r.createdAt).toLocaleString('zh-CN')}</span>
-                        <Button size="sm" variant="ghost" onClick={async () => { await del(`/api/ai/inspection/${r.id}`); loadInspections(); }} style={{ marginLeft: 'auto', fontSize: 11 }}>删除</Button>
+                        <Button size="sm" variant="ghost" onClick={async () => { await del(`/api/ai/inspection/${r.id}`); loadInspections(); }} style={{ marginLeft: 'auto', fontSize: 11 }}>{t('删除')}</Button>
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: 240, overflow: 'auto' }}>{r.summary}</div>
                     </div>
@@ -2077,7 +2078,7 @@ export default function AiAssistantPage() {
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
               className="ai-assistant__usage"
-              title="文件分析结果"
+              title={t('文件分析结果')}
               extra={
                 <Button size="sm" onClick={() => { setShowAnalyze(false); setAnalyzeResult(null); }}>✕</Button>
               }
@@ -2085,21 +2086,21 @@ export default function AiAssistantPage() {
               <div className="ai-assistant__usage-body">
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                   <div className="ai-assistant__usage-card">
-                    <span style={{ fontSize: 12, opacity: 0.6 }}>安全</span>
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>{t('安全')}</span>
                     <span style={{ fontSize: 20, fontWeight: 600, color: analyzeResult.score.security >= 7 ? 'var(--color-success)' : analyzeResult.score.security >= 4 ? 'var(--color-warning)' : 'var(--color-danger)' }}>{analyzeResult.score.security}/10</span>
                   </div>
                   <div className="ai-assistant__usage-card">
-                    <span style={{ fontSize: 12, opacity: 0.6 }}>性能</span>
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>{t('性能')}</span>
                     <span style={{ fontSize: 20, fontWeight: 600, color: analyzeResult.score.performance >= 7 ? 'var(--color-success)' : analyzeResult.score.performance >= 4 ? 'var(--color-warning)' : 'var(--color-danger)' }}>{analyzeResult.score.performance}/10</span>
                   </div>
                   <div className="ai-assistant__usage-card">
-                    <span style={{ fontSize: 12, opacity: 0.6 }}>可维护性</span>
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>{t('可维护性')}</span>
                     <span style={{ fontSize: 20, fontWeight: 600, color: analyzeResult.score.maintainability >= 7 ? 'var(--color-success)' : analyzeResult.score.maintainability >= 4 ? 'var(--color-warning)' : 'var(--color-danger)' }}>{analyzeResult.score.maintainability}/10</span>
                   </div>
                 </div>
                 {analyzeResult.issues.length > 0 && (
                   <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontWeight: 500, marginBottom: 6 }}>问题列表</div>
+                    <div style={{ fontWeight: 500, marginBottom: 6 }}>{t('问题列表')}</div>
                     {analyzeResult.issues.map((it, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 13, marginBottom: 4 }}>
                         <span className={`ai-assistant__cap-tag is-${it.severity === 'critical' ? 'off' : it.severity === 'warning' ? 'local' : 'cloud'}`} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{it.severity}</span>
@@ -2110,7 +2111,7 @@ export default function AiAssistantPage() {
                 )}
                 {analyzeResult.suggestions && (
                   <div>
-                    <div style={{ fontWeight: 500, marginBottom: 6 }}>AI 建议</div>
+                    <div style={{ fontWeight: 500, marginBottom: 6 }}>{t('AI 建议')}</div>
                     <div className="ai-assistant__msg-content" style={{ background: 'var(--bg-tertiary)', borderRadius: 6, padding: 12, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{analyzeResult.suggestions}</div>
                   </div>
                 )}

@@ -12,6 +12,7 @@
 import { useMemo, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
+import { translateNow as t } from '../i18n';
 import './tools.less';
 
 /** 通用文本域 */
@@ -35,7 +36,7 @@ function TextArea(props: {
 }
 
 /** 结果输出区（只读） */
-function Out({ text, ok, placeholder = '结果' }: { text: string; ok?: boolean; placeholder?: string }) {
+function Out({ text, ok, placeholder = t('结果') }: { text: string; ok?: boolean; placeholder?: string }) {
   return (
     <div className={`tools-out ${ok === false ? 'tools-out--err' : ''}`}>
       {text || <span className="tools-out__ph">{placeholder}</span>}
@@ -63,15 +64,15 @@ function JsonTool() {
   }
 
   return (
-    <Card title="JSON 校验 / 格式化">
-      <TextArea value={input} onChange={setInput} placeholder='粘贴 JSON，例如 {"a":1}' rows={5} mono />
+    <Card title={t('JSON 校验 / 格式化')}>
+      <TextArea value={input} onChange={setInput} placeholder={t('粘贴 JSON，例如 {"a":1}')} rows={5} mono />
       <div className="tools-row">
-        <Button size="sm" onClick={() => run('format')}>格式化</Button>
-        <Button size="sm" variant="secondary" onClick={() => run('minify')}>压缩</Button>
-        <Button size="sm" variant="ghost" onClick={() => { setInput(''); setOutput(''); setError(''); }}>清空</Button>
+        <Button size="sm" onClick={() => run('format')}>{t('格式化')}</Button>
+        <Button size="sm" variant="secondary" onClick={() => run('minify')}>{t('压缩')}</Button>
+        <Button size="sm" variant="ghost" onClick={() => { setInput(''); setOutput(''); setError(''); }}>{t('清空')}</Button>
       </div>
       {error && <div className="tools-err">✗ {error}</div>}
-      <Out text={output} ok={!error} placeholder="格式化结果" />
+      <Out text={output} ok={!error} placeholder={t('格式化结果')} />
     </Card>
   );
 }
@@ -98,17 +99,17 @@ function RegexTool() {
   }, [pattern, flags, text]);
 
   return (
-    <Card title="正则表达式测试">
+    <Card title={t('正则表达式测试')}>
       <div className="tools-inline">
         <span className="tools-label">/</span>
-        <input className="tools-input tools-input--grow tools-mono" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="正则表达式" />
+        <input className="tools-input tools-input--grow tools-mono" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder={t('正则表达式')} />
         <span className="tools-label">/</span>
         <input className="tools-input tools-input--flags tools-mono" value={flags} onChange={(e) => setFlags(e.target.value)} placeholder="g" />
       </div>
-      <TextArea value={text} onChange={setText} placeholder="待匹配文本" rows={4} mono />
+      <TextArea value={text} onChange={setText} placeholder={t('待匹配文本')} rows={4} mono />
       {error && <div className="tools-err">✗ {error}</div>}
       <div className="tools-hint">
-        {ok && pattern ? `匹配 ${matches.length} 处` : '输入正则与文本开始测试'}
+        {ok && pattern ? t('匹配 {{v1}} 处', { v1: matches.length }) : t('输入正则与文本开始测试')}
       </div>
       {matches.length > 0 && (
         <div className="tools-out">
@@ -136,7 +137,7 @@ function Base64Tool() {
       bytes.forEach((b) => { bin += String.fromCharCode(b); });
       setOutput(btoa(bin));
     } catch (e: any) {
-      setOutput(`编码失败: ${e?.message || e}`);
+      setOutput(t('编码失败: {{v1}}', { v1: e?.message || e }));
     }
   }
 
@@ -147,16 +148,16 @@ function Base64Tool() {
       const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
       setOutput(new TextDecoder().decode(bytes));
     } catch (e: any) {
-      setOutput(`解码失败: ${e?.message || e}`);
+      setOutput(t('解码失败: {{v1}}', { v1: e?.message || e }));
     }
   }
 
   return (
-    <Card title="Base64 编解码">
-      <TextArea value={input} onChange={setInput} placeholder="输入文本或 Base64" rows={3} mono />
+    <Card title={t('Base64 编解码')}>
+      <TextArea value={input} onChange={setInput} placeholder={t('输入文本或 Base64')} rows={3} mono />
       <div className="tools-row">
-        <Button size="sm" onClick={encode}>编码 →</Button>
-        <Button size="sm" variant="secondary" onClick={decode}>← 解码</Button>
+        <Button size="sm" onClick={encode}>{t('编码 →')}</Button>
+        <Button size="sm" variant="secondary" onClick={decode}>{t('← 解码')}</Button>
       </div>
       <Out text={output} />
     </Card>
@@ -172,34 +173,34 @@ function TimestampTool() {
 
   function tsToDate() {
     const n = Number(ts.trim());
-    if (!Number.isFinite(n) || ts.trim() === '') { setResult('请输入有效数字'); return; }
+    if (!Number.isFinite(n) || ts.trim() === '') { setResult(t('请输入有效数字')); return; }
     // 自动识别秒（10 位）/毫秒（13 位）
     const ms = ts.trim().length <= 10 ? n * 1000 : n;
     const d = new Date(ms);
-    if (isNaN(d.getTime())) { setResult('时间戳超出范围'); return; }
+    if (isNaN(d.getTime())) { setResult(t('时间戳超出范围')); return; }
     setResult(`${d.toLocaleString()}（ISO: ${d.toISOString()}）`);
   }
 
   function dateToTs() {
     const d = new Date(date);
-    if (isNaN(d.getTime())) { setResult('请输入有效日期，如 2026-01-01 08:00:00'); return; }
-    setResult(`秒: ${Math.floor(d.getTime() / 1000)}    毫秒: ${d.getTime()}`);
+    if (isNaN(d.getTime())) { setResult(t('请输入有效日期，如 2026-01-01 08:00:00')); return; }
+    setResult(t('秒: {{v1}}    毫秒: {{v2}}', { v1: Math.floor(d.getTime() / 1000), v2: d.getTime() }));
   }
 
   function fillNow() {
     const now = Date.now();
-    setResult(`当前时间戳 — 秒: ${Math.floor(now / 1000)}    毫秒: ${now}`);
+    setResult(t('当前时间戳 — 秒: {{v1}}    毫秒: {{now}}', { v1: Math.floor(now / 1000), now }));
   }
 
   return (
-    <Card title="时间戳 ↔ 日期" extra={<Button size="sm" variant="ghost" onClick={fillNow}>当前时间</Button>}>
+    <Card title={t('时间戳 ↔ 日期')} extra={<Button size="sm" variant="ghost" onClick={fillNow}>{t('当前时间')}</Button>}>
       <div className="tools-inline">
-        <input className="tools-input tools-input--grow tools-mono" value={ts} onChange={(e) => setTs(e.target.value)} placeholder="时间戳（秒或毫秒）" />
-        <Button size="sm" onClick={tsToDate}>→ 日期</Button>
+        <input className="tools-input tools-input--grow tools-mono" value={ts} onChange={(e) => setTs(e.target.value)} placeholder={t('时间戳（秒或毫秒）')} />
+        <Button size="sm" onClick={tsToDate}>{t('→ 日期')}</Button>
       </div>
       <div className="tools-inline">
-        <input className="tools-input tools-input--grow" value={date} onChange={(e) => setDate(e.target.value)} placeholder="日期，如 2026-01-01 08:00:00" />
-        <Button size="sm" variant="secondary" onClick={dateToTs}>→ 时间戳</Button>
+        <input className="tools-input tools-input--grow" value={date} onChange={(e) => setDate(e.target.value)} placeholder={t('日期，如 2026-01-01 08:00:00')} />
+        <Button size="sm" variant="secondary" onClick={dateToTs}>{t('→ 时间戳')}</Button>
       </div>
       <Out text={result} />
     </Card>
@@ -217,21 +218,21 @@ function RadixTool() {
     const trimmed = input.trim();
     if (!trimmed) { setResult(''); return; }
     const n = parseInt(trimmed, from);
-    if (isNaN(n) || n < 0) { setResult('无法解析该数字（仅支持非负整数）'); return; }
-    setResult([2, 8, 10, 16].map((b) => `${b} 进制: ${n.toString(b)}${b === 16 ? `（0x${n.toString(16).toUpperCase()}）` : ''}`).join('    '));
+    if (isNaN(n) || n < 0) { setResult(t('无法解析该数字（仅支持非负整数）')); return; }
+    setResult([2, 8, 10, 16].map((b) => t('{{b}} 进制: {{v2}}{{v3}}', { b, v2: n.toString(b), v3: b === 16 ? t('（0x{{v}}）', { v: n.toString(16).toUpperCase() }) : '' })).join('    '));
   }
 
   return (
-    <Card title="进制转换">
+    <Card title={t('进制转换')}>
       <div className="tools-inline">
-        <input className="tools-input tools-input--grow tools-mono" value={input} onChange={(e) => setInput(e.target.value)} placeholder="输入数字" onKeyDown={(e) => e.key === 'Enter' && convert()} />
+        <input className="tools-input tools-input--grow tools-mono" value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('输入数字')} onKeyDown={(e) => e.key === 'Enter' && convert()} />
         <select className="tools-input" value={from} onChange={(e) => setFrom(Number(e.target.value))}>
-          <option value={2}>二进制</option>
-          <option value={8}>八进制</option>
-          <option value={10}>十进制</option>
-          <option value={16}>十六进制</option>
+          <option value={2}>{t('二进制')}</option>
+          <option value={8}>{t('八进制')}</option>
+          <option value={10}>{t('十进制')}</option>
+          <option value={16}>{t('十六进制')}</option>
         </select>
-        <Button size="sm" onClick={convert}>转换</Button>
+        <Button size="sm" onClick={convert}>{t('转换')}</Button>
       </div>
       <Out text={result} />
     </Card>
@@ -254,17 +255,17 @@ function PortSubnetTool() {
       for (const p of parts) {
         if (p.includes('-')) {
           const [a, b] = p.split('-').map(Number);
-          if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b > 65535 || a > b) throw new Error(`非法范围: ${p}`);
+          if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b > 65535 || a > b) throw new Error(t('非法范围: {{p}}', { p }));
           count += b - a + 1;
           ranges.push(`${a}-${b}`);
         } else {
           const n = Number(p);
-          if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(`非法端口: ${p}`);
+          if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(t('非法端口: {{p}}', { p }));
           count += 1;
           ranges.push(`${n}`);
         }
       }
-      setResult(`共 ${count} 个端口：${ranges.join(', ')}`);
+      setResult(t('共 {{count}} 个端口：{{v2}}', { count, v2: ranges.join(', ') }));
     } catch (e: any) {
       setResult(e?.message || String(e));
     }
@@ -273,11 +274,11 @@ function PortSubnetTool() {
   /** IPv4 CIDR 计算：网络地址 / 广播地址 / 掩码 / 可用主机数 */
   function parseCidr() {
     const m = cidr.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/);
-    if (!m) { setResult('格式示例：192.168.1.10/24'); return; }
+    if (!m) { setResult(t('格式示例：192.168.1.10/24')); return; }
     const octets = m.slice(1, 5).map(Number);
-    if (octets.some((o) => o > 255)) { setResult('IPv4 每段须为 0-255'); return; }
+    if (octets.some((o) => o > 255)) { setResult(t('IPv4 每段须为 0-255')); return; }
     const prefix = m[5] !== undefined ? Number(m[5]) : 32;
-    if (prefix > 32) { setResult('前缀长度须为 0-32'); return; }
+    if (prefix > 32) { setResult(t('前缀长度须为 0-32')); return; }
     const ip = octets.reduce((acc, o) => (acc << 8) + o, 0) >>> 0;
     const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
     const network = (ip & mask) >>> 0;
@@ -286,20 +287,20 @@ function PortSubnetTool() {
     const total = Math.pow(2, 32 - prefix);
     const usable = prefix >= 31 ? total : total - 2;
     setResult(
-      `网络: ${toStr(network)}/${prefix}    掩码: ${toStr(mask)}    ` +
-      `广播: ${toStr(broadcast)}    可用主机: ${usable.toLocaleString()}`
+      t('网络: {{v1}}/{{prefix}}    掩码: {{v3}}    ', { v1: toStr(network), prefix, v3: toStr(mask) }) +
+      t('广播: {{v1}}    可用主机: {{v2}}', { v1: toStr(broadcast), v2: usable.toLocaleString() })
     );
   }
 
   return (
-    <Card title="端口范围 / IPv4 网段">
+    <Card title={t('端口范围 / IPv4 网段')}>
       <div className="tools-inline">
-        <input className="tools-input tools-input--grow tools-mono" value={ports} onChange={(e) => setPorts(e.target.value)} placeholder="端口列表，如 80,443,8000-9000" onKeyDown={(e) => e.key === 'Enter' && parsePorts()} />
-        <Button size="sm" onClick={parsePorts}>解析</Button>
+        <input className="tools-input tools-input--grow tools-mono" value={ports} onChange={(e) => setPorts(e.target.value)} placeholder={t('端口列表，如 80,443,8000-9000')} onKeyDown={(e) => e.key === 'Enter' && parsePorts()} />
+        <Button size="sm" onClick={parsePorts}>{t('解析')}</Button>
       </div>
       <div className="tools-inline">
-        <input className="tools-input tools-input--grow tools-mono" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="IPv4/CIDR，如 192.168.1.10/24" onKeyDown={(e) => e.key === 'Enter' && parseCidr()} />
-        <Button size="sm" variant="secondary" onClick={parseCidr}>计算</Button>
+        <input className="tools-input tools-input--grow tools-mono" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder={t('IPv4/CIDR，如 192.168.1.10/24')} onKeyDown={(e) => e.key === 'Enter' && parseCidr()} />
+        <Button size="sm" variant="secondary" onClick={parseCidr}>{t('计算')}</Button>
       </div>
       <Out text={result} />
     </Card>

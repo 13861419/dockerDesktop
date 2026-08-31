@@ -13,6 +13,7 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Field, Input } from '../components/Form';
+import { translateNow as t } from '../i18n';
 import './build.less';
 
 /** 构建参数行 */
@@ -110,7 +111,7 @@ export default function BuildPage() {
       setArgs([]);
       setLogs([]);
       setStatus('idle');
-      showToast(`已加载历史配置：${item.name}`);
+      showToast(t('已加载历史配置：{{v1}}', { v1: item.name }));
     },
     [showToast],
   );
@@ -120,10 +121,10 @@ export default function BuildPage() {
    * @param item 历史记录项
    */
   const showHistoryLog = useCallback((item: BuildHistoryItem) => {
-    const preview = item.log_preview || '（无日志预览）';
+    const preview = item.log_preview || t('（无日志预览）');
     setLogs(preview.split('\n'));
     setStatus(item.success === 1 ? 'success' : 'error');
-    showToast(item.success === 1 ? '该次构建成功' : '该次构建失败', item.success === 1 ? undefined : 'error');
+    showToast(item.success === 1 ? t('该次构建成功') : t('该次构建失败'), item.success === 1 ? undefined : 'error');
   }, [showToast]);
 
   /**
@@ -131,16 +132,16 @@ export default function BuildPage() {
    */
   const confirmClearHistory = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可清空构建历史', 'error');
+      showToast(t('仅管理员可清空构建历史'), 'error');
       return;
     }
     try {
       await del('/api/build/history');
       setHistory([]);
       setClearTarget(false);
-      showToast('构建历史已清空');
+      showToast(t('构建历史已清空'));
     } catch (e: any) {
-      showToast(e?.message || '清空失败', 'error');
+      showToast(e?.message || t('清空失败'), 'error');
     }
   }, [canManage, showToast]);
 
@@ -195,15 +196,15 @@ export default function BuildPage() {
    */
   const handleBuild = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可构建镜像', 'error');
+      showToast(t('仅管理员可构建镜像'), 'error');
       return;
     }
     if (!name.trim()) {
-      showToast('请填写镜像名称', 'error');
+      showToast(t('请填写镜像名称'), 'error');
       return;
     }
     if (!context.trim()) {
-      showToast('请填写构建上下文目录', 'error');
+      showToast(t('请填写构建上下文目录'), 'error');
       return;
     }
 
@@ -232,12 +233,12 @@ export default function BuildPage() {
             } else if (data?.type === 'done') {
               if (data.success) {
                 setStatus('success');
-                showToast(`镜像构建成功：${data.name}`);
+                showToast(t('镜像构建成功：{{v1}}', { v1: data.name }));
               } else {
                 setStatus('error');
-                showToast(data.error || '镜像构建失败', 'error');
+                showToast(data.error || t('镜像构建失败'), 'error');
                 if (data.error) {
-                  setLogs((prev) => [...prev, `[错误] ${data.error}`]);
+                  setLogs((prev) => [...prev, t('[错误] {{v1}}', { v1: data.error })]);
                 }
               }
               loadHistory();
@@ -247,8 +248,8 @@ export default function BuildPage() {
       );
     } catch (e: any) {
       setStatus('error');
-      setLogs((prev) => [...prev, `[错误] ${e?.message || '构建失败'}`]);
-      showToast(e?.message || '构建请求失败', 'error');
+      setLogs((prev) => [...prev, t('[错误] {{v1}}', { v1: e?.message || t('构建失败') })]);
+      showToast(e?.message || t('构建请求失败'), 'error');
       loadHistory();
     }
   }, [canManage, name, context, dockerfile, noCache, args, showToast, loadHistory]);
@@ -266,13 +267,13 @@ export default function BuildPage() {
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">构建镜像</h1>
-        <p className="page__desc">通过宿主机的 Dockerfile 构建上下文目录创建镜像</p>
+        <h1 className="page__title">{t('构建镜像')}</h1>
+        <p className="page__desc">{t('通过宿主机的 Dockerfile 构建上下文目录创建镜像')}</p>
       </div>
 
       <Card>
         <div className="build-config">
-          <Field label="镜像名称" required hint="例如：myapp:latest">
+          <Field label={t('镜像名称')} required hint={t('例如：myapp:latest')}>
             <Input
               value={name}
               placeholder="myapp:latest"
@@ -280,41 +281,41 @@ export default function BuildPage() {
             />
           </Field>
 
-          <Field label="构建上下文目录" required hint="宿主机上包含 Dockerfile 的目录（绝对路径）">
+          <Field label={t('构建上下文目录')} required hint={t('宿主机上包含 Dockerfile 的目录（绝对路径）')}>
             <Input
               value={context}
-              placeholder="如 /home/user/myapp 或 D:\\docker\\myapp"
+              placeholder={t('如 /home/user/myapp 或 D:\\docker\\myapp')}
               onChange={(e) => setContext(e.target.value)}
             />
           </Field>
 
-          <Field label="Dockerfile 文件名">
+          <Field label={t('Dockerfile 文件名')}>
             <Input
               value={dockerfile}
               onChange={(e) => setDockerfile(e.target.value)}
             />
           </Field>
 
-          <Field label="构建参数（Build Args）" hint="对应 Dockerfile 中的 ARG，可留空">
+          <Field label={t('构建参数（Build Args）')} hint={t('对应 Dockerfile 中的 ARG，可留空')}>
             <div className="build-config">
               {args.map((a, i) => (
                 <div className="build-arg-row" key={i}>
                   <Input
                     className="build-arg-key"
-                    placeholder="参数名，如 VERSION"
+                    placeholder={t('参数名，如 VERSION')}
                     value={a.key}
                     onChange={(e) => updateArg(i, 'key', e.target.value)}
                   />
                   <Input
                     className="build-arg-value"
-                    placeholder="值，如 1.0"
+                    placeholder={t('值，如 1.0')}
                     value={a.value}
                     onChange={(e) => updateArg(i, 'value', e.target.value)}
                   />
-                  <Button variant="ghost" size="sm" onClick={() => removeArg(i)}>删除</Button>
+                  <Button variant="ghost" size="sm" onClick={() => removeArg(i)}>{t('删除')}</Button>
                 </div>
               ))}
-              <Button variant="ghost" size="sm" onClick={addArg}>+ 添加参数</Button>
+              <Button variant="ghost" size="sm" onClick={addArg}>{t('+ 添加参数')}</Button>
             </div>
           </Field>
 
@@ -324,16 +325,16 @@ export default function BuildPage() {
               checked={noCache}
               onChange={(e) => setNoCache(e.target.checked)}
             />
-            <span>构建时忽略缓存（--no-cache）</span>
+            <span>{t('构建时忽略缓存（--no-cache）')}</span>
           </label>
 
           <div className="build-actions">
             <Button loading={running} disabled={running || !canManage} onClick={handleBuild}>
-              {running ? '构建中...' : '开始构建'}
+              {running ? t('构建中...') : t('开始构建')}
             </Button>
-            <Button variant="ghost" onClick={handleReset} disabled={running}>清空日志</Button>
+            <Button variant="ghost" onClick={handleReset} disabled={running}>{t('清空日志')}</Button>
             {status === 'success' && (
-              <Button variant="secondary" onClick={() => navigate('/images')}>前往镜像页</Button>
+              <Button variant="secondary" onClick={() => navigate('/images')}>{t('前往镜像页')}</Button>
             )}
           </div>
         </div>
@@ -342,19 +343,19 @@ export default function BuildPage() {
       <Card>
         <div className="build-logs">
           <div className="build-logs__header">
-            <span className="build-logs__title">构建日志</span>
+            <span className="build-logs__title">{t('构建日志')}</span>
             <span className={`build-logs__status ${running ? 'build-logs__status--running' : status === 'success' ? 'build-logs__status--success' : status === 'error' ? 'build-logs__status--error' : ''}`}>
-              {status === 'running' ? '构建中...' : status === 'success' ? '构建成功' : status === 'error' ? '构建失败' : '等待构建'}
+              {status === 'running' ? t('构建中...') : status === 'success' ? t('构建成功') : status === 'error' ? t('构建失败') : t('等待构建')}
             </span>
           </div>
           <pre ref={logPreRef} className={`build-logs__pre ${logs.length === 0 ? 'build-logs__pre--empty' : ''}`}>
-            {logs.length === 0 ? '暂无日志，点击「开始构建」以启动。' : logs.join('\n')}
+            {logs.length === 0 ? t('暂无日志，点击「开始构建」以启动。') : logs.join('\n')}
           </pre>
         </div>
       </Card>
 
       {history.length > 1 && (
-        <Card title="构建时长对比（最近 15 次）">
+        <Card title={t('构建时长对比（最近 15 次）')}>
           {(() => {
             const recent = history.slice(0, 15);
             const maxMs = Math.max(...recent.map((h) => h.duration_ms || 0), 1);
@@ -381,27 +382,27 @@ export default function BuildPage() {
       )}
 
       <Card
-        title="构建历史"
+        title={t('构建历史')}
         extra={
           history.length > 0 && canManage ? (
-            <Button variant="ghost" size="sm" onClick={() => setClearTarget(true)}>清空历史</Button>
+            <Button variant="ghost" size="sm" onClick={() => setClearTarget(true)}>{t('清空历史')}</Button>
           ) : undefined
         }
       >
         {historyLoading ? (
-          <div className="build-history__empty">加载中...</div>
+          <div className="build-history__empty">{t('加载中...')}</div>
         ) : history.length === 0 ? (
-          <div className="build-history__empty">暂无构建历史，完成一次镜像构建后将在此留档。</div>
+          <div className="build-history__empty">{t('暂无构建历史，完成一次镜像构建后将在此留档。')}</div>
         ) : (
           <table className="build-history__table">
             <thead>
               <tr>
-                <th>时间</th>
-                <th>镜像名称</th>
-                <th>上下文目录</th>
-                <th>结果</th>
-                <th>耗时</th>
-                <th>操作</th>
+                <th>{t('时间')}</th>
+                <th>{t('镜像名称')}</th>
+                <th>{t('上下文目录')}</th>
+                <th>{t('结果')}</th>
+                <th>{t('耗时')}</th>
+                <th>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -412,14 +413,14 @@ export default function BuildPage() {
                   <td className="build-history__ctx" title={h.context}>{h.context}</td>
                   <td>
                     <span className={h.success === 1 ? 'build-history__ok' : 'build-history__fail'}>
-                      {h.success === 1 ? '成功' : '失败'}
+                      {h.success === 1 ? t('成功') : t('失败')}
                     </span>
                   </td>
                   <td>{formatDuration(h.duration_ms)}</td>
                   <td>
                     <div className="build-history__ops">
-                      <Button variant="ghost" size="sm" onClick={() => loadConfigFromHistory(h)}>加载配置</Button>
-                      <Button variant="ghost" size="sm" onClick={() => showHistoryLog(h)}>查看日志</Button>
+                      <Button variant="ghost" size="sm" onClick={() => loadConfigFromHistory(h)}>{t('加载配置')}</Button>
+                      <Button variant="ghost" size="sm" onClick={() => showHistoryLog(h)}>{t('查看日志')}</Button>
                     </div>
                   </td>
                 </tr>
@@ -431,9 +432,9 @@ export default function BuildPage() {
 
       <ConfirmDialog
         open={clearTarget}
-        title="清空构建历史"
+        title={t('清空构建历史')}
         message="确定清空全部镜像构建历史记录吗？此操作不可撤销。"
-        confirmText="清空"
+        confirmText={t('清空')}
         danger
         onConfirm={confirmClearHistory}
         onCancel={() => setClearTarget(false)}

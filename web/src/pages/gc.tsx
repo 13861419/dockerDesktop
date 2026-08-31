@@ -8,6 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { post } from '../api/client';
 import type { GcPolicy, GcPlanResponse, GcRunResult } from '../types';
+import { translateNow as t } from '../i18n';
 import './gc.less';
 
 export default function GcPage() {
@@ -43,7 +44,7 @@ export default function GcPage() {
       const data = await post<GcPlanResponse>('/api/gc/plan', buildBody());
       setPlan(data);
     } catch (e: any) {
-      showToast(e?.message || '预演失败', 'error');
+      showToast(e?.message || t('预演失败'), 'error');
     } finally {
       setPlanning(false);
     }
@@ -55,10 +56,10 @@ export default function GcPage() {
     try {
       const data = await post<GcRunResult>('/api/gc/run', buildBody());
       setRunResult(data);
-      showToast(`清理完成：删除 ${data.deleted.length} 个`, 'success');
+      showToast(t('清理完成：删除 {{v1}} 个', { v1: data.deleted.length }), 'success');
       setPlan(null);
     } catch (e: any) {
-      showToast(e?.message || '清理失败', 'error');
+      showToast(e?.message || t('清理失败'), 'error');
     } finally {
       setRunning(false);
     }
@@ -69,39 +70,39 @@ export default function GcPage() {
 
   return (
     <div className="gc-page">
-      <Card title="镜像 GC 策略清理">
+      <Card title={t('镜像 GC 策略清理')}>
         <div className="gc-page__form">
-          <Field label="每仓库保留版本数" hint="每个镜像仓库保留最近 N 个标签，历史版本进入清理候选">
+          <Field label={t('每仓库保留版本数')} hint={t('每个镜像仓库保留最近 N 个标签，历史版本进入清理候选')}>
             <Input
               type="number"
               min={0}
-              placeholder="如 2（留空=不启用）"
+              placeholder={t('如 2（留空=不启用）')}
               value={keepPerRepo}
               onChange={(e: any) => setKeepPerRepo(e.target.value)}
             />
           </Field>
-          <Field label="清理超过天数" hint="创建超过该天数且未被引用的镜像（含近期未拉取）">
+          <Field label={t('清理超过天数')} hint={t('创建超过该天数且未被引用的镜像（含近期未拉取）')}>
             <Input
               type="number"
               min={0}
-              placeholder="如 30（留空=不启用）"
+              placeholder={t('如 30（留空=不启用）')}
               value={olderThanDays}
               onChange={(e: any) => setOlderThanDays(e.target.value)}
             />
           </Field>
-          <Field label="悬空镜像" hint="清理无标签（悬空）镜像">
+          <Field label={t('悬空镜像')} hint={t('清理无标签（悬空）镜像')}>
             <label className="gc-page__checkbox">
               <input
                 type="checkbox"
                 checked={pruneDangling}
                 onChange={(e: any) => setPruneDangling(e.target.checked)}
               />
-              <span>清理悬空镜像</span>
+              <span>{t('清理悬空镜像')}</span>
             </label>
           </Field>
           <div className="gc-page__actions">
             <Button variant="primary" loading={planning} disabled={!hasStrategy} onClick={planNow}>
-              预演清理
+              {t('预演清理')}
             </Button>
           </div>
         </div>
@@ -109,7 +110,7 @@ export default function GcPage() {
         {plan && (
           <div className="gc-page__result">
             <div className="gc-page__summary">
-              预演结果：将清理 <b>{plan.totals.toFree}</b> 个镜像（约 <b>{plan.totals.bytesText}</b>）
+              {t('预演结果：将清理')} <b>{plan.totals.toFree}</b>{t('个镜像（约')}<b>{plan.totals.bytesText}</b>）
             </div>
             {plan.warnings.length > 0 && (
               <div className="gc-page__warnings">
@@ -131,12 +132,12 @@ export default function GcPage() {
                 ))}
                 <div className="gc-page__actions">
                   <Button variant="danger" loading={running} disabled={!canRun} onClick={() => setRunTarget(true)}>
-                    确认清理
+                    {t('确认清理')}
                   </Button>
                 </div>
               </div>
             ) : (
-              <Empty title="无可清理镜像" description="当前策略下没有镜像需要清理。" />
+              <Empty title={t('无可清理镜像')} description="当前策略下没有镜像需要清理。" />
             )}
 
             {plan.keepers.length > 0 && (
@@ -146,7 +147,7 @@ export default function GcPage() {
                   {plan.keepers.map((k) => (
                     <div className="gc-page__row" key={k.id}>
                       <span className="gc-page__name">{k.repoTags[0] || k.id.slice(0, 12)}</span>
-                      <span className="gc-page__reasons">{k.usedByContainers ? '有容器引用' : '策略保留'}</span>
+                      <span className="gc-page__reasons">{k.usedByContainers ? t('有容器引用') : t('策略保留')}</span>
                     </div>
                   ))}
                 </div>
@@ -181,9 +182,9 @@ export default function GcPage() {
 
       <ConfirmDialog
         open={runTarget}
-        title="确认清理镜像"
+        title={t('确认清理镜像')}
         message="此操作将删除预演中列出的镜像，且不可恢复。确认继续？"
-        confirmText="确认清理"
+        confirmText={t('确认清理')}
         danger
         loading={running}
         onConfirm={run}

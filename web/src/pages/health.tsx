@@ -14,13 +14,14 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
+import { translateNow as t } from '../i18n';
 import './health.less';
 
 /** 各级别对应的展示文案 */
 const LEVEL_LABEL: Record<HealthLevel, string> = {
-  healthy: '健康',
-  warning: '警告',
-  danger: '危险',
+  healthy: t('健康'),
+  warning: t('警告'),
+  danger: t('危险'),
 };
 
 /** 各级别对应的 CSS 修饰类（配色由 less 定义） */
@@ -113,7 +114,7 @@ export default function HealthPage() {
         const res = await get<HealthCheck>('/api/health-check');
         setData(res);
       } catch (e: any) {
-        const msg = e?.message || '体检加载失败';
+        const msg = e?.message || t('体检加载失败');
         setError(msg);
         showToast(msg, 'error');
       } finally {
@@ -135,11 +136,11 @@ export default function HealthPage() {
   if (error || !data) {
     return (
       <div className="health-page">
-        <h1 className="health-page__title">健康体检</h1>
+        <h1 className="health-page__title">{t('健康体检')}</h1>
         <Card>
           <div className="health-page__error">
-            <p>{error || '暂无体检数据'}</p>
-            <Button onClick={() => load()}>重试</Button>
+            <p>{error || t('暂无体检数据')}</p>
+            <Button onClick={() => load()}>{t('重试')}</Button>
           </div>
         </Card>
       </div>
@@ -164,16 +165,16 @@ export default function HealthPage() {
     if (target) {
       navigate(target);
     } else {
-      showToast('该项目无需跳转清理', 'info');
+      showToast(t('该项目无需跳转清理'), 'info');
     }
   }
 
   return (
     <div className="health-page">
       <div className="health-page__head">
-        <h1 className="health-page__title">健康体检</h1>
+        <h1 className="health-page__title">{t('健康体检')}</h1>
         <Button variant="secondary" onClick={() => load(true)} loading={refreshing}>
-          重新体检
+          {t('重新体检')}
         </Button>
       </div>
 
@@ -185,7 +186,7 @@ export default function HealthPage() {
         </div>
         <div className="health-hero__score">
           <div className="health-hero__score-num">{data.score}</div>
-          <div className="health-hero__score-label">健康评分 / 100</div>
+          <div className="health-hero__score-label">{t('健康评分 / 100')}</div>
         </div>
       </div>
 
@@ -200,7 +201,7 @@ export default function HealthPage() {
       </div>
 
       {/* 体检条目列表 */}
-      <Card title="体检项目">
+      <Card title={t('体检项目')}>
         <div className="health__items">
           {data.items.map((item) => (
             <div key={item.key} className={`health__item ${LEVEL_CLASS[item.level]}`}>
@@ -216,7 +217,7 @@ export default function HealthPage() {
                 </span>
                 {item.level !== 'healthy' && (
                   <button className="health__item-clean" onClick={() => handleClean(item)}>
-                    去清理
+                    {t('去清理')}
                   </button>
                 )}
               </div>

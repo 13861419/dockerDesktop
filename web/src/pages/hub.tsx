@@ -15,6 +15,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del } from '../api/client';
 import { isAdmin } from '../api/auth';
+import { translateNow as t } from '../i18n';
 import './hub.less';
 
 /** 镜像源条目 */
@@ -66,26 +67,26 @@ interface HubTag {
  * 可直接点选这些常见镜像通过镜像源拉取，无需搜索。
  */
 const COMMON_REPOS: Array<{ name: string; desc: string }> = [
-  { name: 'nginx', desc: 'HTTP 与反向代理服务器' },
-  { name: 'redis', desc: '开源内存数据库' },
-  { name: 'mysql', desc: 'MySQL 关系型数据库' },
-  { name: 'mysql:8', desc: 'MySQL 8 关系型数据库' },
-  { name: 'postgres', desc: 'PostgreSQL 数据库' },
-  { name: 'mongo', desc: 'MongoDB 文档数据库' },
-  { name: 'rabbitmq', desc: 'RabbitMQ 消息队列' },
-  { name: 'busybox', desc: '精简 Linux 工具集合' },
-  { name: 'alpine', desc: '轻量 Linux 发行版' },
-  { name: 'ubuntu', desc: 'Ubuntu 发行版' },
-  { name: 'node', desc: 'Node.js 运行时' },
-  { name: 'python', desc: 'Python 运行时' },
-  { name: 'portainer/portainer-ce', desc: 'Docker 可视化管理工具' },
-  { name: 'gitlab/gitlab-ce', desc: 'GitLab 代码托管' },
-  { name: 'nextcloud', desc: '私有云盘' },
-  { name: 'wordpress', desc: '博客内容管理系统' },
-  { name: 'mariadb', desc: 'MariaDB 数据库' },
-  { name: 'elasticsearch', desc: 'Elasticsearch 搜索引擎' },
-  { name: 'prom/prometheus', desc: 'Prometheus 监控系统' },
-  { name: 'grafana/grafana', desc: 'Grafana 可视化面板' },
+  { name: 'nginx', desc: t('HTTP 与反向代理服务器') },
+  { name: 'redis', desc: t('开源内存数据库') },
+  { name: 'mysql', desc: t('MySQL 关系型数据库') },
+  { name: 'mysql:8', desc: t('MySQL 8 关系型数据库') },
+  { name: 'postgres', desc: t('PostgreSQL 数据库') },
+  { name: 'mongo', desc: t('MongoDB 文档数据库') },
+  { name: 'rabbitmq', desc: t('RabbitMQ 消息队列') },
+  { name: 'busybox', desc: t('精简 Linux 工具集合') },
+  { name: 'alpine', desc: t('轻量 Linux 发行版') },
+  { name: 'ubuntu', desc: t('Ubuntu 发行版') },
+  { name: 'node', desc: t('Node.js 运行时') },
+  { name: 'python', desc: t('Python 运行时') },
+  { name: 'portainer/portainer-ce', desc: t('Docker 可视化管理工具') },
+  { name: 'gitlab/gitlab-ce', desc: t('GitLab 代码托管') },
+  { name: 'nextcloud', desc: t('私有云盘') },
+  { name: 'wordpress', desc: t('博客内容管理系统') },
+  { name: 'mariadb', desc: t('MariaDB 数据库') },
+  { name: 'elasticsearch', desc: t('Elasticsearch 搜索引擎') },
+  { name: 'prom/prometheus', desc: t('Prometheus 监控系统') },
+  { name: 'grafana/grafana', desc: t('Grafana 可视化面板') },
 ];
 
 /** 默认搜索关键字 */
@@ -201,23 +202,23 @@ export default function HubPage() {
    */
   const handleAddSource = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可新增镜像源', 'error');
+      showToast(t('仅管理员可新增镜像源'), 'error');
       return;
     }
     const host = newSourceHost.trim();
     if (!host) {
-      showToast('请输入镜像源地址', 'error');
+      showToast(t('请输入镜像源地址'), 'error');
       return;
     }
     setSavingSource(true);
     try {
       await post('/api/hub/sources', { host, name: newSourceName.trim() || undefined });
-      showToast('镜像源已添加');
+      showToast(t('镜像源已添加'));
       setNewSourceHost('');
       setNewSourceName('');
       await loadSources();
     } catch (e: any) {
-      showToast(e?.message || '添加镜像源失败', 'error');
+      showToast(e?.message || t('添加镜像源失败'), 'error');
     } finally {
       setSavingSource(false);
     }
@@ -228,14 +229,14 @@ export default function HubPage() {
    */
   const handleSaveSearchSource = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可保存搜索源', 'error');
+      showToast(t('仅管理员可保存搜索源'), 'error');
       return;
     }
     try {
       await post('/api/hub/search-source', { host: searchSource.trim() });
-      showToast('搜索源已保存');
+      showToast(t('搜索源已保存'));
     } catch (e: any) {
-      showToast(e?.message || '保存搜索源失败', 'error');
+      showToast(e?.message || t('保存搜索源失败'), 'error');
     }
   }, [canManage, searchSource, showToast]);
 
@@ -245,17 +246,17 @@ export default function HubPage() {
   const confirmDeleteSource = useCallback(async () => {
     if (!deleteSourceId) return;
     if (!canManage) {
-      showToast('仅管理员可删除镜像源', 'error');
+      showToast(t('仅管理员可删除镜像源'), 'error');
       setDeleteSourceId(null);
       return;
     }
     try {
       await del(`/api/hub/sources/${encodeURIComponent(deleteSourceId)}`);
-      showToast('镜像源已删除');
+      showToast(t('镜像源已删除'));
       setDeleteSourceId(null);
       await loadSources();
     } catch (e: any) {
-      showToast(e?.message || '删除镜像源失败', 'error');
+      showToast(e?.message || t('删除镜像源失败'), 'error');
     }
   }, [canManage, deleteSourceId, loadSources, showToast]);
 
@@ -266,7 +267,7 @@ export default function HubPage() {
   const toggleSourceEnabled = useCallback(
     async (s: HubSource) => {
       if (!canManage) {
-        showToast('仅管理员可启停镜像源', 'error');
+        showToast(t('仅管理员可启停镜像源'), 'error');
         return;
       }
       try {
@@ -275,7 +276,7 @@ export default function HubPage() {
         });
         await loadSources();
       } catch (e: any) {
-        showToast(e?.message || '操作失败', 'error');
+        showToast(e?.message || t('操作失败'), 'error');
       }
     },
     [canManage, loadSources, showToast]
@@ -288,15 +289,15 @@ export default function HubPage() {
   const handleSetDefault = useCallback(
     async (s: HubSource) => {
       if (!canManage) {
-        showToast('仅管理员可设置默认源', 'error');
+        showToast(t('仅管理员可设置默认源'), 'error');
         return;
       }
       try {
         await post(`/api/hub/sources/${encodeURIComponent(s.id)}/default`);
-        showToast(`已将「${s.name || s.host}」设为默认镜像源`);
+        showToast(t('已将「{{v1}}」设为默认镜像源', { v1: s.name || s.host }));
         await loadSources();
       } catch (e: any) {
-        showToast(e?.message || '设置默认源失败', 'error');
+        showToast(e?.message || t('设置默认源失败'), 'error');
       }
     },
     [canManage, loadSources, showToast]
@@ -318,7 +319,7 @@ export default function HubPage() {
   const handleSaveEdit = useCallback(async () => {
     if (!editSourceId) return;
     if (!canManage) {
-      showToast('仅管理员可编辑镜像源', 'error');
+      showToast(t('仅管理员可编辑镜像源'), 'error');
       return;
     }
     setSavingEdit(true);
@@ -327,11 +328,11 @@ export default function HubPage() {
         host: editHost.trim() || undefined,
         name: editName.trim() || undefined,
       });
-      showToast('镜像源已更新');
+      showToast(t('镜像源已更新'));
       setEditSourceId(null);
       await loadSources();
     } catch (e: any) {
-      showToast(e?.message || '更新镜像源失败', 'error');
+      showToast(e?.message || t('更新镜像源失败'), 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -356,7 +357,7 @@ export default function HubPage() {
             reachable: false,
             latencyMs: 0,
             statusCode: 0,
-            error: e?.message || '测试失败',
+            error: e?.message || t('测试失败'),
           },
         }));
       } finally {
@@ -379,9 +380,9 @@ export default function HubPage() {
         map[id] = rest;
       }
       setHealthMap(map);
-      showToast('镜像源测试完成');
+      showToast(t('镜像源测试完成'));
     } catch (e: any) {
-      showToast(e?.message || '批量测试失败', 'error');
+      showToast(e?.message || t('批量测试失败'), 'error');
     } finally {
       setTestingAll(false);
     }
@@ -395,7 +396,7 @@ export default function HubPage() {
   const handleMoveSource = useCallback(
     async (s: HubSource, delta: -1 | 1) => {
       if (!canManage) {
-        showToast('仅管理员可调整顺序', 'error');
+        showToast(t('仅管理员可调整顺序'), 'error');
         return;
       }
       const idx = sources.findIndex((x) => x.id === s.id);
@@ -408,7 +409,7 @@ export default function HubPage() {
         await post('/api/hub/sources/reorder', { ids });
         await loadSources();
       } catch (e: any) {
-        showToast(e?.message || '调整顺序失败', 'error');
+        showToast(e?.message || t('调整顺序失败'), 'error');
       }
     },
     [canManage, sources, loadSources, showToast]
@@ -422,7 +423,7 @@ export default function HubPage() {
     async (q: string) => {
       const kw = q.trim();
       if (!kw) {
-        showToast('请输入镜像名称', 'error');
+        showToast(t('请输入镜像名称'), 'error');
         return;
       }
       setLoading(true);
@@ -436,8 +437,8 @@ export default function HubPage() {
         setTotal(data?.total || 0);
         setPage(1);
       } catch (e: any) {
-        setLoadError(e?.message || '搜索失败');
-        showToast(e?.message || '搜索失败', 'error');
+        setLoadError(e?.message || t('搜索失败'));
+        showToast(e?.message || t('搜索失败'), 'error');
         setResults([]);
         setTotal(0);
       } finally {
@@ -475,7 +476,7 @@ export default function HubPage() {
       setTotal(data?.total ?? total);
       setPage(next);
     } catch (e: any) {
-      showToast(e?.message || '加载更多失败', 'error');
+      showToast(e?.message || t('加载更多失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -501,7 +502,7 @@ export default function HubPage() {
         );
         setTags(data?.tags || []);
       } catch (e: any) {
-        showToast(e?.message || '加载标签失败', 'error');
+        showToast(e?.message || t('加载标签失败'), 'error');
         setTags([]);
       } finally {
         setTagsLoading(false);
@@ -525,7 +526,7 @@ export default function HubPage() {
   const handlePull = useCallback(async () => {
     if (!pullTarget) return;
     if (!canManage) {
-      showToast('仅管理员可拉取镜像', 'error');
+      showToast(t('仅管理员可拉取镜像'), 'error');
       setPullTarget(null);
       return;
     }
@@ -534,10 +535,10 @@ export default function HubPage() {
     setPulling(true);
     try {
       await post('/api/hub/pull', { ref, source: pullSource || undefined });
-      showToast(`镜像 ${ref} 拉取成功`);
+      showToast(t('镜像 {{ref}} 拉取成功', { ref }));
       setPullTarget(null);
     } catch (e: any) {
-      showToast(e?.message || '镜像拉取失败', 'error');
+      showToast(e?.message || t('镜像拉取失败'), 'error');
     } finally {
       setPulling(false);
     }
@@ -551,16 +552,16 @@ export default function HubPage() {
     async (name: string) => {
       if (pullingCommon) return;
       if (!canManage) {
-        showToast('仅管理员可拉取镜像', 'error');
+        showToast(t('仅管理员可拉取镜像'), 'error');
         return;
       }
       setPullingCommon(name);
       try {
         // 未显式选源时后端会自动用默认镜像源；显式传 pullSource 以跟随下拉
         await post('/api/images/pull', { ref: name, source: pullSource || undefined });
-        showToast(`镜像 ${name} 拉取成功`);
+        showToast(t('镜像 {{name}} 拉取成功', { name }));
       } catch (e: any) {
-        showToast(e?.message || `镜像 ${name} 拉取失败`, 'error');
+        showToast(e?.message || t('镜像 {{name}} 拉取失败', { name }), 'error');
       } finally {
         setPullingCommon(null);
       }
@@ -571,28 +572,28 @@ export default function HubPage() {
   return (
     <div className="page">
       <Card
-        title="镜像中心"
+        title={t('镜像中心')}
         extra={
           <div className="hub-toolbar">
             <form className="hub-toolbar__search" onSubmit={handleSearchSubmit}>
               <input
                 className="input hub-search"
-                placeholder="搜索 Docker Hub 镜像，如 nginx"
+                placeholder={t('搜索 Docker Hub 镜像，如 nginx')}
                 value={queryInput}
                 onChange={(e) => setQueryInput(e.target.value)}
               />
               <Button variant="primary" type="submit">
-                搜索
+                {t('搜索')}
               </Button>
             </form>
             <Button variant="secondary" onClick={() => setSourcesOpen(true)} disabled={!canManage}>
-              镜像源
+              {t('镜像源')}
             </Button>
           </div>
         }
       >
         <div className="hub-tip">
-          浏览并拉取 Docker Hub 上的镜像，点击条目可查看其标签列表。
+          {t('浏览并拉取 Docker Hub 上的镜像，点击条目可查看其标签列表。')}
           {pullSource && (
             <span className="hub-tip__source">当前拉取源：{pullSource}</span>
           )}
@@ -600,7 +601,7 @@ export default function HubPage() {
 
         {/* 常用镜像快捷拉取：在线搜索不可用时的兜底入口 */}
         <div className="hub-common">
-          <div className="hub-common__title">常用镜像</div>
+          <div className="hub-common__title">{t('常用镜像')}</div>
           <div className="hub-common__grid">
             {COMMON_REPOS.map((m) => (
               <button
@@ -611,9 +612,9 @@ export default function HubPage() {
               >
                 <span className="hub-common__name">{m.name}</span>
                 {pullingCommon === m.name ? (
-                  <span className="hub-common__busy">拉取中…</span>
+                  <span className="hub-common__busy">{t('拉取中…')}</span>
                 ) : (
-                  <span className="hub-common__desc">{m.desc || '拉取'}</span>
+                  <span className="hub-common__desc">{m.desc || t('拉取')}</span>
                 )}
               </button>
             ))}
@@ -625,16 +626,16 @@ export default function HubPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="搜索失败"
-            description={loadError || '请检查网络连接后重试'}
+            title={t('搜索失败')}
+            description={loadError || t('请检查网络连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={() => doSearch(query)}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : results.length === 0 ? (
-          <Empty title="未找到镜像" description="尝试更换搜索关键字" />
+          <Empty title={t('未找到镜像')} description="尝试更换搜索关键字" />
         ) : (
           <div className="hub-list">
             {results.map((repo) => {
@@ -652,11 +653,11 @@ export default function HubPage() {
                       <div className="hub-item__name">
                         {repo.name}
                         {repo.is_official && (
-                          <span className="hub-item__official">官方</span>
+                          <span className="hub-item__official">{t('官方')}</span>
                         )}
                       </div>
                       <div className="hub-item__desc" title={repo.description}>
-                        {repo.description || '暂无描述'}
+                        {repo.description || t('暂无描述')}
                       </div>
                     </div>
                     <div className="hub-item__stats">
@@ -665,11 +666,11 @@ export default function HubPage() {
                         <span className="hub-item__stat-value">{formatCount(repo.star_count)}</span>
                       </div>
                       <div className="hub-item__stat">
-                        <span className="hub-item__stat-label">拉取</span>
+                        <span className="hub-item__stat-label">{t('拉取')}</span>
                         <span className="hub-item__stat-value">{formatCount(repo.pull_count)}</span>
                       </div>
                       <div className="hub-item__stat">
-                        <span className="hub-item__stat-label">更新</span>
+                        <span className="hub-item__stat-label">{t('更新')}</span>
                         <span className="hub-item__stat-value">{formatDate(repo.last_updated)}</span>
                       </div>
                     </div>
@@ -683,7 +684,7 @@ export default function HubPage() {
                           openPull(repo);
                         }}
                       >
-                        拉取
+                        {t('拉取')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -693,7 +694,7 @@ export default function HubPage() {
                           toggleExpand(repo);
                         }}
                       >
-                        {isExpanded ? '收起' : '标签'}
+                        {isExpanded ? t('收起') : t('标签')}
                       </Button>
                     </div>
                   </div>
@@ -701,9 +702,9 @@ export default function HubPage() {
                   {isExpanded && (
                     <div className="hub-item__body">
                       {tagsLoading ? (
-                        <div className="hub-item__tip">加载标签中…</div>
+                        <div className="hub-item__tip">{t('加载标签中…')}</div>
                       ) : tags.length === 0 ? (
-                        <div className="hub-item__tip">该镜像暂无标签</div>
+                        <div className="hub-item__tip">{t('该镜像暂无标签')}</div>
                       ) : (
                         <div className="hub-tags">
                           {tags.map((tag) => (
@@ -722,7 +723,7 @@ export default function HubPage() {
             {results.length < total && (
               <div className="hub-more">
                 <Button variant="secondary" loading={loading} onClick={loadMore}>
-                  加载更多
+                  {t('加载更多')}
                 </Button>
               </div>
             )}
@@ -733,28 +734,28 @@ export default function HubPage() {
       {/* 拉取镜像弹窗：选择标签 */}
       <Modal
         open={!!pullTarget}
-        title={pullTarget ? `拉取 ${pullTarget.name}` : '拉取镜像'}
+        title={pullTarget ? t('拉取 {{v1}}', { v1: pullTarget.name }) : t('拉取镜像')}
         onClose={() => !pulling && setPullTarget(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPullTarget(null)} disabled={pulling}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handlePull} loading={pulling} disabled={!canManage}>
-              拉取
+              {t('拉取')}
             </Button>
           </>
         }
       >
         <div className="hub-pull">
           <div className="hub-pull__row">
-            <span className="hub-pull__label">镜像</span>
+            <span className="hub-pull__label">{t('镜像')}</span>
             <span className="hub-pull__value mono">
               {pullTarget ? `${pullTarget.full_name}:${pullTag || 'latest'}` : '-'}
             </span>
           </div>
           <div className="hub-pull__row">
-            <span className="hub-pull__label">选择标签</span>
+            <span className="hub-pull__label">{t('选择标签')}</span>
             <Select value={pullTag} onChange={(e) => setPullTag(e.target.value)}>
               <option value="latest">latest</option>
               {tags.map((t) => (
@@ -765,12 +766,12 @@ export default function HubPage() {
             </Select>
           </div>
           <div className="hub-pull__row">
-            <span className="hub-pull__label">镜像源</span>
+            <span className="hub-pull__label">{t('镜像源')}</span>
             <Select
               value={pullSource}
               onChange={(e) => setPullSource(e.target.value)}
             >
-              <option value="">官方 Docker Hub</option>
+              <option value="">{t('官方 Docker Hub')}</option>
               {sources
                 .filter((s) => s.enabled !== false)
                 .map((s) => (
@@ -781,7 +782,7 @@ export default function HubPage() {
             </Select>
           </div>
           <div className="hub-pull__hint">
-            选择镜像加速源可在 Docker Hub 访问不稳定时加速拉取。
+            {t('选择镜像加速源可在 Docker Hub 访问不稳定时加速拉取。')}
           </div>
           {pullTarget && (
             <div className="hub-pull__actions">
@@ -793,7 +794,7 @@ export default function HubPage() {
                   navigate('/images');
                 }}
               >
-                前往镜像列表
+                {t('前往镜像列表')}
               </Button>
             </div>
           )}
@@ -803,18 +804,18 @@ export default function HubPage() {
       {/* 镜像源配置弹窗 */}
       <Modal
         open={sourcesOpen}
-        title="镜像源配置"
+        title={t('镜像源配置')}
         onClose={() => setSourcesOpen(false)}
         width={560}
         footer={
           <Button variant="secondary" onClick={() => setSourcesOpen(false)}>
-            关闭
+            {t('关闭')}
           </Button>
         }
       >
         <div className="hub-sources">
           <div className="hub-sources__tip">
-            在 Docker Hub 访问不稳定时，可在这里配置镜像加速源。拉取镜像时选择对应源即可，镜像引用会自动带上该源前缀。
+            {t('在 Docker Hub 访问不稳定时，可在这里配置镜像加速源。拉取镜像时选择对应源即可，镜像引用会自动带上该源前缀。')}
           </div>
 
           <div className="hub-sources__toolbar">
@@ -825,13 +826,13 @@ export default function HubPage() {
               disabled={!canManage || sources.length === 0}
               onClick={handleTestAll}
             >
-              测试全部
+              {t('测试全部')}
             </Button>
           </div>
 
           <div className="hub-sources__list">
             {sources.length === 0 ? (
-              <Empty title="暂无镜像源" description="请在下方添加" />
+              <Empty title={t('暂无镜像源')} description="请在下方添加" />
             ) : (
               sources.map((s, idx) => {
                 const health = healthMap[s.id];
@@ -843,8 +844,8 @@ export default function HubPage() {
                         <div className="hub-sources__host">
                           <span className="hub-sources__order">#{(s.sortOrder ?? idx) + 1}</span>
                           {s.host}
-                          {s.isDefault && <span className="hub-sources__default">默认</span>}
-                          {s.builtin && <span className="hub-sources__tag">内置</span>}
+                          {s.isDefault && <span className="hub-sources__default">{t('默认')}</span>}
+                          {s.builtin && <span className="hub-sources__tag">{t('内置')}</span>}
                           {s.name && <span className="hub-sources__name">{s.name}</span>}
                         </div>
                         {health && (
@@ -854,14 +855,14 @@ export default function HubPage() {
                             }
                           >
                             {health.reachable
-                              ? `可达 · ${health.latencyMs}ms${health.statusCode === 401 ? ' · 需认证' : ''}`
-                              : `不可达 · ${health.error || ''}`}
+                              ? t('可达 · {{v1}}ms{{v2}}', { v1: health.latencyMs, v2: health.statusCode === 401 ? t(' · 需认证') : '' })
+                              : t('不可达 · {{v1}}', { v1: health.error || '' })}
                           </div>
                         )}
                       </div>
                       <div className="hub-sources__actions">
                         <span className="hub-sources__status">
-                          {s.enabled === false ? '未启用' : '启用'}
+                          {s.enabled === false ? t('未启用') : t('启用')}
                         </span>
                         <Button
                           variant="ghost"
@@ -870,7 +871,7 @@ export default function HubPage() {
                           loading={testingId === s.id}
                           onClick={() => handleTestSource(s)}
                         >
-                          测试
+                          {t('测试')}
                         </Button>
                         {!s.isDefault && s.enabled !== false && (
                           <Button
@@ -879,7 +880,7 @@ export default function HubPage() {
                             disabled={!canManage}
                             onClick={() => handleSetDefault(s)}
                           >
-                            设为默认
+                            {t('设为默认')}
                           </Button>
                         )}
                         <Button
@@ -888,7 +889,7 @@ export default function HubPage() {
                           disabled={!canManage || idx === 0}
                           onClick={() => handleMoveSource(s, -1)}
                         >
-                          上移
+                          {t('上移')}
                         </Button>
                         <Button
                           variant="ghost"
@@ -896,7 +897,7 @@ export default function HubPage() {
                           disabled={!canManage || idx === sources.length - 1}
                           onClick={() => handleMoveSource(s, 1)}
                         >
-                          下移
+                          {t('下移')}
                         </Button>
                         <Button
                           variant="ghost"
@@ -904,7 +905,7 @@ export default function HubPage() {
                           disabled={!canManage}
                           onClick={() => (editing ? setEditSourceId(null) : openEdit(s))}
                         >
-                          {editing ? '取消' : '编辑'}
+                          {editing ? t('取消') : t('编辑')}
                         </Button>
                         <Button
                           variant="ghost"
@@ -912,7 +913,7 @@ export default function HubPage() {
                           disabled={!canManage}
                           onClick={() => toggleSourceEnabled(s)}
                         >
-                          {s.enabled === false ? '启用' : '停用'}
+                          {s.enabled === false ? t('启用') : t('停用')}
                         </Button>
                         {!s.builtin && (
                           <Button
@@ -921,7 +922,7 @@ export default function HubPage() {
                             disabled={!canManage}
                             onClick={() => setDeleteSourceId(s.id)}
                           >
-                            删除
+                            {t('删除')}
                           </Button>
                         )}
                       </div>
@@ -929,19 +930,19 @@ export default function HubPage() {
 
                     {editing && (
                       <div className="hub-sources__edit">
-                        <Field label="镜像源地址" required>
+                        <Field label={t('镜像源地址')} required>
                           <Input
                             value={editHost}
                             onChange={(e) => setEditHost(e.target.value)}
-                            placeholder="如 https://docker.xuanyuan.me"
+                            placeholder={t('如 https://docker.xuanyuan.me')}
                             disabled={s.builtin}
                           />
                         </Field>
-                        <Field label="名称（可选）">
+                        <Field label={t('名称（可选）')}>
                           <Input
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            placeholder="如 轩辕镜像源"
+                            placeholder={t('如 轩辕镜像源')}
                           />
                         </Field>
                         <div className="hub-sources__edit-btn">
@@ -952,12 +953,12 @@ export default function HubPage() {
                             disabled={!canManage}
                             onClick={handleSaveEdit}
                           >
-                            保存
+                            {t('保存')}
                           </Button>
                         </div>
                         {s.builtin && (
                           <div className="hub-sources__edit-hint">
-                            内置源的主机地址不可修改，仅可编辑名称。
+                            {t('内置源的主机地址不可修改，仅可编辑名称。')}
                           </div>
                         )}
                       </div>
@@ -969,23 +970,23 @@ export default function HubPage() {
           </div>
 
           <div className="hub-sources__add">
-            <Field label="镜像源地址" required>
+            <Field label={t('镜像源地址')} required>
               <Input
                 value={newSourceHost}
                 onChange={(e) => setNewSourceHost(e.target.value)}
-                placeholder="如 https://docker.xuanyuan.me"
+                placeholder={t('如 https://docker.xuanyuan.me')}
               />
             </Field>
-            <Field label="名称（可选）">
+            <Field label={t('名称（可选）')}>
               <Input
                 value={newSourceName}
                 onChange={(e) => setNewSourceName(e.target.value)}
-                placeholder="如 轩辕镜像源"
+                placeholder={t('如 轩辕镜像源')}
               />
             </Field>
             <div className="hub-sources__add-btn">
               <Button variant="primary" onClick={handleAddSource} loading={savingSource} disabled={!canManage}>
-                添加镜像源
+                {t('添加镜像源')}
               </Button>
             </div>
           </div>
@@ -993,8 +994,8 @@ export default function HubPage() {
           {/* 自定义搜索源（可选） */}
           <div className="hub-sources__search">
             <Field
-              label="搜索源（可选）"
-              hint="国内镜像站普遍不支持在线搜索，可在此填一个能返回 Docker Hub 搜索结果的 API 基址（如 https://hub.docker.com），留空使用内置源。"
+              label={t('搜索源（可选）')}
+              hint={t('国内镜像站普遍不支持在线搜索，可在此填一个能返回 Docker Hub 搜索结果的 API 基址（如 https://hub.docker.com），留空使用内置源。')}
             >
               <Input
                 value={searchSource}
@@ -1004,7 +1005,7 @@ export default function HubPage() {
             </Field>
             <div className="hub-sources__add-btn">
               <Button variant="primary" onClick={handleSaveSearchSource} disabled={!canManage}>
-                保存搜索源
+                {t('保存搜索源')}
               </Button>
             </div>
           </div>
@@ -1014,7 +1015,7 @@ export default function HubPage() {
       {/* 删除镜像源二次确认 */}
       <ConfirmDialog
         open={!!deleteSourceId}
-        title="删除镜像源"
+        title={t('删除镜像源')}
         message="确定删除该自定义镜像源吗？"
         danger
         onCancel={() => setDeleteSourceId(null)}

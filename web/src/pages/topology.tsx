@@ -7,6 +7,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get } from '../api/client';
 import type { TopologyResponse, TopoNode } from '../types';
+import { translateNow as t } from '../i18n';
 import './topology.less';
 
 const W = 1100;
@@ -121,7 +122,7 @@ export default function TopologyPage() {
       setData(d);
       setPos(layout(d.nodes || [], d.edges || []));
     } catch (e: any) {
-      showToast(e?.message || '加载拓扑失败', 'error');
+      showToast(e?.message || t('加载拓扑失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -139,7 +140,7 @@ export default function TopologyPage() {
   return (
     <div className="topo-page">
       <Card
-        title="网络拓扑"
+        title={t('网络拓扑')}
         extra={
           <div className="topo-page__toolbar">
             <span className="topo-page__legend">
@@ -149,7 +150,7 @@ export default function TopologyPage() {
               <span className="topo-page__dot net" /> 网络
             </span>
             <Button size="sm" onClick={load}>
-              刷新
+              {t('刷新')}
             </Button>
           </div>
         }
@@ -157,7 +158,7 @@ export default function TopologyPage() {
         {loading ? (
           <SkeletonRows rows={8} />
         ) : !data || data.nodes.length === 0 ? (
-          <Empty title="暂无拓扑" description="没有可展示的容器或网络。" />
+          <Empty title={t('暂无拓扑')} description="没有可展示的容器或网络。" />
         ) : (
           <div className="topo-page__canvas">
             <div className="topo-page__zoom">
@@ -225,36 +226,36 @@ export default function TopologyPage() {
         {selected && (
           <div className="topo-page__detail">
             <div className="topo-page__detail-row">
-              <span className="topo-page__detail-key">类型</span>
-              <span>{selected.kind === 'network' ? '网络' : '容器'}</span>
+              <span className="topo-page__detail-key">{t('类型')}</span>
+              <span>{selected.kind === 'network' ? t('网络') : t('容器')}</span>
             </div>
             {selected.kind === 'container' && (
               <>
                 <div className="topo-page__detail-row">
-                  <span className="topo-page__detail-key">状态</span>
+                  <span className="topo-page__detail-key">{t('状态')}</span>
                   <span>{selected.status}</span>
                 </div>
                 {selected.health && (
                   <div className="topo-page__detail-row">
-                    <span className="topo-page__detail-key">健康</span>
+                    <span className="topo-page__detail-key">{t('健康')}</span>
                     <span>{selected.health}</span>
                   </div>
                 )}
                 {selected.image && (
                   <div className="topo-page__detail-row">
-                    <span className="topo-page__detail-key">镜像</span>
+                    <span className="topo-page__detail-key">{t('镜像')}</span>
                     <span>{selected.image}</span>
                   </div>
                 )}
                 {selected.projectName && (
                   <div className="topo-page__detail-row">
-                    <span className="topo-page__detail-key">项目</span>
+                    <span className="topo-page__detail-key">{t('项目')}</span>
                     <span>{selected.projectName}</span>
                   </div>
                 )}
                 {selected.ports && selected.ports.length > 0 && (
                   <div className="topo-page__detail-row">
-                    <span className="topo-page__detail-key">端口</span>
+                    <span className="topo-page__detail-key">{t('端口')}</span>
                     <span>
                       {selected.ports
                         .map((p) => (p.published ? `${p.published}:${p.target}/${p.protocol}` : `${p.target}/${p.protocol}`))
@@ -266,19 +267,19 @@ export default function TopologyPage() {
             )}
             {selected.kind === 'network' && selected.driver && (
               <div className="topo-page__detail-row">
-                <span className="topo-page__detail-key">驱动</span>
+                <span className="topo-page__detail-key">{t('驱动')}</span>
                 <span>{selected.driver}</span>
               </div>
             )}
             {selected.kind === 'container' && (
               <div className="topo-page__detail-row">
-                <span className="topo-page__detail-key">所属网络</span>
-                <span>{selected.networks?.join(', ') || '无'}</span>
+                <span className="topo-page__detail-key">{t('所属网络')}</span>
+                <span>{selected.networks?.join(', ') || t('无')}</span>
               </div>
             )}
             {/* 容器连接数 */}
             <div className="topo-page__detail-row">
-              <span className="topo-page__detail-key">连接数</span>
+              <span className="topo-page__detail-key">{t('连接数')}</span>
               <span>{data ? data.edges.filter((e) => e.from === selected.id || e.to === selected.id).length : 0}</span>
             </div>
           </div>

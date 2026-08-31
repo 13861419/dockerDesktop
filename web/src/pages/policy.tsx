@@ -13,6 +13,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post } from '../api/client';
+import { translateNow as t } from '../i18n';
 import './policy.less';
 
 /** 违规严重度 */
@@ -46,7 +47,7 @@ interface PolicyScanReport {
 }
 
 /** 严重度中文名与配色类 */
-const SEVERITY_LABEL: Record<Severity, string> = { danger: '严重', warn: '警告', info: '提示' };
+const SEVERITY_LABEL: Record<Severity, string> = { danger: t('严重'), warn: t('警告'), info: t('提示') };
 
 /** 安全基线页面入口 */
 export default function Policy() {
@@ -62,7 +63,7 @@ export default function Policy() {
       const resp = await get<PolicyScanReport>('/api/policy/scan');
       setReport(resp);
     } catch (e: any) {
-      showToast(e?.message || '安全基线扫描失败', 'error');
+      showToast(e?.message || t('安全基线扫描失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -88,13 +89,13 @@ export default function Policy() {
         { containerId: row.containerId, ruleId },
       );
       if (r.approvalPending) {
-        showToast('已提交修复审批，批准后自动执行', 'info');
+        showToast(t('已提交修复审批，批准后自动执行'), 'info');
       } else {
         showToast(r.message, r.ok ? 'success' : 'error');
       }
       await load();
     } catch (e: any) {
-      showToast(e?.message || '修复失败', 'error');
+      showToast(e?.message || t('修复失败'), 'error');
     } finally {
       setFixing((prev) => {
         const next = new Set(prev);
@@ -108,55 +109,55 @@ export default function Policy() {
     <div className="policy-page">
       <div className="policy-page__toolbar">
         <Button variant="secondary" size="sm" onClick={load} loading={loading}>
-          重新扫描
+          {t('重新扫描')}
         </Button>
-        <span className="policy-page__hint">内存 / CPU / 重启策略违规支持在线一键修复，其余需重建容器</span>
+        <span className="policy-page__hint">{t('内存 / CPU / 重启策略违规支持在线一键修复，其余需重建容器')}</span>
       </div>
 
       {loading && !report ? (
-        <Card title="安全基线报告">
+        <Card title={t('安全基线报告')}>
           <SkeletonRows rows={4} />
         </Card>
       ) : !report ? (
-        <Empty kind="error" title="扫描失败" description="无法获取安全基线报告" />
+        <Empty kind="error" title={t('扫描失败')} description="无法获取安全基线报告" />
       ) : (
         <>
           {/* 摘要 */}
           <div className="policy-page__summary">
             <div className="policy-stat">
               <div className="policy-stat__value">{report.containerCount}</div>
-              <div className="policy-stat__label">扫描容器</div>
+              <div className="policy-stat__label">{t('扫描容器')}</div>
             </div>
             <div className="policy-stat policy-stat--ok">
               <div className="policy-stat__value">{report.passCount}</div>
-              <div className="policy-stat__label">完全合规</div>
+              <div className="policy-stat__label">{t('完全合规')}</div>
             </div>
             <div className={`policy-stat ${report.summary.danger > 0 ? 'policy-stat--bad' : ''}`}>
               <div className="policy-stat__value">{report.summary.danger}</div>
-              <div className="policy-stat__label">严重违规</div>
+              <div className="policy-stat__label">{t('严重违规')}</div>
             </div>
             <div className="policy-stat">
               <div className="policy-stat__value">{report.summary.warn}</div>
-              <div className="policy-stat__label">警告</div>
+              <div className="policy-stat__label">{t('警告')}</div>
             </div>
             <div className="policy-stat">
               <div className="policy-stat__value">{report.summary.info}</div>
-              <div className="policy-stat__label">提示</div>
+              <div className="policy-stat__label">{t('提示')}</div>
             </div>
           </div>
 
           {/* 违规明细 */}
-          <Card title={`违规明细（${violatingRows.length}）`}>
+          <Card title={t('违规明细（{{v1}}）', { v1: violatingRows.length })}>
             {violatingRows.length === 0 ? (
-              <Empty kind="empty" title="全部容器均符合安全基线" />
+              <Empty kind="empty" title={t('全部容器均符合安全基线')} />
             ) : (
               <table className="policy-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '18%' }}>容器</th>
-                    <th style={{ width: '22%' }}>镜像</th>
-                    <th style={{ width: '12%' }}>状态</th>
-                    <th>违规项</th>
+                    <th style={{ width: '18%' }}>{t('容器')}</th>
+                    <th style={{ width: '22%' }}>{t('镜像')}</th>
+                    <th style={{ width: '12%' }}>{t('状态')}</th>
+                    <th>{t('违规项')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -178,7 +179,7 @@ export default function Policy() {
                                 <span className="policy-violation__name">{rule?.name || v.ruleId}</span>
                                 <span className="policy-violation__detail" title={rule?.advice}>
                                   {v.detail}
-                                  {rule?.advice ? ` · 建议：${rule.advice}` : ''}
+                                  {rule?.advice ? t(' · 建议：{{v1}}', { v1: rule.advice }) : ''}
                                 </span>
                                 {rule?.fixable && (
                                   <Button
@@ -187,7 +188,7 @@ export default function Policy() {
                                     loading={fixing.has(fixKey)}
                                     onClick={() => fix(row, v.ruleId)}
                                   >
-                                    一键修复
+                                    {t('一键修复')}
                                   </Button>
                                 )}
                               </div>
@@ -203,14 +204,14 @@ export default function Policy() {
           </Card>
 
           {/* 规则清单 */}
-          <Card title="基线规则清单">
+          <Card title={t('基线规则清单')}>
             <table className="policy-table">
               <thead>
                 <tr>
-                  <th style={{ width: '14%' }}>严重度</th>
-                  <th style={{ width: '18%' }}>规则</th>
-                  <th style={{ width: '36%' }}>说明</th>
-                  <th>加固建议</th>
+                  <th style={{ width: '14%' }}>{t('严重度')}</th>
+                  <th style={{ width: '18%' }}>{t('规则')}</th>
+                  <th style={{ width: '36%' }}>{t('说明')}</th>
+                  <th>{t('加固建议')}</th>
                 </tr>
               </thead>
               <tbody>

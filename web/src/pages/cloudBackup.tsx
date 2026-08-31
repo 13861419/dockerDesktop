@@ -15,6 +15,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input, Select } from '../components/Form';
+import { translateNow as t } from '../i18n';
 import './cloudBackup.less';
 
 /** 云目标类型 */
@@ -46,7 +47,7 @@ interface FormError {
 
 const TYPE_LABEL: Record<CloudType, string> = {
   s3: 'S3',
-  oss: '阿里 OSS',
+  oss: t('阿里 OSS'),
   webdav: 'WebDAV',
 };
 
@@ -105,8 +106,8 @@ export default function CloudBackupPage() {
         setUploadTargetId(list[0].id);
       }
     } catch (e: any) {
-      setLoadError(e?.message || '加载失败');
-      showToast(e?.message || '加载失败', 'error');
+      setLoadError(e?.message || t('加载失败'));
+      showToast(e?.message || t('加载失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -121,7 +122,7 @@ export default function CloudBackupPage() {
    */
   const openCreate = useCallback(() => {
     if (!canManage) {
-      showToast('仅管理员可新增云端目标', 'error');
+      showToast(t('仅管理员可新增云端目标'), 'error');
       return;
     }
     setEditing(null);
@@ -134,21 +135,21 @@ export default function CloudBackupPage() {
    * 打开编辑弹窗
    * @param t 目标
    */
-  const openEdit = useCallback((t: CloudTarget) => {
+  const openEdit = useCallback((tg: CloudTarget) => {
     if (!canManage) {
-      showToast('仅管理员可编辑云端目标', 'error');
+      showToast(t('仅管理员可编辑云端目标'), 'error');
       return;
     }
-    setEditing(t);
+    setEditing(tg);
     setForm({
-      type: t.type,
-      name: t.name,
-      endpoint: t.endpoint,
-      bucket: t.bucket,
-      path: t.path,
-      accessKey: t.accessKey,
+      type: tg.type,
+      name: tg.name,
+      endpoint: tg.endpoint,
+      bucket: tg.bucket,
+      path: tg.path,
+      accessKey: tg.accessKey,
       secret: '',
-      region: t.region,
+      region: tg.region,
     });
     setErrors({});
     setModalOpen(true);
@@ -159,13 +160,13 @@ export default function CloudBackupPage() {
    */
   const handleSubmit = useCallback(async () => {
     if (!canManage) {
-      showToast(editing ? '仅管理员可编辑云端目标' : '仅管理员可新增云端目标', 'error');
+      showToast(editing ? t('仅管理员可编辑云端目标') : t('仅管理员可新增云端目标'), 'error');
       setModalOpen(false);
       return;
     }
     const err: FormError = {};
-    if (!form.name.trim()) err.name = '请输入名称';
-    if (!form.endpoint.trim()) err.endpoint = '请输入端点地址';
+    if (!form.name.trim()) err.name = t('请输入名称');
+    if (!form.endpoint.trim()) err.endpoint = t('请输入端点地址');
     setErrors(err);
     if (Object.keys(err).length) return;
 
@@ -183,15 +184,15 @@ export default function CloudBackupPage() {
       };
       if (editing) {
         await post(`/api/cloud/targets/${editing.id}`, body);
-        showToast('目标已更新');
+        showToast(t('目标已更新'));
       } else {
         await post('/api/cloud/targets', body);
-        showToast('目标已添加');
+        showToast(t('目标已添加'));
       }
       setModalOpen(false);
       load();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setSaving(false);
     }
@@ -203,18 +204,18 @@ export default function CloudBackupPage() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canManage) {
-      showToast('仅管理员可删除云端目标', 'error');
+      showToast(t('仅管理员可删除云端目标'), 'error');
       setDeleteTarget(null);
       return;
     }
     setDeleting(true);
     try {
       await del(`/api/cloud/targets/${deleteTarget.id}`);
-      showToast('目标已删除');
+      showToast(t('目标已删除'));
       setDeleteTarget(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -224,17 +225,17 @@ export default function CloudBackupPage() {
    * 测试连接
    * @param t 目标
    */
-  const handleTest = useCallback(async (t: CloudTarget) => {
+  const handleTest = useCallback(async (tg: CloudTarget) => {
     if (!canManage) {
-      showToast('仅管理员可测试云端目标', 'error');
+      showToast(t('仅管理员可测试云端目标'), 'error');
       return;
     }
-    setTestingId(t.id);
+    setTestingId(tg.id);
     try {
-      const data = await post<{ ok: boolean; message: string }>(`/api/cloud/targets/${t.id}/test`);
-      showToast(data?.message || (data?.ok ? '连接成功' : '连接失败'));
+      const data = await post<{ ok: boolean; message: string }>(`/api/cloud/targets/${tg.id}/test`);
+      showToast(data?.message || (data?.ok ? t('连接成功') : t('连接失败')));
     } catch (e: any) {
-      showToast(e?.message || '测试失败', 'error');
+      showToast(e?.message || t('测试失败'), 'error');
     } finally {
       setTestingId(null);
     }
@@ -245,15 +246,15 @@ export default function CloudBackupPage() {
    */
   const handleUpload = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可上传备份', 'error');
+      showToast(t('仅管理员可上传备份'), 'error');
       return;
     }
     if (!uploadTargetId) {
-      showToast('请选择目标', 'error');
+      showToast(t('请选择目标'), 'error');
       return;
     }
     if (!uploadFile) {
-      showToast('请选择文件', 'error');
+      showToast(t('请选择文件'), 'error');
       return;
     }
     setUploading(true);
@@ -266,7 +267,7 @@ export default function CloudBackupPage() {
         { method: 'POST', headers, body: uploadFile },
       );
       if (!resp.ok) {
-        let msg = `上传失败 (${resp.status})`;
+        let msg = t('上传失败 ({{v1}})', { v1: resp.status });
         try {
           const data = await resp.json();
           msg = data?.error || msg;
@@ -275,11 +276,11 @@ export default function CloudBackupPage() {
         }
         throw new Error(msg);
       }
-      showToast(`已上传到云端：${uploadFile.name}`);
+      showToast(t('已上传到云端：{{v1}}', { v1: uploadFile.name }));
       if (uploadRef.current) uploadRef.current.value = '';
       setUploadFile(null);
     } catch (e: any) {
-      showToast(e?.message || '上传失败', 'error');
+      showToast(e?.message || t('上传失败'), 'error');
     } finally {
       setUploading(false);
     }
@@ -288,16 +289,16 @@ export default function CloudBackupPage() {
   // 目标类型提示
   const endpointHint =
     form.type === 'webdav'
-      ? 'WebDAV 服务器地址，如 https://dav.example.com/dav'
+      ? t('WebDAV 服务器地址，如 https://dav.example.com/dav')
       : form.type === 'oss'
-        ? 'OSS 端点，如 https://oss-cn-hangzhou.aliyuncs.com'
-        : 'S3 端点，如 https://s3.region.amazonaws.com';
+        ? t('OSS 端点，如 https://oss-cn-hangzhou.aliyuncs.com')
+        : t('S3 端点，如 https://s3.region.amazonaws.com');
 
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">云端备份</h1>
-        <p className="page__desc">将备份文件上传到 S3 / 阿里 OSS / WebDAV 存储</p>
+        <h1 className="page__title">{t('云端备份')}</h1>
+        <p className="page__desc">{t('将备份文件上传到 S3 / 阿里 OSS / WebDAV 存储')}</p>
       </div>
 
       {/* 上传区 */}
@@ -308,19 +309,19 @@ export default function CloudBackupPage() {
             value={uploadTargetId}
             onChange={(e) => setUploadTargetId(e.target.value)}
           >
-            {targets.length === 0 && <option value="">暂无目标</option>}
-            {targets.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}（{TYPE_LABEL[t.type]}）</option>
-            ))}
+            {targets.length === 0 && <option value="">{t('暂无目标')}</option>}
+{targets.map((tg) => (
+<option key={tg.id} value={tg.id}>{tg.name}（{t(TYPE_LABEL[tg.type])}）</option>
+))}
           </Select>
           <div className="cb-upload__file">
             <Button variant="secondary" size="sm" onClick={() => uploadRef.current?.click()}>
-              {uploadFile ? '重新选择' : '选择文件'}
+              {uploadFile ? t('重新选择') : t('选择文件')}
             </Button>
             {uploadFile && <span className="cb-upload__name">{uploadFile.name}</span>}
           </div>
           <Button loading={uploading} disabled={!uploadFile || targets.length === 0 || !canManage} onClick={handleUpload}>
-            {uploading ? '上传中...' : '上传'}
+            {uploading ? t('上传中...') : t('上传')}
           </Button>
         </div>
         <input
@@ -333,8 +334,8 @@ export default function CloudBackupPage() {
 
       {/* 目标列表 */}
       <div className="toolbar">
-        <Button onClick={openCreate} disabled={!canManage}>+ 新增目标</Button>
-        <Button variant="ghost" onClick={load}>刷新</Button>
+        <Button onClick={openCreate} disabled={!canManage}>{t('+ 新增目标')}</Button>
+        <Button variant="ghost" onClick={load}>{t('刷新')}</Button>
       </div>
 
       <Card>
@@ -343,43 +344,43 @@ export default function CloudBackupPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="加载云端目标失败"
-            description={loadError || '请稍后重试'}
+            title={t('加载云端目标失败')}
+            description={loadError || t('请稍后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={load}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : targets.length === 0 ? (
-          <Empty title="暂无云端目标" description="先新增一个 S3 / OSS / WebDAV 目标，即可上传备份文件。" />
+          <Empty title={t('暂无云端目标')} description="先新增一个 S3 / OSS / WebDAV 目标，即可上传备份文件。" />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '20%' }}>名称</th>
-                <th style={{ width: '10%' }}>类型</th>
-                <th style={{ width: '32%' }}>端点</th>
-                <th style={{ width: '12%' }}>密钥</th>
-                <th style={{ width: '26%' }}>操作</th>
+                <th style={{ width: '20%' }}>{t('名称')}</th>
+                <th style={{ width: '10%' }}>{t('类型')}</th>
+                <th style={{ width: '32%' }}>{t('端点')}</th>
+                <th style={{ width: '12%' }}>{t('密钥')}</th>
+                <th style={{ width: '26%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
-              {targets.map((t) => (
-                <tr key={t.id}>
-                  <td><strong>{t.name}</strong></td>
-                  <td><span className="cb-badge">{TYPE_LABEL[t.type]}</span></td>
-                  <td className="cb-endpoint">{t.endpoint}</td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                    {t.hasSecret ? '已配置' : '未配置'}
-                  </td>
+{targets.map((tg) => (
+<tr key={tg.id}>
+<td><strong>{tg.name}</strong></td>
+<td><span className="cb-badge">{t(TYPE_LABEL[tg.type])}</span></td>
+<td className="cb-endpoint">{tg.endpoint}</td>
+<td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+{tg.hasSecret ? t('已配置') : t('未配置')}
+</td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 6 }}>
-                      <Button variant="ghost" size="sm" loading={testingId === t.id} disabled={!canManage} onClick={() => handleTest(t)}>
-                        测试连接
+                      <Button variant="ghost" size="sm" loading={testingId === tg.id} disabled={!canManage} onClick={() => handleTest(tg)}>
+                        {t('测试连接')}
                       </Button>
-                      <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEdit(t)}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)} disabled={!canManage}>删除</Button>
+                      <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEdit(tg)}>{t('编辑')}</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(tg)} disabled={!canManage}>{t('删除')}</Button>
                     </div>
                   </td>
                 </tr>
@@ -389,40 +390,40 @@ export default function CloudBackupPage() {
         )}
 
         <div className="cb-type-hint" style={{ marginTop: 14 }}>
-          WebDAV：PUT + Basic 认证（AccessKey=用户名，Secret=密码）。
-          S3/OSS：使用 AccessKey + SecretKey 签名上传。
+          {t('WebDAV：PUT + Basic 认证（AccessKey=用户名，Secret=密码）。')}
+          {t('S3/OSS：使用 AccessKey + SecretKey 签名上传。')}
         </div>
       </Card>
 
       {/* 新增/编辑目标弹窗 */}
       <Modal
         open={modalOpen}
-        title={editing ? `编辑目标：${editing.name}` : '新增云端目标'}
+        title={editing ? t('编辑目标：{{v1}}', { v1: editing.name }) : t('新增云端目标')}
         onClose={() => setModalOpen(false)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button loading={saving} onClick={handleSubmit} disabled={!canManage}>{editing ? '保存' : '新增'}</Button>
+            <Button variant="ghost" onClick={() => setModalOpen(false)}>{t('取消')}</Button>
+            <Button loading={saving} onClick={handleSubmit} disabled={!canManage}>{editing ? t('保存') : t('新增')}</Button>
           </div>
         }
       >
-        <Field label="类型">
+        <Field label={t('类型')}>
           <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as CloudType }))}>
             <option value="webdav">WebDAV</option>
             <option value="s3">S3</option>
-            <option value="oss">阿里 OSS</option>
+            <option value="oss">{t('阿里 OSS')}</option>
           </Select>
         </Field>
-        <Field label="名称" required>
-          <Input value={form.name} placeholder="如：我的 NAS/腾讯云 COS" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        <Field label={t('名称')} required>
+          <Input value={form.name} placeholder={t('如：我的 NAS/腾讯云 COS')} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           {errors.name && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.name}</div>}
         </Field>
-        <Field label="端点地址" required hint={endpointHint}>
+        <Field label={t('端点地址')} required hint={endpointHint}>
           <Input value={form.endpoint} placeholder="https://..." onChange={(e) => setForm((f) => ({ ...f, endpoint: e.target.value }))} />
           {errors.endpoint && <div style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginTop: 4 }}>{errors.endpoint}</div>}
         </Field>
         {form.type !== 'webdav' && (
-          <Field label="桶名（Bucket）" required>
+          <Field label={t('桶名（Bucket）')} required>
             <Input value={form.bucket} placeholder="my-bucket" onChange={(e) => setForm((f) => ({ ...f, bucket: e.target.value }))} />
           </Field>
         )}
@@ -431,13 +432,13 @@ export default function CloudBackupPage() {
             <Input value={form.region} placeholder="us-east-1" onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))} />
           </Field>
         )}
-        <Field label="基路径（可选）">
+        <Field label={t('基路径（可选）')}>
           <Input value={form.path} placeholder="backup/app1" onChange={(e) => setForm((f) => ({ ...f, path: e.target.value }))} />
         </Field>
-        <Field label="AccessKey / 用户名" hint={form.type === 'webdav' ? 'WebDAV 用户名' : '访问密钥 ID'}>
+        <Field label={t('AccessKey / 用户名')} hint={form.type === 'webdav' ? t('WebDAV 用户名') : t('访问密钥 ID')}>
           <Input value={form.accessKey} onChange={(e) => setForm((f) => ({ ...f, accessKey: e.target.value }))} />
         </Field>
-        <Field label={form.type === 'webdav' ? '密码' : 'SecretKey'} hint={editing ? '留空则保持原密钥不变' : undefined}>
+        <Field label={form.type === 'webdav' ? t('密码') : 'SecretKey'} hint={editing ? t('留空则保持原密钥不变') : undefined}>
           <Input type="password" value={form.secret} onChange={(e) => setForm((f) => ({ ...f, secret: e.target.value }))} />
         </Field>
       </Modal>
@@ -445,9 +446,9 @@ export default function CloudBackupPage() {
       {/* 删除确认 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除目标"
-        message={`确定删除云端目标「${deleteTarget?.name}」吗？`}
-        confirmText="删除"
+        title={t('删除目标')}
+        message={t('确定删除云端目标「{{v1}}」吗？', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
