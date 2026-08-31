@@ -14,6 +14,7 @@ import Modal from '../components/Modal';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { Field, Input, TextArea } from '../components/Form';
+import { translateNow as t } from '../i18n';
 import './hostFiles.less';
 
 /** 条目类型 */
@@ -128,8 +129,8 @@ export default function HostFilesPage() {
       setItems(data?.items || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '加载失败');
-      showToast(e?.message || '加载失败', 'error');
+      setLoadError(e?.message || t('加载失败'));
+      showToast(e?.message || t('加载失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -179,7 +180,7 @@ export default function HostFilesPage() {
   const handleUpload = useCallback(
     async (file: File) => {
       if (!canManage) {
-        showToast('仅管理员可上传文件', 'error');
+        showToast(t('仅管理员可上传文件'), 'error');
         if (uploadRef.current) uploadRef.current.value = '';
         return;
       }
@@ -195,7 +196,7 @@ export default function HostFilesPage() {
           { method: 'POST', headers, body: file },
         );
         if (!resp.ok) {
-          let msg = `上传失败 (${resp.status})`;
+          let msg = t('上传失败 ({{v1}})', { v1: resp.status });
           try {
             const data = await resp.json();
             msg = data?.error || data?.message || msg;
@@ -204,10 +205,10 @@ export default function HostFilesPage() {
           }
           throw new Error(msg);
         }
-        showToast(`已上传 ${file.name}`);
+        showToast(t('已上传 {{v1}}', { v1: file.name }));
         load(curPath);
       } catch (e: any) {
-        showToast(e?.message || '上传失败', 'error');
+        showToast(e?.message || t('上传失败'), 'error');
       } finally {
         setUploading(false);
         if (uploadRef.current) uploadRef.current.value = '';
@@ -224,9 +225,9 @@ export default function HostFilesPage() {
     async (item: FsItem) => {
       try {
         await download(`/api/hostfiles/download?path=${encodeURIComponent(item.path)}`, item.name);
-        showToast(`已开始下载 ${item.name}`);
+        showToast(t('已开始下载 {{v1}}', { v1: item.name }));
       } catch (e: any) {
-        showToast(e?.message || '下载失败', 'error');
+        showToast(e?.message || t('下载失败'), 'error');
       }
     },
     [showToast],
@@ -255,7 +256,7 @@ export default function HostFilesPage() {
   const handleArchiveDownload = useCallback(async () => {
     if (selected.size === 0) return;
     if (!canManage) {
-      showToast('仅管理员可打包下载', 'error');
+      showToast(t('仅管理员可打包下载'), 'error');
       return;
     }
     setArchiving(true);
@@ -271,10 +272,10 @@ export default function HostFilesPage() {
         body: JSON.stringify({ paths: Array.from(selected) }),
       });
       if (!resp.ok) {
-        let msg = `打包失败 (${resp.status})`;
+        let msg = t('打包失败 ({{v1}})', { v1: resp.status });
         try {
           const data = await resp.json();
-          msg = resp.status === 403 ? '权限不足，仅管理员可执行此操作' : data?.error || data?.message || msg;
+          msg = resp.status === 403 ? t('权限不足，仅管理员可执行此操作') : data?.error || data?.message || msg;
         } catch {
           // 非 JSON 响应，保留默认错误信息
         }
@@ -290,10 +291,10 @@ export default function HostFilesPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(objectUrl);
-      showToast(`已打包下载 ${selected.size} 项`);
+      showToast(t('已打包下载 {{v1}} 项', { v1: selected.size }));
       setSelected(new Set());
     } catch (e: any) {
-      showToast(e?.message || '打包下载失败', 'error');
+      showToast(e?.message || t('打包下载失败'), 'error');
     } finally {
       setArchiving(false);
     }
@@ -304,19 +305,19 @@ export default function HostFilesPage() {
    */
   const handleMkdir = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可新建文件夹', 'error');
+      showToast(t('仅管理员可新建文件夹'), 'error');
       setMkdirOpen(false);
       return;
     }
     if (!mkdirName.trim()) return;
     try {
       await post('/api/hostfiles/mkdir', { path: curPath, name: mkdirName.trim() });
-      showToast('目录已创建');
+      showToast(t('目录已创建'));
       setMkdirOpen(false);
       setMkdirName('');
       load(curPath);
     } catch (e: any) {
-      showToast(e?.message || '创建失败', 'error');
+      showToast(e?.message || t('创建失败'), 'error');
     }
   }, [canManage, mkdirName, curPath, load, showToast]);
 
@@ -325,7 +326,7 @@ export default function HostFilesPage() {
    */
   const handleCreateFile = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可新建文件', 'error');
+      showToast(t('仅管理员可新建文件'), 'error');
       setCreateOpen(false);
       return;
     }
@@ -333,12 +334,12 @@ export default function HostFilesPage() {
     try {
       const target = curPath.replace(/[\\/]+$/, '') + '/' + createName.trim();
       await post('/api/hostfiles/write', { path: target, content: '' });
-      showToast('文件已创建');
+      showToast(t('文件已创建'));
       setCreateOpen(false);
       setCreateName('');
       load(curPath);
     } catch (e: any) {
-      showToast(e?.message || '创建失败', 'error');
+      showToast(e?.message || t('创建失败'), 'error');
     }
   }, [canManage, createName, curPath, load, showToast]);
 
@@ -349,7 +350,7 @@ export default function HostFilesPage() {
   const openEditor = useCallback(
     async (item?: FsItem) => {
       if (!canManage) {
-        showToast('仅管理员可编辑文件', 'error');
+        showToast(t('仅管理员可编辑文件'), 'error');
         return;
       }
       if (item) {
@@ -363,7 +364,7 @@ export default function HostFilesPage() {
             existing: true,
           });
         } catch (e: any) {
-          showToast(e?.message || '读取失败', 'error');
+          showToast(e?.message || t('读取失败'), 'error');
         }
       } else {
         setEditor({ open: true, path: '', name: '', content: '', existing: false });
@@ -377,7 +378,7 @@ export default function HostFilesPage() {
    */
   const handleSaveEditor = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可保存文件', 'error');
+      showToast(t('仅管理员可保存文件'), 'error');
       setEditor((s) => ({ ...s, open: false }));
       return;
     }
@@ -385,24 +386,24 @@ export default function HostFilesPage() {
     try {
       if (editor.existing) {
         await post('/api/hostfiles/write', { path: editor.path, content: editor.content });
-        showToast('已保存');
+        showToast(t('已保存'));
         setEditor((s) => ({ ...s, open: false }));
         // 保存成功后刷新当前目录列表以更新 mtime / 大小
         load(curPath);
       } else {
         const name = editor.name.trim();
         if (!name) {
-          showToast('请填写文件名', 'error');
+          showToast(t('请填写文件名'), 'error');
           return;
         }
         const target = curPath.replace(/[\\/]+$/, '') + '/' + name;
         await post('/api/hostfiles/write', { path: target, content: editor.content });
-        showToast('文件已创建');
+        showToast(t('文件已创建'));
         setEditor((s) => ({ ...s, open: false }));
         load(curPath);
       }
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setEditorSaving(false);
     }
@@ -414,7 +415,7 @@ export default function HostFilesPage() {
   const handleRename = useCallback(async () => {
     if (!renameTarget) return;
     if (!canManage) {
-      showToast('仅管理员可重命名文件', 'error');
+      showToast(t('仅管理员可重命名文件'), 'error');
       setRenameTarget(null);
       return;
     }
@@ -423,11 +424,11 @@ export default function HostFilesPage() {
       const dir = renameTarget.path.slice(0, renameTarget.path.length - renameTarget.name.length);
       const to = dir + renameName.trim();
       await post('/api/hostfiles/rename', { from: renameTarget.path, to });
-      showToast('已重命名');
+      showToast(t('已重命名'));
       setRenameTarget(null);
       load(curPath);
     } catch (e: any) {
-      showToast(e?.message || '重命名失败', 'error');
+      showToast(e?.message || t('重命名失败'), 'error');
     }
   }, [canManage, renameTarget, renameName, curPath, load, showToast]);
 
@@ -437,7 +438,7 @@ export default function HostFilesPage() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canManage) {
-      showToast('仅管理员可删除文件', 'error');
+      showToast(t('仅管理员可删除文件'), 'error');
       setDeleteTarget(null);
       setForceDelete(false);
       return;
@@ -445,12 +446,12 @@ export default function HostFilesPage() {
     setDeleting(true);
     try {
       await post('/api/hostfiles/delete', { path: deleteTarget.path, force: forceDelete });
-      showToast('已删除');
+      showToast(t('已删除'));
       setDeleteTarget(null);
       setForceDelete(false);
       load(curPath);
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -474,22 +475,22 @@ export default function HostFilesPage() {
   // 错误处理提示的删除目标描述
   const deleteDesc = deleteTarget
     ? deleteTarget.type === 'dir'
-      ? `目录「${deleteTarget.name}」（含其子项将被递归删除）`
-      : `文件「${deleteTarget.name}」`
+      ? t('目录「{{v1}}」（含其子项将被递归删除）', { v1: deleteTarget.name })
+      : t('文件「{{v1}}」', { v1: deleteTarget.name })
     : '';
 
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">宿主机文件</h1>
-        <p className="page__desc">浏览与管理宿主机文件系统（Windows）</p>
+        <h1 className="page__title">{t('宿主机文件')}</h1>
+        <p className="page__desc">{t('浏览与管理宿主机文件系统（Windows）')}</p>
       </div>
 
       <Card>
         <div className="hf-toolbar">
           <Input
             className="hf-toolbar__path"
-            placeholder="输入宿主机路径后回车跳转，或点击目录进入"
+            placeholder={t('输入宿主机路径后回车跳转，或点击目录进入')}
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => {
@@ -497,14 +498,14 @@ export default function HostFilesPage() {
             }}
           />
           <div className="hf-toolbar__actions">
-            <Button variant="secondary" size="sm" onClick={() => load(pathInput)}>跳转</Button>
-            <Button variant="ghost" size="sm" onClick={goUp} disabled={!curPath}>上级</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setPathInput(''); load(''); }}>盘符</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setPathInput(curPath); load(curPath); }}>刷新</Button>
-            <Button variant="secondary" size="sm" onClick={() => setMkdirOpen(true)} disabled={!canManage}>新建文件夹</Button>
-            <Button variant="secondary" size="sm" onClick={() => setCreateOpen(true)} disabled={!canManage}>新建文件</Button>
+            <Button variant="secondary" size="sm" onClick={() => load(pathInput)}>{t('跳转')}</Button>
+            <Button variant="ghost" size="sm" onClick={goUp} disabled={!curPath}>{t('上级')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setPathInput(''); load(''); }}>{t('盘符')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setPathInput(curPath); load(curPath); }}>{t('刷新')}</Button>
+            <Button variant="secondary" size="sm" onClick={() => setMkdirOpen(true)} disabled={!canManage}>{t('新建文件夹')}</Button>
+            <Button variant="secondary" size="sm" onClick={() => setCreateOpen(true)} disabled={!canManage}>{t('新建文件')}</Button>
             <Button variant="secondary" size="sm" loading={uploading} disabled={!curPath || !canManage} onClick={() => uploadRef.current?.click()}>
-              上传
+              {t('上传')}
             </Button>
           </div>
         </div>
@@ -519,7 +520,7 @@ export default function HostFilesPage() {
             disabled={selected.size === 0 || !canManage}
             onClick={handleArchiveDownload}
           >
-            打包下载
+            {t('打包下载')}
           </Button>
         </div>
       </Card>
@@ -530,16 +531,16 @@ export default function HostFilesPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="加载文件列表失败"
-            description={loadError || '请稍后重试'}
+            title={t('加载文件列表失败')}
+            description={loadError || t('请稍后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={() => load(curPath)}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : items.length === 0 ? (
-          <Empty title={curPath ? '目录为空' : '未检测到磁盘'} />
+          <Empty title={curPath ? t('目录为空') : t('未检测到磁盘')} />
         ) : (
           <div className="hf-table-wrap">
             <table className="hf-table">
@@ -557,11 +558,11 @@ export default function HostFilesPage() {
                       }}
                     />
                   </th>
-                  <th style={{ width: '44%' }}>名称</th>
-                  <th style={{ width: '10%' }}>类型</th>
-                  <th style={{ width: '12%' }}>大小</th>
-                  <th style={{ width: '16%' }}>修改时间</th>
-                  <th style={{ width: '14%' }}>操作</th>
+                  <th style={{ width: '44%' }}>{t('名称')}</th>
+                  <th style={{ width: '10%' }}>{t('类型')}</th>
+                  <th style={{ width: '12%' }}>{t('大小')}</th>
+                  <th style={{ width: '16%' }}>{t('修改时间')}</th>
+                  <th style={{ width: '14%' }}>{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -595,24 +596,24 @@ export default function HostFilesPage() {
                         <span className="hf-name__text">{item.name}</span>
                       </div>
                     </td>
-                    <td className="hf-type">{item.type === 'drive' ? '磁盘' : item.type === 'dir' ? '目录' : item.type === 'file' ? '文件' : '其他'}</td>
+                    <td className="hf-type">{item.type === 'drive' ? t('磁盘') : item.type === 'dir' ? t('目录') : item.type === 'file' ? t('文件') : t('其他')}</td>
                     <td className="hf-size">{item.type === 'file' ? formatSize(item.size) : '—'}</td>
                     <td className="hf-time">{item.type === 'file' || item.type === 'dir' ? formatTime(item.mtime) : '—'}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <div className="hf-actions">
                         {item.type === 'file' && (
                           <>
-                            <button className="hf-link" onClick={() => handleDownload(item)}>下载</button>
-                            <button className="hf-link" onClick={() => openEditor(item)} disabled={!canManage}>编辑</button>
+                            <button className="hf-link" onClick={() => handleDownload(item)}>{t('下载')}</button>
+                            <button className="hf-link" onClick={() => openEditor(item)} disabled={!canManage}>{t('编辑')}</button>
                           </>
                         )}
                         {item.type === 'dir' && (
-                          <button className="hf-link" onClick={() => setRenameTarget({ ...item })} disabled={!canManage}>重命名</button>
+                          <button className="hf-link" onClick={() => setRenameTarget({ ...item })} disabled={!canManage}>{t('重命名')}</button>
                         )}
                         {item.type === 'file' && (
-                          <button className="hf-link" onClick={() => setRenameTarget({ ...item })} disabled={!canManage}>重命名</button>
+                          <button className="hf-link" onClick={() => setRenameTarget({ ...item })} disabled={!canManage}>{t('重命名')}</button>
                         )}
-                        <button className="hf-link hf-link--danger" onClick={() => setDeleteTarget({ ...item })} disabled={!canManage}>删除</button>
+                        <button className="hf-link hf-link--danger" onClick={() => setDeleteTarget({ ...item })} disabled={!canManage}>{t('删除')}</button>
                       </div>
                     </td>
                   </tr>
@@ -636,19 +637,19 @@ export default function HostFilesPage() {
       {/* 新建文件夹弹窗 */}
       <Modal
         open={mkdirOpen}
-        title="新建文件夹"
+        title={t('新建文件夹')}
         onClose={() => setMkdirOpen(false)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setMkdirOpen(false)}>取消</Button>
-            <Button onClick={handleMkdir} disabled={!canManage}>创建</Button>
+            <Button variant="ghost" onClick={() => setMkdirOpen(false)}>{t('取消')}</Button>
+            <Button onClick={handleMkdir} disabled={!canManage}>{t('创建')}</Button>
           </div>
         }
       >
-        <Field label="文件夹名" required>
+        <Field label={t('文件夹名')} required>
           <Input
             value={mkdirName}
-            placeholder="例如：new_folder"
+            placeholder={t('例如：new_folder')}
             autoFocus
             onChange={(e) => setMkdirName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleMkdir(); }}
@@ -659,19 +660,19 @@ export default function HostFilesPage() {
       {/* 新建文件弹窗 */}
       <Modal
         open={createOpen}
-        title="新建文件"
+        title={t('新建文件')}
         onClose={() => setCreateOpen(false)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button onClick={handleCreateFile} disabled={!canManage}>创建</Button>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>{t('取消')}</Button>
+            <Button onClick={handleCreateFile} disabled={!canManage}>{t('创建')}</Button>
           </div>
         }
       >
-        <Field label="文件名" required hint={`将创建于：${curPath}`}>
+        <Field label={t('文件名')} required hint={t('将创建于：{{curPath}}', { curPath })}>
           <Input
             value={createName}
-            placeholder="例如：config.txt"
+            placeholder={t('例如：config.txt')}
             autoFocus
             onChange={(e) => setCreateName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFile(); }}
@@ -682,16 +683,16 @@ export default function HostFilesPage() {
       {/* 重命名弹窗 */}
       <Modal
         open={!!renameTarget}
-        title="重命名"
+        title={t('重命名')}
         onClose={() => setRenameTarget(null)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setRenameTarget(null)}>取消</Button>
-            <Button onClick={handleRename} disabled={!canManage}>确定</Button>
+            <Button variant="ghost" onClick={() => setRenameTarget(null)}>{t('取消')}</Button>
+            <Button onClick={handleRename} disabled={!canManage}>{t('确定')}</Button>
           </div>
         }
       >
-        <Field label="新名称" required>
+        <Field label={t('新名称')} required>
           <Input
             value={renameName}
             autoFocus
@@ -704,20 +705,20 @@ export default function HostFilesPage() {
       {/* 文本编辑器 */}
       <Modal
         open={editor.open}
-        title={editor.existing ? `编辑 ${editor.name}` : '新建文本文件'}
+        title={editor.existing ? t('编辑 {{v1}}', { v1: editor.name }) : t('新建文本文件')}
         onClose={() => setEditor((s) => ({ ...s, open: false }))}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             {!editor.existing && (
               <Input
-                placeholder="文件名（如 note.txt）"
+                placeholder={t('文件名（如 note.txt）')}
                 value={editor.name}
                 onChange={(e) => setEditor((s) => ({ ...s, name: e.target.value }))}
                 style={{ width: 220, marginRight: 'auto' }}
               />
             )}
-            <Button variant="ghost" onClick={() => setEditor((s) => ({ ...s, open: false }))}>取消</Button>
-            <Button onClick={handleSaveEditor} loading={editorSaving} disabled={!canManage}>保存</Button>
+            <Button variant="ghost" onClick={() => setEditor((s) => ({ ...s, open: false }))}>{t('取消')}</Button>
+            <Button onClick={handleSaveEditor} loading={editorSaving} disabled={!canManage}>{t('保存')}</Button>
           </div>
         }
       >
@@ -732,15 +733,15 @@ export default function HostFilesPage() {
       {/* 删除确认 */}
       <Modal
         open={!!deleteTarget}
-        title="删除"
+        title={t('删除')}
         onClose={() => { setDeleteTarget(null); setForceDelete(false); }}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button variant="secondary" onClick={() => { setDeleteTarget(null); setForceDelete(false); }} disabled={deleting}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="danger" onClick={handleDelete} loading={deleting}>
-              删除
+              {t('删除')}
             </Button>
           </div>
         }
@@ -749,7 +750,7 @@ export default function HostFilesPage() {
         {deleteTarget?.type === 'dir' && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-secondary)', marginTop: 10 }}>
             <input type="checkbox" checked={forceDelete} onChange={(e) => setForceDelete(e.target.checked)} />
-            <span>递归删除整个目录（非空目录需勾选）</span>
+            <span>{t('递归删除整个目录（非空目录需勾选）')}</span>
           </label>
         )}
       </Modal>

@@ -14,6 +14,7 @@ import Empty from '../components/Empty';
 import { useToast } from '../components/Toast';
 import { get, del, post } from '../api/client';
 import { getToken, isAdmin, canOperate } from '../api/auth';
+import { translateNow as t } from '../i18n';
 import './imageDetail.less';
 
 /** Docker 镜像 inspect 结果的结构 */
@@ -176,7 +177,7 @@ async function downloadImage(name: string): Promise<void> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let message = `镜像导出失败 (${res.status})`;
+    let message = t('镜像导出失败 ({{v1}})', { v1: res.status });
     try {
       const data = JSON.parse(text);
       message = data?.error || message;
@@ -237,7 +238,7 @@ export default function ImageDetailPage() {
       const data = await get<ImageInspect>('/api/images/' + encodeURIComponent(name));
       setImage(data || null);
     } catch (e: any) {
-      showToast(e?.message || '拉取镜像详情失败', 'error');
+      showToast(e?.message || t('拉取镜像详情失败'), 'error');
       setImage(null);
     } finally {
       setLoading(false);
@@ -252,7 +253,7 @@ export default function ImageDetailPage() {
       const data = await get<HistoryItem[]>('/api/images/' + encodeURIComponent(name) + '/history');
       setHistory(data || []);
     } catch (e: any) {
-      showToast(e?.message || '拉取镜像构建历史失败', 'error');
+      showToast(e?.message || t('拉取镜像构建历史失败'), 'error');
       setHistory([]);
     } finally {
       setHistoryLoading(false);
@@ -267,7 +268,7 @@ export default function ImageDetailPage() {
       const r = await post<ImageScan>('/api/images/' + encodeURIComponent(name) + '/scan');
       setScanResult(r);
     } catch (e: any) {
-      showToast(e?.message || '漏洞扫描失败', 'error');
+      showToast(e?.message || t('漏洞扫描失败'), 'error');
       setScanResult(null);
     } finally {
       setScanLoading(false);
@@ -282,7 +283,7 @@ export default function ImageDetailPage() {
       const data = await get<LayerAnalysis>('/api/images/' + encodeURIComponent(name) + '/layers');
       setLayerAnalysis(data || null);
     } catch (e: any) {
-      showToast(e?.message || '拉取镜像层分析失败', 'error');
+      showToast(e?.message || t('拉取镜像层分析失败'), 'error');
       setLayerAnalysis(null);
     } finally {
       setLayerLoading(false);
@@ -295,7 +296,7 @@ export default function ImageDetailPage() {
       const data = await get<ContainerBrief[]>('/api/containers', { all: true });
       setContainers(data || []);
     } catch (e: any) {
-      showToast(e?.message || '拉取容器列表失败', 'error');
+      showToast(e?.message || t('拉取容器列表失败'), 'error');
       setContainers([]);
     }
   }, [showToast]);
@@ -342,9 +343,9 @@ export default function ImageDetailPage() {
     setExporting(true);
     try {
       await downloadImage(target);
-      showToast('镜像导出已开始');
+      showToast(t('镜像导出已开始'));
     } catch (e: any) {
-      showToast(e?.message || '镜像导出失败', 'error');
+      showToast(e?.message || t('镜像导出失败'), 'error');
     } finally {
       setExporting(false);
     }
@@ -357,18 +358,18 @@ export default function ImageDetailPage() {
   const handleDeleteTag = useCallback(async () => {
     if (!deleteTag) return;
     if (!canDelete) {
-      showToast('仅管理员可删除镜像标签', 'error');
+      showToast(t('仅管理员可删除镜像标签'), 'error');
       setDeleteTag(null);
       return;
     }
     setDeletingTag(true);
     try {
       await del('/api/images/' + encodeURIComponent(deleteTag) + '?force=true');
-      showToast(`标签 ${deleteTag} 删除成功`);
+      showToast(t('标签 {{deleteTag}} 删除成功', { deleteTag }));
       setDeleteTag(null);
       await fetchImage();
     } catch (e: any) {
-      showToast(e?.message || `标签 ${deleteTag} 删除失败`, 'error');
+      showToast(e?.message || t('标签 {{deleteTag}} 删除失败', { deleteTag }), 'error');
     } finally {
       setDeletingTag(false);
     }
@@ -377,33 +378,33 @@ export default function ImageDetailPage() {
   return (
     <div className="page detail-page">
       <Button variant="ghost" size="sm" className="back-btn" onClick={() => navigate(-1)}>
-        ← 返回
+        {t('← 返回')}
       </Button>
 
       {loading ? (
         <PageLoading />
       ) : !image ? (
-        <Empty title="未找到镜像" description="该镜像可能已被删除或名称不正确" />
+        <Empty title={t('未找到镜像')} description={t('该镜像可能已被删除或名称不正确')} />
       ) : (
         <>
         <Card
           title={displayName}
           extra={
             <Button variant="secondary" size="sm" loading={exporting} onClick={handleExport}>
-              导出
+              {t('导出')}
             </Button>
           }
         >
           <div className="desc-grid">
             <div className="desc-item">
-              <div className="desc-label">镜像 ID</div>
+              <div className="desc-label">{t('镜像 ID')}</div>
               <div className="desc-value mono" title={image.Id}>
                 {image.Id}
               </div>
             </div>
 
             <div className="desc-item">
-              <div className="desc-label">仓库标签</div>
+              <div className="desc-label">{t('仓库标签')}</div>
               <div className="desc-value">
                 {image.RepoTags && image.RepoTags.length ? (
                   <ul className="tag-list">
@@ -413,8 +414,8 @@ export default function ImageDetailPage() {
                         <button
                           type="button"
                           className="tag-chip__del"
-                          title="删除此标签"
-                          aria-label={`删除标签 ${tag}`}
+                          title={t('删除此标签')}
+                          aria-label={t('删除标签 {{tag}}', { tag })}
                           onClick={() => setDeleteTag(tag)}
                           disabled={!canDelete}
                         >
@@ -430,19 +431,19 @@ export default function ImageDetailPage() {
             </div>
 
             <div className="desc-item">
-              <div className="desc-label">驱动 / 架构 / 系统</div>
+              <div className="desc-label">{t('驱动 / 架构 / 系统')}</div>
               <div className="desc-value">
                 {image.Driver || '-'} / {image.Architecture || '-'} / {image.Os || '-'}
               </div>
             </div>
 
             <div className="desc-item">
-              <div className="desc-label">大小</div>
+              <div className="desc-label">{t('大小')}</div>
               <div className="desc-value">{formatSize(image.Size)}</div>
             </div>
 
             <div className="desc-item">
-              <div className="desc-label">存储层（RootFS）</div>
+              <div className="desc-label">{t('存储层（RootFS）')}</div>
               <div className="desc-value">
                 {layerCount > 0 ? (
                   <>
@@ -458,13 +459,13 @@ export default function ImageDetailPage() {
             </div>
 
             <div className="desc-item">
-              <div className="desc-label">构建时间</div>
+              <div className="desc-label">{t('构建时间')}</div>
               <div className="desc-value">{formatCreated(image.Created)}</div>
             </div>
 
             {image.RepoDigests && image.RepoDigests.length > 0 && (
               <div className="desc-item">
-                <div className="desc-label">仓库摘要</div>
+                <div className="desc-label">{t('仓库摘要')}</div>
                 <div className="desc-value" title={image.RepoDigests.join('\n')}>
                   {image.RepoDigests.map((d) => (
                     <div key={d} className="line">
@@ -476,7 +477,7 @@ export default function ImageDetailPage() {
             )}
 
             <div className="desc-item desc-item--full">
-              <div className="desc-label">暴露端口</div>
+              <div className="desc-label">{t('暴露端口')}</div>
               <div className="desc-value">
                 {image.Config?.ExposedPorts &&
                 Object.keys(image.Config.ExposedPorts).length ? (
@@ -494,7 +495,7 @@ export default function ImageDetailPage() {
             </div>
 
             <div className="desc-item desc-item--full">
-              <div className="desc-label">环境变量（只读）</div>
+              <div className="desc-label">{t('环境变量（只读）')}</div>
               <div className="desc-value">
                 {image.Config?.Env && image.Config.Env.length ? (
                   <div className="env-list">
@@ -511,7 +512,7 @@ export default function ImageDetailPage() {
             </div>
 
             <div className="desc-item desc-item--full">
-              <div className="desc-label">标签（Labels）</div>
+              <div className="desc-label">{t('标签（Labels）')}</div>
               <div className="desc-value">
                 {image.Labels && Object.keys(image.Labels).length ? (
                   <table className="labels-table">
@@ -533,16 +534,16 @@ export default function ImageDetailPage() {
         </Card>
 
         {/* 使用该镜像的容器 */}
-        <Card title="使用该镜像的容器">
+        <Card title={t('使用该镜像的容器')}>
           {relatedContainers.length === 0 ? (
-            <div className="desc-value">暂无容器使用该镜像</div>
+            <div className="desc-value">{t('暂无容器使用该镜像')}</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>名称</th>
-                  <th>状态</th>
-                  <th>创建时间</th>
+                  <th>{t('名称')}</th>
+                  <th>{t('状态')}</th>
+                  <th>{t('创建时间')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -562,47 +563,47 @@ export default function ImageDetailPage() {
         </Card>
 
         {/* 层空间分析 */}
-        <Card title="层空间分析（Layer）">
+        <Card title={t('层空间分析（Layer）')}>
           {layerLoading ? (
-            <div className="desc-value">加载中…</div>
+            <div className="desc-value">{t('加载中…')}</div>
           ) : !layerAnalysis || layerAnalysis.layerCount === 0 ? (
-            <div className="desc-value">暂无可用层的空间数据。</div>
+            <div className="desc-value">{t('暂无可用层的空间数据。')}</div>
           ) : (
             <>
               <div className="desc-row">
-                <div className="desc-label">有效层数</div>
-                <div className="desc-value">{layerAnalysis.layerCount} 层</div>
+                <div className="desc-label">{t('有效层数')}</div>
+                <div className="desc-value">{t('{{n}} 层', { n: layerAnalysis.layerCount })}</div>
               </div>
               <div className="desc-row">
-                <div className="desc-label">层占用合计</div>
+                <div className="desc-label">{t('层占用合计')}</div>
                 <div className="desc-value">{formatSize(layerAnalysis.totalSize)}</div>
               </div>
 
-              <h4 className="section-sub">层大小热力图</h4>
+              <h4 className="section-sub">{t('层大小热力图')}</h4>
               <div className="layer-heatmap">
                 {layerAnalysis.layers.map((l) => (
                   <div
                     key={l.index}
                     className="layer-heatmap__cell"
                     style={{ background: heatColor(l.ratio) }}
-                    title={`第 ${l.index + 1} 层 · ${formatSize(l.size)} · ${(l.ratio * 100).toFixed(1)}%\n${l.createdBy}`}
+                    title={t('第 {{v1}} 层 · {{v2}} · {{v3}}%\n{{v4}}', { v1: l.index + 1, v2: formatSize(l.size), v3: (l.ratio * 100).toFixed(1), v4: l.createdBy })}
                   />
                 ))}
               </div>
               <div className="layer-heatmap__legend">
-                <span>小</span>
+                <span>{t('小')}</span>
                 <div className="layer-heatmap__legend-bar" />
-                <span>大</span>
-                <span className="layer-heatmap__legend-note">每格一层，悬停查看明细</span>
+                <span>{t('大')}</span>
+                <span className="layer-heatmap__legend-note">{t('每格一层，悬停查看明细')}</span>
               </div>
 
-              <h4 className="section-sub">占用最大的层</h4>
+              <h4 className="section-sub">{t('占用最大的层')}</h4>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '10%' }}>占比</th>
-                    <th style={{ width: '18%' }}>大小</th>
-                    <th>命令</th>
+                    <th style={{ width: '10%' }}>{t('占比')}</th>
+                    <th style={{ width: '18%' }}>{t('大小')}</th>
+                    <th>{t('命令')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -628,7 +629,7 @@ export default function ImageDetailPage() {
 
               {layerAnalysis.suggestions.length > 0 && (
                 <>
-                  <h4 className="section-sub">瘦身建议</h4>
+                  <h4 className="section-sub">{t('瘦身建议')}</h4>
                   <ul className="suggest-list">
                     {layerAnalysis.suggestions.map((s, i) => (
                       <li key={i}>{s}</li>
@@ -641,30 +642,30 @@ export default function ImageDetailPage() {
         </Card>
 
         {/* 漏洞扫描（Trivy） */}
-        <Card title="漏洞扫描（Trivy）">
+        <Card title={t('漏洞扫描（Trivy）')}>
           {scanLoading ? (
-            <div className="desc-value">扫描中…（首次可能较慢）</div>
+            <div className="desc-value">{t('扫描中…（首次可能较慢）')}</div>
           ) : !scanResult ? (
             <div className="desc-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="desc-value">
                 {canOperateNow
-                  ? '点击扫描以检测镜像中的已知漏洞（依赖本机 Trivy）。'
-                  : '无扫描权限。'}
+                  ? t('点击扫描以检测镜像中的已知漏洞（依赖本机 Trivy）。')
+                  : t('无扫描权限。')}
               </div>
               {canOperateNow && (
                 <Button variant="primary" size="sm" onClick={handleScan} disabled={scanLoading}>
-                  立即扫描
+                  {t('立即扫描')}
                 </Button>
               )}
             </div>
           ) : !scanResult.available ? (
             <div className="desc-value" style={{ color: 'var(--warn, #d97706)' }}>
-              <strong>未检测到 Trivy</strong>：{scanResult.notAvailableReason}
+              <strong>{t('未检测到 Trivy')}</strong>：{scanResult.notAvailableReason}
             </div>
           ) : (
             <>
               <div className="desc-row" style={{ justifyContent: 'space-between' }}>
-                <span className="desc-label">扫描时间</span>
+                <span className="desc-label">{t('扫描时间')}</span>
                 <span className="desc-value">{scanResult.scannedAt ? new Date(scanResult.scannedAt).toLocaleString() : '-'}</span>
               </div>
               {/* 等级分布 */}
@@ -687,10 +688,10 @@ export default function ImageDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '16%' }}>CVE</th>
-                      <th style={{ width: '10%' }}>等级</th>
-                      <th style={{ width: '20%' }}>依赖包</th>
-                      <th style={{ width: '22%' }}>版本</th>
-                      <th>说明</th>
+                      <th style={{ width: '10%' }}>{t('等级')}</th>
+                      <th style={{ width: '20%' }}>{t('依赖包')}</th>
+                      <th style={{ width: '22%' }}>{t('版本')}</th>
+                      <th>{t('说明')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -710,7 +711,7 @@ export default function ImageDetailPage() {
                         <td>{v.pkgName || '-'}</td>
                         <td>
                           {v.installedVersion || '-'}
-                          {v.fixedVersion ? ` → ${v.fixedVersion}` : '（未修复）'}
+                          {v.fixedVersion ? ` → ${v.fixedVersion}` : t('（未修复）')}
                         </td>
                         <td className="scan-desc" title={v.description}>{v.title || v.description || '-'}</td>
                       </tr>
@@ -718,26 +719,26 @@ export default function ImageDetailPage() {
                   </tbody>
                 </table>
               ) : (
-                <div className="desc-value">未发现已知漏洞（或 Trivy 未检出）。</div>
+                <div className="desc-value">{t('未发现已知漏洞（或 Trivy 未检出）。')}</div>
               )}
             </>
           )}
         </Card>
 
         {/* 构建历史 */}
-        <Card title="构建历史（History）">
+        <Card title={t('构建历史（History）')}>
           {historyLoading ? (
-            <div className="desc-value">加载中…</div>
+            <div className="desc-value">{t('加载中…')}</div>
           ) : history.length === 0 ? (
-            <div className="desc-value">暂无历史</div>
+            <div className="desc-value">{t('暂无历史')}</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>层 ID</th>
-                  <th>大小</th>
-                  <th>命令</th>
-                  <th>标签</th>
+                  <th>{t('层 ID')}</th>
+                  <th>{t('大小')}</th>
+                  <th>{t('命令')}</th>
+                  <th>{t('标签')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -751,7 +752,7 @@ export default function ImageDetailPage() {
                       <td
                         className="history-cmd clickable"
                         onClick={() => toggleHistory(idx)}
-                        title={expanded ? '' : '点击展开'}
+                        title={expanded ? '' : t('点击展开')}
                       >
                         {expanded ? h.CreatedBy : truncate(h.CreatedBy || '-', 160)}
                       </td>
@@ -779,15 +780,15 @@ export default function ImageDetailPage() {
         {/* 删除单个标签确认框 */}
         <ConfirmDialog
           open={!!deleteTag}
-          title="删除标签"
+          title={t('删除标签')}
           message={
             deleteTag
               ? (image?.RepoTags?.length ?? 0) <= 1
-                ? `确定要删除镜像标签 "${deleteTag}" 吗？这是最后一个正常标签，删除后将不再显示该镜像条目。此操作不可恢复。`
-                : `确定要删除镜像标签 "${deleteTag}" 吗？仅移除该标签引用，不影响其他标签指向的镜像层。此操作不可恢复。`
+                ? t('确定要删除镜像标签 "{{deleteTag}}" 吗？这是最后一个正常标签，删除后将不再显示该镜像条目。此操作不可恢复。', { deleteTag })
+                : t('确定要删除镜像标签 "{{deleteTag}}" 吗？仅移除该标签引用，不影响其他标签指向的镜像层。此操作不可恢复。', { deleteTag })
               : ''
           }
-          confirmText="删除"
+          confirmText={t('删除')}
           danger
           loading={deletingTag}
           onConfirm={handleDeleteTag}

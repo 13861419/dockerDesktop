@@ -11,7 +11,7 @@ import Button from '../components/Button';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, post, del } from '../api/client';
+import { get, post, del, download } from '../api/client';
 import { translateNow as t } from '../i18n';
 import './approvals.less';
 
@@ -146,6 +146,17 @@ export default function Approvals() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
+  /** 按当前状态过滤导出审批记录 CSV */
+  const exportCsv = useCallback(async () => {
+    try {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      await download(`/api/approvals/export${qs}`, 'approvals.csv');
+      showToast(t('审批记录已导出'));
+    } catch (e: any) {
+      showToast(e?.message || t('导出失败：{{v1}}', { v1: e?.message || '' }), 'error');
+    }
+  }, [status, showToast]);
+
   /** 摘要统计（基于当前列表） */
   const counts = useMemo(() => {
     const c: Record<ApprovalStatus, number> = { pending: 0, approved: 0, rejected: 0, cancelled: 0 };
@@ -267,6 +278,9 @@ export default function Approvals() {
         ))}
         <Button variant="secondary" size="sm" onClick={load} loading={loading}>
           {t('刷新')}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={exportCsv}>
+          {t('导出CSV')}
         </Button>
         {admin && pendingIds.length > 0 && (
           <>

@@ -22,6 +22,7 @@ import {
   ImageItem,
   TransferBatchResponse,
 } from '../types';
+import { translateNow as t } from '../i18n';
 import './engines.less';
 
 /** 引擎 */
@@ -118,7 +119,7 @@ export default function EnginesPage() {
     } catch (e: any) {
       setAggregate([]);
       setTotals(null);
-      setAggError(e?.message || '加载聚合总览失败');
+      setAggError(e?.message || t('加载聚合总览失败'));
     } finally {
       setAggLoading(false);
     }
@@ -134,8 +135,8 @@ export default function EnginesPage() {
       setEngines(data?.engines || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '加载引擎失败');
-      showToast(e?.message || '加载引擎失败', 'error');
+      setLoadError(e?.message || t('加载引擎失败'));
+      showToast(e?.message || t('加载引擎失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -151,7 +152,7 @@ export default function EnginesPage() {
    */
   const openCreate = useCallback(() => {
     if (!canManage) {
-      showToast('仅管理员可新增引擎', 'error');
+      showToast(t('仅管理员可新增引擎'), 'error');
       return;
     }
     setEditing(null);
@@ -167,7 +168,7 @@ export default function EnginesPage() {
    */
   const openEdit = useCallback((engine: Engine) => {
     if (!canManage) {
-      showToast('仅管理员可编辑引擎', 'error');
+      showToast(t('仅管理员可编辑引擎'), 'error');
       return;
     }
     setEditing(engine);
@@ -182,8 +183,8 @@ export default function EnginesPage() {
    */
   const handleSubmit = useCallback(async () => {
     const err: FormError = {};
-    if (!name.trim()) err.name = '请输入引擎名称';
-    if (!endpoint.trim()) err.endpoint = '请输入端点（如 tcp://host:2375）';
+    if (!name.trim()) err.name = t('请输入引擎名称');
+    if (!endpoint.trim()) err.endpoint = t('请输入端点（如 tcp://host:2375）');
     setErrors(err);
     if (Object.keys(err).length) return;
 
@@ -191,18 +192,18 @@ export default function EnginesPage() {
     try {
       if (editing) {
         await put(`/api/engines/${editing.id}`, { name: name.trim(), endpoint: endpoint.trim() });
-        showToast('引擎已更新');
+        showToast(t('引擎已更新'));
       } else {
         const data = await post<{ ok: boolean; isCurrent: boolean }>('/api/engines', {
           name: name.trim(),
           endpoint: endpoint.trim(),
         });
-        showToast(`引擎已添加${data?.isCurrent ? '（已设为当前）' : ''}`);
+        showToast(t('引擎已添加{{v1}}', { v1: data?.isCurrent ? t('（已设为当前）') : '' }));
       }
       setModalOpen(false);
       load();
     } catch (e: any) {
-      showToast(e?.message || '保存失败', 'error');
+      showToast(e?.message || t('保存失败'), 'error');
     } finally {
       setSaving(false);
     }
@@ -215,16 +216,16 @@ export default function EnginesPage() {
   const handleSwitch = useCallback(
     async (engine: Engine) => {
       if (!canManage) {
-        showToast('仅管理员可切换引擎', 'error');
+        showToast(t('仅管理员可切换引擎'), 'error');
         return;
       }
       setSwitchingId(engine.id);
       try {
         await post(`/api/engines/${engine.id}/switch`);
-        showToast(`已切换到「${engine.name}」`);
+        showToast(t('已切换到「{{v1}}」', { v1: engine.name }));
         load();
       } catch (e: any) {
-        showToast(e?.message || '切换失败', 'error');
+        showToast(e?.message || t('切换失败'), 'error');
       } finally {
         setSwitchingId(null);
       }
@@ -237,18 +238,18 @@ export default function EnginesPage() {
    */
   const handleDelete = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可删除引擎', 'error');
+      showToast(t('仅管理员可删除引擎'), 'error');
       return;
     }
     if (!deleteTarget) return;
     setDeleting(true);
     try {
       await del(`/api/engines/${deleteTarget.id}`);
-      showToast('引擎已删除');
+      showToast(t('引擎已删除'));
       setDeleteTarget(null);
       load();
     } catch (e: any) {
-      showToast(e?.message || '删除失败', 'error');
+      showToast(e?.message || t('删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -265,11 +266,11 @@ export default function EnginesPage() {
    */
   const openTransfer = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可分发镜像', 'error');
+      showToast(t('仅管理员可分发镜像'), 'error');
       return;
     }
     if (!currentEngine) {
-      showToast('未检测到当前引擎，无法分发镜像', 'error');
+      showToast(t('未检测到当前引擎，无法分发镜像'), 'error');
       return;
     }
     const targets = engines.filter((e) => e.id !== currentEngine.id);
@@ -285,7 +286,7 @@ export default function EnginesPage() {
       if (data && data.length > 0) setTransferImage(imageName(data[0]));
     } catch (e: any) {
       setTransferImages([]);
-      showToast(e?.message || '加载镜像列表失败', 'error');
+      showToast(e?.message || t('加载镜像列表失败'), 'error');
     }
   }, [canManage, currentEngine, engines, showToast]);
 
@@ -295,12 +296,12 @@ export default function EnginesPage() {
   const handleTransferSubmit = useCallback(async () => {
     if (!currentEngine) return;
     if (!transferImage) {
-      showToast('请选择要分发的镜像', 'error');
+      showToast(t('请选择要分发的镜像'), 'error');
       return;
     }
     const targetEngineIds = Object.keys(selectedTargets).filter((id) => selectedTargets[id]);
     if (targetEngineIds.length === 0) {
-      showToast('请至少选择一个目标引擎', 'error');
+      showToast(t('请至少选择一个目标引擎'), 'error');
       return;
     }
     setTransferLoading(true);
@@ -311,9 +312,9 @@ export default function EnginesPage() {
         targetEngineIds,
       });
       setTransferResults(res || null);
-      showToast(res && res.okCount > 0 ? `分发完成：成功 ${res.okCount}，失败 ${res.failedCount || 0}` : '分发完成');
+      showToast(res && res.okCount > 0 ? t('分发完成：成功 {{v1}}，失败 {{v2}}', { v1: res.okCount, v2: res.failedCount || 0 }) : t('分发完成'));
     } catch (e: any) {
-      showToast(e?.message || '镜像分发失败', 'error');
+      showToast(e?.message || t('镜像分发失败'), 'error');
     } finally {
       setTransferLoading(false);
     }
@@ -332,66 +333,66 @@ export default function EnginesPage() {
   return (
     <div className="page">
       <div className="page__header">
-        <h1 className="page__title">Docker 引擎</h1>
-        <p className="page__desc">配置多个 Docker 引擎端点，并在其中切换</p>
+        <h1 className="page__title">{t('Docker 引擎')}</h1>
+        <p className="page__desc">{t('配置多个 Docker 引擎端点，并在其中切换')}</p>
       </div>
 
       <div className="toolbar">
-        <Button onClick={openCreate}>+ 新增引擎</Button>
-        <Button variant="ghost" onClick={load}>刷新</Button>
+        <Button onClick={openCreate}>{t('+ 新增引擎')}</Button>
+        <Button variant="ghost" onClick={load}>{t('刷新')}</Button>
       </div>
 
-      <Card title="跨引擎总览">
+      <Card title={t('跨引擎总览')}>
         {aggLoading ? (
           <SkeletonRows rows={3} />
         ) : aggError ? (
           <Empty
             kind="error"
-            title="加载聚合总览失败"
-            description={aggError || '请稍后重试'}
+            title={t('加载聚合总览失败')}
+            description={aggError || t('请稍后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={loadAggregate}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : aggregate.length === 0 ? (
-          <Empty title="暂无聚合数据" description="配置多个引擎后可在本区域查看跨引擎资源总览。" />
+          <Empty title={t('暂无聚合数据')} description={t('配置多个引擎后可在本区域查看跨引擎资源总览。')} />
         ) : (
           <>
             <div className="en-summary">
               <div className="en-summary__item">
-                <span className="en-summary__label">引擎总数</span>
+                <span className="en-summary__label">{t('引擎总数')}</span>
                 <span className="en-summary__value">{totalCount}</span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">在线数</span>
+                <span className="en-summary__label">{t('在线数')}</span>
                 <span className="en-summary__value">{onlineCount}</span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">容器（运行/总数）</span>
+                <span className="en-summary__label">{t('容器（运行/总数）')}</span>
                 <span className="en-summary__value en-summary__value--tiny">
                   {runningContainers}/{containerCount}
                 </span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">镜像</span>
+                <span className="en-summary__label">{t('镜像')}</span>
                 <span className="en-summary__value">{imgCount}</span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">卷</span>
+                <span className="en-summary__label">{t('卷')}</span>
                 <span className="en-summary__value">{volumeCount}</span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">网络</span>
+                <span className="en-summary__label">{t('网络')}</span>
                 <span className="en-summary__value">{networkCount}</span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">CPU 核数</span>
+                <span className="en-summary__label">{t('CPU 核数')}</span>
                 <span className="en-summary__value">{cpuTotal}</span>
               </div>
               <div className="en-summary__item">
-                <span className="en-summary__label">内存</span>
+                <span className="en-summary__label">{t('内存')}</span>
                 <span className="en-summary__value en-summary__value--tiny">{formatSize(memTotal)}</span>
               </div>
             </div>
@@ -402,10 +403,10 @@ export default function EnginesPage() {
                   <div className="en-card__head">
                     <span className="en-card__name">
                       {a.name}
-                      {a.isCurrent && <span className="en-badge en-badge--current">当前</span>}
+                      {a.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
                     </span>
                     <span className={`en-badge ${a.online ? 'en-badge--online' : 'en-badge--offline'}`}>
-                      {a.online ? '在线' : '离线'}
+                      {a.online ? t('在线') : t('离线')}
                     </span>
                   </div>
                   {a.online ? (
@@ -416,17 +417,17 @@ export default function EnginesPage() {
                       </div>
                       <div className="en-card__meta">
                         <span>CPU {a.resources?.nCPU ?? '-'}</span>
-                        <span>内存 {formatSize(a.resources?.memTotal)}</span>
+                        <span>{t('内存 {{v}}', { v: formatSize(a.resources?.memTotal) })}</span>
                       </div>
                       <div className="en-card__counts">
-                        <span>容器 {a.counts?.containers ?? 0}</span>
-                        <span>镜像 {a.counts?.images ?? 0}</span>
-                        <span>卷 {a.counts?.volumes ?? 0}</span>
-                        <span>网络 {a.counts?.networks ?? 0}</span>
+                        <span>{t('容器 {{v}}', { v: a.counts?.containers ?? 0 })}</span>
+                        <span>{t('镜像 {{v}}', { v: a.counts?.images ?? 0 })}</span>
+                        <span>{t('卷 {{v}}', { v: a.counts?.volumes ?? 0 })}</span>
+                        <span>{t('网络 {{v}}', { v: a.counts?.networks ?? 0 })}</span>
                       </div>
                     </>
                   ) : (
-                    <div className="en-card__error">{a.error || '引擎不在线'}</div>
+                    <div className="en-card__error">{a.error || t('引擎不在线')}</div>
                   )}
                 </div>
               ))}
@@ -441,24 +442,24 @@ export default function EnginesPage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="加载引擎失败"
-            description={loadError || '请稍后重试'}
+            title={t('加载引擎失败')}
+            description={loadError || t('请稍后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={load}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : engines.length === 0 ? (
-          <Empty title="尚未配置引擎" description="当前使用本机自动探测的默认 Docker 引擎。可新增引擎进行多引擎管理。" />
+          <Empty title={t('尚未配置引擎')} description={t('当前使用本机自动探测的默认 Docker 引擎。可新增引擎进行多引擎管理。')} />
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '26%' }}>名称</th>
-                <th style={{ width: '42%' }}>端点</th>
-                <th style={{ width: '14%' }}>状态</th>
-                <th style={{ width: '18%' }}>操作</th>
+                <th style={{ width: '26%' }}>{t('名称')}</th>
+                <th style={{ width: '42%' }}>{t('端点')}</th>
+                <th style={{ width: '14%' }}>{t('状态')}</th>
+                <th style={{ width: '18%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -467,20 +468,20 @@ export default function EnginesPage() {
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <strong>{e.name}</strong>
-                      {e.isCurrent && <span className="en-badge en-badge--current">当前</span>}
+                      {e.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
                     </div>
                   </td>
                   <td className="en-endpoint">{e.endpoint}</td>
                   <td>
                     <span className={`en-badge ${e.isCurrent ? 'en-badge--current' : 'en-badge--default'}`}>
-                      {e.isCurrent ? '使用中' : '备用'}
+                      {e.isCurrent ? t('使用中') : t('备用')}
                     </span>
                   </td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 6 }}>
                       {!e.isCurrent && (
                         <Button variant="secondary" size="sm" loading={switchingId === e.id} onClick={() => handleSwitch(e)}>
-                          设为当前
+                          {t('设为当前')}
                         </Button>
                       )}
                       <Button
@@ -490,18 +491,18 @@ export default function EnginesPage() {
                         disabled={!transferAvailable}
                         title={
                           !canManage
-                            ? '仅管理员可分发镜像'
+                            ? t('仅管理员可分发镜像')
                             : !currentEngine
-                              ? '未检测到当前引擎，无法分发'
+                              ? t('未检测到当前引擎，无法分发')
                               : canManage && transferAvailable
-                                ? '将当前引擎的镜像批量分发到其它引擎'
-                                : '需要至少两个引擎且当前引擎外存在其它引擎'
+                                ? t('将当前引擎的镜像批量分发到其它引擎')
+                                : t('需要至少两个引擎且当前引擎外存在其它引擎')
                         }
                       >
-                        分发镜像
+                        {t('分发镜像')}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(e)} disabled={!canManage}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(e)} disabled={!canManage}>删除</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(e)} disabled={!canManage}>{t('编辑')}</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(e)} disabled={!canManage}>{t('删除')}</Button>
                     </div>
                   </td>
                 </tr>
@@ -511,34 +512,34 @@ export default function EnginesPage() {
         )}
 
         <div className="en-hint" style={{ marginTop: 14 }}>
-          提示：默认（未配置任何引擎）时使用环境变量 DOCKER_HOST 或本机自动探测的引擎。
-          切换当前引擎后，容器、镜像、数据卷、网络、Compose、监控与事件流等能力均切到新引擎。
+          {t('提示：默认（未配置任何引擎）时使用环境变量 DOCKER_HOST 或本机自动探测的引擎。')}
+          {t('切换当前引擎后，容器、镜像、数据卷、网络、Compose、监控与事件流等能力均切到新引擎。')}
         </div>
       </Card>
 
       {/* 新增/编辑引擎弹窗 */}
       <Modal
         open={modalOpen}
-        title={editing ? `编辑引擎：${editing.name}` : '新增引擎'}
+        title={editing ? t('编辑引擎：{{v1}}', { v1: editing.name }) : t('新增引擎')}
         onClose={() => setModalOpen(false)}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button loading={saving} onClick={handleSubmit}>{editing ? '保存' : '新增'}</Button>
+            <Button variant="ghost" onClick={() => setModalOpen(false)}>{t('取消')}</Button>
+            <Button loading={saving} onClick={handleSubmit}>{editing ? t('保存') : t('新增')}</Button>
           </div>
         }
       >
-        <Field label="引擎名称" required error={errors.name}>
+        <Field label={t('引擎名称')} required error={errors.name}>
           <Input
             value={name}
             error={!!errors.name}
-            placeholder="如：服务器B"
+            placeholder={t('如：服务器B')}
             onChange={(e) => setName(e.target.value)}
             disabled={!canManage}
           />
         </Field>
         <Field
-          label="端点地址"
+          label={t('端点地址')}
           required
           error={errors.endpoint}
           hint="npipe:////./pipe/dockerDesktopLinuxEngine · tcp://host:2375 · unix:///var/run/docker.sock"
@@ -556,9 +557,9 @@ export default function EnginesPage() {
       {/* 删除确认 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除引擎"
-        message={`确定删除引擎「${deleteTarget?.name}」吗？`}
-        confirmText="删除"
+        title={t('删除引擎')}
+        message={t('确定删除引擎「{{v1}}」吗？', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -568,28 +569,28 @@ export default function EnginesPage() {
       {/* 批量镜像分发弹窗：以当前引擎为源，分发到其它引擎 */}
       <Modal
         open={transferOpen}
-        title="批量分发镜像"
+        title={t('批量分发镜像')}
         onClose={() => setTransferOpen(false)}
         width={640}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setTransferOpen(false)}>取消</Button>
-            <Button loading={transferLoading} onClick={handleTransferSubmit}>开始分发</Button>
+            <Button variant="ghost" onClick={() => setTransferOpen(false)}>{t('取消')}</Button>
+            <Button loading={transferLoading} onClick={handleTransferSubmit}>{t('开始分发')}</Button>
           </div>
         }
       >
         <p className="en-hint" style={{ marginBottom: 12 }}>
-          源：<strong>{currentEngine?.name || '-'}</strong>（当前引擎）
+          {t('源：')}<strong>{currentEngine?.name || '-'}</strong>{t('（当前引擎）')}
         </p>
 
-        <Field label="源镜像" required>
+        <Field label={t('源镜像')} required>
           <Select
             value={transferImage}
             onChange={(e) => setTransferImage(e.target.value)}
             disabled={transferImages.length === 0}
           >
             {transferImages.length === 0 ? (
-              <option value="">当前引擎暂无镜像</option>
+              <option value="">{t('当前引擎暂无镜像')}</option>
             ) : (
               transferImages.map((img) => (
                 <option key={img.Id} value={imageName(img)}>
@@ -600,24 +601,24 @@ export default function EnginesPage() {
           </Select>
         </Field>
 
-        <Field label="目标引擎（可多选）" required>
+        <Field label={t('目标引擎（可多选）')} required>
           {transferTargets.length === 0 ? (
-            <div className="en-hint">尚无可用目标引擎</div>
+            <div className="en-hint">{t('尚无可用目标引擎')}</div>
           ) : (
-            transferTargets.map((t) => (
-              <label
-                key={t.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!selectedTargets[t.id]}
-                  onChange={(e) =>
-                    setSelectedTargets((prev) => ({ ...prev, [t.id]: e.target.checked }))
-                  }
-                />
-                <span>{t.name}</span>
-                {t.isCurrent && <span className="en-badge en-badge--current">当前</span>}
+              transferTargets.map((tg) => (
+                <label
+                  key={tg.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!selectedTargets[tg.id]}
+                    onChange={(e) =>
+                      setSelectedTargets((prev) => ({ ...prev, [tg.id]: e.target.checked }))
+                    }
+                  />
+                  <span>{tg.name}</span>
+                  {tg.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
               </label>
             ))
           )}
@@ -626,8 +627,8 @@ export default function EnginesPage() {
         {transferResults && (
           <div style={{ marginTop: 12 }}>
             <div className="en-hint" style={{ marginBottom: 8 }}>
-              分发结果：成功 {transferResults.okCount}，失败 {transferResults.failedCount}，
-              共 {transferResults.total} 个目标
+              {t('分发结果：成功 {{ok}}，失败 {{fail}}，', { ok: transferResults.okCount, fail: transferResults.failedCount })}
+              {t('共 {{n}} 个目标', { n: transferResults.total })}
             </div>
             <div className="en-cards" style={{ gridTemplateColumns: '1fr' }}>
               {transferResults.results.map((r) => (
@@ -635,13 +636,13 @@ export default function EnginesPage() {
                   <div className="en-card__head">
                     <span className="en-card__name">{r.name}</span>
                     <span className={`en-badge ${r.ok ? 'en-badge--online' : 'en-badge--offline'}`}>
-                      {r.ok ? '成功' : '失败'}
+                      {r.ok ? t('成功') : t('失败')}
                     </span>
                   </div>
                   {r.ok ? (
-                    <div className="en-card__meta">{r.loaded ? `已加载：${r.loaded}` : '已完成'}</div>
+                    <div className="en-card__meta">{r.loaded ? t('已加载：{{v1}}', { v1: r.loaded }) : t('已完成')}</div>
                   ) : (
-                    <div className="en-card__error">{r.error || '分发失败'}</div>
+                    <div className="en-card__error">{r.error || t('分发失败')}</div>
                   )}
                 </div>
               ))}

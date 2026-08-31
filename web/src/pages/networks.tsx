@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
 import { NetworkItem, ContainerListItem } from '../types';
+import { translateNow as t } from '../i18n';
 import './networks.less';
 
 /** 网络 inspect 中连接容器条目（id → {Name, IPv4Address, Aliases}） */
@@ -172,7 +173,7 @@ function renderTopology(detail: NetworkInspect, list: ContainerListItem[]): Reac
   const netEdgeY = net.y + TOPO_NET_H / 2;
 
   return (
-    <svg className="topo" viewBox={`0 0 ${TOPO_WIDTH} ${TOPO_HEIGHT}`} role="img" aria-label="网络拓扑">
+    <svg className="topo" viewBox={`0 0 ${TOPO_WIDTH} ${TOPO_HEIGHT}`} role="img" aria-label={t('网络拓扑')}>
       {/* 网络节点到各容器节点的连接线 */}
       {nodes.map((n) => (
         <line
@@ -268,8 +269,8 @@ const checking = checkingAdmin;
       setNetworks(data || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '拉取网络列表失败');
-      showToast(e?.message || '拉取网络列表失败', 'error');
+      setLoadError(e?.message || t('拉取网络列表失败'));
+      showToast(e?.message || t('拉取网络列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -282,11 +283,11 @@ const checking = checkingAdmin;
   const handleCreate = useCallback(async () => {
     const netName = name.trim();
     if (!netName) {
-      showToast('请输入网络名称', 'error');
+      showToast(t('请输入网络名称'), 'error');
       return;
     }
     if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可创建网络', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可创建网络'), 'error');
       setCreateOpen(false);
       return;
     }
@@ -301,7 +302,7 @@ const checking = checkingAdmin;
         internal,
         ipv6,
       });
-      showToast('网络创建成功');
+      showToast(t('网络创建成功'));
       setCreateOpen(false);
       setName('');
       setDriver('bridge');
@@ -312,7 +313,7 @@ const checking = checkingAdmin;
       setIpv6(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '网络创建失败', 'error');
+      showToast(e?.message || t('网络创建失败'), 'error');
     } finally {
       setCreating(false);
     }
@@ -321,18 +322,18 @@ const checking = checkingAdmin;
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可删除网络', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可删除网络'), 'error');
       setDeleteTarget(null);
       return;
     }
     setDeleting(true);
     try {
       await del('/api/networks/' + encodeURIComponent(deleteTarget.Id));
-      showToast('网络删除成功');
+      showToast(t('网络删除成功'));
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '网络删除失败', 'error');
+      showToast(e?.message || t('网络删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -346,7 +347,7 @@ const checking = checkingAdmin;
    */
   const handlePrune = useCallback(async () => {
     if (checking) {
-      showToast('正在确认权限，请稍候', 'error');
+      showToast(t('正在确认权限，请稍候'), 'error');
       setPruneOpen(false);
       return;
     }
@@ -355,16 +356,16 @@ const checking = checkingAdmin;
       const res = await post<{ success: number; failed: number; approvalPending?: boolean }>('/api/networks/prune');
       setPruneOpen(false);
       if (res?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
         setRefreshKey((k) => k + 1);
       } else if ((res?.success ?? 0) > 0) {
-        showToast(`已清理 ${res.success} 个未使用网络${res.failed ? `，${res.failed} 个删除失败` : ''}`);
+        showToast(t('已清理 {{v1}} 个未使用网络{{v2}}', { v1: res.success, v2: res.failed ? t('，{{v3}} 个删除失败', { v3: res.failed }) : '' }));
         setRefreshKey((k) => k + 1);
       } else {
-        showToast('没有未使用的网络');
+        showToast(t('没有未使用的网络'));
       }
     } catch (e: any) {
-      showToast(e?.message || '清理未使用网络失败', 'error');
+      showToast(e?.message || t('清理未使用网络失败'), 'error');
     } finally {
       setPruning(false);
     }
@@ -378,7 +379,7 @@ const checking = checkingAdmin;
       const data = await get<ContainerListItem[]>('/api/containers', { all: true });
       setContainers(data || []);
     } catch (e: any) {
-      showToast(e?.message || '拉取容器列表失败', 'error');
+      showToast(e?.message || t('拉取容器列表失败'), 'error');
     }
   }, [showToast]);
 
@@ -398,7 +399,7 @@ const checking = checkingAdmin;
         const data = await get<NetworkInspect>('/api/networks/' + encodeURIComponent(net.Id));
         setDetailInfo(data);
       } catch (e: any) {
-        showToast(e?.message || '拉取网络详情失败', 'error');
+        showToast(e?.message || t('拉取网络详情失败'), 'error');
       } finally {
         setDetailLoading(false);
       }
@@ -423,7 +424,7 @@ const checking = checkingAdmin;
       const data = await get<NetworkInspect>('/api/networks/' + encodeURIComponent(detailTarget.Id));
       setDetailInfo(data);
     } catch (e: any) {
-      showToast(e?.message || '刷新网络详情失败', 'error');
+      showToast(e?.message || t('刷新网络详情失败'), 'error');
     } finally {
       setDetailLoading(false);
     }
@@ -435,11 +436,11 @@ const checking = checkingAdmin;
   const handleConnect = useCallback(async () => {
     if (!detailTarget) return;
     if (!canDelete || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '仅管理员可连接容器到网络', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可连接容器到网络'), 'error');
       return;
     }
     if (!connectContainer) {
-      showToast('请选择要连接的容器', 'error');
+      showToast(t('请选择要连接的容器'), 'error');
       return;
     }
     setConnecting(true);
@@ -448,12 +449,12 @@ const checking = checkingAdmin;
         container: connectContainer,
         ipv4Address: connectIpv4.trim() || undefined,
       });
-      showToast('容器连接成功');
+      showToast(t('容器连接成功'));
       setConnectContainer('');
       setConnectIpv4('');
       await refreshDetail();
     } catch (e: any) {
-      showToast(e?.message || '容器连接失败', 'error');
+      showToast(e?.message || t('容器连接失败'), 'error');
     } finally {
       setConnecting(false);
     }
@@ -467,7 +468,7 @@ const checking = checkingAdmin;
     async (containerId: string) => {
       if (!detailTarget) return;
       if (!canDelete || checking) {
-        showToast(checking ? '正在确认权限，请稍候' : '仅管理员可从网络断开容器', 'error');
+        showToast(checking ? t('正在确认权限，请稍候') : t('仅管理员可从网络断开容器'), 'error');
         return;
       }
       setDisconnectId(containerId);
@@ -475,10 +476,10 @@ const checking = checkingAdmin;
         await post('/api/networks/' + encodeURIComponent(detailTarget.Id) + '/disconnect', {
           container: containerId,
         });
-        showToast('容器已断开');
+        showToast(t('容器已断开'));
         await refreshDetail();
       } catch (e: any) {
-        showToast(e?.message || '断开容器失败', 'error');
+        showToast(e?.message || t('断开容器失败'), 'error');
       } finally {
         setDisconnectId(null);
       }
@@ -498,17 +499,17 @@ const checking = checkingAdmin;
   return (
     <div className="page">
       <Card
-        title="网络"
+        title={t('网络')}
         extra={
           <div className="toolbar">
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPrune}>
-              清理未使用
+              {t('清理未使用')}
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canDelete}>
-              新建网络
+              {t('新建网络')}
             </Button>
           </div>
         }
@@ -518,26 +519,26 @@ const checking = checkingAdmin;
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取网络列表失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('拉取网络列表失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchNetworks}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : networks.length === 0 ? (
-          <Empty title="暂无网络" description="点击右上角" />
+          <Empty title={t('暂无网络')} description={t('点击右上角')} />
         ) : (
           <table className="data-table">
             <thead>
               <tr>
-                <th>名称</th>
-                <th>驱动</th>
-                <th>作用域</th>
-                <th>子网</th>
-                <th>内部</th>
-                <th className="col-actions">操作</th>
+                <th>{t('名称')}</th>
+                <th>{t('驱动')}</th>
+                <th>{t('作用域')}</th>
+                <th>{t('子网')}</th>
+                <th>{t('内部')}</th>
+                <th className="col-actions">{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -556,15 +557,15 @@ const checking = checkingAdmin;
                   <td className="col-mono">{getSubnet(net)}</td>
                   <td>
                     <span className={`badge ${net.Internal ? 'badge--primary' : 'badge--muted'}`}>
-                      {net.Internal ? '是' : '否'}
+                      {net.Internal ? t('是') : t('否')}
                     </span>
                   </td>
                   <td className="col-actions">
                     <Button variant="ghost" size="sm" onClick={() => handleOpenDetail(net)}>
-                      详情
+                      {t('详情')}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(net)} disabled={!canDelete}>
-                      删除
+                      {t('删除')}
                     </Button>
                   </td>
                 </tr>
@@ -577,44 +578,44 @@ const checking = checkingAdmin;
       {/* 新建网络弹窗 */}
       <Modal
         open={createOpen}
-        title="新建网络"
+        title={t('新建网络')}
         onClose={() => setCreateOpen(false)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleCreate} loading={creating}>
-              创建
+              {t('创建')}
             </Button>
           </>
         }
       >
-        <Field label="名称" required>
+        <Field label={t('名称')} required>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="网络名称"
+            placeholder={t('网络名称')}
             autoFocus
           />
         </Field>
-        <Field label="驱动" hint="默认 bridge">
+        <Field label={t('驱动')} hint={t('默认 bridge')}>
           <Input value={driver} onChange={(e) => setDriver(e.target.value)} placeholder="bridge" />
         </Field>
-        <Field label="子网" hint="例如：172.20.0.0/16（可选）">
-          <Input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="子网网段" />
+        <Field label={t('子网')} hint={t('例如：172.20.0.0/16（可选）')}>
+          <Input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder={t('子网网段')} />
         </Field>
-        <Field label="网关" hint="例如：172.20.0.1（可选，需配合子网使用）">
-          <Input value={gateway} onChange={(e) => setGateway(e.target.value)} placeholder="网关地址" />
+        <Field label={t('网关')} hint={t('例如：172.20.0.1（可选，需配合子网使用）')}>
+          <Input value={gateway} onChange={(e) => setGateway(e.target.value)} placeholder={t('网关地址')} />
         </Field>
-        <Field label="IP 段（IPRange）" hint="例如：172.20.0.0/24（可选，限制自动分配范围）">
+        <Field label={t('IP 段（IPRange）')} hint={t('例如：172.20.0.0/24（可选，限制自动分配范围）')}>
           <Input
             value={ipRange}
             onChange={(e) => setIpRange(e.target.value)}
-            placeholder="IP 段网段"
+            placeholder={t('IP 段网段')}
           />
         </Field>
-        <Field label="内部网络">
+        <Field label={t('内部网络')}>
           <label className="create-checkbox">
             <input
               type="checkbox"
@@ -622,10 +623,10 @@ const checking = checkingAdmin;
               onChange={(e) => setInternal(e.target.checked)}
               disabled={creating}
             />
-            限制外部访问，仅允许本网络内互通
+            {t('限制外部访问，仅允许本网络内互通')}
           </label>
         </Field>
-        <Field label="启用 IPv6">
+        <Field label={t('启用 IPv6')}>
           <label className="create-checkbox">
             <input
               type="checkbox"
@@ -633,7 +634,7 @@ const checking = checkingAdmin;
               onChange={(e) => setIpv6(e.target.checked)}
               disabled={creating}
             />
-            为网络启用 IPv6 地址
+            {t('为网络启用 IPv6 地址')}
           </label>
         </Field>
       </Modal>
@@ -641,9 +642,9 @@ const checking = checkingAdmin;
       {/* 删除网络确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除网络"
-        message={`确定要删除网络 "${deleteTarget?.Name}" 吗？`}
-        confirmText="删除"
+        title={t('删除网络')}
+        message={t('确定要删除网络 "{{v1}}" 吗？', { v1: deleteTarget?.Name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -653,9 +654,9 @@ const checking = checkingAdmin;
       {/* 清理未使用网络确认框 */}
       <ConfirmDialog
         open={pruneOpen}
-        title="清理未使用网络"
-        message="将批量断开并删除所有未被任何容器连接的网络，此操作不可恢复。是否继续？"
-        confirmText="清理"
+        title={t('清理未使用网络')}
+        message={t('将批量断开并删除所有未被任何容器连接的网络，此操作不可恢复。是否继续？')}
+        confirmText={t('清理')}
         danger
         loading={pruning}
         onConfirm={handlePrune}
@@ -665,16 +666,16 @@ const checking = checkingAdmin;
       {/* 网络详情弹窗 */}
       <Modal
         open={!!detailTarget}
-        title="网络详情"
+        title={t('网络详情')}
         onClose={handleCloseDetail}
         width={680}
         footer={
           <>
             <Button variant="secondary" onClick={handleCloseDetail}>
-              关闭
+              {t('关闭')}
             </Button>
             <Button variant="secondary" onClick={refreshDetail} loading={detailLoading}>
-              刷新
+              {t('刷新')}
             </Button>
           </>
         }
@@ -690,14 +691,14 @@ const checking = checkingAdmin;
                 className={`detail-tabs__btn ${!topoView ? 'detail-tabs__btn--active' : ''}`}
                 onClick={() => setTopoView(false)}
               >
-                列表
+                {t('列表')}
               </button>
               <button
                 type="button"
                 className={`detail-tabs__btn ${topoView ? 'detail-tabs__btn--active' : ''}`}
                 onClick={() => setTopoView(true)}
               >
-                拓扑
+                {t('拓扑')}
               </button>
             </div>
 
@@ -708,7 +709,7 @@ const checking = checkingAdmin;
               <>
             <div className="detail">
               <div className="detail__row">
-                <span className="detail__label">名称</span>
+                <span className="detail__label">{t('名称')}</span>
                 <span className="detail__value">{detailInfo?.Name || detailTarget?.Name}</span>
               </div>
               <div className="detail__row">
@@ -716,41 +717,41 @@ const checking = checkingAdmin;
                 <span className="detail__value detail__mono">{detailInfo?.Id || detailTarget?.Id}</span>
               </div>
               <div className="detail__row">
-                <span className="detail__label">驱动</span>
+                <span className="detail__label">{t('驱动')}</span>
                 <span className="detail__value">{detailInfo?.Driver || detailTarget?.Driver}</span>
               </div>
               <div className="detail__row">
-                <span className="detail__label">作用域</span>
+                <span className="detail__label">{t('作用域')}</span>
                 <span className="detail__value">{detailInfo?.Scope || detailTarget?.Scope}</span>
               </div>
               <div className="detail__row">
-                <span className="detail__label">IPAM 驱动</span>
+                <span className="detail__label">{t('IPAM 驱动')}</span>
                 <span className="detail__value">{detailInfo?.IPAM?.Driver || '-'}</span>
               </div>
               <div className="detail__row">
-                <span className="detail__label">子网</span>
+                <span className="detail__label">{t('子网')}</span>
                 <span className="detail__value detail__mono">
                   {detailInfo?.IPAM?.Config?.[0]?.Subnet ||
                     (detailTarget ? getSubnet(detailTarget) : '-')}
                 </span>
               </div>
               <div className="detail__row">
-                <span className="detail__label">内部</span>
+                <span className="detail__label">{t('内部')}</span>
                 <span className="detail__value">
-                  {(detailInfo?.Internal ?? detailTarget?.Internal) ? '是' : '否'}
+                  {(detailInfo?.Internal ?? detailTarget?.Internal) ? t('是') : t('否')}
                 </span>
               </div>
               <div className="detail__row">
-                <span className="detail__label">启用IPv6</span>
+                <span className="detail__label">{t('启用IPv6')}</span>
                 <span className="detail__value">
-                  {(detailInfo?.EnableIPv6 ?? detailTarget?.EnableIPv6) ? '是' : '否'}
+                  {(detailInfo?.EnableIPv6 ?? detailTarget?.EnableIPv6) ? t('是') : t('否')}
                 </span>
               </div>
             </div>
 
             <div className="detail-section">
               <div className="detail-section__header">
-                <span>已连接容器</span>
+                <span>{t('已连接容器')}</span>
                 <span className="detail-section__count">
                   {detailInfo?.Containers ? Object.keys(detailInfo.Containers).length : 0} 个
                 </span>
@@ -759,10 +760,10 @@ const checking = checkingAdmin;
                 <table className="net-cont-table">
                   <thead>
                     <tr>
-                      <th>名称</th>
-                      <th>IPv4 地址</th>
-                      <th>别名</th>
-                      <th className="col-actions">操作</th>
+                      <th>{t('名称')}</th>
+                      <th>{t('IPv4 地址')}</th>
+                      <th>{t('别名')}</th>
+                      <th className="col-actions">{t('操作')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -785,7 +786,7 @@ const checking = checkingAdmin;
                             disabled={!canDelete}
                             onClick={() => handleDisconnect(c.Name || cid)}
                           >
-                            断开
+                            {t('断开')}
                           </Button>
                         </td>
                       </tr>
@@ -793,22 +794,22 @@ const checking = checkingAdmin;
                   </tbody>
                 </table>
               ) : (
-                <Empty title="暂无已连接容器" description="通过下方表单连接容器" />
+                <Empty title={t('暂无已连接容器')} description={t('通过下方表单连接容器')} />
               )}
             </div>
 
             <div className="detail-section">
               <div className="detail-section__header">
-                <span>连接容器</span>
+                <span>{t('连接容器')}</span>
               </div>
               {connectedIds.size > 0 ? (
                 <div className="connect-form">
-                  <Field label="选择容器">
+                  <Field label={t('选择容器')}>
                     <Select
                       value={connectContainer}
                       onChange={(e) => setConnectContainer(e.target.value)}
                     >
-                      <option value="">请选择容器</option>
+                      <option value="">{t('请选择容器')}</option>
                       {containers
                         .filter((c) => !connectedIds.has(c.Id) && !connectedIds.has(c.Names[0] || ''))
                         .map((c) => {
@@ -821,21 +822,21 @@ const checking = checkingAdmin;
                         })}
                     </Select>
                   </Field>
-                  <Field label="IPv4 地址" hint="可选，不填则由 Docker 自动分配">
+                  <Field label={t('IPv4 地址')} hint={t('可选，不填则由 Docker 自动分配')}>
                     <Input
                       value={connectIpv4}
                       onChange={(e) => setConnectIpv4(e.target.value)}
-                      placeholder="例如：172.20.0.10"
+                      placeholder={t('例如：172.20.0.10')}
                     />
                   </Field>
                   <div className="connect-form__actions">
                     <Button onClick={handleConnect} loading={connecting} disabled={!canDelete}>
-                      连接
+                      {t('连接')}
                     </Button>
                   </div>
                 </div>
               ) : (
-                <Empty title="暂无可连接容器" description="当前全部容器已连接至该网络" />
+                <Empty title={t('暂无可连接容器')} description={t('当前全部容器已连接至该网络')} />
               )}
             </div>
               </>

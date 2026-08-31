@@ -13,7 +13,7 @@ const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-approvalstats-'))
 process.env.DOCKERMANAGER_DATA = tmpData;
 
 import { initStorage, closeDb, getDb } from '../src/storage';
-import { getApprovalStats } from '../src/approvals';
+import { getApprovalStats, listAllApprovals, renderApprovalsCsv } from '../src/approvals';
 
 before(() => {
   initStorage();
@@ -81,4 +81,21 @@ test('getApprovalStats: 天数窗口过滤旧记录', () => {
   // 收窄到 1 天：只剩 3 条最近的
   const narrow = getApprovalStats(1);
   assert.strictEqual(narrow.totals.total, 5);
+});
+
+test('renderApprovalsCsv: 表头、行数与字段转义', () => {
+  // 含逗号/引号的 result 字段应被双引号包裹转义
+  getDb()
+    .prepare('INSERT INTO approvals (username, action_type, target, payload, status, reason, result, created_at, decided_at, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('carol', 'image.delete', 'nginx', '{}', 'approved', 'test', '执行成功：已删除, 版本 "v1"', Date.now(), Date.now(), 'admin');
+  const rows = listAllApprovals();
+  assert.ok(rows.length >= 6);
+  const csv = renderApprovalsCsv(rows);
+  assert.ok(csv.startsWith('\ufeff'));
+  assert.ok(csv.includes('提交人,动作类型,目标,状态'));
+  // 含逗号/引号的 result 应被双引号包裹且内部引号翻倍
+  assert.ok(csv.includes('"执行成功：已删除, 版本 ""v1"""'));
+  // 状态过滤
+  const pendingOnly = listAllApprovals(undefined, 'pending');
+  assert.ok(pendingOnly.every((r) => r.status === 'pending'));
 });

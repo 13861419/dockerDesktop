@@ -300,6 +300,64 @@ export function getApprovalStats(days = 30): {
 }
 
 /**
+ * 导出用：按状态查询全部审批记录（不受列表 200 条截断限制）
+ * @param username 限定提交人（非管理员查自己）
+ */
+export function listAllApprovals(username?: string, status?: string): ApprovalRow[] {
+  expireStaleApprovals();
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (username) {
+    conditions.push('username = ?');
+    params.push(username);
+  }
+  if (status) {
+    conditions.push('status = ?');
+    params.push(status);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  return getDb()
+    .prepare(
+      `SELECT id, username, action_type, target, payload, status, reason, result, created_at, decided_at, decided_by
+       FROM approvals ${where} ORDER BY id DESC`,
+    )
+    .all(...params) as unknown as ApprovalRow[];
+}
+
+/** CSV 字段转义（含引号/逗号/换行的字段用双引号包裹） */
+function csvField(v: unknown): string {
+  const s = String(v ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * 渲染审批记录 CSV（UTF-8 BOM 便于 Excel 识别中文）
+ */
+export function renderApprovalsCsv(rows: ApprovalRow[]): string {
+  const esc = (v: unknown) => csvField(v);
+  const header = 'ID,提交人,动作类型,目标,状态,理由,结果,提交时间,审批时间,审批人';
+  const body = rows
+    .map((r) =>
+      [
+        r.id,
+        r.username,
+        r.action_type,
+        r.target,
+        r.status,
+        r.reason,
+        r.result || '',
+        new Date(r.created_at).toISOString(),
+        r.decided_at ? new Date(r.decided_at).toISOString() : '',
+        r.decided_by || '',
+      ]
+        .map(esc)
+        .join(','),
+    )
+    .join('\n');
+  return `\ufeff${header}\n${body}\n`;
+}
+
+/**
  * 审批决定：批准则立即执行目标操作，拒绝仅留档
  * @returns 执行结果（批准时）
  * @throws 审批记录不存在/状态不对时抛 404/400

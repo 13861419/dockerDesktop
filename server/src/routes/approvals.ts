@@ -16,6 +16,8 @@ import {
   cancelApproval,
   hasExecutor,
   getApprovalStats,
+  listAllApprovals,
+  renderApprovalsCsv,
 } from '../approvals';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
@@ -58,6 +60,25 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const days = Number(req.query.days) || 30;
     res.json(getApprovalStats(days));
+  }),
+);
+
+/**
+ * GET /api/approvals/export?status=
+ * 导出审批记录为 CSV（管理员导出全部，其他用户仅导出自己提交的）
+ */
+router.get(
+  '/export',
+  asyncHandler(async (req: Request, res: Response) => {
+    const role = res.locals.user?.role;
+    const isAdmin = role === 'admin';
+    const status = String(req.query.status || '') || undefined;
+    const rows = listAllApprovals(isAdmin ? undefined : res.locals.username, status);
+    const csv = renderApprovalsCsv(rows);
+    logOperation(res.locals.username, '导出审批记录', '审批', '', `共 ${rows.length} 条`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="approvals-${Date.now()}.csv"`);
+    res.send(csv);
   }),
 );
 
