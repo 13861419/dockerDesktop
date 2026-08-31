@@ -18,13 +18,14 @@ import { isAdmin } from '../api/auth';
 import { AppStoreItem } from '../types';
 // 复用的状态徽标样式（已安装应用需展示运行/停止状态）
 import '../components/StatusBadge.less';
+import { translateNow as t } from '../i18n';
 import './appstore.less';
 
 /** 视图过滤类型：全部 或 仅已安装 */
 type ViewFilter = 'all' | 'installed';
 
 /** 应用商店页标题说明 */
-const APP_LABEL = '应用商店';
+const APP_LABEL = t('应用商店');
 
 /**
  * 应用商店页面组件
@@ -122,8 +123,8 @@ export default function AppStorePage() {
       setApps(data?.apps || []);
       setLoadError('');
     } catch (e: any) {
-      setLoadError(e?.message || '拉取应用商店失败');
-      showToast(e?.message || '拉取应用商店失败', 'error');
+      setLoadError(e?.message || t('拉取应用商店失败'));
+      showToast(e?.message || t('拉取应用商店失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -231,7 +232,7 @@ export default function AppStorePage() {
   const handleInstall = useCallback(
     async (app: AppStoreItem) => {
       if (!canManage) {
-        showToast('仅管理员可安装应用', 'error');
+        showToast(t('仅管理员可安装应用'), 'error');
         setInstallTarget(null);
         return;
       }
@@ -265,13 +266,13 @@ export default function AppStorePage() {
           volumes,
           source: installSource || undefined,
         });
-        showToast(`${app.name} 安装成功`);
+        showToast(t('{{v1}} 安装成功', { v1: app.name }));
         setInstallTarget(null);
         setInstallSource('');
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
         // 409 应用已安装，也提示并刷新保持一致
-        showToast(e?.message || `${app.name} 安装失败`, 'error');
+        showToast(e?.message || t('{{v1}} 安装失败', { v1: app.name }), 'error');
         setRefreshKey((k) => k + 1);
       } finally {
         setInstallingId(null);
@@ -286,7 +287,7 @@ export default function AppStorePage() {
   const handleUninstall = useCallback(async () => {
     if (!uninstallTarget) return;
     if (!canManage) {
-      showToast('仅管理员可卸载应用', 'error');
+      showToast(t('仅管理员可卸载应用'), 'error');
       setUninstallTarget(null);
       return;
     }
@@ -294,11 +295,11 @@ export default function AppStorePage() {
     setUninstalling(true);
     try {
       await post(`/api/appstore/${target.id}/uninstall`);
-      showToast(`${target.name} 卸载成功`);
+      showToast(t('{{v1}} 卸载成功', { v1: target.name }));
       setUninstallTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || `${target.name} 卸载失败`, 'error');
+      showToast(e?.message || t('{{v1}} 卸载失败', { v1: target.name }), 'error');
     } finally {
       setUninstalling(false);
     }
@@ -311,7 +312,7 @@ export default function AppStorePage() {
    */
   const openParams = useCallback((app: AppStoreItem) => {
     if (!canManage) {
-      showToast('仅管理员可修改应用参数', 'error');
+      showToast(t('仅管理员可修改应用参数'), 'error');
       return;
     }
     const init: Record<string, string> = {};
@@ -334,7 +335,7 @@ export default function AppStorePage() {
   const handleUpdateParams = useCallback(async () => {
     if (!paramsTarget) return;
     if (!canManage) {
-      showToast('仅管理员可修改应用参数', 'error');
+      showToast(t('仅管理员可修改应用参数'), 'error');
       setParamsTarget(null);
       return;
     }
@@ -353,11 +354,11 @@ export default function AppStorePage() {
         env: paramsEnv,
         ports,
       });
-      showToast(`${paramsTarget.name} 参数已更新`);
+      showToast(t('{{v1}} 参数已更新', { v1: paramsTarget.name }));
       setParamsTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || `${paramsTarget.name} 参数更新失败`, 'error');
+      showToast(e?.message || t('{{v1}} 参数更新失败', { v1: paramsTarget.name }), 'error');
     } finally {
       setUpdatingParams(false);
     }
@@ -370,7 +371,7 @@ export default function AppStorePage() {
   const handleUpgrade = useCallback(
     async (app: AppStoreItem) => {
       if (!canManage) {
-        showToast('仅管理员可升级应用', 'error');
+        showToast(t('仅管理员可升级应用'), 'error');
         return;
       }
       setActionId(app.id);
@@ -380,10 +381,10 @@ export default function AppStorePage() {
         );
         // 优先展示返回的版本号，否则展示拉取/重建的输出摘要
         const detail = res?.version || res?.pullOut || res?.upOut;
-        showToast(`${app.name} 升级成功${detail ? `：${detail}` : ''}`);
+        showToast(t('{{v1}} 升级成功{{v2}}', { v1: app.name, v2: detail ? '：' + detail : '' }));
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || `${app.name} 升级失败`, 'error');
+        showToast(e?.message || t('{{v1}} 升级失败', { v1: app.name }), 'error');
       } finally {
         setActionId(null);
       }
@@ -399,17 +400,17 @@ export default function AppStorePage() {
   const handleControl = useCallback(
     async (app: AppStoreItem, action: 'start' | 'stop' | 'restart') => {
       if (!canManage) {
-        showToast('仅管理员可操作应用', 'error');
+        showToast(t('仅管理员可操作应用'), 'error');
         return;
       }
       setActionId(app.id);
-      const actionText = action === 'start' ? '启动' : action === 'stop' ? '停止' : '重启';
+      const actionText = action === 'start' ? t('启动') : action === 'stop' ? t('停止') : t('重启');
       try {
         await post(`/api/appstore/${app.id}/${action}`);
-        showToast(`${app.name} 已${actionText}`);
+        showToast(t('{{v1}} 已{{actionText}}', { v1: app.name, actionText }));
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || `${app.name} ${actionText}失败`, 'error');
+        showToast(e?.message || t('{{v1}} {{actionText}}失败', { v1: app.name, actionText }), 'error');
         setRefreshKey((k) => k + 1);
       } finally {
         setActionId(null);
@@ -488,15 +489,15 @@ export default function AppStorePage() {
    */
   const handleCustomSave = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可管理自定义应用', 'error');
+      showToast(t('仅管理员可管理自定义应用'), 'error');
       return;
     }
     if (!customName.trim()) {
-      showToast('请填写应用名称', 'error');
+      showToast(t('请填写应用名称'), 'error');
       return;
     }
     if (!customImage.trim()) {
-      showToast('请填写镜像名称', 'error');
+      showToast(t('请填写镜像名称'), 'error');
       return;
     }
     setCustomSaving(true);
@@ -542,17 +543,17 @@ export default function AppStorePage() {
       if (customTarget) {
         // 编辑：PUT 更新现有自定义应用
         await put(`/api/appstore/custom/${customTarget.id}`, body);
-        showToast(`${customTarget.name} 更新成功`);
+        showToast(t('{{v1}} 更新成功', { v1: customTarget.name }));
       } else {
         // 新增：POST 创建自定义应用
         await post('/api/appstore/custom', body);
-        showToast('自定义应用创建成功');
+        showToast(t('自定义应用创建成功'));
       }
       setCustomModalOpen(false);
       setCustomTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '保存自定义应用失败', 'error');
+      showToast(e?.message || t('保存自定义应用失败'), 'error');
     } finally {
       setCustomSaving(false);
     }
@@ -564,7 +565,7 @@ export default function AppStorePage() {
   const handleCustomDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canManage) {
-      showToast('仅管理员可删除自定义应用', 'error');
+      showToast(t('仅管理员可删除自定义应用'), 'error');
       setDeleteTarget(null);
       return;
     }
@@ -572,11 +573,11 @@ export default function AppStorePage() {
     setDeleting(true);
     try {
       await del(`/api/appstore/custom/${target.id}`);
-      showToast(`自定义应用 "${target.name}" 已删除`);
+      showToast(t('自定义应用 "{{v1}}" 已删除', { v1: target.name }));
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '删除自定义应用失败', 'error');
+      showToast(e?.message || t('删除自定义应用失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -619,7 +620,7 @@ export default function AppStorePage() {
           {app.installed && (
             <span className={`appstore-card__status status-badge ${app.running ? 'status--running' : 'status--stopped'}`}>
               <span className="status-badge__dot" />
-              {app.running ? '运行中' : '已停止'}
+              {app.running ? t('运行中') : t('已停止')}
             </span>
           )}
         </div>
@@ -640,21 +641,21 @@ export default function AppStorePage() {
 
         {compose && app.services && app.services.length > 0 && (
           <div className="appstore-card__tags">
-            <span className="appstore-card__tag appstore-card__tag--suite">套件</span>
-            <span className="appstore-card__tag">{app.services.length} 个服务</span>
+            <span className="appstore-card__tag appstore-card__tag--suite">{t('套件')}</span>
+            <span className="appstore-card__tag">{t('{{n}} 个服务', { n: app.services.length })}</span>
           </div>
         )}
 
         {portInfo && (
           <div className="appstore-card__ports">
-            <span className="appstore-card__ports-label">端口</span>
+            <span className="appstore-card__ports-label">{t('端口')}</span>
             <span className="appstore-card__ports-value">{portInfo}</span>
           </div>
         )}
 
         <div className="appstore-card__actions">
           <Button variant="ghost" size="sm" onClick={() => setDetailTarget(app)}>
-            详情
+            {t('详情')}
           </Button>
           {isCustomApp(app) && canManage && (
             <>
@@ -664,7 +665,7 @@ export default function AppStorePage() {
                 disabled={customSaving || !!deleting}
                 onClick={() => openCustomEdit(app)}
               >
-                编辑
+                {t('编辑')}
               </Button>
               <Button
                 variant="danger"
@@ -672,7 +673,7 @@ export default function AppStorePage() {
                 disabled={customSaving || !!deleting}
                 onClick={() => setDeleteTarget(app)}
               >
-                删除
+                {t('删除')}
               </Button>
             </>
           )}
@@ -687,7 +688,7 @@ export default function AppStorePage() {
                   loading={actionId === app.id}
                   onClick={() => handleControl(app, app.running ? 'stop' : 'start')}
                 >
-                  {app.running ? '停止' : '启动'}
+                  {app.running ? t('停止') : t('启动')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -695,7 +696,7 @@ export default function AppStorePage() {
                   disabled={!!actionId || !canManage}
                   onClick={() => handleControl(app, 'restart')}
                 >
-                  重启
+                  {t('重启')}
                 </Button>
                 <Button
                   variant="secondary"
@@ -704,7 +705,7 @@ export default function AppStorePage() {
                   loading={updatingParams}
                   onClick={() => openParams(app)}
                 >
-                  参数
+                  {t('参数')}
                 </Button>
                 <Button
                   variant="secondary"
@@ -713,7 +714,7 @@ export default function AppStorePage() {
                   loading={actionId === app.id}
                   onClick={() => handleUpgrade(app)}
                 >
-                  升级
+                  {t('升级')}
                 </Button>
                 <Button
                   variant="danger"
@@ -721,7 +722,7 @@ export default function AppStorePage() {
                   onClick={() => setUninstallTarget(app)}
                   disabled={installing || !canManage}
                 >
-                  卸载
+                  {t('卸载')}
                 </Button>
               </>
             ) : (
@@ -736,7 +737,7 @@ export default function AppStorePage() {
                     handleControl(app, app.running ? 'stop' : 'start')
                   }
                 >
-                  {app.running ? '停止' : '启动'}
+                  {app.running ? t('停止') : t('启动')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -744,7 +745,7 @@ export default function AppStorePage() {
                   disabled={!!actionId || !canManage}
                   onClick={() => handleControl(app, 'restart')}
                 >
-                  重启
+                  {t('重启')}
                 </Button>
                 <Button
                   variant="danger"
@@ -752,7 +753,7 @@ export default function AppStorePage() {
                   onClick={() => setUninstallTarget(app)}
                   disabled={installing || !canManage}
                 >
-                  卸载
+                  {t('卸载')}
                 </Button>
               </>
             )
@@ -764,7 +765,7 @@ export default function AppStorePage() {
               disabled={!canManage || (!!installingId && !installing)}
               onClick={() => openInstall(app)}
             >
-              {installing ? '安装中' : '安装'}
+              {installing ? t('安装中') : t('安装')}
             </Button>
           )}
         </div>
@@ -780,7 +781,7 @@ export default function AppStorePage() {
           <div className="appstore-toolbar">
             <input
               className="input appstore-search"
-              placeholder="搜索应用名称或描述"
+              placeholder={t('搜索应用名称或描述')}
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />
@@ -789,7 +790,7 @@ export default function AppStorePage() {
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              <option value="all">全部分类</option>
+              <option value="all">{t('全部分类')}</option>
               {categories.map((c) => (
                 <option value={c} key={c}>
                   {c}
@@ -801,28 +802,28 @@ export default function AppStorePage() {
                 className={`appstore-tabs__item ${view === 'all' ? 'is-active' : ''}`}
                 onClick={() => setView('all')}
               >
-                全部应用
+                {t('全部应用')}
               </button>
               <button
                 className={`appstore-tabs__item ${view === 'installed' ? 'is-active' : ''}`}
                 onClick={() => setView('installed')}
               >
-                已安装 ({installedCount})
+                {t('已安装 (')}{installedCount})
               </button>
             </div>
             {canManage && (
               <Button variant="primary" size="sm" onClick={openCustomAdd}>
-                新增自定义应用
+                {t('新增自定义应用')}
               </Button>
             )}
             <Button variant="secondary" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
-              刷新
+              {t('刷新')}
             </Button>
           </div>
         }
       >
         <div className="appstore-tip">
-          从内置目录一键安装常用应用，安装后将以容器方式运行于 Docker 引擎中。
+          {t('从内置目录一键安装常用应用，安装后将以容器方式运行于 Docker 引擎中。')}
         </div>
 
         {loading ? (
@@ -830,18 +831,18 @@ export default function AppStorePage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取应用商店失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('拉取应用商店失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchAppStore}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : filteredApps.length === 0 ? (
           <Empty
-            title={view === 'installed' ? '暂无已安装应用' : '未找到匹配应用'}
-            description={view === 'installed' ? '前往"全部应用"安装所需应用' : '尝试更换搜索关键字'}
+            title={view === 'installed' ? t('暂无已安装应用') : t('未找到匹配应用')}
+            description={view === 'installed' ? t('前往"全部应用"安装所需应用') : t('尝试更换搜索关键字')}
           />
         ) : (
           <div className="appstore-grid">{filteredApps.map(renderAppCard)}</div>
@@ -851,7 +852,7 @@ export default function AppStorePage() {
       {/* 应用详情弹窗 */}
       <Modal
         open={!!detailTarget}
-        title={detailTarget ? `${detailTarget.icon} ${detailTarget.name}` : '应用详情'}
+        title={detailTarget ? `${detailTarget.icon} ${detailTarget.name}` : t('应用详情')}
         onClose={() => setDetailTarget(null)}
         width={520}
       >
@@ -861,13 +862,13 @@ export default function AppStorePage() {
       {/* 安装前环境变量配置弹窗 */}
       <Modal
         open={!!installTarget}
-        title={installTarget ? `安装 ${installTarget.name}` : '应用配置'}
+        title={installTarget ? t('安装 {{v1}}', { v1: installTarget.name }) : t('应用配置')}
         onClose={() => !installing && setInstallTarget(null)}
         width={540}
         footer={
           <div className="appstore-install__footer">
             <Button variant="ghost" size="md" onClick={() => setInstallTarget(null)} disabled={installing}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -876,7 +877,7 @@ export default function AppStorePage() {
               disabled={!installTarget || !canManage}
               onClick={() => installTarget && handleInstall(installTarget)}
             >
-              确认安装
+              {t('确认安装')}
             </Button>
           </div>
         }
@@ -895,11 +896,11 @@ export default function AppStorePage() {
         {installTarget && (
           <div className="appstore-install__source">
             <Field
-              label="镜像源"
-              hint="留空则依次尝试所有启用的镜像源，单个不可用会自动切换（多源容灾）"
+              label={t('镜像源')}
+              hint={t('留空则依次尝试所有启用的镜像源，单个不可用会自动切换（多源容灾）')}
             >
               <Select value={installSource} onChange={(e) => setInstallSource(e.target.value)}>
-                <option value="">使用默认镜像源</option>
+                <option value="">{t('使用默认镜像源')}</option>
                 {sources
                   .filter((s) => s.enabled !== false)
                   .map((s) => (
@@ -916,13 +917,13 @@ export default function AppStorePage() {
       {/* 自定义应用新增/编辑弹窗 */}
       <Modal
         open={customModalOpen}
-        title={customTarget ? `编辑自定义应用 ${customTarget.name}` : '新增自定义应用'}
+        title={customTarget ? t('编辑自定义应用 {{v1}}', { v1: customTarget.name }) : t('新增自定义应用')}
         onClose={() => !customSaving && setCustomModalOpen(false)}
         width={600}
         footer={
           <div className="appstore-install__footer">
             <Button variant="ghost" size="md" onClick={() => setCustomModalOpen(false)} disabled={customSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -931,7 +932,7 @@ export default function AppStorePage() {
               disabled={!canManage}
               onClick={handleCustomSave}
             >
-              {customTarget ? '保存修改' : '创建应用'}
+              {customTarget ? t('保存修改') : t('创建应用')}
             </Button>
           </div>
         }
@@ -961,13 +962,13 @@ export default function AppStorePage() {
       {/* 卸载确认框 */}
       <ConfirmDialog
         open={!!uninstallTarget}
-        title="卸载应用"
+        title={t('卸载应用')}
         message={
           uninstallTarget && isCompose(uninstallTarget)
-            ? `确定要卸载套件 "${uninstallTarget.name}" 吗？将停止并删除其全部容器，且会删除该项目关联的数据卷（compose down -v）与项目目录。`
-            : `确定要卸载应用 "${uninstallTarget?.name || ''}" 吗？将停止并删除其对应的容器。`
+            ? t('确定要卸载套件 "{{v1}}" 吗？将停止并删除其全部容器，且会删除该项目关联的数据卷（compose down -v）与项目目录。', { v1: uninstallTarget.name })
+            : t('确定要卸载应用 "{{v1}}" 吗？将停止并删除其对应的容器。', { v1: uninstallTarget?.name || '' })
         }
-        confirmText="卸载"
+        confirmText={t('卸载')}
         danger
         loading={uninstalling}
         onConfirm={handleUninstall}
@@ -977,9 +978,9 @@ export default function AppStorePage() {
       {/* 自定义应用删除确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除自定义应用"
-        message={`确定要删除自定义应用 "${deleteTarget?.name || ''}" 吗？删除后该应用定义将不可恢复。`}
-        confirmText="删除"
+        title={t('删除自定义应用')}
+        message={t('确定要删除自定义应用 "{{v1}}" 吗？删除后该应用定义将不可恢复。', { v1: deleteTarget?.name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleCustomDelete}
@@ -1006,42 +1007,42 @@ function AppStoreDetail({ app }: { app: AppStoreItem }) {
     <div className="appstore-detail">
       <div className="appstore-detail__desc">{app.description}</div>
       {compose && (
-        <div className="appstore-detail__suite">多容器套件</div>
+        <div className="appstore-detail__suite">{t('多容器套件')}</div>
       )}
       <div className="appstore-detail__row">
-        <span className="appstore-detail__label">镜像</span>
+        <span className="appstore-detail__label">{t('镜像')}</span>
         <span className="appstore-detail__value appstore-detail__value--mono">{app.image}</span>
       </div>
       {app.version && (
         <div className="appstore-detail__row">
-          <span className="appstore-detail__label">版本</span>
+          <span className="appstore-detail__label">{t('版本')}</span>
           <span className="appstore-detail__value">{app.version}</span>
         </div>
       )}
       {app.running !== undefined ? (
         // 已安装：展示实时运行/停止状态
         <div className="appstore-detail__row">
-          <span className="appstore-detail__label">状态</span>
-          <span className="appstore-detail__value">{app.running ? '运行中' : '已停止'}</span>
+          <span className="appstore-detail__label">{t('状态')}</span>
+          <span className="appstore-detail__value">{app.running ? t('运行中') : t('已停止')}</span>
         </div>
       ) : (
         compose && (
           <div className="appstore-detail__row">
-            <span className="appstore-detail__label">状态</span>
-            <span className="appstore-detail__value">套件</span>
+            <span className="appstore-detail__label">{t('状态')}</span>
+            <span className="appstore-detail__value">{t('套件')}</span>
           </div>
         )
       )}
       {app.port && (
         <div className="appstore-detail__row">
-          <span className="appstore-detail__label">端口</span>
+          <span className="appstore-detail__label">{t('端口')}</span>
           <span className="appstore-detail__value appstore-detail__value--mono">{app.port}</span>
         </div>
       )}
 
       {compose && app.services && app.services.length > 0 && (
         <>
-          <div className="appstore-detail__section">服务列表</div>
+          <div className="appstore-detail__section">{t('服务列表')}</div>
           <div className="appstore-detail__list">
             {app.services.map((s, i) => (
               <div className="appstore-detail__line" key={i}>
@@ -1055,13 +1056,13 @@ function AppStoreDetail({ app }: { app: AppStoreItem }) {
 
       {app.ports && app.ports.length > 0 && (
         <>
-          <div className="appstore-detail__section">端口映射</div>
+          <div className="appstore-detail__section">{t('端口映射')}</div>
           <div className="appstore-detail__list">
             {app.ports.map((p, i) => (
               <div className="appstore-detail__line" key={i}>
-                <span className="appstore-detail__list-key">容器 {p.container}</span>
+                <span className="appstore-detail__list-key">{t('容器 {{name}}', { name: p.container })}</span>
                 <span className="appstore-detail__list-val">
-                  宿主机 {(p.host ?? p.container)}
+                  {t('宿主机')} {(p.host ?? p.container)}
                 </span>
               </div>
             ))}
@@ -1071,7 +1072,7 @@ function AppStoreDetail({ app }: { app: AppStoreItem }) {
 
       {app.env && app.env.length > 0 && (
         <>
-          <div className="appstore-detail__section">环境变量</div>
+          <div className="appstore-detail__section">{t('环境变量')}</div>
           <div className="appstore-detail__list">
             {app.env.map((e, i) => (
               <div className="appstore-detail__line" key={i}>
@@ -1088,12 +1089,12 @@ function AppStoreDetail({ app }: { app: AppStoreItem }) {
 
       {app.volumes && app.volumes.length > 0 && (
         <>
-          <div className="appstore-detail__section">挂载卷</div>
+          <div className="appstore-detail__section">{t('挂载卷')}</div>
           <div className="appstore-detail__list">
             {app.volumes.map((v, i) => (
               <div className="appstore-detail__line" key={i}>
                 <span className="appstore-detail__list-key">{v.container}</span>
-                <span className="appstore-detail__list-val">{v.host ?? '自动命名卷'}</span>
+                <span className="appstore-detail__list-val">{v.host ?? t('自动命名卷')}</span>
               </div>
             ))}
           </div>
@@ -1101,7 +1102,7 @@ function AppStoreDetail({ app }: { app: AppStoreItem }) {
       )}
 
       {!hasDetail && app.running === undefined && (
-        <div className="appstore-detail__empty">该应用无额外配置。</div>
+        <div className="appstore-detail__empty">{t('该应用无额外配置。')}</div>
       )}
     </div>
   );
@@ -1218,11 +1219,11 @@ function InstallConfigPanel({
     <div className="appstore-install">
       <div className="appstore-install__tip">
         {compose
-          ? '多容器套件，卷已由模板配置，安装时将使用以下环境变量与端口映射。'
-          : '安装后将使用以下环境变量、端口映射与挂载卷创建容器，可在此调整默认配置。'}
+          ? t('多容器套件，卷已由模板配置，安装时将使用以下环境变量与端口映射。')
+          : t('安装后将使用以下环境变量、端口映射与挂载卷创建容器，可在此调整默认配置。')}
       </div>
       {envList.length === 0 ? (
-        <div className="appstore-install__none">该应用无需配置环境变量，将使用默认配置安装。</div>
+        <div className="appstore-install__none">{t('该应用无需配置环境变量，将使用默认配置安装。')}</div>
       ) : (
         <div className="appstore-install__fields">
           {envList.map((e) => (
@@ -1242,28 +1243,28 @@ function InstallConfigPanel({
         </div>
       )}
 
-      <div className="appstore-install__sec">端口映射</div>
+      <div className="appstore-install__sec">{t('端口映射')}</div>
       {installPorts.length === 0 ? (
-        <div className="appstore-install__none">该应用无需映射端口，或可手动添加。</div>
+        <div className="appstore-install__none">{t('该应用无需映射端口，或可手动添加。')}</div>
       ) : (
         <div className="appstore-install__rows">
           {installPorts.map((p, index) => (
             <div className="appstore-install__row" key={index}>
-              <Field label="容器端口" className="appstore-install__cell">
+              <Field label={t('容器端口')} className="appstore-install__cell">
                 <Input
                   value={p.container}
                   placeholder="8080"
                   onChange={(ev) => updatePort(index, 'container', ev.target.value)}
                 />
               </Field>
-              <Field label="宿主机端口" className="appstore-install__cell">
+              <Field label={t('宿主机端口')} className="appstore-install__cell">
                 <Input
                   value={p.host}
-                  placeholder="可空"
+                  placeholder={t('可空')}
                   onChange={(ev) => updatePort(index, 'host', ev.target.value)}
                 />
               </Field>
-              <Field label="协议" className="appstore-install__cell appstore-install__cell--proto">
+              <Field label={t('协议')} className="appstore-install__cell appstore-install__cell--proto">
                 <Select
                   value={p.protocol}
                   onChange={(ev) => updatePort(index, 'protocol', ev.target.value)}
@@ -1273,7 +1274,7 @@ function InstallConfigPanel({
                 </Select>
               </Field>
               <Button variant="ghost" size="sm" onClick={() => removePort(index)}>
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -1281,27 +1282,27 @@ function InstallConfigPanel({
       )}
       <div className="appstore-install__add">
         <Button variant="secondary" size="sm" onClick={addPort}>
-          + 添加端口
+          {t('+ 添加端口')}
         </Button>
       </div>
 
       {!compose && (
         <>
-          <div className="appstore-install__sec">挂载卷</div>
+          <div className="appstore-install__sec">{t('挂载卷')}</div>
           {installVolumes.length === 0 ? (
-            <div className="appstore-install__none">该应用无需挂载卷，或可手动添加。</div>
+            <div className="appstore-install__none">{t('该应用无需挂载卷，或可手动添加。')}</div>
           ) : (
             <div className="appstore-install__rows">
               {installVolumes.map((v, index) => (
                 <div className="appstore-install__row" key={index}>
-                  <Field label="来源" className="appstore-install__cell">
+                  <Field label={t('来源')} className="appstore-install__cell">
                     <Input
                       value={v.source}
-                      placeholder="宿主机路径或卷名"
+                      placeholder={t('宿主机路径或卷名')}
                       onChange={(ev) => updateVolume(index, 'source', ev.target.value)}
                     />
                   </Field>
-                  <Field label="容器路径" className="appstore-install__cell">
+                  <Field label={t('容器路径')} className="appstore-install__cell">
                     <Input
                       value={v.target}
                       placeholder="/data"
@@ -1314,10 +1315,10 @@ function InstallConfigPanel({
                       checked={v.readonly}
                       onChange={(ev) => updateVolume(index, 'readonly', ev.target.checked)}
                     />
-                    只读
+                    {t('只读')}
                   </label>
                   <Button variant="ghost" size="sm" onClick={() => removeVolume(index)}>
-                    删除
+                    {t('删除')}
                   </Button>
                 </div>
               ))}
@@ -1325,7 +1326,7 @@ function InstallConfigPanel({
           )}
           <div className="appstore-install__add">
             <Button variant="secondary" size="sm" onClick={addVolume}>
-              + 添加挂载
+              {t('+ 添加挂载')}
             </Button>
           </div>
         </>
@@ -1471,42 +1472,42 @@ function CustomAppForm({
   return (
     <div className="appstore-install">
       <div className="appstore-install__tip">
-        定义一个镜像应用，保存后将出现在应用商店网格中，可像内置应用一样安装/卸载。
+        {t('定义一个镜像应用，保存后将出现在应用商店网格中，可像内置应用一样安装/卸载。')}
       </div>
 
       <div className="appstore-install__fields">
-        <Field label="应用名称" required>
+        <Field label={t('应用名称')} required>
           <Input
             value={name}
-            placeholder="如：MyApp"
+            placeholder={t('如：MyApp')}
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label="镜像名称" required hint="如：nginx:latest">
+        <Field label={t('镜像名称')} required hint={t('如：nginx:latest')}>
           <Input
             value={image}
-            placeholder="镜像名:标签"
+            placeholder={t('镜像名:标签')}
             onChange={(e) => setImage(e.target.value)}
           />
         </Field>
-        <Field label="分类">
+        <Field label={t('分类')}>
           <Input
             value={category}
-            placeholder="如：数据库 / 开发工具（留空为“自定义”）"
+            placeholder={t('如：数据库 / 开发工具（留空为“自定义”）')}
             onChange={(e) => setCategory(e.target.value)}
           />
         </Field>
-        <Field label="图标" hint="使用一个 emoji 作为图标">
+        <Field label={t('图标')} hint={t('使用一个 emoji 作为图标')}>
           <Input value={icon} placeholder="📦" onChange={(e) => setIcon(e.target.value)} />
         </Field>
-        <Field label="描述">
+        <Field label={t('描述')}>
           <Input
             value={description}
-            placeholder="简要描述该应用"
+            placeholder={t('简要描述该应用')}
             onChange={(e) => setDescription(e.target.value)}
           />
         </Field>
-        <Field label="标签" hint="多个标签用空格或逗号分隔">
+        <Field label={t('标签')} hint={t('多个标签用空格或逗号分隔')}>
           <Input
             value={tags}
             placeholder="web proxy http"
@@ -1515,36 +1516,36 @@ function CustomAppForm({
         </Field>
       </div>
 
-      <div className="appstore-install__sec">环境变量</div>
+      <div className="appstore-install__sec">{t('环境变量')}</div>
       {customEnv.length === 0 ? (
-        <div className="appstore-install__none">暂无环境变量，可手动添加。</div>
+        <div className="appstore-install__none">{t('暂无环境变量，可手动添加。')}</div>
       ) : (
         <div className="appstore-install__rows">
           {customEnv.map((e, index) => (
             <div className="appstore-install__row" key={index}>
-              <Field label="键" className="appstore-install__cell">
+              <Field label={t('键')} className="appstore-install__cell">
                 <Input
                   value={e.key}
                   placeholder="KEY"
                   onChange={(ev) => updateEnvRow(index, 'key', ev.target.value)}
                 />
               </Field>
-              <Field label="值" className="appstore-install__cell">
+              <Field label={t('值')} className="appstore-install__cell">
                 <Input
                   value={e.value}
-                  placeholder="默认值"
+                  placeholder={t('默认值')}
                   onChange={(ev) => updateEnvRow(index, 'value', ev.target.value)}
                 />
               </Field>
-              <Field label="说明" className="appstore-install__cell">
+              <Field label={t('说明')} className="appstore-install__cell">
                 <Input
                   value={e.desc}
-                  placeholder="可空"
+                  placeholder={t('可空')}
                   onChange={(ev) => updateEnvRow(index, 'desc', ev.target.value)}
                 />
               </Field>
               <Button variant="ghost" size="sm" onClick={() => removeEnvRow(index)}>
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -1552,32 +1553,32 @@ function CustomAppForm({
       )}
       <div className="appstore-install__add">
         <Button variant="secondary" size="sm" onClick={addEnvRow}>
-          + 添加环境变量
+          {t('+ 添加环境变量')}
         </Button>
       </div>
 
-      <div className="appstore-install__sec">端口映射</div>
+      <div className="appstore-install__sec">{t('端口映射')}</div>
       {customPorts.length === 0 ? (
-        <div className="appstore-install__none">暂无端口映射，可手动添加。</div>
+        <div className="appstore-install__none">{t('暂无端口映射，可手动添加。')}</div>
       ) : (
         <div className="appstore-install__rows">
           {customPorts.map((p, index) => (
             <div className="appstore-install__row" key={index}>
-              <Field label="容器端口" className="appstore-install__cell">
+              <Field label={t('容器端口')} className="appstore-install__cell">
                 <Input
                   value={p.container}
                   placeholder="8080"
                   onChange={(ev) => updatePortRow(index, 'container', ev.target.value)}
                 />
               </Field>
-              <Field label="宿主机端口" className="appstore-install__cell">
+              <Field label={t('宿主机端口')} className="appstore-install__cell">
                 <Input
                   value={p.host}
-                  placeholder="可空"
+                  placeholder={t('可空')}
                   onChange={(ev) => updatePortRow(index, 'host', ev.target.value)}
                 />
               </Field>
-              <Field label="协议" className="appstore-install__cell appstore-install__cell--proto">
+              <Field label={t('协议')} className="appstore-install__cell appstore-install__cell--proto">
                 <Select
                   value={p.protocol}
                   onChange={(ev) => updatePortRow(index, 'protocol', ev.target.value)}
@@ -1587,7 +1588,7 @@ function CustomAppForm({
                 </Select>
               </Field>
               <Button variant="ghost" size="sm" onClick={() => removePortRow(index)}>
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -1595,25 +1596,25 @@ function CustomAppForm({
       )}
       <div className="appstore-install__add">
         <Button variant="secondary" size="sm" onClick={addPortRow}>
-          + 添加端口
+          {t('+ 添加端口')}
         </Button>
       </div>
 
-      <div className="appstore-install__sec">挂载卷</div>
+      <div className="appstore-install__sec">{t('挂载卷')}</div>
       {customVolumes.length === 0 ? (
-        <div className="appstore-install__none">暂无挂载卷，可手动添加。</div>
+        <div className="appstore-install__none">{t('暂无挂载卷，可手动添加。')}</div>
       ) : (
         <div className="appstore-install__rows">
           {customVolumes.map((v, index) => (
             <div className="appstore-install__row" key={index}>
-              <Field label="来源" className="appstore-install__cell">
+              <Field label={t('来源')} className="appstore-install__cell">
                 <Input
                   value={v.source}
-                  placeholder="宿主机路径或卷名"
+                  placeholder={t('宿主机路径或卷名')}
                   onChange={(ev) => updateVolumeRow(index, 'source', ev.target.value)}
                 />
               </Field>
-              <Field label="容器路径" className="appstore-install__cell">
+              <Field label={t('容器路径')} className="appstore-install__cell">
                 <Input
                   value={v.target}
                   placeholder="/data"
@@ -1626,10 +1627,10 @@ function CustomAppForm({
                   checked={v.readonly}
                   onChange={(ev) => updateVolumeRow(index, 'readonly', ev.target.checked)}
                 />
-                只读
+                {t('只读')}
               </label>
               <Button variant="ghost" size="sm" onClick={() => removeVolumeRow(index)}>
-                删除
+                {t('删除')}
               </Button>
             </div>
           ))}
@@ -1637,7 +1638,7 @@ function CustomAppForm({
       )}
       <div className="appstore-install__add">
         <Button variant="secondary" size="sm" onClick={addVolumeRow}>
-          + 添加挂载
+          {t('+ 添加挂载')}
         </Button>
       </div>
     </div>

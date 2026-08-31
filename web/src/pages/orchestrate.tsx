@@ -20,6 +20,7 @@ import Modal from '../components/Modal';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import StatusBadge from '../components/StatusBadge';
+import { translateNow as t } from '../i18n';
 import './orchestrates.less';
 
 /** 单容器依赖配置项（对齐 /api/orchestrate/dependencies 返回结构） */
@@ -234,8 +235,8 @@ export default function OrchestratePage() {
       setLoadError('');
       await loadDeps();
     } catch (e: any) {
-      setLoadError(e?.message || '获取容器列表失败');
-      showToast(e?.message || '获取容器列表失败', 'error');
+      setLoadError(e?.message || t('获取容器列表失败'));
+      showToast(e?.message || t('获取容器列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -250,7 +251,7 @@ export default function OrchestratePage() {
    */
   const handleRefresh = async () => {
     await load();
-    showToast('已刷新');
+    showToast(t('已刷新'));
   };
 
   /**
@@ -261,7 +262,7 @@ export default function OrchestratePage() {
    */
   const toggleEnabled = async (id: string, name: string, enabled: boolean) => {
     if (!canManage) {
-      showToast('仅管理员可修改编排配置', 'error');
+      showToast(t('仅管理员可修改编排配置'), 'error');
       return;
     }
     // 未配置过的容器首次开启时 deps 为空数组
@@ -270,10 +271,10 @@ export default function OrchestratePage() {
     setTogglingId(id);
     try {
       await put(`/api/orchestrate/dependencies/${id}`, { deps, enabled });
-      showToast(`已${enabled ? '启用' : '停用'}「${name}」的启动编排`);
+      showToast(t('已{{v1}}「{{name}}」的启动编排', { v1: enabled ? t('启用') : t('停用'), name }));
       await loadDeps();
     } catch (e: any) {
-      showToast(e?.message || '更新编排配置失败', 'error');
+      showToast(e?.message || t('更新编排配置失败'), 'error');
       await loadDeps();
     } finally {
       setTogglingId(null);
@@ -287,7 +288,7 @@ export default function OrchestratePage() {
    */
   const openEdit = (id: string, name: string) => {
     if (!canManage) {
-      showToast('仅管理员可编辑依赖配置', 'error');
+      showToast(t('仅管理员可编辑依赖配置'), 'error');
       return;
     }
     const current = depMap[id];
@@ -303,7 +304,7 @@ export default function OrchestratePage() {
   const confirmEdit = async () => {
     if (!editTarget) return;
     if (!canManage) {
-      showToast('仅管理员可编辑依赖配置', 'error');
+      showToast(t('仅管理员可编辑依赖配置'), 'error');
       setEditOpen(false);
       return;
     }
@@ -313,11 +314,11 @@ export default function OrchestratePage() {
     setEditSaving(true);
     try {
       await put(`/api/orchestrate/dependencies/${editTarget.id}`, { deps: editDeps, enabled });
-      showToast(`已保存「${editTarget.name}」的依赖配置`);
+      showToast(t('已保存「{{v1}}」的依赖配置', { v1: editTarget.name }));
       setEditOpen(false);
       await loadDeps();
     } catch (e: any) {
-      showToast(e?.message || '保存依赖配置失败', 'error');
+      showToast(e?.message || t('保存依赖配置失败'), 'error');
     } finally {
       setEditSaving(false);
     }
@@ -329,18 +330,18 @@ export default function OrchestratePage() {
   const clearEdit = async () => {
     if (!editTarget) return;
     if (!canManage) {
-      showToast('仅管理员可清除依赖配置', 'error');
+      showToast(t('仅管理员可清除依赖配置'), 'error');
       setEditOpen(false);
       return;
     }
     setEditSaving(true);
     try {
       await del(`/api/orchestrate/dependencies/${editTarget.id}`);
-      showToast(`已清除「${editTarget.name}」的依赖配置`);
+      showToast(t('已清除「{{v1}}」的依赖配置', { v1: editTarget.name }));
       setEditOpen(false);
       await loadDeps();
     } catch (e: any) {
-      showToast(e?.message || '清除依赖配置失败', 'error');
+      showToast(e?.message || t('清除依赖配置失败'), 'error');
     } finally {
       setEditSaving(false);
     }
@@ -373,7 +374,7 @@ export default function OrchestratePage() {
    */
   const runAction = async (action: 'start' | 'stop' | 'restart') => {
     if (!canManage) {
-      showToast('仅管理员可执行一键编排', 'error');
+      showToast(t('仅管理员可执行一键编排'), 'error');
       return;
     }
     setRunningAction(action);
@@ -382,8 +383,8 @@ export default function OrchestratePage() {
         // 重启返回嵌套的 stop / start 两阶段结果
         const res = await post<RestartResult>('/api/orchestrate/restart');
         const phases: OrchestratePhase[] = [];
-        const stopPhase = toPhase(res?.stop, '停止阶段');
-        const startPhase = toPhase(res?.start, '启动阶段');
+        const stopPhase = toPhase(res?.stop, t('停止阶段'));
+        const startPhase = toPhase(res?.start, t('启动阶段'));
         if (stopPhase) phases.push(stopPhase);
         if (startPhase) phases.push(startPhase);
         setResult({
@@ -394,7 +395,7 @@ export default function OrchestratePage() {
         });
       } else {
         const res = await post<PhasePayload>(`/api/orchestrate/${action}`);
-        const label = action === 'start' ? '一键启动' : '一键停止';
+        const label = action === 'start' ? t('一键启动') : t('一键停止');
         const phase = toPhase(res, label);
         setResult({
           ok: !!res?.ok,
@@ -404,7 +405,7 @@ export default function OrchestratePage() {
         });
       }
     } catch (e: any) {
-      showToast(`编排${action === 'start' ? '启动' : action === 'stop' ? '停止' : '重启'}失败：${e?.message || '未知错误'}`, 'error');
+      showToast(t('编排{{v1}}失败：{{v2}}', { v1: action === 'start' ? t('启动') : action === 'stop' ? t('停止') : t('重启'), v2: e?.message || t('未知错误') }), 'error');
     } finally {
       setRunningAction(null);
     }
@@ -428,7 +429,7 @@ export default function OrchestratePage() {
       setHistoryTotal(res?.total ?? 0);
       setHistoryOffset(offset);
     } catch (e: any) {
-      showToast(e?.message || '加载编排历史失败', 'error');
+      showToast(e?.message || t('加载编排历史失败'), 'error');
     } finally {
       setHistoryLoading(false);
     }
@@ -499,12 +500,12 @@ export default function OrchestratePage() {
    */
   const handleRetryClick = (item: HistoryItem) => {
     if (!canManage) {
-      showToast('仅管理员可重试失败项', 'error');
+      showToast(t('仅管理员可重试失败项'), 'error');
       return;
     }
     const entries = collectFailed(item);
     if (entries.length === 0) {
-      showToast('该次执行没有可重试的失败项', 'error');
+      showToast(t('该次执行没有可重试的失败项'), 'error');
       return;
     }
     setRetryConfirm({ item, entries });
@@ -516,7 +517,7 @@ export default function OrchestratePage() {
   const confirmRetry = async () => {
     if (!retryConfirm) return;
     if (!canManage) {
-      showToast('仅管理员可重试失败项', 'error');
+      showToast(t('仅管理员可重试失败项'), 'error');
       return;
     }
     const { item, entries } = retryConfirm;
@@ -539,13 +540,13 @@ export default function OrchestratePage() {
         success += res?.success ?? 0;
         fail += res?.fail ?? 0;
       }
-      showToast(`重试完成：成功 ${success}，失败 ${fail}`, fail > 0 ? 'error' : 'success');
+      showToast(t('重试完成：成功 {{success}}，失败 {{fail}}', { success, fail }), fail > 0 ? 'error' : 'success');
       // 刷新容器列表与历史，保持最新状态
       await load();
       await loadHistory(historyOffset);
       setRetryConfirm(null);
     } catch (e: any) {
-      showToast(e?.message || '重试失败项失败', 'error');
+      showToast(e?.message || t('重试失败项失败'), 'error');
     } finally {
       setRetrySaving(false);
       setRetryingId(null);
@@ -555,15 +556,15 @@ export default function OrchestratePage() {
   return (
     <div className="orchestrates-page">
       <Card
-        title="容器启动编排"
+        title={t('容器启动编排')}
         extra={
           <div className="orchestrates-page__toolbar">
-            <span className="orchestrates-page__total">共 {list.length} 个容器</span>
+            <span className="orchestrates-page__total">{t('共 {{n}} 个容器', { n: list.length })}</span>
             <Button variant="secondary" size="sm" onClick={handleRefresh}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="secondary" size="sm" onClick={openHistory}>
-              历史
+              {t('历史')}
             </Button>
             <Button
               variant="primary"
@@ -572,7 +573,7 @@ export default function OrchestratePage() {
               disabled={!canManage || busy}
               onClick={() => runAction('start')}
             >
-              一键启动
+              {t('一键启动')}
             </Button>
             <Button
               variant="secondary"
@@ -581,7 +582,7 @@ export default function OrchestratePage() {
               disabled={!canManage || busy}
               onClick={() => runAction('stop')}
             >
-              一键停止
+              {t('一键停止')}
             </Button>
             <Button
               variant="secondary"
@@ -590,7 +591,7 @@ export default function OrchestratePage() {
               disabled={!canManage || busy}
               onClick={() => runAction('restart')}
             >
-              一键重启
+              {t('一键重启')}
             </Button>
           </div>
         }
@@ -600,25 +601,25 @@ export default function OrchestratePage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="加载容器列表失败"
-            description={loadError || '请检查后重试'}
+            title={t('加载容器列表失败')}
+            description={loadError || t('请检查后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={load}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : list.length === 0 ? (
-          <Empty kind="empty" title="暂无容器" description="容器未创建或已被删除" />
+          <Empty kind="empty" title={t('暂无容器')} description={t('容器未创建或已被删除')} />
         ) : (
           <div className="orchestrates__table">
             <table>
               <thead>
                 <tr>
-                  <th className="col-enabled">启用</th>
-                  <th>容器名</th>
-                  <th>依赖（需先启动）</th>
-                  <th className="col-actions">操作</th>
+                  <th className="col-enabled">{t('启用')}</th>
+                  <th>{t('容器名')}</th>
+                  <th>{t('依赖（需先启动）')}</th>
+                  <th className="col-actions">{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -653,11 +654,11 @@ export default function OrchestratePage() {
                       <td>
                         {!enabled ? (
                           <div className="orchestrates__deps">
-                            <span className="orchestrates__deps__disabled">未启用编排</span>
+                            <span className="orchestrates__deps__disabled">{t('未启用编排')}</span>
                           </div>
                         ) : depNames.length === 0 ? (
                           <div className="orchestrates__deps">
-                            <span className="orchestrates__deps__disabled">无依赖（最先启动）</span>
+                            <span className="orchestrates__deps__disabled">{t('无依赖（最先启动）')}</span>
                           </div>
                         ) : (
                           <div className="orchestrates__deps">
@@ -676,10 +677,10 @@ export default function OrchestratePage() {
                           disabled={!canManage || busy}
                           onClick={() => openEdit(c.Id, name)}
                         >
-                          编辑依赖
+                          {t('编辑依赖')}
                         </Button>
                         <span className="orchestrates__edit-hint">
-                          {otherContainers.length} 个可依赖容器
+                          {t('{{n}} 个可依赖容器', { n: otherContainers.length })}
                         </span>
                       </td>
                     </tr>
@@ -694,7 +695,7 @@ export default function OrchestratePage() {
       {/* 依赖结果弹窗：多选其它容器作为依赖 */}
       <Modal
         open={editOpen}
-        title={editTarget ? `编辑「${editTarget.name}」的启动依赖` : '编辑依赖'}
+        title={editTarget ? t('编辑「{{v1}}」的启动依赖', { v1: editTarget.name }) : t('编辑依赖')}
         onClose={() => !editSaving && setEditOpen(false)}
         width={560}
         footer={
@@ -706,26 +707,26 @@ export default function OrchestratePage() {
               disabled={!canManage}
               onClick={clearEdit}
             >
-              清除配置
+              {t('清除配置')}
             </Button>
             <span style={{ flex: 1 }} />
             <Button variant="ghost" size="md" onClick={() => setEditOpen(false)} disabled={editSaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={editSaving} onClick={confirmEdit}>
-              保存
+              {t('保存')}
             </Button>
           </div>
         }
       >
         <div className="orchestrates__dep-tip">
-          选择需要在「{editTarget?.name}」之前启动的其它容器（即其启动依赖）。依赖容器需先就绪，当前容器才会启动。
+          {t('选择需要在「{{name}}」之前启动的其它容器（即其启动依赖）。依赖容器需先就绪，当前容器才会启动。', { name: editTarget?.name || '' })}
         </div>
         <div className="orchestrates__dep-pick">
           {(() => {
             const others = list.filter((x) => x.Id !== editTarget?.id);
             if (others.length === 0) {
-              return <div className="orchestrates__dep-pick__empty">当前没有可选的其它容器</div>;
+              return <div className="orchestrates__dep-pick__empty">{t('当前没有可选的其它容器')}</div>;
             }
             return others.map((x) => {
               const id = x.Id;
@@ -787,24 +788,24 @@ export default function OrchestratePage() {
       {/* 重试失败项确认弹窗 */}
       <Modal
         open={!!retryConfirm}
-        title="重试失败项"
+        title={t('重试失败项')}
         onClose={() => !retrySaving && setRetryConfirm(null)}
         width={520}
         footer={
           <div className="orchestrates__modal-footer">
             <span style={{ flex: 1 }} />
             <Button variant="ghost" size="md" onClick={() => setRetryConfirm(null)} disabled={retrySaving}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" size="md" loading={retrySaving} onClick={confirmRetry}>
-              确认重试
+              {t('确认重试')}
             </Button>
           </div>
         }
       >
         {retryConfirm && (
           <div className="orchestrates__result">
-            <div>将以下 {retryConfirm.entries.length} 个失败容器按动作分组重试：</div>
+            <div>{t('将以下 {{n}} 个失败容器按动作分组重试：', { n: retryConfirm.entries.length })}</div>
             <div className="orchestrates__result__rounds">
               {(() => {
                 // 按（动作）分组展示将重试的容器
@@ -817,9 +818,9 @@ export default function OrchestratePage() {
                 return Array.from(groups.entries()).map(([action, arr]) => (
                   <div key={action} className="orchestrates__result__round">
                     <div className="orchestrates__result__round__head">
-                      <span>{action === 'start' ? '启动' : '停止'}</span>
+                      <span>{action === 'start' ? t('启动') : t('停止')}</span>
                       <span className="round-stats">
-                        <span className="rs--fail">共 {arr.length} 个</span>
+                        <span className="rs--fail">{t('共 {{n}} 个', { n: arr.length })}</span>
                       </span>
                     </div>
                     <div className="orchestrates__result__round__items">
@@ -829,7 +830,7 @@ export default function OrchestratePage() {
                           <span
                             className="orchestrates__result__round__item__badge orchestrates__result__round__item__badge--fail"
                           >
-                            失败
+                            {t('失败')}
                           </span>
                         </div>
                       ))}
@@ -851,21 +852,21 @@ export default function OrchestratePage() {
  */
 function ResultModal({ open, result, onClose }: { open: boolean; result: OrchestrateResult | null; onClose: () => void }) {
   return (
-    <Modal open={open} title="编排结果" onClose={onClose} width={720}>
+    <Modal open={open} title={t('编排结果')} onClose={onClose} width={720}>
       {result && (
         <div className="orchestrates__result">
           <div className="orchestrates__result__summary">
             <div className="sum-item sum-item--success">
               <div className="sum-item__num">{result.summary.success}</div>
-              <div className="sum-item__label">成功</div>
+              <div className="sum-item__label">{t('成功')}</div>
             </div>
             <div className="sum-item sum-item--skip">
               <div className="sum-item__num">{result.summary.skipped}</div>
-              <div className="sum-item__label">跳过</div>
+              <div className="sum-item__label">{t('跳过')}</div>
             </div>
             <div className="sum-item sum-item--fail">
               <div className="sum-item__num">{result.summary.fail}</div>
-              <div className="sum-item__label">失败</div>
+              <div className="sum-item__label">{t('失败')}</div>
             </div>
           </div>
 
@@ -873,7 +874,7 @@ function ResultModal({ open, result, onClose }: { open: boolean; result: Orchest
           {phasesWithCycle(result).map((phase) => (
             <div key={phase.label} className="orchestrates__result__warn orchestrates__result__warn--cycle">
               <span>
-                检测到依赖环：{phase.label} 的依赖关系中存在循环依赖（{phase.cycle}），无法进行拓扑排序，已中止执行。
+                {t('检测到依赖环：')}{phase.label} 的依赖关系中存在循环依赖（{phase.cycle}），无法进行拓扑排序，已中止执行。
               </span>
             </div>
           ))}
@@ -899,7 +900,7 @@ function ResultModal({ open, result, onClose }: { open: boolean; result: Orchest
               <div className="orchestrates__result__phase__body">
                 {phase.order.length > 0 && (
                   <div className="orchestrates__result__order">
-                    <div className="orchestrates__result__order__label">启动顺序（拓扑序）：</div>
+                    <div className="orchestrates__result__order__label">{t('启动顺序（拓扑序）：')}</div>
                     <div>
                       {phase.order.map((o, i) => (
                         <span key={o.id} className="order-item">
@@ -954,7 +955,7 @@ function RoundBlock({ round }: { round: OrchestrateRound }) {
       </div>
       {round.items.length === 0 ? (
         <div className="orchestrates__result__round__items">
-          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>本轮无容器执行</span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('本轮无容器执行')}</span>
         </div>
       ) : (
         <div className="orchestrates__result__round__items">
@@ -962,7 +963,7 @@ function RoundBlock({ round }: { round: OrchestrateRound }) {
             // 失败：ok 为 false 且带错误信息；跳过：ok 为 false 且无错误
             const isFail = !item.ok && !!item.error;
             const status = item.ok ? 'ok' : isFail ? 'fail' : 'skip';
-            const statusText = item.ok ? '成功' : isFail ? '失败' : '跳过';
+            const statusText = item.ok ? t('成功') : isFail ? t('失败') : t('跳过');
             return (
               <div key={item.id} className="orchestrates__result__round__item">
                 <span className="orchestrates__result__round__item__name">{item.name}</span>
@@ -1016,9 +1017,9 @@ function formatDuration(ms: number): string {
  * @returns 中文文案
  */
 function actionLabel(action: string): string {
-  if (action === 'start') return '启动';
-  if (action === 'stop') return '停止';
-  if (action === 'restart') return '重启';
+  if (action === 'start') return t('启动');
+  if (action === 'stop') return t('停止');
+  if (action === 'restart') return t('重启');
   return action;
 }
 
@@ -1089,7 +1090,7 @@ function HistoryRow({
                   onRetryClick();
                 }}
               >
-                重试失败项
+                {t('重试失败项')}
               </Button>
             </div>
           )}
@@ -1119,14 +1120,14 @@ function HistoryPhaseBlock({ phase }: { phase: HistoryPhase }) {
         {phase.cycle && (
           <div className="orchestrates__result__warn orchestrates__result__warn--cycle">
             <span>
-              检测到依赖环：{phase.label} 的依赖关系中存在循环依赖（{phase.cycle}），无法进行拓扑排序，已中止执行。
+              {t('检测到依赖环：')}{phase.label} 的依赖关系中存在循环依赖（{phase.cycle}），无法进行拓扑排序，已中止执行。
             </span>
           </div>
         )}
         {phase.order.length > 0 && (
           <div className="orchestrates__result__order">
             <div className="orchestrates__result__order__label">
-              {phase.action === 'stop' ? '停止顺序：' : '启动顺序（拓扑序）：'}
+              {phase.action === 'stop' ? t('停止顺序：') : t('启动顺序（拓扑序）：')}
             </div>
             <div>
               {phase.order.map((o, i) => (
@@ -1190,18 +1191,18 @@ function HistoryModal({
   const hasPrev = pageNum > 1;
   const hasNext = offset + list.length < total;
   return (
-    <Modal open={open} title="编排历史" onClose={onClose} width={760}>
+    <Modal open={open} title={t('编排历史')} onClose={onClose} width={760}>
       <div className="orchestrates__history">
         <div className="orchestrates__history__pager">
           <span className="orchestrates__history__pager__info">
-            共 {total} 条 · 第 {pageNum}/{totalPages || 1} 页
+            {t('共')} {total} 条 · 第 {pageNum}/{totalPages || 1} 页
           </span>
           <span className="orchestrates__history__pager__btns">
             <Button variant="secondary" size="sm" disabled={!hasPrev || loading} onClick={onPrev}>
-              上一页
+              {t('上一页')}
             </Button>
             <Button variant="secondary" size="sm" disabled={!hasNext || loading} onClick={onNext}>
-              下一页
+              {t('下一页')}
             </Button>
           </span>
         </div>
@@ -1209,7 +1210,7 @@ function HistoryModal({
         {loading ? (
           <SkeletonRows rows={5} />
         ) : list.length === 0 ? (
-          <div className="orchestrates__history-empty">暂无编排历史记录</div>
+          <div className="orchestrates__history-empty">{t('暂无编排历史记录')}</div>
         ) : (
           <div className="orchestrates__history__list">
             {list.map((item) => (
@@ -1245,7 +1246,7 @@ function historyPhasesOf(item: HistoryItem): HistoryPhase[] {
       .map((p: any) => toHistoryPhaseFromDetail(p, p?.label || p?.action || ''))
       .filter((p: HistoryPhase | null): p is HistoryPhase => !!p);
   }
-  const phase = toHistoryPhaseFromDetail(d, item.action === 'start' ? '启动' : '停止');
+  const phase = toHistoryPhaseFromDetail(d, item.action === 'start' ? t('启动') : t('停止'));
   return phase ? [phase] : [];
 }
 

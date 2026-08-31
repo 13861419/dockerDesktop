@@ -16,6 +16,7 @@ import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
 import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
+import { translateNow as t } from '../i18n';
 import './compose.less';
 
 /**
@@ -34,7 +35,7 @@ const COMPOSE_TEMPLATES: {
   {
     id: 'wordpress',
     name: 'WordPress',
-    description: 'WordPress + MySQL 博客站点',
+    description: t('WordPress + MySQL 博客站点'),
     content: `version: "3"
 services:
   wordpress:
@@ -67,8 +68,8 @@ volumes:
   },
   {
     id: 'nginx',
-    name: 'Nginx 静态站',
-    description: 'Nginx 静态网站托管',
+    name: t('Nginx 静态站'),
+    description: t('Nginx 静态网站托管'),
     content: `version: "3"
 services:
   web:
@@ -83,7 +84,7 @@ services:
   {
     id: 'redis',
     name: 'Redis',
-    description: 'Redis 缓存服务（含密码）',
+    description: t('Redis 缓存服务（含密码）'),
     content: `version: "3"
 services:
   redis:
@@ -100,7 +101,7 @@ volumes:
   {
     id: 'postgres',
     name: 'PostgreSQL',
-    description: 'PostgreSQL 数据库服务',
+    description: t('PostgreSQL 数据库服务'),
     content: `version: "3"
 services:
   postgres:
@@ -119,8 +120,8 @@ volumes:
   },
   {
     id: 'node',
-    name: 'Node.js 应用',
-    description: 'Node.js 应用 + 构建后运行',
+    name: t('Node.js 应用'),
+    description: t('Node.js 应用 + 构建后运行'),
     content: `version: "3"
 services:
   app:
@@ -236,7 +237,7 @@ export default function ComposePage() {
   const runAction = useCallback(
     async (project: ComposeProject, action: string, successMsg: string, body?: object) => {
       if (!canManage) {
-        showToast('仅管理员可操作 Compose 项目', 'error');
+        showToast(t('仅管理员可操作 Compose 项目'), 'error');
         return;
       }
       const name = project.name;
@@ -246,7 +247,7 @@ export default function ComposePage() {
         showToast(successMsg);
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || successMsg.replace('成功', '失败'), 'error');
+        showToast(e?.message || successMsg.replace(t('成功'), t('失败')), 'error');
       } finally {
         setOpName(null);
       }
@@ -286,8 +287,8 @@ export default function ComposePage() {
       // 逐个拉取各项目的服务运行状态
       (data || []).forEach((p) => loadStatus(p.name));
     } catch (e: any) {
-      setLoadError(e?.message || '拉取项目列表失败');
-      showToast(e?.message || '拉取项目列表失败', 'error');
+      setLoadError(e?.message || t('拉取项目列表失败'));
+      showToast(e?.message || t('拉取项目列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -311,7 +312,7 @@ export default function ComposePage() {
         setCreateFileName(file.name);
       };
       reader.onerror = () => {
-        showToast('读取文件失败', 'error');
+        showToast(t('读取文件失败'), 'error');
       };
       reader.readAsText(file);
     },
@@ -351,7 +352,7 @@ export default function ComposePage() {
   /** 打开"保存为模板"弹窗：用当前项目名作默认模板名，内容取当前编辑内容 */
   const openSaveTemplate = useCallback(() => {
     if (!editContent.trim()) {
-      showToast('内容为空，暂无法保存为模板', 'error');
+      showToast(t('内容为空，暂无法保存为模板'), 'error');
       return;
     }
     // 默认以项目名作为模板名，名称唯一由后端校验
@@ -363,17 +364,17 @@ export default function ComposePage() {
   /** 提交"保存为模板"：携带名称、描述与当前编辑内容写入模板库 */
   const handleSaveTemplate = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可保存模板', 'error');
+      showToast(t('仅管理员可保存模板'), 'error');
       setSaveModalOpen(false);
       return;
     }
     const name = saveModalName.trim();
     if (!name) {
-      showToast('请输入模板名称', 'error');
+      showToast(t('请输入模板名称'), 'error');
       return;
     }
     if (!editContent.trim()) {
-      showToast('内容为空，暂无法保存为模板', 'error');
+      showToast(t('内容为空，暂无法保存为模板'), 'error');
       return;
     }
     setSavingTemplate(true);
@@ -383,14 +384,14 @@ export default function ComposePage() {
         description: saveModalDesc.trim(),
         content: editContent,
       });
-      showToast('模板保存成功');
+      showToast(t('模板保存成功'));
       setSaveModalOpen(false);
       setSaveModalName('');
       setSaveModalDesc('');
       // 重新拉取模板列表，使新模板立即出现在"从模板新建"下拉
       fetchUserTemplates();
     } catch (e: any) {
-      showToast(e?.message || '模板保存失败', 'error');
+      showToast(e?.message || t('模板保存失败'), 'error');
     } finally {
       setSavingTemplate(false);
     }
@@ -409,23 +410,23 @@ export default function ComposePage() {
 
   const handleCreate = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可新建 Compose 项目', 'error');
+      showToast(t('仅管理员可新建 Compose 项目'), 'error');
       setCreateOpen(false);
       return;
     }
     const name = createName.trim();
     if (!name) {
-      showToast('请输入项目名称', 'error');
+      showToast(t('请输入项目名称'), 'error');
       return;
     }
     if (!createContent.trim()) {
-      showToast('请输入 docker-compose.yml 内容', 'error');
+      showToast(t('请输入 docker-compose.yml 内容'), 'error');
       return;
     }
     setCreating(true);
     try {
       await post('/api/compose', { name, content: createContent });
-      showToast('项目创建成功');
+      showToast(t('项目创建成功'));
       setCreateOpen(false);
       setCreateName('');
       setCreateContent('');
@@ -434,10 +435,10 @@ export default function ComposePage() {
       setCreateYamlErr({ message: '', line: null });
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      const msg = e?.message || '项目创建失败';
+      const msg = e?.message || t('项目创建失败');
       const line = parseYamlLine(msg);
       setCreateYamlErr({ message: msg, line });
-      showToast(line !== null ? 'Compose YAML 语法有误，请修正后保存' : msg, 'error');
+      showToast(line !== null ? t('Compose YAML 语法有误，请修正后保存') : msg, 'error');
     } finally {
       setCreating(false);
     }
@@ -455,10 +456,10 @@ export default function ComposePage() {
               res?.config ||
               JSON.stringify(res, null, 2);
         setConfigTitle(project.name);
-        setConfigContent(content || '（无配置文件）');
+        setConfigContent(content || t('（无配置文件）'));
         setConfigOpen(true);
       } catch (e: any) {
-        showToast(e?.message || '获取配置失败', 'error');
+        showToast(e?.message || t('获取配置失败'), 'error');
       }
     },
     [showToast]
@@ -482,7 +483,7 @@ export default function ComposePage() {
           networks: data?.networks || [],
         });
       } catch (e: any) {
-        showToast(e?.message || '获取 Compose 结构失败', 'error');
+        showToast(e?.message || t('获取 Compose 结构失败'), 'error');
         setStructureOpen(false);
       } finally {
         setStructureLoading(false);
@@ -508,7 +509,7 @@ export default function ComposePage() {
     async (service: string, action: string, successMsg: string) => {
       if (!structureData) return;
       if (!canManage) {
-        showToast('仅管理员可操作 Compose 服务', 'error');
+        showToast(t('仅管理员可操作 Compose 服务'), 'error');
         return;
       }
       const key = `${service}/${action}`;
@@ -523,7 +524,7 @@ export default function ComposePage() {
         }
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
-        showToast(e?.message || successMsg.replace('成功', '失败'), 'error');
+        showToast(e?.message || successMsg.replace(t('成功'), t('失败')), 'error');
       } finally {
         setServiceOpKey(null);
       }
@@ -535,7 +536,7 @@ export default function ComposePage() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (!canDelete) {
-      showToast('仅管理员可删除 Compose 项目', 'error');
+      showToast(t('仅管理员可删除 Compose 项目'), 'error');
       setDeleteTarget(null);
       setDeleteVolumes(false);
       return;
@@ -543,12 +544,12 @@ export default function ComposePage() {
     setDeleting(true);
     try {
       await del(projectUrl(deleteTarget.name), { volumes: deleteVolumes });
-      showToast('项目删除成功');
+      showToast(t('项目删除成功'));
       setDeleteTarget(null);
       setDeleteVolumes(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '项目删除失败', 'error');
+      showToast(e?.message || t('项目删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -558,7 +559,7 @@ export default function ComposePage() {
   const openEdit = useCallback(
     async (project: ComposeProject) => {
       if (!canManage) {
-        showToast('仅管理员可编辑 Compose 项目', 'error');
+        showToast(t('仅管理员可编辑 Compose 项目'), 'error');
         return;
       }
       setEditName(project.name);
@@ -571,7 +572,7 @@ export default function ComposePage() {
         setEditContent(content);
       } catch (e: any) {
         setEditContent('');
-        showToast(e?.message || '获取 compose 文件失败', 'error');
+        showToast(e?.message || t('获取 compose 文件失败'), 'error');
       } finally {
         setEditLoading(false);
       }
@@ -582,31 +583,31 @@ export default function ComposePage() {
   /** 保存编辑后的 compose 文件（复用 POST /api/compose 同名覆盖端点） */
   const handleSaveEdit = useCallback(async () => {
     if (!canManage) {
-      showToast('仅管理员可编辑 Compose 项目', 'error');
+      showToast(t('仅管理员可编辑 Compose 项目'), 'error');
       setEditOpen(false);
       return;
     }
     const name = editName.trim();
     if (!name) {
-      showToast('项目名称无效', 'error');
+      showToast(t('项目名称无效'), 'error');
       return;
     }
     if (!editContent.trim()) {
-      showToast('请输入 docker-compose.yml 内容', 'error');
+      showToast(t('请输入 docker-compose.yml 内容'), 'error');
       return;
     }
     setSavingEdit(true);
     try {
       await post('/api/compose', { name, content: editContent });
-      showToast('项目修改已保存');
+      showToast(t('项目修改已保存'));
       setEditOpen(false);
       setEditYamlErr({ message: '', line: null });
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      const msg = e?.message || '保存失败';
+      const msg = e?.message || t('保存失败');
       const line = parseYamlLine(msg);
       setEditYamlErr({ message: msg, line });
-      showToast(line !== null ? 'Compose YAML 语法有误，请修正后保存' : msg, 'error');
+      showToast(line !== null ? t('Compose YAML 语法有误，请修正后保存') : msg, 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -629,15 +630,15 @@ export default function ComposePage() {
         volumes: stopVolumes,
       });
       if (resp?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
       } else {
-        showToast(stopVolumes ? '项目已停止，数据卷已删除' : '项目已停止');
+        showToast(stopVolumes ? t('项目已停止，数据卷已删除') : t('项目已停止'));
       }
       setStopTarget(null);
       setStopVolumes(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '停止项目失败', 'error');
+      showToast(e?.message || t('停止项目失败'), 'error');
       setStopping(false);
       return;
     }
@@ -661,7 +662,7 @@ export default function ComposePage() {
         );
       } catch (e: any) {
         setLogContent('');
-        showToast(e?.message || '获取日志失败', 'error');
+        showToast(e?.message || t('获取日志失败'), 'error');
       } finally {
         setLogLoading(false);
       }
@@ -681,7 +682,7 @@ export default function ComposePage() {
         typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
       );
     } catch (e: any) {
-      showToast(e?.message || '刷新日志失败', 'error');
+      showToast(e?.message || t('刷新日志失败'), 'error');
     } finally {
       setLogLoading(false);
     }
@@ -697,11 +698,11 @@ export default function ComposePage() {
   return (
     <div className="page">
       <Card
-        title="Compose 项目"
+        title={t('Compose 项目')}
         extra={
           <div className="toolbar">
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button
               variant="primary"
@@ -714,7 +715,7 @@ export default function ComposePage() {
                 fetchUserTemplates();
               }}
             >
-              新建项目
+              {t('新建项目')}
             </Button>
           </div>
         }
@@ -724,25 +725,25 @@ export default function ComposePage() {
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取项目列表失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('拉取项目列表失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchProjects}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : projects.length === 0 ? (
-          <Empty title="暂无 Compose 项目" description="点击右上角「新建项目」创建" />
+          <Empty title={t('暂无 Compose 项目')} description={t('点击右上角「新建项目」创建')} />
         ) : (
           <table className="data-table">
             <thead>
               <tr>
-                <th>项目名</th>
-                <th>状态</th>
-                <th>Compose 文件</th>
-                <th>路径</th>
-                <th className="col-actions">操作</th>
+                <th>{t('项目名')}</th>
+                <th>{t('状态')}</th>
+                <th>{t('Compose 文件')}</th>
+                <th>{t('路径')}</th>
+                <th className="col-actions">{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -753,9 +754,9 @@ export default function ComposePage() {
                       {proj.name}
                     </div>
                     {proj.hasCompose ? (
-                      <div className="name-sub badge badge--running">已配置</div>
+                      <div className="name-sub badge badge--running">{t('已配置')}</div>
                     ) : (
-                      <div className="name-sub badge badge--muted">未配置</div>
+                      <div className="name-sub badge badge--muted">{t('未配置')}</div>
                     )}
                   </td>
                   <td className="status-cell">
@@ -793,9 +794,9 @@ export default function ComposePage() {
                         size="sm"
                         loading={opName === proj.name}
                         disabled={!canManage}
-                        onClick={() => runAction(proj, 'up', '项目启动成功')}
+                        onClick={() => runAction(proj, 'up', t('项目启动成功'))}
                       >
-                        启动
+                        {t('启动')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -805,58 +806,58 @@ export default function ComposePage() {
                           setStopTarget(proj);
                         }}
                       >
-                        停止
+                        {t('停止')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
                         disabled={!canManage}
-                        onClick={() => runAction(proj, 'restart', '项目重启成功')}
+                        onClick={() => runAction(proj, 'restart', t('项目重启成功'))}
                       >
-                        重启
+                        {t('重启')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
                         disabled={!canManage}
-                        onClick={() => runAction(proj, 'pull', '镜像拉取成功')}
+                        onClick={() => runAction(proj, 'pull', t('镜像拉取成功'))}
                       >
-                        拉取镜像
+                        {t('拉取镜像')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         loading={opName === proj.name}
                         disabled={!canManage}
-                        onClick={() => runAction(proj, 'build', '镜像构建成功')}
+                        onClick={() => runAction(proj, 'build', t('镜像构建成功'))}
                       >
-                        构建镜像
+                        {t('构建镜像')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(proj)} disabled={!canManage}>
-                        编辑
+                        {t('编辑')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleViewConfig(proj)}
                       >
-                        配置
+                        {t('配置')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => openStructure(proj)}
                       >
-                        结构
+                        {t('结构')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => openLog(proj.name)}
                       >
-                        日志
+                        {t('日志')}
                       </Button>
                       <Button
                         variant="danger"
@@ -864,7 +865,7 @@ export default function ComposePage() {
                         onClick={() => setDeleteTarget(proj)}
                         disabled={!canDelete}
                       >
-                        删除
+                        {t('删除')}
                       </Button>
                     </div>
                   </td>
@@ -878,7 +879,7 @@ export default function ComposePage() {
       {/* 新建项目弹窗 */}
       <Modal
         open={createOpen}
-        title="新建 Compose 项目"
+        title={t('新建 Compose 项目')}
         onClose={() => setCreateOpen(false)}
         width={640}
         footer={
@@ -891,37 +892,37 @@ export default function ComposePage() {
               }}
               disabled={creating}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleCreate} loading={creating} disabled={!canManage}>
-              创建
+              {t('创建')}
             </Button>
           </>
         }
       >
-        <Field label="项目名称" required>
+        <Field label={t('项目名称')} required>
           <Input
             value={createName}
             onChange={(e) => setCreateName(e.target.value)}
-            placeholder="例如：myapp"
+            placeholder={t('例如：myapp')}
             autoFocus
           />
         </Field>
-        <Field label="docker-compose.yml" required hint="可选内置模板，或选择文件上传、直接粘贴完整内容">
+        <Field label="docker-compose.yml" required hint={t('可选内置模板，或选择文件上传、直接粘贴完整内容')}>
           <div className="compose-tpl">
             <Select
               value={createTemplate}
               onChange={(e) => handleTemplateChange(e.target.value)}
               className="compose-tpl__select"
             >
-              <option value="">空白</option>
+              <option value="">{t('空白')}</option>
               {COMPOSE_TEMPLATES.map((tpl) => (
                 <option key={tpl.id} value={tpl.id}>
                   {tpl.name}
                 </option>
               ))}
               {userTemplates.length > 0 && (
-                <optgroup label="我的模板">
+                <optgroup label={t('我的模板')}>
                   {userTemplates.map((tpl) => (
                     <option key={tpl.id} value={'tpl:' + tpl.id}>
                       {tpl.name}
@@ -944,7 +945,7 @@ export default function ComposePage() {
           />
           {createFileName && (
             <div className="compose-upload__name" title={createFileName}>
-              已选择文件：{createFileName}
+              {t('已选择文件：')}{createFileName}
             </div>
           )}
           <YamlEditor
@@ -964,7 +965,7 @@ export default function ComposePage() {
       {/* 编辑项目弹窗 */}
       <Modal
         open={editOpen}
-        title={`编辑 ${editName} - docker-compose.yml`}
+        title={t('编辑 {{editName}} - docker-compose.yml', { editName })}
         onClose={closeEdit}
         width={720}
         footer={
@@ -975,20 +976,20 @@ export default function ComposePage() {
                 onClick={openSaveTemplate}
                 disabled={savingEdit || !canManage}
               >
-                保存为模板
+                {t('保存为模板')}
               </Button>
             )}
             <Button variant="secondary" onClick={closeEdit} disabled={savingEdit}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleSaveEdit} loading={savingEdit} disabled={!canManage}>
-              保存
+              {t('保存')}
             </Button>
           </>
         }
       >
         {editLoading ? (
-          <div className="log-empty">正在加载 compose 文件…</div>
+          <div className="log-empty">{t('正在加载 compose 文件…')}</div>
         ) : (
           <Field label="docker-compose.yml" required>
             <YamlEditor
@@ -1008,7 +1009,7 @@ export default function ComposePage() {
       {/* 保存为模板弹窗 */}
       <Modal
         open={saveModalOpen}
-        title="保存为模板"
+        title={t('保存为模板')}
         onClose={() => setSaveModalOpen(false)}
         width={420}
         footer={
@@ -1018,27 +1019,27 @@ export default function ComposePage() {
               onClick={() => setSaveModalOpen(false)}
               disabled={savingTemplate}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleSaveTemplate} loading={savingTemplate} disabled={!canManage}>
-              保存
+              {t('保存')}
             </Button>
           </>
         }
       >
-        <Field label="模板名称" required>
+        <Field label={t('模板名称')} required>
           <Input
             value={saveModalName}
             onChange={(e) => setSaveModalName(e.target.value)}
-            placeholder="例如：WordPress"
+            placeholder={t('例如：WordPress')}
             autoFocus
           />
         </Field>
-        <Field label="描述">
+        <Field label={t('描述')}>
           <Input
             value={saveModalDesc}
             onChange={(e) => setSaveModalDesc(e.target.value)}
-            placeholder="可选，记录模板用途"
+            placeholder={t('可选，记录模板用途')}
           />
         </Field>
       </Modal>
@@ -1046,12 +1047,12 @@ export default function ComposePage() {
       {/* 查看配置弹窗 */}
       <Modal
         open={configOpen}
-        title={`${configTitle} - 配置`}
+        title={t('{{configTitle}} - 配置', { configTitle })}
         onClose={() => setConfigOpen(false)}
         width={720}
         footer={
           <Button variant="secondary" onClick={() => setConfigOpen(false)}>
-            关闭
+            {t('关闭')}
           </Button>
         }
       >
@@ -1061,39 +1062,39 @@ export default function ComposePage() {
       {/* 结构视图弹窗 */}
       <Modal
         open={structureOpen}
-        title={structureData ? `${structureData.name} - 结构` : 'Compose 结构'}
+        title={structureData ? t('{{v1}} - 结构', { v1: structureData.name }) : t('Compose 结构')}
         onClose={closeStructure}
         width={760}
         footer={
           <Button variant="secondary" onClick={closeStructure} disabled={structureLoading}>
-            关闭
+            {t('关闭')}
           </Button>
         }
       >
         {structureLoading ? (
-          <div className="log-empty">正在解析 Compose 结构…</div>
+          <div className="log-empty">{t('正在解析 Compose 结构…')}</div>
         ) : structureData ? (
           <div className="structure">
             <div className="structure__meta">
               <span>
-                项目：<b>{structureData.name}</b>
+                {t('项目：')}<b>{structureData.name}</b>
               </span>
               <span>
-                服务：<b>{structureData.services.length}</b>
+                {t('服务：')}<b>{structureData.services.length}</b>
               </span>
               {structureData.volumes.length > 0 && (
                 <span>
-                  卷：<b>{structureData.volumes.join(', ') || '-'}</b>
+                  {t('卷：')}<b>{structureData.volumes.join(', ') || '-'}</b>
                 </span>
               )}
               {structureData.networks.length > 0 && (
                 <span>
-                  网络：<b>{structureData.networks.join(', ') || '-'}</b>
+                  {t('网络：')}<b>{structureData.networks.join(', ') || '-'}</b>
                 </span>
               )}
             </div>
             {structureData.services.length === 0 ? (
-              <Empty title="暂无服务" description="该 Compose 项目未定义任何服务" />
+              <Empty title={t('暂无服务')} description={t('该 Compose 项目未定义任何服务')} />
             ) : (
               <div className="structure__list">
                 {structureData.services.map((svc) => {
@@ -1103,7 +1104,7 @@ export default function ComposePage() {
                       <div className="structure-card__head">
                         <span className="structure-card__name">{svc.name}</span>
                         <span className="structure-card__image" title={svc.image || ''}>
-                          {svc.image || '（build 构建）'}
+                          {svc.image || t('（build 构建）')}
                         </span>
                         <div className="structure-card__actions">
                           <Button
@@ -1111,34 +1112,34 @@ export default function ComposePage() {
                             size="sm"
                             loading={serviceOpKey === `${svc.name}/start`}
                             disabled={!canManage || !!isOp}
-                            onClick={() => runServiceAction(svc.name, 'start', `${svc.name} 启动成功`)}
+                            onClick={() => runServiceAction(svc.name, 'start', t('{{v1}} 启动成功', { v1: svc.name }))}
                           >
-                            启动
+                            {t('启动')}
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
                             loading={serviceOpKey === `${svc.name}/stop`}
                             disabled={!canManage || !!isOp}
-                            onClick={() => runServiceAction(svc.name, 'stop', `${svc.name} 停止成功`)}
+                            onClick={() => runServiceAction(svc.name, 'stop', t('{{v1}} 停止成功', { v1: svc.name }))}
                           >
-                            停止
+                            {t('停止')}
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
                             loading={serviceOpKey === `${svc.name}/restart`}
                             disabled={!canManage || !!isOp}
-                            onClick={() => runServiceAction(svc.name, 'restart', `${svc.name} 重启成功`)}
+                            onClick={() => runServiceAction(svc.name, 'restart', t('{{v1}} 重启成功', { v1: svc.name }))}
                           >
-                            重启
+                            {t('重启')}
                           </Button>
                         </div>
                       </div>
                       <div className="structure-card__body">
                         {svc.ports.length > 0 && (
                           <div className="structure-line">
-                            <span className="structure-label">端口</span>
+                            <span className="structure-label">{t('端口')}</span>
                             <span className="structure-value">
                               {svc.ports
                                 .map((p) =>
@@ -1152,23 +1153,23 @@ export default function ComposePage() {
                         )}
                         {svc.depends_on.length > 0 && (
                           <div className="structure-line">
-                            <span className="structure-label">依赖</span>
+                            <span className="structure-label">{t('依赖')}</span>
                             <span className="structure-value">{svc.depends_on.join('，')}</span>
                           </div>
                         )}
                         {svc.volumes.length > 0 && (
                           <div className="structure-line">
-                            <span className="structure-label">卷</span>
+                            <span className="structure-label">{t('卷')}</span>
                             <span className="structure-value">
                               {svc.volumes
-                                .map((v) => `${v.source || ''} -> ${v.target}${v.readOnly ? ' (只读)' : ''}`.replace(/^\s+->/, ''))
+                                .map((v) => `${v.source || ''} -> ${v.target}${v.readOnly ? t(' (只读)') : ''}`.replace(/^\s+->/, ''))
                                 .join('，')}
                             </span>
                           </div>
                         )}
                         {svc.environment.length > 0 && (
                           <div className="structure-line">
-                            <span className="structure-label">环境</span>
+                            <span className="structure-label">{t('环境')}</span>
                             <span className="structure-value">{svc.environment.join('，')}</span>
                           </div>
                         )}
@@ -1177,7 +1178,7 @@ export default function ComposePage() {
                           svc.volumes.length === 0 &&
                           svc.environment.length === 0 && (
                             <div className="structure-line">
-                              <span className="structure-value">（无额外配置）</span>
+                              <span className="structure-value">{t('（无额外配置）')}</span>
                             </div>
                           )}
                       </div>
@@ -1193,53 +1194,53 @@ export default function ComposePage() {
       {/* 日志弹窗 */}
       <Modal
         open={logOpen}
-        title={`${logName} - 日志`}
+        title={t('{{logName}} - 日志', { logName })}
         onClose={closeLog}
         width={760}
         footer={
           <>
             <Button variant="secondary" onClick={refreshLog} loading={logLoading}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="secondary" onClick={closeLog}>
-              关闭
+              {t('关闭')}
             </Button>
           </>
         }
       >
         {logLoading && !logContent ? (
-          <div className="log-empty">正在拉取日志…</div>
+          <div className="log-empty">{t('正在拉取日志…')}</div>
         ) : (
-          <pre className="log-viewer">{logContent || '（暂无日志）'}</pre>
+          <pre className="log-viewer">{logContent || t('（暂无日志）')}</pre>
         )}
       </Modal>
 
       {/* 停止（down）确认弹窗：可选择是否同时删除数据卷 */}
       <Modal
         open={!!stopTarget}
-        title="停止项目"
+        title={t('停止项目')}
         onClose={() => setStopTarget(null)}
         width={420}
         footer={
           <>
             <Button variant="secondary" onClick={() => setStopTarget(null)} disabled={stopping}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleStopConfirm} loading={stopping} disabled={!canManage}>
-              停止
+              {t('停止')}
             </Button>
           </>
         }
       >
         <div className="compose-confirm">
-          <p>确定要停止 Compose 项目 "{stopTarget?.name}" 吗？</p>
+          <p>{t('确定要停止 Compose 项目 "{{name}}" 吗？', { name: stopTarget?.name || '' })}</p>
           <label className="compose-confirm__check">
             <input
               type="checkbox"
               checked={stopVolumes}
               onChange={(e) => setStopVolumes(e.target.checked)}
             />
-            <span>同时删除该项目的数据卷（volumes）</span>
+            <span>{t('同时删除该项目的数据卷（volumes）')}</span>
           </label>
         </div>
       </Modal>
@@ -1247,7 +1248,7 @@ export default function ComposePage() {
       {/* 删除项目确认框：可选择是否同时删除数据卷 */}
       <Modal
         open={!!deleteTarget}
-        title="删除项目"
+        title={t('删除项目')}
         onClose={() => setDeleteTarget(null)}
         width={420}
         footer={
@@ -1260,23 +1261,23 @@ export default function ComposePage() {
               }}
               disabled={deleting}
             >
-              取消
+              {t('取消')}
             </Button>
             <Button variant="danger" onClick={handleDelete} loading={deleting} disabled={!canDelete}>
-              删除
+              {t('删除')}
             </Button>
           </>
         }
       >
         <div className="compose-confirm">
-          <p>确定要删除 Compose 项目 "{deleteTarget?.name}" 吗？此操作不可恢复。</p>
+          <p>{t('确定要删除 Compose 项目 "{{name}}" 吗？此操作不可恢复。', { name: deleteTarget?.name || '' })}</p>
           <label className="compose-confirm__check">
             <input
               type="checkbox"
               checked={deleteVolumes}
               onChange={(e) => setDeleteVolumes(e.target.checked)}
             />
-            <span>同时删除该项目的数据卷（volumes）</span>
+            <span>{t('同时删除该项目的数据卷（volumes）')}</span>
           </label>
         </div>
       </Modal>

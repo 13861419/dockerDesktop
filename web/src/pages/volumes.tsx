@@ -16,6 +16,7 @@ import { get, post, del, download } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
 import { VolumeItem } from '../types';
 import VolumeFileExplorer from '../components/VolumeFileExplorer';
+import { translateNow as t } from '../i18n';
 import './volumes.less';
 
 /**
@@ -162,8 +163,8 @@ const canPrune = hasPerm('volumes.prune');
         // 容器映射拉取失败时保留空映射，仅影响状态增强展示
       }
     } catch (e: any) {
-      setLoadError(e?.message || '拉取数据卷列表失败');
-      showToast(e?.message || '拉取数据卷列表失败', 'error');
+      setLoadError(e?.message || t('拉取数据卷列表失败'));
+      showToast(e?.message || t('拉取数据卷列表失败'), 'error');
     } finally {
       setLoading(false);
     }
@@ -176,24 +177,24 @@ const canPrune = hasPerm('volumes.prune');
   const handleCreate = useCallback(async () => {
     const volName = name.trim();
     if (!volName) {
-      showToast('请输入数据卷名称', 'error');
+      showToast(t('请输入数据卷名称'), 'error');
       return;
     }
     if (!canWrite || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '缺少数据卷管理权限', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('缺少数据卷管理权限'), 'error');
       setCreateOpen(false);
       return;
     }
     setCreating(true);
     try {
       await post('/api/volumes', { name: volName, driver });
-      showToast('数据卷创建成功');
+      showToast(t('数据卷创建成功'));
       setCreateOpen(false);
       setName('');
       setDriver('local');
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '数据卷创建失败', 'error');
+      showToast(e?.message || t('数据卷创建失败'), 'error');
     } finally {
       setCreating(false);
     }
@@ -202,7 +203,7 @@ const canPrune = hasPerm('volumes.prune');
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     if (checking) {
-      showToast('正在确认权限，请稍候', 'error');
+      showToast(t('正在确认权限，请稍候'), 'error');
       setDeleteTarget(null);
       return;
     }
@@ -210,14 +211,14 @@ const canPrune = hasPerm('volumes.prune');
     try {
       const resp = await del<{ approvalPending?: boolean }>('/api/volumes/' + encodeURIComponent(deleteTarget.Name));
       if (resp?.approvalPending) {
-        showToast('该操作已提交审批，等待管理员批准后执行', 'info');
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
       } else {
-        showToast('数据卷删除成功');
+        showToast(t('数据卷删除成功'));
       }
       setDeleteTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '数据卷删除失败', 'error');
+      showToast(e?.message || t('数据卷删除失败'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -225,18 +226,18 @@ const canPrune = hasPerm('volumes.prune');
 
   const handlePrune = useCallback(async () => {
     if (checking) {
-      showToast('正在确认权限，请稍候', 'error');
+      showToast(t('正在确认权限，请稍候'), 'error');
       setPruneOpen(false);
       return;
     }
     setPruning(true);
     try {
       const resp = await post<{ approvalPending?: boolean }>('/api/volumes/prune');
-      showToast(resp?.approvalPending ? '该操作已提交审批，等待管理员批准后执行' : '清理完成', resp?.approvalPending ? 'info' : 'success');
+      showToast(resp?.approvalPending ? t('该操作已提交审批，等待管理员批准后执行') : t('清理完成'), resp?.approvalPending ? 'info' : 'success');
       setPruneOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '清理失败', 'error');
+      showToast(e?.message || t('清理失败'), 'error');
     } finally {
       setPruning(false);
     }
@@ -248,7 +249,7 @@ const canPrune = hasPerm('volumes.prune');
    */
   const openBackup = useCallback((vol: VolumeItem) => {
     setBackupTarget(vol);
-    setBackupName(`卷-${vol.Name}-${new Date().toISOString()}`);
+    setBackupName(t('卷-{{v1}}-{{v2}}', { v1: vol.Name, v2: new Date().toISOString() }));
   }, []);
 
   /**
@@ -266,22 +267,22 @@ const canPrune = hasPerm('volumes.prune');
     if (!cloneTarget || cloning) return;
     const target = cloneName.trim();
     if (!target) {
-      showToast('请输入目标卷名', 'error');
+      showToast(t('请输入目标卷名'), 'error');
       return;
     }
     if (!canWrite || checking) {
-      showToast(checking ? '正在确认权限，请稍候' : '缺少数据卷管理权限', 'error');
+      showToast(checking ? t('正在确认权限，请稍候') : t('缺少数据卷管理权限'), 'error');
       setCloneTarget(null);
       return;
     }
     setCloning(true);
     try {
       await post(`/api/volumes/${encodeURIComponent(cloneTarget.Name)}/clone`, { name: target });
-      showToast(`数据卷已克隆为 "${target}"`);
+      showToast(t('数据卷已克隆为 "{{target}}"', { target }));
       setCloneTarget(null);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
-      showToast(e?.message || '克隆数据卷失败', 'error');
+      showToast(e?.message || t('克隆数据卷失败'), 'error');
     } finally {
       setCloning(false);
     }
@@ -295,9 +296,9 @@ const canPrune = hasPerm('volumes.prune');
     setExportingName(vol.Name);
     try {
       await download(`/api/volumes/${encodeURIComponent(vol.Name)}/export`, `${vol.Name}.tar`);
-      showToast('数据卷已导出');
+      showToast(t('数据卷已导出'));
     } catch (e: any) {
-      showToast(e?.message || '导出数据卷失败', 'error');
+      showToast(e?.message || t('导出数据卷失败'), 'error');
     } finally {
       setExportingName('');
     }
@@ -310,7 +311,7 @@ const canPrune = hasPerm('volumes.prune');
     if (!backupTarget || backingUp) return;
     const finalName = backupName.trim();
     if (!finalName) {
-      showToast('请输入备份名称', 'error');
+      showToast(t('请输入备份名称'), 'error');
       return;
     }
     setBackingUp(true);
@@ -320,10 +321,10 @@ const canPrune = hasPerm('volumes.prune');
         name: finalName,
         source: backupTarget.Name,
       });
-      showToast('数据卷备份已创建，可到「备份」页下载');
+      showToast(t('数据卷备份已创建，可到「备份」页下载'));
       setBackupTarget(null);
     } catch (e: any) {
-      showToast(e?.message || '创建备份失败', 'error');
+      showToast(e?.message || t('创建备份失败'), 'error');
     } finally {
       setBackingUp(false);
     }
@@ -347,7 +348,7 @@ const canPrune = hasPerm('volumes.prune');
         const data = await get<VolumeInspect>('/api/volumes/' + encodeURIComponent(name));
         setDetail(data || null);
       } catch (e: any) {
-        showToast(e?.message || '拉取卷详情失败', 'error');
+        showToast(e?.message || t('拉取卷详情失败'), 'error');
         setDetail(null);
       } finally {
         setDetailLoading(false);
@@ -369,7 +370,7 @@ const canPrune = hasPerm('volumes.prune');
         );
         setUsingContainers(list);
       } catch (e: any) {
-        showToast(e?.message || '拉取容器列表失败', 'error');
+        showToast(e?.message || t('拉取容器列表失败'), 'error');
         setUsingContainers([]);
       } finally {
         setContainersLoading(false);
@@ -456,7 +457,7 @@ const canPrune = hasPerm('volumes.prune');
   return (
     <div className="page">
       <Card
-        title="数据卷"
+        title={t('数据卷')}
         extra={
           <div className="toolbar">
             <Select
@@ -467,7 +468,7 @@ const canPrune = hasPerm('volumes.prune');
                 setPage(1);
               }}
             >
-              <option value="">全部标签</option>
+              <option value="">{t('全部标签')}</option>
               {volumeLabelOptions.map((pair) => (
                 <option key={pair} value={pair}>
                   {pair}
@@ -476,7 +477,7 @@ const canPrune = hasPerm('volumes.prune');
             </Select>
             <input
               className="input volumes-search"
-              placeholder="搜索卷名或挂载点"
+              placeholder={t('搜索卷名或挂载点')}
               value={keyword}
               onChange={(e) => {
                 setKeyword(e.target.value);
@@ -484,13 +485,13 @@ const canPrune = hasPerm('volumes.prune');
               }}
             />
             <Button variant="secondary" onClick={() => setRefreshKey((k) => k + 1)}>
-              刷新
+              {t('刷新')}
             </Button>
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPrune}>
-              清理未使用卷
+              {t('清理未使用卷')}
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canWrite}>
-              新建卷
+              {t('新建卷')}
             </Button>
           </div>
         }
@@ -500,32 +501,32 @@ const canPrune = hasPerm('volumes.prune');
         ) : loadError ? (
           <Empty
             kind="error"
-            title="拉取数据卷列表失败"
-            description={loadError || '请检查 Docker 引擎连接后重试'}
+            title={t('拉取数据卷列表失败')}
+            description={loadError || t('请检查 Docker 引擎连接后重试')}
             action={
               <Button variant="secondary" size="sm" onClick={fetchVolumes}>
-                重试
+                {t('重试')}
               </Button>
             }
           />
         ) : filteredVolumes.length === 0 ? (
           <Empty
             kind={keyword ? 'search' : 'empty'}
-            title={keyword ? '未找到匹配数据卷' : '暂无数据卷'}
-            description={keyword ? '尝试更换搜索关键字' : '点击右上角'}
+            title={keyword ? t('未找到匹配数据卷') : t('暂无数据卷')}
+            description={keyword ? t('尝试更换搜索关键字') : t('点击右上角')}
           />
         ) : (
           <>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>名称</th>
-                  <th>驱动</th>
-                  <th>状态</th>
-                  <th>大小</th>
-                  <th>挂载点</th>
-                  <th>创建时间</th>
-                  <th className="col-actions">操作</th>
+                  <th>{t('名称')}</th>
+                  <th>{t('驱动')}</th>
+                  <th>{t('状态')}</th>
+                  <th>{t('大小')}</th>
+                  <th>{t('挂载点')}</th>
+                  <th>{t('创建时间')}</th>
+                  <th className="col-actions">{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -544,13 +545,13 @@ const canPrune = hasPerm('volumes.prune');
                       className={`badge ${(volumeUsage[vol.Name] || []).length ? 'badge--used' : 'badge--unused'}`}
                       title={
                         (volumeUsage[vol.Name] || []).length
-                          ? `被容器引用：${(volumeUsage[vol.Name] || []).join(', ')}`
-                          : '未被任何容器引用'
+                          ? t('被容器引用：{{v1}}', { v1: (volumeUsage[vol.Name] || []).join(', ') })
+                          : t('未被任何容器引用')
                       }
                     >
                       {(volumeUsage[vol.Name] || []).length
-                        ? `使用中 · ${(volumeUsage[vol.Name] || []).join(', ')}`
-                        : '未使用'}
+                        ? t('使用中 · {{v1}}', { v1: (volumeUsage[vol.Name] || []).join(', ') })
+                        : t('未使用')}
                     </span>
                   </td>
                   <td>{vol.UsageData?.Size != null ? formatBytes(vol.UsageData.Size) : '-'}</td>
@@ -561,13 +562,13 @@ const canPrune = hasPerm('volumes.prune');
                   <td className="col-actions">
                     <div className="row-actions">
                       <Button variant="ghost" size="sm" onClick={() => setBrowseTarget(vol)}>
-                        浏览
+                        {t('浏览')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openBackup(vol)}>
-                        备份
+                        {t('备份')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openClone(vol)} disabled={!canWrite}>
-                        克隆
+                        {t('克隆')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -576,13 +577,13 @@ const canPrune = hasPerm('volumes.prune');
                         loading={exportingName === vol.Name}
                         disabled={!canWrite}
                       >
-                        导出
+                        {t('导出')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openDetail(vol)}>
-                        详情
+                        {t('详情')}
                       </Button>
                         <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(vol)} disabled={!canDelete}>
-                        删除
+                        {t('删除')}
                       </Button>
                     </div>
                   </td>
@@ -595,7 +596,7 @@ const canPrune = hasPerm('volumes.prune');
             <div className="volumes__pagination">
               <div className="volumes__pagination-left">
                 <span className="volumes__pagination-size">
-                  每页
+                  {t('每页')}
                   <Select
                     className="volumes__pagesize"
                     value={String(pageSize)}
@@ -607,10 +608,10 @@ const canPrune = hasPerm('volumes.prune');
                       </option>
                     ))}
                   </Select>
-                  条
+                  {t('条')}
                 </span>
                 <span className="volumes__pagination-info">
-                  共 {filteredVolumes.length} 条，当前第 {pageStart}-{pageEnd} 条
+                  {t('共 {{total}} 条，当前第 {{start}}-{{end}} 条', { total: filteredVolumes.length, start: pageStart, end: pageEnd })}
                 </span>
               </div>
               <div className="volumes__pagination-controls">
@@ -619,7 +620,7 @@ const canPrune = hasPerm('volumes.prune');
                   disabled={safePage <= 1}
                   onClick={() => setPage(safePage - 1)}
                 >
-                  上一页
+                  {t('上一页')}
                 </button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                   <button
@@ -635,7 +636,7 @@ const canPrune = hasPerm('volumes.prune');
                   disabled={safePage >= totalPages}
                   onClick={() => setPage(safePage + 1)}
                 >
-                  下一页
+                  {t('下一页')}
                 </button>
                 <span className="volumes__page-jump">
                   <Input
@@ -643,7 +644,7 @@ const canPrune = hasPerm('volumes.prune');
                     type="number"
                     min={1}
                     max={totalPages}
-                    placeholder="页码"
+                    placeholder={t('页码')}
                     value={pageJump}
                     onChange={(e) => setPageJump(e.target.value)}
                     onKeyDown={(e) => {
@@ -651,7 +652,7 @@ const canPrune = hasPerm('volumes.prune');
                     }}
                   />
                   <Button variant="ghost" size="sm" onClick={handlePageJump}>
-                    跳转
+                    {t('跳转')}
                   </Button>
                 </span>
               </div>
@@ -663,39 +664,39 @@ const canPrune = hasPerm('volumes.prune');
       {/* 卷详情弹窗 */}
       <Modal
         open={!!detailTarget}
-        title={detailTarget ? `卷详情 · ${detailTarget.Name}` : '卷详情'}
+        title={detailTarget ? t('卷详情 · {{v1}}', { v1: detailTarget.Name }) : t('卷详情')}
         onClose={() => setDetailTarget(null)}
         width={620}
       >
         <div className="vol-detail">
           {detailLoading ? (
-            <div className="vol-detail__tip">加载中…</div>
+            <div className="vol-detail__tip">{t('加载中…')}</div>
           ) : !detail ? (
-            <div className="vol-detail__tip">未能加载卷详情</div>
+            <div className="vol-detail__tip">{t('未能加载卷详情')}</div>
           ) : (
             <div className="vol-detail__grid">
               <div className="vol-detail__item">
-                <div className="vol-detail__label">名称</div>
+                <div className="vol-detail__label">{t('名称')}</div>
                 <div className="vol-detail__value mono">{detail.Name}</div>
               </div>
               <div className="vol-detail__item">
-                <div className="vol-detail__label">驱动</div>
+                <div className="vol-detail__label">{t('驱动')}</div>
                 <div className="vol-detail__value">{detail.Driver}</div>
               </div>
               <div className="vol-detail__item vol-detail__item--full">
-                <div className="vol-detail__label">挂载点</div>
+                <div className="vol-detail__label">{t('挂载点')}</div>
                 <div className="vol-detail__value mono">{detail.Mountpoint}</div>
               </div>
               <div className="vol-detail__item">
-                <div className="vol-detail__label">创建时间</div>
+                <div className="vol-detail__label">{t('创建时间')}</div>
                 <div className="vol-detail__value">{formatTime(detail.CreatedAt)}</div>
               </div>
               <div className="vol-detail__item">
-                <div className="vol-detail__label">作用域</div>
+                <div className="vol-detail__label">{t('作用域')}</div>
                 <div className="vol-detail__value">{detail.Scope || '-'}</div>
               </div>
               <div className="vol-detail__item vol-detail__item--full">
-                <div className="vol-detail__label">选项（Options）</div>
+                <div className="vol-detail__label">{t('选项（Options）')}</div>
                 <div className="vol-detail__value">
                   {detail.Options && Object.keys(detail.Options).length ? (
                     <div className="line-list">
@@ -711,7 +712,7 @@ const canPrune = hasPerm('volumes.prune');
                 </div>
               </div>
               <div className="vol-detail__item vol-detail__item--full">
-                <div className="vol-detail__label">标签（Labels）</div>
+                <div className="vol-detail__label">{t('标签（Labels）')}</div>
                 <div className="vol-detail__value">
                   {detail.Labels && Object.keys(detail.Labels).length ? (
                     <div className="line-list">
@@ -727,13 +728,13 @@ const canPrune = hasPerm('volumes.prune');
                 </div>
               </div>
               <div className="vol-detail__item">
-                <div className="vol-detail__label">引用数（RefCount）</div>
+                <div className="vol-detail__label">{t('引用数（RefCount）')}</div>
                 <div className="vol-detail__value">
                   {detail.UsageData?.RefCount != null ? detail.UsageData.RefCount : '-'}
                 </div>
               </div>
               <div className="vol-detail__item">
-                <div className="vol-detail__label">数据大小</div>
+                <div className="vol-detail__label">{t('数据大小')}</div>
                 <div className="vol-detail__value">
                   {detail.UsageData?.Size != null ? formatBytes(detail.UsageData.Size) : '-'}
                 </div>
@@ -741,18 +742,18 @@ const canPrune = hasPerm('volumes.prune');
             </div>
           )}
 
-          <div className="vol-detail__section">使用该卷的容器</div>
+          <div className="vol-detail__section">{t('使用该卷的容器')}</div>
           {containersLoading ? (
-            <div className="vol-detail__tip">加载中…</div>
+            <div className="vol-detail__tip">{t('加载中…')}</div>
           ) : usingContainers.length === 0 ? (
-            <div className="vol-detail__tip">暂无容器使用该卷</div>
+            <div className="vol-detail__tip">{t('暂无容器使用该卷')}</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>名称</th>
-                  <th>镜像</th>
-                  <th>状态</th>
+                  <th>{t('名称')}</th>
+                  <th>{t('镜像')}</th>
+                  <th>{t('状态')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -779,7 +780,7 @@ const canPrune = hasPerm('volumes.prune');
       {/* 数据卷文件浏览弹窗 */}
       <Modal
         open={!!browseTarget}
-        title={browseTarget ? `文件浏览 · ${browseTarget.Name}` : '文件浏览'}
+        title={browseTarget ? t('文件浏览 · {{v1}}', { v1: browseTarget.Name }) : t('文件浏览')}
         onClose={() => setBrowseTarget(null)}
         width={880}
       >
@@ -789,25 +790,25 @@ const canPrune = hasPerm('volumes.prune');
       {/* 数据卷备份弹窗 */}
       <Modal
         open={!!backupTarget}
-        title="备份数据卷"
+        title={t('备份数据卷')}
         onClose={() => !backingUp && setBackupTarget(null)}
         width={460}
         footer={
           <>
             <Button variant="secondary" onClick={() => setBackupTarget(null)} disabled={backingUp}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleBackup} loading={backingUp}>
-              开始备份
+              {t('开始备份')}
             </Button>
           </>
         }
       >
-        <Field label="备份名称" required hint="创建完成后可到「备份」页下载">
+        <Field label={t('备份名称')} required hint={t('创建完成后可到「备份」页下载')}>
           <Input
             value={backupName}
             onChange={(e) => setBackupName(e.target.value)}
-            placeholder="备份名称"
+            placeholder={t('备份名称')}
             autoFocus
             disabled={backingUp}
           />
@@ -817,28 +818,28 @@ const canPrune = hasPerm('volumes.prune');
       {/* 新建数据卷弹窗 */}
       <Modal
         open={createOpen}
-        title="新建数据卷"
+        title={t('新建数据卷')}
         onClose={() => setCreateOpen(false)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleCreate} loading={creating}>
-              创建
+              {t('创建')}
             </Button>
           </>
         }
       >
-        <Field label="名称" required>
+        <Field label={t('名称')} required>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="数据卷名称"
+            placeholder={t('数据卷名称')}
             autoFocus
           />
         </Field>
-        <Field label="驱动" hint="默认 local">
+        <Field label={t('驱动')} hint={t('默认 local')}>
           <Input value={driver} onChange={(e) => setDriver(e.target.value)} placeholder="local" />
         </Field>
       </Modal>
@@ -846,31 +847,31 @@ const canPrune = hasPerm('volumes.prune');
       {/* 克隆数据卷弹窗 */}
       <Modal
         open={!!cloneTarget}
-        title="克隆数据卷"
+        title={t('克隆数据卷')}
         onClose={() => !cloning && setCloneTarget(null)}
         width={460}
         footer={
           <>
             <Button variant="secondary" onClick={() => setCloneTarget(null)} disabled={cloning}>
-              取消
+              {t('取消')}
             </Button>
             <Button onClick={handleClone} loading={cloning}>
-              开始克隆
+              {t('开始克隆')}
             </Button>
           </>
         }
       >
         <Field
-          label="源数据卷"
-          hint={cloneTarget ? `挂载点：${cloneTarget.Mountpoint}` : undefined}
+          label={t('源数据卷')}
+          hint={cloneTarget ? t('挂载点：{{v1}}', { v1: cloneTarget.Mountpoint }) : undefined}
         >
           <Input value={cloneTarget?.Name || ''} disabled />
         </Field>
-        <Field label="目标卷名" required hint="将创建新卷并完整复制源卷数据，耗时取决于数据量">
+        <Field label={t('目标卷名')} required hint={t('将创建新卷并完整复制源卷数据，耗时取决于数据量')}>
           <Input
             value={cloneName}
             onChange={(e) => setCloneName(e.target.value)}
-            placeholder="目标卷名"
+            placeholder={t('目标卷名')}
             autoFocus
             disabled={cloning}
           />
@@ -880,9 +881,9 @@ const canPrune = hasPerm('volumes.prune');
       {/* 删除数据卷确认框 */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除数据卷"
-        message={`确定要删除数据卷 "${deleteTarget?.Name}" 吗？此操作不可恢复。`}
-        confirmText="删除"
+        title={t('删除数据卷')}
+        message={t('确定要删除数据卷 "{{v1}}" 吗？此操作不可恢复。', { v1: deleteTarget?.Name || '' })}
+        confirmText={t('删除')}
         danger
         loading={deleting}
         onConfirm={handleDelete}
@@ -892,9 +893,9 @@ const canPrune = hasPerm('volumes.prune');
       {/* 清理未使用数据卷确认框 */}
       <ConfirmDialog
         open={pruneOpen}
-        title="清理未使用数据卷"
-        message="确定要清理所有未被容器引用的数据卷吗？此操作不可恢复。"
-        confirmText="清理"
+        title={t('清理未使用数据卷')}
+        message={t('确定要清理所有未被容器引用的数据卷吗？此操作不可恢复。')}
+        confirmText={t('清理')}
         danger
         loading={pruning}
         onConfirm={handlePrune}

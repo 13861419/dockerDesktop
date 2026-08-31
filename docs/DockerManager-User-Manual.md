@@ -664,7 +664,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 ### 24.1 System Settings (`/settings`)
 
 - **Theme**: switch light / dark.
-- **Language**: switch the UI language (Chinese / English) in the "About" card → "Interface Language". The preference takes effect immediately and is stored in the browser. v0.6.0 ships an i18n skeleton with an English pack covering the core layer (navigation / login / common components / Overview / Containers / Images / Settings); v0.7.0 extends coverage to Container Details, Notifications, Databases and Scheduled Tasks. Untranslated pages automatically fall back to Chinese.
+- **Language**: switch the UI language (Chinese / English) in the "About" card → "Interface Language". The preference takes effect immediately and is stored in the browser. v0.6.0 ships an i18n skeleton with an English pack covering the core layer (navigation / login / common components / Overview / Containers / Images / Settings); v0.7.0 extends coverage to Container Details, Notifications, Databases and Scheduled Tasks; v0.8.0 extends it to the App Store, Compose, Volumes and the Approval Center. Untranslated pages automatically fall back to Chinese.
 - **Users & passwords**: admins can add / remove users and change passwords (linked to login auth).
 - **Role management (RBAC)**: admins can create custom roles with per-action whitelists (14 resource-domain permissions in 6 groups: containers / images / volumes / networks / compose / self-heal); built-in admin / user / auditor are locked, the operator permission set is adjustable; roles still in use cannot be deleted. Role permissions apply to the resource domain only — user management, system settings, engine switching, etc. always require an admin. Role members see exactly the action buttons their permissions allow (unauthorized buttons are hidden); high-risk entry points such as container terminals are granted by the same permission set.
 
@@ -1209,6 +1209,8 @@ When enabled:
 **When the approval flow is off**: delete / prune endpoints return 403 for non-admins (admin-only as before); custom roles (RBAC) holding the corresponding permission always execute directly and bypass approvals.
 
 **Gated actions**: container delete (`container.delete`), image delete (`image.delete`), batch image delete (`image.deleteBatch`), dangling image prune (`image.prune`), volume delete (`volume.delete`), volume prune (`volume.prune`), network prune (`network.prune`), compose project down (`compose.down`), container config fix (`container.fix`).
+
+**Approval stats**: admins also see the "Approval Stats" card (last 30 days) with an executed OK / failed overview, a per-action distribution table (total / approved / rejected / pending) and a top-submitter list, giving an at-a-glance view of dangerous operations.
 
 ![Approval center](../images/approvals.png)
 

@@ -15,6 +15,7 @@ import {
   decideApproval,
   cancelApproval,
   hasExecutor,
+  getApprovalStats,
 } from '../approvals';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
@@ -45,6 +46,18 @@ router.get(
     const isAdmin = role === 'admin';
     const rows = await listApprovalsView(isAdmin ? undefined : res.locals.username, String(req.query.status || '') || undefined);
     res.json({ items: rows, isAdmin });
+  }),
+);
+
+/**
+ * GET /api/approvals/stats?days=30
+ * 审批统计：近 N 天按状态汇总、按动作类型与提交人分布、执行质量
+ */
+router.get(
+  '/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    const days = Number(req.query.days) || 30;
+    res.json(getApprovalStats(days));
   }),
 );
 

@@ -3,7 +3,7 @@
  *
  * - 管理员：查看全部审批，批准（立即执行）/ 拒绝
  * - 其他用户：查看自己提交的审批，可撤销待审批记录
- * - 状态筛选 + 摘要统计
+ * - 状态筛选 + 摘要统计 + 送达统计卡片
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Card from '../components/Card';
@@ -12,6 +12,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import { translateNow as t } from '../i18n';
 import './approvals.less';
 
 /** 审批状态 */
@@ -32,6 +33,21 @@ interface ApprovalItem {
   created_at: number;
   decided_at: number | null;
   decided_by: string | null;
+}
+
+/** 审批统计（GET /api/approvals/stats 响应） */
+interface ApprovalStats {
+  totals: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    cancelled: number;
+    executedOk: number;
+    executedFail: number;
+  };
+  byAction: Array<{ actionType: string; label: string; total: number; approved: number; rejected: number; pending: number }>;
+  byUser: Array<{ username: string; total: number; approved: number; rejected: number; pending: number }>;
 }
 
 /** 动作类型中文名 */
@@ -92,6 +108,8 @@ export default function Approvals() {
   /** 拒绝理由弹窗：单条或批量 */
   const [rejectInput, setRejectInput] = useState<{ ids: number[]; label: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  /** 审批统计（近 30 天） */
+  const [stats, setStats] = useState<ApprovalStats | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,14 +124,26 @@ export default function Approvals() {
       const meResp = await get<{ username: string }>('/api/auth/me').catch(() => null);
       if (meResp?.username) setMe(meResp.username);
     } catch (e: any) {
-      showToast(e?.message || '加载审批列表失败', 'error');
+      showToast(e?.message || t('加载审批列表失败'), 'error');
     } finally {
       setLoading(false);
     }
   }, [status, showToast]);
 
+  /** 加载审批统计（仅管理员；统计口径为全部审批） */
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await get<ApprovalStats>('/api/approvals/stats?days=30');
+      setStats(res);
+    } catch {
+      // 统计失败不影响主界面
+    }
+  }, []);
+
   useEffect(() => {
     load();
+    loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
   /** 摘要统计（基于当前列表） */
@@ -127,11 +157,11 @@ export default function Approvals() {
   async function approve(item: ApprovalItem) {
     try {
       const r = await post<{ ok: boolean; executed: boolean; error?: string }>(`/api/approvals/${item.id}/approve`);
-      if (r.executed) showToast(`已批准并执行成功`, 'success');
-      else showToast(`已批准，但执行失败：${r.error || '未知错误'}`, 'error');
+      if (r.executed) showToast(t('已批准并执行成功'), 'success');
+      else showToast(t('已批准，但执行失败：{{v1}}', { v1: r.error || t('未知错误') }), 'error');
       load();
     } catch (e: any) {
-      showToast(e?.message || '批准失败', 'error');
+      showToast(e?.message || t('批准失败'), 'error');
     }
   }
 
@@ -142,11 +172,18 @@ export default function Approvals() {
     setBatchBusy(true);
     try {
       const r = await post<{ ok: number; fail: number }>('/api/approvals/batch', { ids, decision });
-      showToast(`批量处理完成：成功 ${r.ok} 条${r.fail ? `，失败 ${r.fail} 条` : ''}`, r.fail ? 'info' : 'success');
+      showToast(
+        t('批量处理完成：成功 {{ok}} 条{{failPart}}', {
+          ok: r.ok,
+          failPart: r.fail ? t('，失败 {{n}} 条', { n: r.fail }) : '',
+        }),
+        r.fail ? 'info' : 'success',
+      );
       setSelected(new Set());
       load();
+      loadStats();
     } catch (e: any) {
-      showToast(e?.message || '批量处理失败', 'error');
+      showToast(e?.message || t('批量处理失败'), 'error');
     } finally {
       setBatchBusy(false);
     }
@@ -179,19 +216,26 @@ export default function Approvals() {
     if (!rejectInput) return;
     const reason = rejectReason.trim();
     if (!reason) {
-      showToast('请填写拒绝理由', 'error');
+      showToast(t('请填写拒绝理由'), 'error');
       return;
     }
     setBatchBusy(true);
     post<{ ok: number; fail: number }>('/api/approvals/batch', { ids: rejectInput.ids, decision: 'rejected', reason })
       .then((r) => {
-        showToast(`已拒绝 ${r.ok} 条审批${r.fail ? `，失败 ${r.fail} 条` : ''}`, r.fail ? 'info' : 'success');
+        showToast(
+          t('已拒绝 {{ok}} 条审批{{failPart}}', {
+            ok: r.ok,
+            failPart: r.fail ? t('，失败 {{n}} 条', { n: r.fail }) : '',
+          }),
+          r.fail ? 'info' : 'success',
+        );
         setSelected(new Set());
         setRejectInput(null);
         setRejectReason('');
         load();
+        loadStats();
       })
-      .catch((e: any) => showToast(e?.message || '拒绝失败', 'error'))
+      .catch((e: any) => showToast(e?.message || t('拒绝失败'), 'error'))
       .finally(() => setBatchBusy(false));
   }
 
@@ -199,10 +243,11 @@ export default function Approvals() {
   async function cancel(item: ApprovalItem) {
     try {
       await del(`/api/approvals/${item.id}`);
-      showToast('已撤销', 'info');
+      showToast(t('已撤销'), 'info');
       load();
+      loadStats();
     } catch (e: any) {
-      showToast(e?.message || '撤销失败', 'error');
+      showToast(e?.message || t('撤销失败'), 'error');
     }
   }
 
@@ -216,12 +261,12 @@ export default function Approvals() {
             variant={status === f.value ? 'primary' : 'ghost'}
             onClick={() => setStatus(f.value)}
           >
-            {f.label}
+            {t(f.label)}
             {f.value && items.length > 0 ? '' : ''}
           </Button>
         ))}
         <Button variant="secondary" size="sm" onClick={load} loading={loading}>
-          刷新
+          {t('刷新')}
         </Button>
         {admin && pendingIds.length > 0 && (
           <>
@@ -232,7 +277,7 @@ export default function Approvals() {
               loading={batchBusy}
               onClick={() => batchDecide('approved')}
             >
-              批量批准{selected.size ? `（${selected.size}）` : ''}
+              {t('批量批准')}{selected.size ? t('（{{n}}）', { n: selected.size }) : ''}
             </Button>
             <Button
               variant="danger"
@@ -240,15 +285,15 @@ export default function Approvals() {
               disabled={selected.size === 0}
               onClick={() => {
                 setRejectReason('');
-                setRejectInput({ ids: [...selected], label: `选中的 ${selected.size} 条待审批记录` });
+                setRejectInput({ ids: [...selected], label: t('选中的 {{n}} 条待审批记录', { n: selected.size }) });
               }}
             >
-              批量拒绝{selected.size ? `（${selected.size}）` : ''}
+              {t('批量拒绝')}{selected.size ? t('（{{n}}）', { n: selected.size }) : ''}
             </Button>
           </>
         )}
         <span className="approvals-page__hint">
-          开启设置中心「高危操作审批流」后，非管理员的容器删除将自动转入此处待审批
+          {t('开启设置中心「高危操作审批流」后，非管理员的容器删除将自动转入此处待审批')}
         </span>
       </div>
 
@@ -257,33 +302,87 @@ export default function Approvals() {
         {STATUS_FILTERS.filter((f) => f.value).map((f) => (
           <div key={f.value} className={`approvals-stat approvals-stat--${f.value}`}>
             <div className="approvals-stat__value">{counts[f.value as ApprovalStatus]}</div>
-            <div className="approvals-stat__label">{f.label}</div>
+            <div className="approvals-stat__label">{t(f.label)}</div>
           </div>
         ))}
       </div>
 
-      <Card title={`审批记录（${items.length}）`}>
+      {/* 审批统计（仅管理员） */}
+      {admin && stats && (
+        <Card title={t('审批统计（近 {{days}} 天）', { days: 30 })}>
+          <div className="approvals-page__summary" style={{ marginBottom: 12 }}>
+            <div className="approvals-stat approvals-stat--approved">
+              <div className="approvals-stat__value">{stats.totals.executedOk}</div>
+              <div className="approvals-stat__label">{t('执行成功')}</div>
+            </div>
+            <div className="approvals-stat approvals-stat--rejected">
+              <div className="approvals-stat__value">{stats.totals.executedFail}</div>
+              <div className="approvals-stat__label">{t('执行失败')}</div>
+            </div>
+          </div>
+          {stats.byAction.length === 0 ? (
+            <Empty kind="empty" title={t('暂无审批记录')} />
+          ) : (
+            <>
+              <table className="approvals-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '34%' }}>{t('动作')}</th>
+                    <th style={{ width: '14%' }}>{t('总数')}</th>
+                    <th style={{ width: '14%' }}>{t('已批准')}</th>
+                    <th style={{ width: '14%' }}>{t('已拒绝')}</th>
+                    <th>{t('待审批')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.byAction.map((a) => (
+                    <tr key={a.actionType}>
+                      <td><strong>{t(a.label)}</strong></td>
+                      <td>{a.total}</td>
+                      <td>{a.approved}</td>
+                      <td>{a.rejected}</td>
+                      <td>{a.pending}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {stats.byUser.length > 0 && (
+                <div style={{ marginTop: 10 }} className="notify-dim">
+                  {t('提交人 Top：{{list}}', {
+                    list: stats.byUser
+                      .slice(0, 5)
+                      .map((u) => `${u.username}(${u.total})`)
+                      .join('、'),
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      <Card title={t('审批记录（{{n}}）', { n: items.length })}>
         {loading && items.length === 0 ? (
           <SkeletonRows rows={4} />
         ) : items.length === 0 ? (
-          <Empty kind="empty" title="暂无审批记录" />
+          <Empty kind="empty" title={t('暂无审批记录')} />
         ) : (
           <table className="approvals-table">
             <thead>
               <tr>
                 {admin && pendingIds.length > 0 && (
                   <th style={{ width: '4%' }}>
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} title="全选待审批" />
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} title={t('全选待审批')} />
                   </th>
                 )}
                 <th style={{ width: '5%' }}>#</th>
-                <th style={{ width: '10%' }}>提交人</th>
-                <th style={{ width: '12%' }}>动作</th>
-                <th style={{ width: '20%' }}>目标</th>
-                <th style={{ width: '10%' }}>状态</th>
-                <th>结果 / 说明</th>
-                <th style={{ width: '14%' }}>提交时间</th>
-                <th style={{ width: '16%' }}>操作</th>
+                <th style={{ width: '10%' }}>{t('提交人')}</th>
+                <th style={{ width: '12%' }}>{t('动作')}</th>
+                <th style={{ width: '20%' }}>{t('目标')}</th>
+                <th style={{ width: '10%' }}>{t('状态')}</th>
+                <th>{t('结果 / 说明')}</th>
+                <th style={{ width: '14%' }}>{t('提交时间')}</th>
+                <th style={{ width: '16%' }}>{t('操作')}</th>
               </tr>
             </thead>
             <tbody>
@@ -303,7 +402,7 @@ export default function Approvals() {
                     )}
                     <td>{it.id}</td>
                     <td>{it.username}</td>
-                    <td>{ACTION_LABELS[it.action_type] || it.action_type}</td>
+                    <td>{t(ACTION_LABELS[it.action_type] || it.action_type)}</td>
                     <td className="approvals-table__target" title={it.target}>
                       <div className="approvals-table__target-main">{it.target_label || it.target}</div>
                       {/* 目标为 ID（与展示名不同）时，附加短 ID 便于核对 */}
@@ -315,8 +414,8 @@ export default function Approvals() {
                         (() => {
                           const p = parsePayload(it.payload);
                           const flags: string[] = [];
-                          if (p.force) flags.push('强制删除');
-                          if (p.v) flags.push('同时删除卷');
+                          if (p.force) flags.push(t('强制删除'));
+                          if (p.v) flags.push(t('同时删除卷'));
                           return flags.length > 0 ? (
                             <div className="approvals-table__payload">{flags.join(' / ')}</div>
                           ) : null;
@@ -324,7 +423,7 @@ export default function Approvals() {
                     </td>
                     <td>
                       <span className={`approvals-badge approvals-badge--${it.status}`}>
-                        {STATUS_LABEL[it.status]}
+                        {t(STATUS_LABEL[it.status])}
                       </span>
                     </td>
                     <td className="approvals-table__result">
@@ -339,7 +438,7 @@ export default function Approvals() {
                         {admin && it.status === 'pending' && (
                           <>
                             <Button variant="primary" size="sm" onClick={() => approve(it)}>
-                              批准
+                              {t('批准')}
                             </Button>
                             <Button
                               variant="danger"
@@ -348,17 +447,20 @@ export default function Approvals() {
                                 setRejectReason('');
                                 setRejectInput({
                                   ids: [it.id],
-                                  label: `「${ACTION_LABELS[it.action_type] || it.action_type} ${it.target_label || it.target}」的申请`,
+                                  label: t('「{{action}} {{target}}」的申请', {
+                                    action: t(ACTION_LABELS[it.action_type] || it.action_type),
+                                    target: it.target_label || it.target,
+                                  }),
                                 });
                               }}
                             >
-                              拒绝
+                              {t('拒绝')}
                             </Button>
                           </>
                         )}
                         {it.status === 'pending' && (own || admin) && (
                           <Button variant="ghost" size="sm" onClick={() => cancel(it)}>
-                            撤销
+                            {t('撤销')}
                           </Button>
                         )}
                         {it.status !== 'pending' && <span className="approvals-table__done">—</span>}
@@ -376,11 +478,11 @@ export default function Approvals() {
       {rejectInput && (
         <div className="approvals-page__overlay" onClick={() => setRejectInput(null)}>
           <div className="approvals-page__dialog" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-            <div className="approvals-page__dialog-title">拒绝审批</div>
-            <div className="approvals-page__dialog-text">确定拒绝 {rejectInput.label} 吗？</div>
+            <div className="approvals-page__dialog-title">{t('拒绝审批')}</div>
+            <div className="approvals-page__dialog-text">{t('确定拒绝 {{v1}} 吗？', { v1: rejectInput.label })}</div>
             <textarea
               className="approvals-page__textarea"
-              placeholder="请填写拒绝理由（必填，将随审批留痕并通知提交人）"
+              placeholder={t('请填写拒绝理由（必填，将随审批留痕并通知提交人）')}
               value={rejectReason}
               rows={3}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectReason(e.target.value)}
@@ -388,10 +490,10 @@ export default function Approvals() {
             />
             <div className="approvals-page__dialog-ops">
               <Button variant="ghost" size="sm" onClick={() => setRejectInput(null)}>
-                取消
+                {t('取消')}
               </Button>
               <Button variant="danger" size="sm" loading={batchBusy} onClick={submitReject}>
-                确认拒绝
+                {t('确认拒绝')}
               </Button>
             </div>
           </div>

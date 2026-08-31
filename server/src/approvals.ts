@@ -222,6 +222,84 @@ export async function listApprovalsView(username?: string, status?: string): Pro
 }
 
 /**
+ * 审批统计：近 days 天按状态汇总、按动作类型分布、按提交人分布、执行质量
+ * @param days 统计回溯天数（默认 30，1-365）
+ */
+export function getApprovalStats(days = 30): {
+  since: number;
+  totals: { total: number; pending: number; approved: number; rejected: number; cancelled: number; executedOk: number; executedFail: number };
+  byAction: Array<{ actionType: string; label: string; total: number; approved: number; rejected: number; pending: number }>;
+  byUser: Array<{ username: string; total: number; approved: number; rejected: number; pending: number }>;
+} {
+  const window = Math.max(1, Math.min(365, days));
+  const since = Date.now() - window * 86400_000;
+  const d = getDb();
+
+  const totalsRow = d
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+              SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+              SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+              SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+              SUM(CASE WHEN status = 'approved' AND result LIKE '执行成功%' THEN 1 ELSE 0 END) AS executedOk,
+              SUM(CASE WHEN status = 'approved' AND result LIKE '执行失败%' THEN 1 ELSE 0 END) AS executedFail
+       FROM approvals WHERE created_at >= ?`,
+    )
+    .get(since) as any;
+
+  const actionRows = d
+    .prepare(
+      `SELECT action_type,
+              COUNT(*) AS total,
+              SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+              SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+              SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+       FROM approvals WHERE created_at >= ? GROUP BY action_type ORDER BY total DESC`,
+    )
+    .all(since) as unknown as Array<{ action_type: string; total: number; approved: number; rejected: number; pending: number }>;
+
+  const userRows = d
+    .prepare(
+      `SELECT username,
+              COUNT(*) AS total,
+              SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+              SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+              SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+       FROM approvals WHERE created_at >= ? GROUP BY username ORDER BY total DESC LIMIT 10`,
+    )
+    .all(since) as unknown as Array<{ username: string; total: number; approved: number; rejected: number; pending: number }>;
+
+  return {
+    since,
+    totals: {
+      total: Number(totalsRow?.total ?? 0),
+      pending: Number(totalsRow?.pending ?? 0),
+      approved: Number(totalsRow?.approved ?? 0),
+      rejected: Number(totalsRow?.rejected ?? 0),
+      cancelled: Number(totalsRow?.cancelled ?? 0),
+      executedOk: Number(totalsRow?.executedOk ?? 0),
+      executedFail: Number(totalsRow?.executedFail ?? 0),
+    },
+    byAction: actionRows.map((r) => ({
+      actionType: r.action_type,
+      label: GATE_ACTIONS[r.action_type]?.label || r.action_type,
+      total: Number(r.total),
+      approved: Number(r.approved),
+      rejected: Number(r.rejected),
+      pending: Number(r.pending),
+    })),
+    byUser: userRows.map((r) => ({
+      username: r.username,
+      total: Number(r.total),
+      approved: Number(r.approved),
+      rejected: Number(r.rejected),
+      pending: Number(r.pending),
+    })),
+  };
+}
+
+/**
  * 审批决定：批准则立即执行目标操作，拒绝仅留档
  * @returns 执行结果（批准时）
  * @throws 审批记录不存在/状态不对时抛 404/400
