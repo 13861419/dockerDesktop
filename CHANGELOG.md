@@ -3,6 +3,37 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-09-01
+
+本版本为 **安全加固**：2FA 双因素认证、会话管理、IP 白名单与密码策略，补齐账号安全体系。
+
+### Added（新增）
+
+- **2FA 双因素认证（TOTP，RFC 6238 零依赖实现）**
+  - 登录二步验证：密码通过后签发 2 分钟单次有效票据，需输入认证器 6 位验证码方可登录
+  - 设置页自助管理：生成密钥（Base32 + otpauth URI）→ 首枚验证码确认启用；关闭需当前验证码确认
+  - 密钥以加密形式存储于 users 表
+- **会话管理**
+  - 在线会话列表（会话 ID / 用户 / IP / 登录时间），当前会话标记；支持撤销单条与撤销其他全部会话
+  - 新增配置 `auth.maxSessionsPerUser`：单用户并发会话上限，超出自动淘汰最早会话（0 = 不限制）
+- **IP 白名单（全局 + 按用户）**
+  - 全局白名单（配置 `security.ipAllowlist`）与按用户白名单（用户管理内联编辑），支持 IPv4 CIDR 与精确 IP（IPv6 精确串）
+  - 用户级白名单优先于全局；登录与每次 API 请求双重校验，命中失败返回 403
+- **密码策略**
+  - `security.passwordMinLength` 最小长度、`security.passwordRequireComplex` 须含大小写与数字、`security.passwordExpiryDays` 有效期（过期登录强制改密）
+  - 新建用户与修改密码统一执行策略
+
+### Changed（调整）
+
+- 登录页新增 2FA 验证码输入视图；设置页用户新增「IP 白名单」列与「在线会话」「两步验证（2FA）」区块
+- users 表迁移新增 totp_secret / totp_enabled / ip_allowlist / pwd_changed_at 列（自动迁移，无需手工干预）
+
+### Test（测试）
+
+- 新增单测 security2.test.ts（7 例）：TOTP RFC 6238 向量、Base32 往返、CIDR 匹配、白名单解析、密码策略、密码过期、会话列表/上限/撤销；单测累计 **277/277**
+- API 冒烟 20/20：2FA 启停与登录流、会话列表/撤销、用户级与全局白名单 403、密码策略拦截
+- typecheck + vite build 通过；E2E 5/5（默认中文零回归）
+
 ## [1.0.0] - 2026-08-31
 
 本版本为 **i18n 全覆盖收官**：剩余 20 个页面全部完成迁移，全部界面实现中英文完整覆盖。

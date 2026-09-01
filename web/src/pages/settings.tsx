@@ -27,6 +27,7 @@ interface UserItem {
   // 角色名：内置 admin/operator/user/auditor 或自定义角色
   role: string;
   createdAt: number;
+  ipAllowlist?: string;
 }
 
 /** 角色信息（/api/roles） */
@@ -252,6 +253,7 @@ export default function SettingsPage() {
       ]);
       const role = me.role || 'user';
       setUsers(u || []);
+      setIpEdits(Object.fromEntries((u || []).map((x) => [x.username, x.ipAllowlist || ''])));
       setSettings(s);
       setCurrentUser(me.username || '');
       setCurrentRole(role);
@@ -283,6 +285,105 @@ export default function SettingsPage() {
   useEffect(() => {
     loadKvSettings();
   }, [loadKvSettings]);
+
+  /** 2FA 状态与在线会话（安全卡） */
+  interface SessionItem {
+    id: string;
+    username: string;
+    createdAt: number;
+    expiresAt: number;
+    ip: string;
+    userAgent: string;
+    current: boolean;
+  }
+  const [totpEnabled, setTotpEnabled] = useState<boolean | null>(null);
+  const [totpSetup, setTotpSetup] = useState<{ secret: string; uri: string } | null>(null);
+  const [totpCode, setTotpCode] = useState('');
+  const [totpBusy, setTotpBusy] = useState(false);
+  const [sessions, setSessions] = useState<SessionItem[]>([]);
+
+  const loadSecurity = useCallback(async () => {
+    try {
+      const [st, ss] = await Promise.all([
+        get<{ enabled: boolean }>('/api/system/totp/status'),
+        get<{ sessions: SessionItem[] }>('/api/auth/sessions'),
+      ]);
+      setTotpEnabled(!!st?.enabled);
+      setSessions(ss?.sessions || []);
+    } catch {
+      // 静默：旧后端或会话失效时不影响其余区块
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSecurity();
+  }, [loadSecurity]);
+
+  /** 生成 2FA 密钥（待确认） */
+  async function handleTotpSetup() {
+    try {
+      setTotpSetup(await post<{ secret: string; uri: string }>('/api/system/totp/setup', {}));
+    } catch (e: any) {
+      showToast(e?.message || t('生成密钥失败'), 'error');
+    }
+  }
+
+  /** 用首枚验证码确认启用 2FA */
+  async function handleTotpEnable() {
+    setTotpBusy(true);
+    try {
+      await post('/api/system/totp/enable', { code: totpCode });
+      showToast(t('2FA 已启用'), 'success');
+      setTotpSetup(null);
+      setTotpCode('');
+      loadSecurity();
+    } catch (e: any) {
+      showToast(e?.message || t('启用失败'), 'error');
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  /** 关闭 2FA */
+  async function handleTotpDisable() {
+    setTotpBusy(true);
+    try {
+      await post('/api/system/totp/disable', { code: totpCode });
+      showToast(t('2FA 已关闭'), 'success');
+      setTotpCode('');
+      loadSecurity();
+    } catch (e: any) {
+      showToast(e?.message || t('关闭失败'), 'error');
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  /** 撤销会话（id 缺省 = 撤销除当前外的全部） */
+  async function handleRevoke(id?: string) {
+    try {
+      const r = await post<{ revoked: number }>('/api/auth/sessions/revoke', id ? { id } : {});
+      showToast(t('已撤销 {{n}} 个会话', { n: String(r?.revoked ?? 0) }), 'success');
+      loadSecurity();
+    } catch (e: any) {
+      showToast(e?.message || t('撤销失败'), 'error');
+    }
+  }
+
+  // 按用户 IP 白名单（管理员，内联编辑）
+  const [ipEdits, setIpEdits] = useState<Record<string, string>>({});
+
+  async function handleSaveIpAllowlist(name: string) {
+    try {
+      await put(`/api/system/users/${encodeURIComponent(name)}/ip-allowlist`, {
+        allowlist: ipEdits[name] ?? '',
+      });
+      showToast(t('已保存 {{name}} 的 IP 白名单', { name }), 'success');
+      load();
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    }
+  }
 
   /** 保存配置中心编辑项（仅提交有改动的键） */
   async function handleSaveKv() {
@@ -759,6 +860,7 @@ export default function SettingsPage() {
             <tr>
               <th>{t('用户名')}</th>
               <th>{t('角色')}</th>
+              <th>{t('IP 白名单')}</th>
               <th>{t('创建时间')}</th>
               <th style={{ width: 100 }}>{t('操作')}</th>
             </tr>
@@ -774,6 +876,25 @@ export default function SettingsPage() {
                 </td>
                 {/* 角色列：内置角色显示中文名，自定义角色显示角色名 */}
                 <td>{t(roleLabel(u.role))}</td>
+                {/* IP 白名单：内联编辑（管理员），空 = 回退全局白名单 */}
+                <td>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Input
+                      type="text"
+                      value={ipEdits[u.username] ?? ''}
+                      placeholder={t('如 192.168.1.0/24，留空不限制')}
+                      onChange={(e) => setIpEdits({ ...ipEdits, [u.username]: e.target.value })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSaveIpAllowlist(u.username)}
+                      disabled={u.username === currentUser}
+                    >
+                      {t('保存')}
+                    </Button>
+                  </div>
+                </td>
                 <td>{formatDate(u.createdAt)}</td>
                 <td>
                   <Button
@@ -856,6 +977,116 @@ export default function SettingsPage() {
               </Button>
             </div>
           </div>
+        </div>
+        {/* 安全加固：2FA + 会话管理 */}
+        <div className="settings-section">
+          <div className="settings-section__title">{t('两步验证（2FA）')}</div>
+          {totpEnabled === null ? (
+            <div className="settings-hint">{t('加载中…')}</div>
+          ) : totpEnabled ? (
+            <div className="settings-form">
+              <div className="settings-hint">{t('当前账号已启用 2FA，登录时需输入认证器验证码。')}</div>
+              <Field label={t('验证码')}>
+                <Input
+                  type="text"
+                  value={totpCode}
+                  maxLength={6}
+                  placeholder={t('6 位数字验证码')}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                />
+              </Field>
+              <div className="settings-form__actions">
+                <Button variant="danger" size="sm" loading={totpBusy} onClick={handleTotpDisable}>
+                  {t('关闭 2FA')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="settings-form">
+              <div className="settings-hint">
+                {t('使用 Google Authenticator 等认证器 App 扫码或手动录入密钥，启用后登录需输入验证码。')}
+              </div>
+              {!totpSetup ? (
+                <div className="settings-form__actions">
+                  <Button variant="primary" size="sm" onClick={handleTotpSetup}>
+                    {t('生成密钥')}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <Field label={t('密钥（手动录入用）')}>
+                    <Input type="text" value={totpSetup.secret} readOnly />
+                  </Field>
+                  <div className="settings-hint">{totpSetup.uri}</div>
+                  <Field label={t('首枚验证码')} required>
+                    <Input
+                      type="text"
+                      value={totpCode}
+                      maxLength={6}
+                      placeholder={t('6 位数字验证码')}
+                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                    />
+                  </Field>
+                  <div className="settings-form__actions">
+                    <Button variant="primary" size="sm" loading={totpBusy} onClick={handleTotpEnable}>
+                      {t('确认启用')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setTotpSetup(null)}>
+                      {t('取消')}
+                    </Button>
+                  </div>
+                </>
+              )}
+          </div>
+          )}
+        </div>
+        <div className="settings-section">
+          <div className="settings-section__title">
+            {t('在线会话')}
+            <Button variant="ghost" size="sm" style={{ marginLeft: 12 }} onClick={() => handleRevoke()}>
+              {t('撤销其他会话')}
+            </Button>
+          </div>
+          <table className="settings-table">
+            <thead>
+              <tr>
+                <th>{t('会话 ID')}</th>
+                <th>{t('用户')}</th>
+                <th>{t('IP')}</th>
+                <th>{t('登录时间')}</th>
+                <th>{t('操作')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <code>{s.id}</code>
+                    {s.current && (
+                      <span className="settings-hint" style={{ marginLeft: 6 }}>
+                        ({t('当前')})
+                      </span>
+                    )}
+                  </td>
+                  <td>{s.username}</td>
+                  <td>{s.ip || '-'}</td>
+                  <td>{formatDate(s.createdAt)}</td>
+                  <td>
+                    {!s.current && (
+                      <Button variant="ghost" size="sm" onClick={() => handleRevoke(s.id)}>
+                        {t('撤销')}
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {sessions.length === 0 && (
+                <tr>
+                  <td colSpan={5}>{t('暂无在线会话')}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </Card>
 

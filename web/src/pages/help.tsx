@@ -83,6 +83,14 @@ const FAQ_ITEMS: FaqItem[] = [
     q: t('界面支持哪些语言？如何切换？'),
     a: t('「设置 → 关于 → 界面语言」可在中文 / English 间一键切换，偏好即时生效并记住（存于浏览器本地）。1.0.0 起全部页面完成中英文覆盖，未收录文案自动回退中文显示。'),
   },
+  {
+    q: t('如何开启 2FA 两步验证？'),
+    a: t('「设置 → 安全加固 → 两步验证（2FA）」点击「生成密钥」，用 Google Authenticator 等认证器 App 扫码或手动录入密钥，输入首枚验证码确认。此后登录在密码之后还需输入 6 位验证码；关闭 2FA 需输入当前验证码确认。建议管理员强制团队关键账号开启。'),
+  },
+  {
+    q: t('登录被提示「当前 IP 不在允许访问的白名单内」？'),
+    a: t('管理员开启了 IP 白名单（全局或按用户）。请确认你的出口 IP 在白名单 CIDR 范围内；若全局白名单把管理机自身也排除导致自锁，需在服务器数据目录的 SQLite 设置表中清空 security.ipAllowlist 键恢复访问。配置时务必先加入当前管理机 IP。'),
+  },
 ];
 
 /** 功能速查表：页面路径 -> 用途 */
@@ -112,7 +120,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份') },
   { path: '/databases', name: t('数据库'), desc: t('MySQL / PostgreSQL / Redis 可视化') },
-  { path: '/settings', name: t('设置'), desc: t('账号、角色管理（RBAC）、界面语言切换、备份、AI 配置、系统参数、用户管理') },
+  { path: '/settings', name: t('设置'), desc: t('账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、界面语言切换、备份、AI 配置、系统参数、用户管理') },
   { path: '/logs', name: t('日志聚合'), desc: t('跨容器日志检索与导出') },
   { path: '/operation-logs', name: t('操作日志'), desc: t('全量操作审计') },
   { path: '/notifications', name: t('告警中心'), desc: t('告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、记录与 AI 诊断') },

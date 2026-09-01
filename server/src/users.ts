@@ -6,6 +6,8 @@
  */
 import crypto from 'crypto';
 import { getDb } from './storage';
+import { validatePasswordPolicy } from './security';
+import { encryptSecret, decryptSecret } from './storage';
 
 export interface UserRecord {
   username: string;
@@ -109,19 +111,19 @@ export function verifyCredentials(
 /**
  * 列出全部用户（不含敏感哈希）
  */
-export function listUsers(): Array<{ username: string; role: UserRecord['role']; createdAt: number }> {
+export function listUsers(): Array<{ username: string; role: UserRecord['role']; createdAt: number; ipAllowlist: string }> {
   const rows = getDb()
-    .prepare('SELECT username, role, created_at FROM users')
-    .all() as unknown as Array<{ username: string; role: string; created_at: number }>;
+    .prepare('SELECT username, role, created_at, ip_allowlist FROM users')
+    .all() as unknown as Array<{ username: string; role: string; created_at: number; ip_allowlist: string | null }>;
   if (rows.length === 0) {
     // 空表时先触发默认管理员初始化，再重新查询
     loadUsers();
     return getDb()
-      .prepare('SELECT username, role, created_at FROM users')
+      .prepare('SELECT username, role, created_at, ip_allowlist FROM users')
       .all()
-      .map((r: any) => ({ username: r.username, role: r.role, createdAt: r.created_at }));
+      .map((r: any) => ({ username: r.username, role: r.role, createdAt: r.created_at, ipAllowlist: String(r.ip_allowlist || '') }));
   }
-  return rows.map((r) => ({ username: r.username, role: (r.role as UserRecord['role']) || 'user', createdAt: r.created_at }));
+  return rows.map((r) => ({ username: r.username, role: (r.role as UserRecord['role']) || 'user', createdAt: r.created_at, ipAllowlist: String(r.ip_allowlist || '') }));
 }
 
 /**
@@ -155,12 +157,12 @@ export function getUserRole(username: string): UserRecord['role'] {
 export function addUser(username: string, password: string, role: UserRecord['role'] = 'user'): void {
   const name = username.trim();
   if (!name) throw new Error('用户名不能为空');
-  if (password.length < 6) throw new Error('密码至少 6 位');
+  validatePasswordPolicy(password);
   if (userExists(name)) throw new Error('用户名已存在');
   const salt = crypto.randomBytes(16).toString('hex');
   getDb()
-    .prepare('INSERT INTO users (username, salt, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(name, salt, hashPassword(password, salt), role, Date.now());
+    .prepare('INSERT INTO users (username, salt, password_hash, role, created_at, pwd_changed_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, salt, hashPassword(password, salt), role, Date.now(), Date.now());
 }
 
 /**
@@ -193,12 +195,77 @@ export function changePassword(username: string, oldPassword: string, newPasswor
   if (!oldPassword) throw new Error('请输入原密码');
   const ok = hashPassword(oldPassword, current.salt) === current.password_hash;
   if (!ok) throw new Error('原密码不正确');
-  if (newPassword.length < 6) throw new Error('新密码至少 6 位');
+  validatePasswordPolicy(newPassword);
   const newSalt = crypto.randomBytes(16).toString('hex');
-  // 修改密码成功后清除强制改密标记
+  // 修改密码成功后清除强制改密标记并刷新密码修改时间（供密码过期策略使用）
   d.prepare(
-    'UPDATE users SET salt = ?, password_hash = ?, must_change_password = 0 WHERE username = ?',
-  ).run(newSalt, hashPassword(newPassword, newSalt), username);
+    'UPDATE users SET salt = ?, password_hash = ?, must_change_password = 0, pwd_changed_at = ? WHERE username = ?',
+  ).run(newSalt, hashPassword(newPassword, newSalt), Date.now(), username);
+}
+
+/**
+ * 读取用户安全信息（2FA 启停、按用户 IP 白名单）
+ */
+export function getUserSecurity(username: string): {
+  totpEnabled: boolean;
+  totpSecret: string;
+  ipAllowlist: string;
+  pwdChangedAt: number | null;
+} {
+  const row = getDb()
+    .prepare('SELECT totp_secret, totp_enabled, ip_allowlist, pwd_changed_at FROM users WHERE username = ?')
+    .get(username) as
+    | { totp_secret: string | null; totp_enabled: number | null; ip_allowlist: string | null; pwd_changed_at: number | null }
+    | undefined;
+  if (!row) throw new Error('用户不存在');
+  let totpSecret = '';
+  if (row.totp_secret) {
+    try {
+      totpSecret = row.totp_secret.startsWith('enc:') ? decryptSecret(row.totp_secret.slice(4)) : row.totp_secret;
+    } catch {
+      totpSecret = '';
+    }
+  }
+  return {
+    totpEnabled: !!row.totp_enabled,
+    totpSecret,
+    ipAllowlist: String(row.ip_allowlist || ''),
+    pwdChangedAt: row.pwd_changed_at ?? null,
+  };
+}
+
+/**
+ * 设置 TOTP 密钥（传 null = 关闭 2FA；密钥以密文存储）
+ */
+export function setTotpSecret(username: string, secret: string | null): void {
+  if (secret) {
+    const enc = 'enc:' + encryptSecret(secret);
+    getDb()
+      .prepare('UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE username = ?')
+      .run(enc, username);
+  } else {
+    getDb()
+      .prepare("UPDATE users SET totp_secret = '', totp_enabled = 0 WHERE username = ?")
+      .run(username);
+  }
+}
+
+/**
+ * 设置按用户 IP 白名单（空串 = 不限制，回退全局白名单）
+ */
+export function setIpAllowlist(username: string, allowlist: string): void {
+  getDb()
+    .prepare('UPDATE users SET ip_allowlist = ? WHERE username = ?')
+    .run(String(allowlist || ''), username);
+}
+
+/**
+ * 设置强制改密标记（密码过期策略触发时调用）
+ */
+export function setMustChangePassword(username: string, flag: boolean): void {
+  getDb()
+    .prepare('UPDATE users SET must_change_password = ? WHERE username = ?')
+    .run(flag ? 1 : 0, username);
 }
 
 /**

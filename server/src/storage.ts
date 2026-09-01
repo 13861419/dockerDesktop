@@ -792,6 +792,27 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：为 users 补充安全列（2FA / 按用户 IP 白名单 / 密码最后修改时间）
+  try {
+    d.exec("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec("ALTER TABLE users ADD COLUMN ip_allowlist TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE users ADD COLUMN pwd_changed_at INTEGER');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 ai_usage 补充响应时间列
   try {
     d.exec('ALTER TABLE ai_usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');

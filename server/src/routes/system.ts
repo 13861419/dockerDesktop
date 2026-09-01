@@ -17,10 +17,79 @@ import {
 } from '../users';
 import { exportDatabase, importDatabaseBuffer, getDataDir } from '../storage';
 import { logOperation } from '../operationLog';
-import { requireAdmin } from '../auth';
+import { requireAdmin, requireAuth } from '../auth';
 import { listRoles } from '../rbac';
+import { getUserSecurity, setTotpSecret, setIpAllowlist } from '../users';
+import { generateSecret, otpauthUri, verifyTotp } from '../totp';
 
 const router = Router();
+
+// 待确认的启用密钥（username → base32），确认成功前不落库
+const pendingTotp = new Map<string, string>();
+
+router.post('/totp/setup', requireAuth, (req: Request, res: Response) => {
+  const sec = getUserSecurity(res.locals.username);
+  if (sec.totpEnabled) {
+    return res.status(400).json({ error: '2FA 已启用；如需更换请先关闭' });
+  }
+  const secret = generateSecret();
+  pendingTotp.set(res.locals.username, secret);
+  res.json({ secret, uri: otpauthUri(res.locals.username, secret) });
+});
+
+router.post('/totp/enable', requireAuth, (req: Request, res: Response) => {
+  const secret = pendingTotp.get(res.locals.username);
+  if (!secret) return res.status(400).json({ error: '请先生成密钥' });
+  const { code } = req.body || {};
+  if (!verifyTotp(secret, String(code || ''))) {
+    return res.status(400).json({ error: '验证码不正确，请确认认证器时间后重试' });
+  }
+  setTotpSecret(res.locals.username, secret);
+  pendingTotp.delete(res.locals.username);
+  logOperation(res.locals.username, '启用 2FA', '安全', '', '');
+  res.json({ ok: true });
+});
+
+router.post('/totp/disable', requireAuth, (req: Request, res: Response) => {
+  const sec = getUserSecurity(res.locals.username);
+  if (!sec.totpEnabled) return res.status(400).json({ error: '2FA 未启用' });
+  if (!verifyTotp(sec.totpSecret, String(req.body?.code || ''))) {
+    return res.status(400).json({ error: '验证码不正确' });
+  }
+  setTotpSecret(res.locals.username, null);
+  logOperation(res.locals.username, '关闭 2FA', '安全', '', '');
+  res.json({ ok: true });
+});
+
+/**
+ * PUT /users/:name/ip-allowlist
+ * 设置按用户 IP 白名单（管理员）。body: { allowlist: string }（CSV/CRLF，空串 = 不限制）
+ */
+router.put(
+  '/users/:name/ip-allowlist',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = req.params.name;
+    if (!userExists(name)) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    setIpAllowlist(name, String(req.body?.allowlist || ''));
+    logOperation(res.locals.username, `设置用户 ${name} 的 IP 白名单`, '安全', name, '');
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * 2FA 自助管理：
+ * - GET  /totp/status  是否已启用
+ * - POST /totp/setup   生成新密钥（未启用状态，返回 Base32 密钥与 otpauth URI）
+ * - POST /totp/enable  用首枚验证码确认启用
+ * - POST /totp/disable 用当前验证码确认关闭
+ */
+router.get('/totp/status', requireAuth, (req: Request, res: Response) => {
+  const sec = getUserSecurity(res.locals.username);
+  res.json({ enabled: sec.totpEnabled });
+});
 
 /** 当前监听端口（来自环境变量，缺省 9528） */
 const SERVICE_PORT = Number(process.env.PORT) || 9528;

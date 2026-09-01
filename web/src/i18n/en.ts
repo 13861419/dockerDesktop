@@ -2719,4 +2719,43 @@ export const en: Record<string, string> = {
   '如 D:\\certs\\app.key': 'e.g. D:\\certs\\app.key',
   '选择本地证书文件（.crt / .pem），上传后将写入上述路径并应用配置：': 'Select a local certificate file (.crt / .pem). After upload it is written to the paths above and the config applied:',
   '选择证书文件': 'Select Certificate File',
-};
+
+  // 1.1.0 安全加固（2FA / 会话 / 白名单 / 密码策略）
+  "两步验证": "Two-Factor Verification",
+  "请输入 6 位验证码": "Please enter the 6-digit code",
+  "请输入认证器中的 6 位验证码（{{name}}）": "Enter the 6-digit code from your authenticator ({{name}})",
+  "6 位数字验证码": "6-digit code",
+  "请输入认证器验证码": "Authenticator code required",
+  "验 证": "Verify",
+  "返回重新登录": "Back to login",
+  "两步验证（2FA）": "Two-Factor Authentication (2FA)",
+  "验证码": "Code",
+  "当前账号已启用 2FA，登录时需输入认证器验证码。": "2FA is enabled for this account; a code is required at login.",
+  "关闭 2FA": "Disable 2FA",
+  "使用 Google Authenticator 等认证器 App 扫码或手动录入密钥，启用后登录需输入验证码。": "Scan or manually enter the key with an authenticator app such as Google Authenticator. A code will be required at login once enabled.",
+  "生成密钥": "Generate Key",
+  "密钥（手动录入用）": "Secret key (for manual entry)",
+  "首枚验证码": "First code",
+  "确认启用": "Confirm",
+  "启用失败": "Enable failed",
+  "2FA 已启用": "2FA enabled",
+  "2FA 已关闭": "2FA disabled",
+  "在线会话": "Active Sessions",
+  "撤销其他会话": "Revoke other sessions",
+  "会话 ID": "Session ID",
+  "登录时间": "Signed in at",
+  "暂无在线会话": "No active sessions",
+  "已撤销 {{n}} 个会话": "Revoked {{n}} session(s)",
+  
+  // 1.1.0 安全加固（2FA / 会话 / 白名单 / 密码策略）
+  "IP 白名单": "IP Allowlist",
+  "如 192.168.1.0/24，留空不限制": "e.g. 192.168.1.0/24; empty = unrestricted",
+  "已保存 {{name}} 的 IP 白名单": "IP allowlist for {{name}} saved",
+  
+  // 1.1.0 帮助中心（2FA / IP 白名单）与设置速查
+  "如何开启 2FA 两步验证？": "How to enable 2FA?",
+  "「设置 → 安全加固 → 两步验证（2FA）」点击「生成密钥」，用 Google Authenticator 等认证器 App 扫码或手动录入密钥，输入首枚验证码确认。此后登录在密码之后还需输入 6 位验证码；关闭 2FA 需输入当前验证码确认。建议管理员强制团队关键账号开启。": "In \"Settings → Security → Two-Factor Verification (2FA)\" click \"Generate Key\", scan the otpauth URI (or enter the Base32 key) with an authenticator app such as Google Authenticator, then confirm with the first 6-digit code. Login then requires the code after the password; disabling requires the current code. Admins are advised to enforce 2FA for key accounts.",
+  "登录被提示「当前 IP 不在允许访问的白名单内」？": "Login says \"Your IP is not in the allowlist\"?",
+  "管理员开启了 IP 白名单（全局或按用户）。请确认你的出口 IP 在白名单 CIDR 范围内；若全局白名单把管理机自身也排除导致自锁，需在服务器数据目录的 SQLite 设置表中清空 security.ipAllowlist 键恢复访问。配置时务必先加入当前管理机 IP。": "An IP allowlist (global or per-user) is enabled. Make sure your egress IP falls within the allowlisted CIDRs. If a global allowlist excludes the admin workstation itself, clear the security.ipAllowlist key in the panel SQLite settings table on the server to regain access. Always add the admin workstation IP first.",
+  "账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、界面语言切换、备份、AI 配置、系统参数、用户管理": "Accounts, role management (RBAC), 2FA verification, active sessions, IP allowlist, password policy, UI language, backups, AI config, system parameters, user management",
+  };
