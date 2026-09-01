@@ -251,6 +251,14 @@ registerSettings([
     group: 'security',
   },
   {
+    key: 'approval.twoStepActions',
+    label: '两级审批动作',
+    hint: '审批流开启时，列出的动作需两级签批（末级须管理员）：如 container.delete,image.deleteBatch；留空表示全部单级审批',
+    type: 'string',
+    def: '',
+    group: 'security',
+  },
+  {
     key: 'logs.defaultTail',
     label: '容器日志默认行数',
     hint: '查看容器日志时默认加载的末尾行数',

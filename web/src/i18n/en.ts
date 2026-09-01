@@ -2778,4 +2778,12 @@ export const en: Record<string, string> = {
   "总览「资源监控」与容器详情「资源曲线」的时间窗支持 10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天。7 天内为原始采样（30 秒粒度），30/90 天来自小时级聚合（自动保留 90 天），可观察周级 / 月级容量与负载趋势。": "The time windows of overview \"Resource Monitoring\" and container detail \"Resource Curves\" support 10m / 1h / 24h / 7d / 30d / 90d. Data within 7 days is raw sampling (30s granularity); 30d/90d come from hourly rollups (kept for 90 days) for week- and month-scale trends.",
   "如何让面板定时做漏洞扫描并在出现新漏洞时提醒？": "How to schedule vulnerability scans and get alerted on new findings?",
   "「计划任务」新建类型为「漏洞定时扫描」的任务：镜像列表可留空（自动扫描本地镜像前 N 个），建议按周配置 cron 并勾选「新增高危时推送告警」。每次扫描与上次按 CVE id 差集对比，新增 Critical / High 即推送到全部启用渠道；历史结果在镜像详情页「漏洞扫描」卡片中查看。": "Create a scheduled task of type \"Scheduled Vulnerability Scan\": leave the image list empty to auto-scan the first N local images, pick a weekly cron and check \"Notify on new high-severity findings\". Each run diffs CVE ids against the previous scan and pushes new Critical / High findings to all enabled channels; history lives in the image detail page's scan card.",
+  
+  // 1.3.0 审批与协作（多级审批 / 单号）
+  "第 {{cur}}/{{total}} 级": "Level {{cur}} of {{total}}",
+  "本级已通过，等待下一级审批": "This level approved; waiting for the next level",
+  "审批流支持多级签批吗？": "Does the approval flow support multi-level sign-off?",
+  "系统参数「安全」组的「两级审批动作」填入动作类型（如 container.delete），该动作的审批单需两级签批：第一级运维或管理员、末级必须管理员；审批中心会显示「第 1/2 级」进度与 AP- 单号，每次签批均留痕并推送通知。待审批超过 TTL 的 3/4 时自动催办一次。": "List action types in \"Two-step approval actions\" (System Parameters → Security), e.g. container.delete. Those tickets require two sign-offs: level 1 by an operator or admin, the final level by an admin. The approval center shows \"Level 1/2\" progress and an AP- ticket number; every decision is logged and pushed. A reminder is sent once when 3/4 of the TTL has elapsed.",
+  
+  // 1.3.0 帮助中心（多级审批）
   };

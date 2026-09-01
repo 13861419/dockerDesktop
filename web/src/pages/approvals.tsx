@@ -33,6 +33,12 @@ interface ApprovalItem {
   created_at: number;
   decided_at: number | null;
   decided_by: string | null;
+  /** 审批单编号（AP-YYYYMMDD-ID） */
+  ticket_no?: string;
+  /** 审批链总级数 */
+  levels?: number;
+  /** 已完成级数 */
+  level?: number;
 }
 
 /** 审批统计（GET /api/approvals/stats 响应） */
@@ -100,6 +106,7 @@ export default function Approvals() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [admin, setAdmin] = useState(false);
+  const [role, setRole] = useState('');
   const [status, setStatus] = useState<ApprovalStatus | ''>('');
   const [me, setMe] = useState('');
   /** 批量选择（仅 pending 可选） */
@@ -120,9 +127,10 @@ export default function Approvals() {
       );
       setItems(resp.items || []);
       setAdmin(resp.isAdmin);
-      // 从自身提交记录推断当前用户名（列表已按角色过滤）
-      const meResp = await get<{ username: string }>('/api/auth/me').catch(() => null);
+      // 当前角色：operator 可签批非末级（第一级）审批
+      const meResp = await get<{ username: string; role: string }>('/api/auth/me').catch(() => null);
       if (meResp?.username) setMe(meResp.username);
+      setRole(meResp?.role || '');
     } catch (e: any) {
       showToast(e?.message || t('加载审批列表失败'), 'error');
     } finally {
@@ -167,8 +175,11 @@ export default function Approvals() {
   /** 批准（管理员） */
   async function approve(item: ApprovalItem) {
     try {
-      const r = await post<{ ok: boolean; executed: boolean; error?: string }>(`/api/approvals/${item.id}/approve`);
-      if (r.executed) showToast(t('已批准并执行成功'), 'success');
+      const r = await post<{ ok: boolean; executed: boolean; advanced?: boolean; error?: string }>(
+        `/api/approvals/${item.id}/approve`,
+      );
+      if (r.advanced) showToast(t('本级已通过，等待下一级审批'), 'info');
+      else if (r.executed) showToast(t('已批准并执行成功'), 'success');
       else showToast(t('已批准，但执行失败：{{v1}}', { v1: r.error || t('未知错误') }), 'error');
       load();
     } catch (e: any) {
@@ -414,7 +425,15 @@ export default function Approvals() {
                         />
                       </td>
                     )}
-                    <td>{it.id}</td>
+                    <td>
+                      <code style={{ fontSize: 11 }}>{it.ticket_no || `#${it.id}`}</code>
+                      {/* 多级审批：待审批时显示当前级数进度 */}
+                      {it.status === 'pending' && (it.levels || 1) > 1 && (
+                        <div className="approvals-table__payload">
+                          {t('第 {{cur}}/{{total}} 级', { cur: String((it.level || 0) + 1), total: String(it.levels || 1) })}
+                        </div>
+                      )}
+                    </td>
                     <td>{it.username}</td>
                     <td>{t(ACTION_LABELS[it.action_type] || it.action_type)}</td>
                     <td className="approvals-table__target" title={it.target}>
@@ -449,7 +468,7 @@ export default function Approvals() {
                     <td>{formatTime(it.created_at)}</td>
                     <td>
                       <div className="approvals-table__ops">
-                        {admin && it.status === 'pending' && (
+                        {it.status === 'pending' && (admin || (role === 'operator' && (it.levels || 1) > 1 && (it.level || 0) + 1 < (it.levels || 1))) && (
                           <>
                             <Button variant="primary" size="sm" onClick={() => approve(it)}>
                               {t('批准')}

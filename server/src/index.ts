@@ -14,6 +14,7 @@ import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
 import { startSelfHeal, stopSelfHeal } from './selfheal';
 import { startMetricsHistory } from './metricsHistory';
+import { startApprovalReminder } from './approvals';
 import { initStorage, closeDb } from './storage';
 import { ensureInitialUser } from './users';
 import { ensureBuiltinRoles } from './rbac';
@@ -62,6 +63,15 @@ const server = app.listen(PORT, HOST, () => {
       console.error('指标聚合器启动失败:', err);
     }
   }, 750);
+
+  // 启动审批超时提醒（1.3.0：过期清理 + 超时前催办）
+  setTimeout(() => {
+    try {
+      startApprovalReminder();
+    } catch (err) {
+      console.error('审批提醒启动失败:', err);
+    }
+  }, 780);
 
   // 启动 Docker 事件采集器（异步，不影响服务启动）
   setTimeout(() => {

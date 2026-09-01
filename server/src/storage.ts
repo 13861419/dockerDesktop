@@ -852,6 +852,32 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：为 approvals 补充 1.3.0 多级审批列（编号 / 级数 / 已完成级数 / 审批轨迹 / 超时提醒标记）
+  try {
+    d.exec("ALTER TABLE approvals ADD COLUMN ticket_no TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE approvals ADD COLUMN levels INTEGER NOT NULL DEFAULT 1');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE approvals ADD COLUMN level INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec("ALTER TABLE approvals ADD COLUMN decisions TEXT NOT NULL DEFAULT '[]'");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE approvals ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 ai_usage 补充响应时间列
   try {
     d.exec('ALTER TABLE ai_usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');

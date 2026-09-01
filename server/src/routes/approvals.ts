@@ -19,7 +19,7 @@ import {
   listAllApprovals,
   renderApprovalsCsv,
 } from '../approvals';
-import { requireAdmin } from '../auth';
+import { requireOperator } from '../auth';
 import { logOperation } from '../operationLog';
 
 const router = Router();
@@ -117,25 +117,25 @@ router.post(
  */
 router.post(
   '/:id/approve',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
-    const r = await decideApproval(Number(req.params.id), 'approved', res.locals.username);
-    logOperation(res.locals.username, '批准审批', 'approval', String(req.params.id), r.executed ? '已执行' : `执行失败：${r.error}`);
+    const r = await decideApproval(Number(req.params.id), 'approved', res.locals.username, undefined, res.locals.user?.role);
+    logOperation(res.locals.username, '批准审批', 'approval', String(req.params.id), r.executed ? '已执行' : r.advanced ? '多级审批推进一级' : `执行失败：${r.error}`);
     res.json({ ok: true, ...r });
   }),
 );
 
 /**
  * POST /api/approvals/:id/reject
- * 拒绝（仅管理员）。body: { reason } —— 理由必填，随审批留痕并通知提交人
+ * 拒绝（运维可拒中间级；末级拒绝需管理员，decideApproval 内校验）。body: { reason } —— 理由必填，随审批留痕并通知提交人
  */
 router.post(
   '/:id/reject',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const reason = String(req.body?.reason || '').trim();
     if (!reason) return res.status(400).json({ error: '拒绝时必须填写理由' });
-    await decideApproval(Number(req.params.id), 'rejected', res.locals.username, reason);
+    await decideApproval(Number(req.params.id), 'rejected', res.locals.username, reason, res.locals.user?.role);
     logOperation(res.locals.username, '拒绝审批', 'approval', String(req.params.id), reason);
     res.json({ ok: true });
   }),
@@ -148,7 +148,7 @@ router.post(
  */
 router.post(
   '/batch',
-  requireAdmin,
+  requireOperator,
   asyncHandler(async (req: Request, res: Response) => {
     const rawIds: unknown[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const ids = rawIds.map(Number).filter((n) => Number.isFinite(n) && n > 0);
@@ -161,7 +161,7 @@ router.post(
     const results: Array<{ id: number; ok: boolean; executed?: boolean; error?: string }> = [];
     for (const id of ids) {
       try {
-        const r = await decideApproval(id, decision, res.locals.username, reason || undefined);
+        const r = await decideApproval(id, decision, res.locals.username, reason || undefined, res.locals.user?.role);
         logOperation(
           res.locals.username,
           decision === 'approved' ? '批准审批' : '拒绝审批',

@@ -48,6 +48,77 @@ export interface ApprovalRow {
   created_at: number;
   decided_at: number | null;
   decided_by: string | null;
+  /** 审批单编号（AP-YYYYMMDD-ID，1.3.0 起生成，存量记录惰性回填） */
+  ticket_no?: string;
+  /** 审批链总级数（1 = 单级；2 = 两级双签） */
+  levels?: number;
+  /** 已完成的审批级数 */
+  level?: number;
+  /** 审批轨迹（JSON 数组：每级的 decision/by/at/reason） */
+  decisions?: string;
+  /** 是否已推送过期前提醒（0/1） */
+  reminded?: number;
+}
+
+/** 审批决策轨迹条目 */
+interface DecisionEntry {
+  decision: 'approved' | 'rejected';
+  by: string;
+  at: number;
+  level: number;
+  reason?: string;
+}
+
+/** 存量记录编号回填标记（进程内一次） */
+let ticketBackfilled = false;
+
+/**
+ * 为存量审批记录回填编号（AP-YYYYMMDD-ID），幂等；仅在首次列表/提交时执行一次
+ */
+function ensureTicketBackfill(): void {
+  if (ticketBackfilled) return;
+  ticketBackfilled = true;
+  try {
+    getDb()
+      .prepare(
+        "UPDATE approvals SET ticket_no = 'AP-' || strftime('%Y%m%d', created_at / 1000, 'unixepoch') || '-' || id WHERE ticket_no = ''",
+      )
+      .run();
+  } catch {
+    // 回填失败不影响主流程
+  }
+}
+
+/**
+ * 动作所需的审批级数：settings.approval.twoStepActions（CSV）中列出的动作为 2 级，其余 1 级
+ */
+function levelsForAction(actionType: string): number {
+  const csv = getSetting<string>('approval.twoStepActions') || '';
+  const twoStep = csv
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return twoStep.includes(actionType) ? 2 : 1;
+}
+
+/** 生成审批单编号：AP-YYYYMMDD-ID */
+function ticketNoFor(id: number, createdAt: number): string {
+  const d = new Date(createdAt);
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return `AP-${ymd}-${id}`;
+}
+
+/** 追加一条决策到轨迹 JSON */
+function appendDecision(decisionsJson: string | null | undefined, entry: DecisionEntry): string {
+  let arr: DecisionEntry[] = [];
+  try {
+    arr = JSON.parse(String(decisionsJson || '[]'));
+    if (!Array.isArray(arr)) arr = [];
+  } catch {
+    arr = [];
+  }
+  arr.push(entry);
+  return JSON.stringify(arr);
 }
 
 /**
@@ -86,6 +157,61 @@ export function expireStaleApprovals(): void {
     .run(Date.now(), `待审批超时（超过 ${ttl} 小时未处理），已自动过期`, cutoff);
 }
 
+/**
+ * 待审批超时前提醒：处理截止时间剩余不足 1/4 时推送一次提醒（每条记录只提醒一次）。
+ * 由 startApprovalReminder 定时调用；TTL 未启用（0）时不提醒。
+ * @returns 本轮提醒的记录数
+ */
+export function remindPendingApprovals(): number {
+  const ttl = Number(getSetting<number>('approvals.ttlHours'));
+  if (!Number.isFinite(ttl) || ttl <= 0) return 0;
+  const remindBefore = Date.now() - ttl * 0.75 * 3600_000;
+  let rows: ApprovalRow[] = [];
+  try {
+    rows = getDb()
+      .prepare(
+        "SELECT id, ticket_no, username, action_type FROM approvals WHERE status = 'pending' AND reminded = 0 AND created_at < ?",
+      )
+      .all(remindBefore) as unknown as ApprovalRow[];
+  } catch {
+    return 0;
+  }
+  for (const row of rows) {
+    const hoursLeft = Math.max(0, Math.round(ttl - (Date.now() - row.created_at) / 3600_000));
+    void notifyApprovalEvent(
+      `【审批催办】单号 ${row.ticket_no || row.id}（${row.username} 申请的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」）已等待较久，约 ${hoursLeft} 小时后自动过期，请尽快处理`,
+    );
+    try {
+      getDb().prepare('UPDATE approvals SET reminded = 1 WHERE id = ?').run(row.id);
+    } catch {
+      // 置位失败不影响其余记录
+    }
+  }
+  return rows.length;
+}
+
+let reminderStarted = false;
+
+/**
+ * 启动审批提醒定时器（幂等）：每 60 秒执行一次过期清理 + 超时前提醒
+ */
+export function startApprovalReminder(): void {
+  if (reminderStarted) return;
+  reminderStarted = true;
+  const tick = () => {
+    try {
+      expireStaleApprovals();
+      remindPendingApprovals();
+    } catch {
+      // 定时任务失败静默
+    }
+  };
+  tick();
+  const timer = setInterval(tick, 60 * 1000);
+  if (timer.unref) timer.unref();
+  console.log('[approvals] 审批超时提醒已启动 (间隔 60s)');
+}
+
 /** 审批动作 -> RBAC 权限键映射（角色持有该权限时可不经审批直接执行） */
 const GATE_PERM_MAP: Record<string, string> = {
   'container.delete': 'containers.delete',
@@ -122,19 +248,21 @@ export function submitApproval(input: {
   target: string;
   payload?: Record<string, unknown>;
   reason?: string;
-}): { id: number; reused: boolean } {
+}): { id: number; reused: boolean; ticketNo: string } {
+  ensureTicketBackfill();
   const d = getDb();
   const existing = d
     .prepare(
-      "SELECT id FROM approvals WHERE username = ? AND action_type = ? AND target = ? AND status = 'pending' LIMIT 1",
+      "SELECT id, ticket_no FROM approvals WHERE username = ? AND action_type = ? AND target = ? AND status = 'pending' LIMIT 1",
     )
-    .get(input.username, input.actionType, input.target) as { id: number } | undefined;
-  if (existing) return { id: existing.id, reused: true };
+    .get(input.username, input.actionType, input.target) as { id: number; ticket_no: string } | undefined;
+  if (existing) return { id: existing.id, reused: true, ticketNo: existing.ticket_no };
 
   const label = GATE_ACTIONS[input.actionType]?.label || input.actionType;
+  const levels = levelsForAction(input.actionType);
   const r = d
     .prepare(
-      'INSERT INTO approvals (username, action_type, target, payload, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO approvals (username, action_type, target, payload, status, reason, created_at, levels) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(
       input.username,
@@ -144,16 +272,19 @@ export function submitApproval(input: {
       'pending',
       input.reason || label,
       Date.now(),
+      levels,
     );
   const id = Number(r.lastInsertRowid);
+  const ticketNo = ticketNoFor(id, Date.now());
+  d.prepare('UPDATE approvals SET ticket_no = ? WHERE id = ?').run(ticketNo, id);
   // 通知所有启用渠道：有新审批待处理（目标解析为容器名等可读标识）
   void (async () => {
     const shown = await resolveTargetLabel(input.actionType, input.target).catch(() => input.target);
     await notifyApprovalEvent(
-      `【审批提醒】用户 ${input.username} 申请「${label}」，目标：${shown || input.target}，请到面板「审批中心」处理`,
+      `【审批提醒】用户 ${input.username} 申请「${label}」（单号 ${ticketNo}${levels > 1 ? `，需 ${levels} 级审批` : ''}），目标：${shown || input.target}，请到面板「审批中心」处理`,
     );
   })();
-  return { id, reused: false };
+  return { id, reused: false, ticketNo };
 }
 
 /**
@@ -162,6 +293,7 @@ export function submitApproval(input: {
  * @param status 限定状态（缺省全部）
  */
 export function listApprovals(username?: string, status?: string): ApprovalRow[] {
+  ensureTicketBackfill();
   const d = getDb();
   expireStaleApprovals();
   const conditions: string[] = [];
@@ -177,7 +309,8 @@ export function listApprovals(username?: string, status?: string): ApprovalRow[]
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return d
     .prepare(
-      `SELECT id, username, action_type, target, payload, status, reason, result, created_at, decided_at, decided_by
+      `SELECT id, username, action_type, target, payload, status, reason, result, created_at, decided_at, decided_by,
+              ticket_no, levels, level, decisions, reminded
        FROM approvals ${where} ORDER BY id DESC LIMIT 200`,
     )
     .all(...params) as unknown as ApprovalRow[];
@@ -367,7 +500,8 @@ export async function decideApproval(
   decision: 'approved' | 'rejected',
   decidedBy: string,
   reason?: string,
-): Promise<{ executed: boolean; result?: string; error?: string }> {
+  decidedRole: string = 'admin',
+): Promise<{ executed: boolean; result?: string; error?: string; advanced?: boolean }> {
   const d = getDb();
   const row = d.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as ApprovalRow | undefined;
   if (!row) throw Object.assign(new Error('审批记录不存在'), { statusCode: 404 });
@@ -375,26 +509,66 @@ export async function decideApproval(
     throw Object.assign(new Error('该审批已处理，不可重复操作'), { statusCode: 400 });
   }
 
+  const levels = Math.max(1, Number(row.levels) || 1);
+  const curLevel = Number(row.level) || 0;
+
+  // 末级审批必须由管理员签批（中间级允许运维或管理员）
+  if (curLevel + 1 >= levels && decidedRole !== 'admin') {
+    throw Object.assign(new Error('该审批为末级审批，需要管理员权限'), { statusCode: 403 });
+  }
+
   if (decision === 'rejected') {
-    d.prepare('UPDATE approvals SET status = ?, decided_at = ?, decided_by = ?, result = ? WHERE id = ?').run(
-      'rejected',
-      Date.now(),
-      decidedBy,
-      reason || '已拒绝',
-      id,
-    );
+    const decisions = appendDecision(row.decisions, {
+      decision,
+      by: decidedBy,
+      at: Date.now(),
+      level: curLevel + 1,
+      reason,
+    });
+    d.prepare(
+      'UPDATE approvals SET status = ?, decided_at = ?, decided_by = ?, result = ?, level = ?, decisions = ? WHERE id = ?',
+    ).run('rejected', Date.now(), decidedBy, reason || '已拒绝', curLevel + 1, decisions, id);
     void notifyApprovalEvent(
-      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已被 ${decidedBy} 拒绝${reason ? `：${reason}` : ''}`,
+      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」（单号 ${row.ticket_no || id}）申请已被 ${decidedBy} 拒绝${reason ? `：${reason}` : ''}`,
     );
     return { executed: false };
   }
 
+  // 多级审批：未到末级时仅推进级数、保持待审批，等待下一级签批
+  if (curLevel + 1 < levels) {
+    const decisions = appendDecision(row.decisions, {
+      decision,
+      by: decidedBy,
+      at: Date.now(),
+      level: curLevel + 1,
+      reason,
+    });
+    d.prepare('UPDATE approvals SET level = ?, decisions = ?, reminded = 0 WHERE id = ?').run(
+      curLevel + 1,
+      decisions,
+      id,
+    );
+    void notifyApprovalEvent(
+      `【审批进度】${row.ticket_no || `#${id}`}「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」第 ${curLevel + 1}/${levels} 级已由 ${decidedBy} 通过，等待下一级审批`,
+    );
+    return { executed: false, advanced: true };
+  }
+
   // 批准：先落状态再执行，执行失败把错误写入 result（不回滚状态，留档排查）
-  d.prepare('UPDATE approvals SET status = ?, decided_at = ?, decided_by = ?, result = ? WHERE id = ?').run(
+  const decisions = appendDecision(row.decisions, {
+    decision,
+    by: decidedBy,
+    at: Date.now(),
+    level: curLevel + 1,
+    reason,
+  });
+  d.prepare('UPDATE approvals SET status = ?, decided_at = ?, decided_by = ?, result = ?, level = ?, decisions = ? WHERE id = ?').run(
     'approved',
     Date.now(),
     decidedBy,
     reason || '',
+    curLevel + 1,
+    decisions,
     id,
   );
   try {
@@ -413,7 +587,7 @@ export async function decideApproval(
       }
     }
     void notifyApprovalEvent(
-      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已由 ${decidedBy} 批准并执行成功`,
+      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」（单号 ${row.ticket_no || id}）申请已由 ${decidedBy} 批准并执行成功`,
     );
     return { executed: true, error: undefined };
   } catch (err: any) {
@@ -428,7 +602,7 @@ export async function decideApproval(
       }
     }
     void notifyApprovalEvent(
-      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」申请已由 ${decidedBy} 批准，但执行失败：${msg}`,
+      `【审批结果】用户 ${row.username} 提交的「${GATE_ACTIONS[row.action_type]?.label || row.action_type}」（单号 ${row.ticket_no || id}）申请已由 ${decidedBy} 批准，但执行失败：${msg}`,
     );
     return { executed: false, error: msg };
   }
@@ -584,14 +758,14 @@ export function maybeGate(
 ): boolean {
   if (!shouldGate(res.locals.user?.role, actionType)) return false;
   expireStaleApprovals();
-  const { id, reused } = submitApproval({
+  const { id, reused, ticketNo } = submitApproval({
     username: res.locals.username,
     actionType,
     target,
     payload,
     reason: GATE_ACTIONS[actionType]?.label || '',
   });
-  res.status(202).json({ approvalPending: true, approvalId: id, reused });
+  res.status(202).json({ approvalPending: true, approvalId: id, reused, ticketNo });
   return true;
 }
 
