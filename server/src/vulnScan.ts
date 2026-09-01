@@ -100,7 +100,7 @@ export function diffNewHigh(prevCsv: string, entries: VulnEntry[]): string[] {
 export function saveScanResult(image: string, counts: VulnCounts, entries: VulnEntry[], summary: string): string[] {
   const db = getDb();
   const last = db
-    .prepare('SELECT cve_ids FROM vuln_scans WHERE image = ? ORDER BY scanned_at DESC LIMIT 1')
+    .prepare('SELECT cve_ids FROM vuln_scans WHERE image = ? ORDER BY scanned_at DESC, id DESC LIMIT 1')
     .get(image) as { cve_ids: string } | undefined;
   const newHigh = diffNewHigh(last?.cve_ids || '', entries);
   const cveIds = entries.map((e) => e.id).slice(0, CVE_SNAPSHOT_LIMIT);
@@ -212,12 +212,12 @@ export function listVulnHistory(image?: string, limit = 50): VulnScanRecord[] {
       image
         ? db
             .prepare(
-              'SELECT id, image, scanned_at, critical, high, medium, low, unknown, total, new_cves, summary FROM vuln_scans WHERE image = ? ORDER BY scanned_at DESC LIMIT ?',
+              'SELECT id, image, scanned_at, critical, high, medium, low, unknown, total, new_cves, summary FROM vuln_scans WHERE image = ? ORDER BY scanned_at DESC, id DESC LIMIT ?',
             )
             .all(image, limit)
         : db
             .prepare(
-              'SELECT id, image, scanned_at, critical, high, medium, low, unknown, total, new_cves, summary FROM vuln_scans ORDER BY scanned_at DESC LIMIT ?',
+              'SELECT id, image, scanned_at, critical, high, medium, low, unknown, total, new_cves, summary FROM vuln_scans ORDER BY scanned_at DESC, id DESC LIMIT ?',
             )
             .all(limit)
     ) as unknown as Array<Record<string, any>>;
