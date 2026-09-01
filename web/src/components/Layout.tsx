@@ -430,6 +430,41 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/k8s',
+    label: 'K8s 集群',
+    end: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 9V4.5M14.6 13.5l3.9 2.3M9.4 13.5 5.5 15.8" />
+      </svg>
+    ),
+  },
+  {
+    to: '/k8s/workloads',
+    label: '工作负载',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="3" width="8" height="8" rx="1.5" />
+        <rect x="13" y="3" width="8" height="8" rx="1.5" />
+        <rect x="3" y="13" width="8" height="8" rx="1.5" />
+        <rect x="13" y="13" width="8" height="8" rx="1.5" />
+      </svg>
+    ),
+  },
+  {
+    to: '/k8s/events',
+    label: 'K8s 事件',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M21 12a9 9 0 1 1-9-9" />
+        <path d="M12 7v5l3 3" />
+        <path d="M21 3v6h-6" />
+      </svg>
+    ),
+  },
+  {
     to: '/help',
     label: '帮助中心',
     icon: (

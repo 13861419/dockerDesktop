@@ -50,6 +50,7 @@
 - [40. 高危操作审批流](#40-高危操作审批流)
 - [41. AI 智能助手](#41-ai-智能助手)
 - [42. 帮助中心](#42-帮助中心)
+- [43. Kubernetes 只读巡检](#43-kubernetes-只读巡检)
 
 ---
 
@@ -1292,6 +1293,60 @@ journalctl -u docker-manager -f
 
 ---
 
+## 43. Kubernetes 只读巡检
+
+> 1.5.0 新增。面向同时维护 Kubernetes 集群的团队：在不影响 Docker 管理功能的前提下，对 K8s 集群做只读巡检。一期不含任何写操作。
+
+| 项目 | 说明 |
+| --- | --- |
+| 路径 | `/k8s`（集群概览）、`/k8s/workloads`（工作负载）、`/k8s/pod/:ns/:name`（Pod 详情）、`/k8s/events`（集群事件） |
+| 权限 | 登录用户 |
+
+### 43.1 接入集群
+
+面板按以下优先级加载集群凭证，无需在界面里填写密码：
+
+1. 环境变量 `KUBECONFIG` 指向的 kubeconfig 文件；
+2. 面板运行用户的 `~/.kube/config`；
+3. 面板以 Pod 方式部署在集群内时自动使用 InCluster 配置。
+
+kubeconfig 中包含多个 context（多个集群）时，「集群概览」页顶部的下拉框可随时切换；切换仅作用于当前面板进程，不会写回 kubeconfig 文件。
+
+> 面板检测不到 kubeconfig 且非集群内部署时，K8s 页面会展示配置引导（而非报错），Docker 域功能不受影响。
+
+### 43.2 集群概览（/k8s)
+
+- 顶部统计卡：节点 / Pod / Service / PVC 数量；
+- 节点表：名称、角色（control-plane / worker）、Ready 状态、CPU 与内存占用条、kubelet 版本、内网 IP；
+- 资源占用数据来自 metrics-server；集群未安装 metrics-server 时该列自动降级为「—」并给出提示。
+
+![K8s 集群概览](../images/k8s-overview.png)
+
+### 43.3 工作负载（/k8s/workloads)
+
+四个标签页：**Pod / Deployment / Service / PVC**，均支持命名空间过滤与关键字搜索。
+
+- Pod 列表展示状态（含 CrashLoopBackOff 等容器级细化原因）、就绪容器数、重启次数、所在节点；点击任意行进入 Pod 详情；
+- Deployment 展示期望 / 就绪副本数；Service 展示类型、ClusterIP 与端口；PVC 展示 Bound 状态、容量与 StorageClass。
+
+![工作负载](../images/k8s-workloads.png)
+
+### 43.4 Pod 详情（/k8s/pod/:ns/:name)
+
+- 基本信息：命名空间、状态、就绪、重启、节点、创建时间；
+- 容器列表：每个容器的 Ready / 镜像 / 重启次数；
+- 日志：多容器时可切换容器，默认返回最近 500 行（上限 2000），可手动刷新；
+- 资源曲线：CPU（毫核）与内存（KiB），在页面停留期间每 15 秒采样一次（不落库，离开页面即停止）；
+- 相关事件：与该 Pod 相关的 Warning / Normal 事件。
+
+### 43.5 集群事件（/k8s/events)
+
+按命名空间、级别（Warning / Normal）与关键字过滤集群事件，展示对象、原因、消息、发生次数与最近时间，便于配合工作负载巡检定位异常。
+
+![K8s 集群事件](../images/k8s-events.png)
+
+---
+
 ## 附：模块与访问路径速查
 
 | 菜单 | 路径 | 权限 |
@@ -1340,6 +1395,9 @@ journalctl -u docker-manager -f
 | 面板数据库备份 | `/settings` → 面板数据库备份管理 | 管理员 🔒 |
 | AI 助手 | `/assistant` | 登录用户（配置仅管理员 🔒） |
 | 帮助中心 | `/help` | 登录用户 |
+| K8s 集群 | `/k8s` | 登录用户 |
+| 工作负载 | `/k8s/workloads` | 登录用户 |
+| K8s 事件 | `/k8s/events` | 登录用户 |
 | Prometheus 指标 | `/metrics` | 可选 Token 鉴权 |
 
 > 本文档基于当前版本功能编写，实际界面以安装版本为准。管理员专属（🔒）页面在普通用户登录后菜单与路由均不可见。

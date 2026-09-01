@@ -43,6 +43,9 @@ const ROUTES: Array<[string, string]> = [
   ['ports', '/ports'],
   ['assistant', '/assistant'],
   ['help', '/help'],
+  ['k8s-overview', '/k8s'],
+  ['k8s-workloads', '/k8s/workloads'],
+  ['k8s-events', '/k8s/events'],
 ];
 
 /** 复用文件：多图引用同一整页截图（消除手册死链） */

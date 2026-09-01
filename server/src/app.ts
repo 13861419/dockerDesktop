@@ -30,6 +30,7 @@ import healthCheckRouter from './routes/healthCheck';
 import buildRouter from './routes/build';
 import hostFilesRouter from './routes/hostFiles';
 import hostTerminalRouter from './routes/hostTerminal';
+import k8sRouter from './routes/k8s';
 import enginesRouter from './routes/engines';
 import cloudRouter from './routes/cloud';
 import sitesRouter from './routes/sites';
@@ -91,6 +92,7 @@ app.use('/api/webhook', webhookRouter);
 
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);
+app.use('/api/k8s', requireAuth, k8sRouter);
 app.use('/api/system', requireAuth, systemRouter);
 app.use('/api/system', requireAuth, configTransferRouter);
 app.use('/api/monitor', requireAuth, monitorRouter);

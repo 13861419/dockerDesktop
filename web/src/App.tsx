@@ -57,6 +57,10 @@ const PortsPage = lazy(() => import('./pages/ports'));
 const PolicyPage = lazy(() => import('./pages/policy'));
 const ApprovalsPage = lazy(() => import('./pages/approvals'));
 const HelpPage = lazy(() => import('./pages/help'));
+const K8sOverviewPage = lazy(() => import('./pages/k8sOverview'));
+const K8sWorkloadsPage = lazy(() => import('./pages/k8sWorkloads'));
+const K8sPodDetailPage = lazy(() => import('./pages/k8sPodDetail'));
+const K8sEventsPage = lazy(() => import('./pages/k8sEvents'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -411,6 +415,38 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <ApprovalsPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/k8s"
+                element={
+                  <PageSuspense>
+                    <K8sOverviewPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/k8s/workloads"
+                element={
+                  <PageSuspense>
+                    <K8sWorkloadsPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/k8s/pod/:ns/:name"
+                element={
+                  <PageSuspense>
+                    <K8sPodDetailPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/k8s/events"
+                element={
+                  <PageSuspense>
+                    <K8sEventsPage />
                   </PageSuspense>
                 }
               />

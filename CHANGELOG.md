@@ -3,6 +3,33 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-09-02
+
+本版本为 **Kubernetes 只读巡检（一期）**：新增独立的 K8s 服务域，支持多集群概览、工作负载巡检、Pod 日志与实时指标，零 Docker 重构。
+
+### Added（新增）
+
+- **Kubernetes 服务域（只读）**
+  - 新增 `server/src/k8s/k8sClient.ts`：kubeconfig 加载（`KUBECONFIG` 环境变量 > `~/.kube/config` > InCluster 三级优先）、多 context（多集群）列表与运行期切换、Quantity 解析（CPU 毫核 / KiB·MiB·GiB 二进制与 SI 十进制）
+  - 新增 `/api/k8s/*` 只读端点：`status`（可用性与 context 列表）、`context`（切换）、`overview`（节点 + 资源计数 + metrics-server 资源占用）、`namespaces`、`pods`、`pods/:ns/:name`（详情）、`pods/:ns/:name/logs`（tail ≤ 2000 行）、`pods/:ns/:name/metrics`（实时快照）、`deployments`、`services`、`pvc`、`events`；全部需登录
+  - 集群不可用（无 kubeconfig 且非 InCluster）时统一返回 **503 + 配置引导**，前端展示三选一启用说明
+- **前端三个新页面**（侧栏新增「K8s 集群 / 工作负载 / K8s 事件」入口）
+  - 集群概览（`/k8s`）：context 与命名空间切换器、节点/Pod/Service/PVC 统计卡、节点表（状态 / CPU / 内存占用条 / 版本 / IP）；未检测到 metrics-server 时自动降级提示
+  - 工作负载（`/k8s/workloads`）：Pod / Deployment / Service / PVC 四标签页，命名空间过滤与关键字搜索；Pod 行可点击进入详情，CrashLoopBackOff 等容器级细化状态直接在列表展示
+  - Pod 详情（`/k8s/pod/:ns/:name`）：基本信息、容器列表（就绪 / 重启 / 镜像）、日志（多容器切换 + tail 500 行）、CPU 与内存实时曲线（页面停留期间每 15 秒采样，不做后端留存）、相关事件
+  - 集群事件（`/k8s/events`）：级别过滤（Warning/Normal）、命名空间过滤与关键字搜索
+
+### Changed（调整）
+
+- 依赖新增 `@kubernetes/client-node@^1.4.0`（纯 JS，无原生编译）
+- 侧栏导航与路由注册新增 K8s 域三项（集群概览 `end` 精确匹配，避免子路由高亮冲突）
+
+### Test（测试）
+
+- 新增单测 k8sClient.test.ts（5 例）：KUBECONFIG 路径优先级、临时 kubeconfig 加载与 context 列表、运行期切换 context（未知 context 报错）、无效 kubeconfig 抛错、Quantity 解析（毫核 / 二进制 / SI）；单测累计 **292/292**
+- API 冒烟：无集群环境 10/10（status 引导、7 端点 503 降级、未认证 401）；假 apiserver 全链路 18/18（概览计数、metrics-server 占用计算、Pod 列表 / 过滤 / 详情 / 日志 / 指标、Deployment / Service / PVC / 事件、context 切换）
+- E2E 5/5 无回归
+
 ## [1.4.0] - 2026-09-01
 
 本版本为 **平台化**：新增 OpenAPI 3.0 接口文档与「API 文档」页，便于二次开发与自动化对接。

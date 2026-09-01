@@ -51,6 +51,7 @@
 - [40. High-Risk Operation Approval Flow](#40-high-risk-operation-approval-flow)
 - [41. AI Assistant](#41-ai-assistant)
 - [42. Help Center](#42-help-center)
+- [43. Kubernetes Read-only Inspection](#43-kubernetes-read-only-inspection)
 
 > **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
 
@@ -1258,6 +1259,60 @@ Three built-in blocks: **Quick Start** (six-step guide), **FAQ** (password reset
 
 ---
 
+## 43. Kubernetes Read-only Inspection
+
+> Added in 1.5.0. For teams that also maintain Kubernetes clusters: read-only cluster inspection without touching any Docker management features. Phase one contains no write operations.
+
+| Project | Description |
+| --- | --- |
+| Path | `/k8s` (Cluster Overview), `/k8s/workloads` (Workloads), `/k8s/pod/:ns/:name` (Pod detail), `/k8s/events` (Cluster Events) |
+| Permission | All users |
+
+### 43.1 Connecting a Cluster
+
+The panel loads cluster credentials in the following order — no passwords are entered in the UI:
+
+1. The kubeconfig file pointed to by the `KUBECONFIG` environment variable;
+2. `~/.kube/config` of the user running the panel;
+3. InCluster config, applied automatically when the panel itself is deployed as a Pod.
+
+If the kubeconfig contains multiple contexts (multiple clusters), switch them at any time from the dropdown at the top of the Cluster Overview page; switching only affects the current panel process and is never written back to the kubeconfig file.
+
+> When no kubeconfig can be detected and the panel is not running inside a cluster, K8s pages show setup guidance instead of errors; Docker-domain features remain unaffected.
+
+### 43.2 Cluster Overview (/k8s)
+
+- Stat cards: nodes / pods / services / PVCs;
+- Node table: name, role (control-plane / worker), Ready status, CPU and memory usage bars, kubelet version, internal IP;
+- Usage data comes from metrics-server; if it is not installed, the column degrades to "—" with a hint.
+
+![K8s Cluster Overview](../images/k8s-overview.png)
+
+### 43.3 Workloads (/k8s/workloads)
+
+Four tabs: **Pod / Deployment / Service / PVC**, all supporting namespace filtering and keyword search.
+
+- The Pod list shows status (including container-level reasons such as CrashLoopBackOff), ready containers, restarts and node; click any row for details;
+- Deployments show desired / ready replicas; services show type, ClusterIP and ports; PVCs show Bound status, capacity and StorageClass.
+
+![Workloads](../images/k8s-workloads.png)
+
+### 43.4 Pod Detail (/k8s/pod/:ns/:name)
+
+- Basics: namespace, status, readiness, restarts, node, creation time;
+- Containers: Ready flag, image and restarts per container;
+- Logs: switchable per container when multiple exist, last 500 lines by default (max 2000), manual refresh;
+- Resource charts: CPU (millicores) and memory (KiB), sampled every 15 seconds while the page stays open (in-memory only, not persisted);
+- Related events: Warning / Normal events attached to this pod.
+
+### 43.5 Cluster Events (/k8s/events)
+
+Filter cluster events by namespace, level (Warning / Normal) and keyword, showing object, reason, message, count and last-seen time — useful alongside workload inspection for troubleshooting.
+
+![K8s Cluster Events](../images/k8s-events.png)
+
+---
+
 ## Appendix: Modules & Routes
 
 | Menu | Route | Access |
@@ -1307,5 +1362,8 @@ Three built-in blocks: **Quick Start** (six-step guide), **FAQ** (password reset
 | AI Assistant | `/assistant` | All users (config admin only 🔒) |
 | Prometheus Metrics | `/metrics` | Optional Token auth |
 | Help Center | `/help` | All users |
+| K8s Cluster | `/k8s` | All users |
+| Workloads | `/k8s/workloads` | All users |
+| K8s Events | `/k8s/events` | All users |
 
 > This document reflects the current version; the installed version may differ. Administrator-only (🔒) pages are hidden from regular users in both menu and routes.

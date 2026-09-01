@@ -1,0 +1,270 @@
+/**
+ * Kubernetes 只读巡检路由（1.5.0 一期）
+ *
+ * - 全部为只读端点，挂载时统一 requireAuth
+ * - 集群不可用（无 kubeconfig 且非 InCluster）时统一 503 + 可读引导
+ * - 列表按 namespace 过滤（query.namespace 缺省或 'all' = 全命名空间，客户端过滤）
+ * - client-node 1.x makeApiClient：方法接收单个参数对象，返回值即 body
+ */
+import { Router, Request, Response } from 'express';
+import {
+  coreApi,
+  appsApi,
+  metricsClient,
+  isK8sAvailable,
+  getK8sLoadError,
+  listK8sContexts,
+  setK8sContext,
+  currentK8sContextName,
+  parseQuantity,
+} from '../k8s/k8sClient';
+const router = Router();
+
+/** 统一错误包装：K8s 不可用 → 503 引导；K8s API 404/403 等透传状态码 */
+function wrap(handler: (req: Request) => Promise<any>) {
+  return async (req: Request, res: Response) => {
+    if (!isK8sAvailable()) {
+      res.status(503).json({
+        error: 'Kubernetes 不可用',
+        reason:
+          getK8sLoadError() ||
+          '未找到 kubeconfig：请放置于 ~/.kube/config 或设置 KUBECONFIG 环境变量；面板以 Pod 部署时自动使用 InCluster 配置',
+      });
+      return;
+    }
+    try {
+      const data = await handler(req);
+      res.json(data ?? { ok: true });
+    } catch (err: any) {
+      const status = err?.statusCode || err?.response?.statusCode || 500;
+      res.status(typeof status === 'number' ? status : 500).json({ error: err?.message || 'K8s 请求失败' });
+    }
+  };
+}
+
+/** ns 参数：'all' 或缺省 = 全命名空间 */
+function nsParam(req: Request): string {
+  const ns = String(req.query.namespace || '').trim();
+  return !ns || ns === 'all' ? '' : ns;
+}
+
+/** 按命名空间过滤（items 为 K8s 列表对象） */
+function filterNs(items: any[] | undefined, ns: string): any[] {
+  return (items || []).filter((it) => !ns || it.metadata?.namespace === ns);
+}
+
+function nodeRoles(n: any): string[] {
+  return Object.keys(n.metadata?.labels || {})
+    .filter((k) => k.startsWith('node-role.kubernetes.io/'))
+    .map((k) => k.split('/')[1]);
+}
+
+function normalizePod(p: any): Record<string, any> {
+  const containerStatuses: any[] = p.status?.containerStatuses || [];
+  const restarts = containerStatuses.reduce((acc: number, c: any) => acc + (c.restartCount || 0), 0);
+  const readyCount = containerStatuses.filter((c: any) => c.ready).length;
+  return {
+    name: p.metadata?.name,
+    namespace: p.metadata?.namespace,
+    phase: p.status?.phase || 'Unknown',
+    detailStatus:
+      containerStatuses.find((c: any) => c.state?.waiting?.reason)?.state?.waiting?.reason ||
+      p.status?.phase ||
+      'Unknown',
+    ready: `${readyCount}/${containerStatuses.length}`,
+    restarts,
+    node: p.spec?.nodeName || '',
+    createdAt: p.metadata?.creationTimestamp ? new Date(p.metadata.creationTimestamp).getTime() : null,
+    labels: p.metadata?.labels || {},
+    containers: (p.spec?.containers || []).map((c: any) => {
+      const st = containerStatuses.find((cs) => cs.name === c.name);
+      return { name: c.name, image: c.image, ready: st?.ready ?? false, restarts: st?.restartCount || 0 };
+    }),
+  };
+}
+
+/** 可用性 + context 列表（前端切换器数据源） */
+router.get('/status', (_req, res) => {
+  const available = isK8sAvailable();
+  res.json({
+    available,
+    contexts: available ? listK8sContexts() : [],
+    context: available ? currentK8sContextName() : '',
+    reason: available ? null : getK8sLoadError(),
+  });
+});
+
+/** 切换 context（内存态，不写回 kubeconfig） */
+router.post('/context', wrap(async (req: Request) => {
+  setK8sContext(String(req.body?.context || ''));
+  return { ok: true, context: currentK8sContextName() };
+}));
+
+/** 集群概览：节点（含 metrics-server 资源占用）+ 资源计数 */
+router.get('/overview', wrap(async () => {
+  const core = coreApi();
+  const [nodes, pods, services, pvcs] = (await Promise.all([
+    core.listNode(),
+    core.listPodForAllNamespaces(),
+    core.listServiceForAllNamespaces(),
+    core.listPersistentVolumeClaimForAllNamespaces(),
+  ])) as any[];
+
+  // metrics-server 节点占用（未安装时整体降级为 null）
+  let metricsAvailable = true;
+  const nodeMetricsMap = new Map<string, { cpuPercent: number; memPercent: number }>();
+  try {
+    const m = await metricsClient().getNodeMetrics();
+    const alloc = new Map<string, { cpu: number; mem: number }>();
+    for (const n of nodes.items || []) {
+      alloc.set(n.metadata?.name, {
+        cpu: parseQuantity(n.status?.allocatable?.cpu),
+        mem: parseQuantity(n.status?.allocatable?.memory),
+      });
+    }
+    for (const it of m.items || []) {
+      const a = alloc.get(it.metadata?.name) || { cpu: 0, mem: 0 };
+      const cpuUsed = parseQuantity(it.usage?.cpu);
+      const memUsed = parseQuantity(it.usage?.memory);
+      nodeMetricsMap.set(it.metadata?.name, {
+        cpuPercent: a.cpu ? Math.min(100, Math.round((cpuUsed / a.cpu) * 100)) : 0,
+        memPercent: a.mem ? Math.min(100, Math.round((memUsed / a.mem) * 100)) : 0,
+      });
+    }
+  } catch {
+    metricsAvailable = false;
+    nodeMetricsMap.clear();
+  }
+
+  return {
+    context: currentK8sContextName(),
+    metricsAvailable,
+    counts: {
+      nodes: (nodes.items || []).length,
+      pods: (pods.items || []).length,
+      services: (services.items || []).length,
+      pvc: (pvcs.items || []).length,
+    },
+    nodes: (nodes.items || []).map((n: any) => ({
+      name: n.metadata?.name,
+      roles: nodeRoles(n),
+      status: (n.status?.conditions || []).find((c: any) => c.type === 'Ready')?.status === 'True' ? 'Ready' : 'NotReady',
+      version: n.status?.nodeInfo?.kubeletVersion || '',
+      internalIP: (n.status?.addresses || []).find((a: any) => a.type === 'InternalIP')?.address || '',
+      cpuPercent: nodeMetricsMap.get(n.metadata?.name)?.cpuPercent ?? null,
+      memPercent: nodeMetricsMap.get(n.metadata?.name)?.memPercent ?? null,
+    })),
+  };
+}));
+
+/** 命名空间列表（切换器数据源） */
+router.get('/namespaces', wrap(async () => {
+  const core = coreApi();
+  const res = await core.listNamespace();
+  return { namespaces: (res.items || []).map((n: any) => n.metadata?.name).filter(Boolean) };
+}));
+
+/** Pod 列表 */
+router.get('/pods', wrap(async (req: Request) => {
+  const core = coreApi();
+  const res = await core.listPodForAllNamespaces();
+  return { pods: filterNs(res.items, nsParam(req)).map(normalizePod) };
+}));
+
+/** Pod 详情 */
+router.get('/pods/:ns/:name', wrap(async (req: Request) => {
+  const core = coreApi();
+  const res = await core.readNamespacedPod({ name: req.params.name, namespace: req.params.ns });
+  return { pod: normalizePod(res) };
+}));
+
+/** Pod 日志（tailLines ≤ 2000，只读） */
+router.get('/pods/:ns/:name/logs', wrap(async (req: Request) => {
+  const core = coreApi();
+  const tailLines = Math.min(2000, Math.max(1, Number(req.query.tailLines) || 500));
+  const container = req.query.container ? String(req.query.container) : undefined;
+  const logs = await core.readNamespacedPodLog({
+    name: req.params.name,
+    namespace: req.params.ns,
+    container,
+    follow: false,
+    tailLines,
+  });
+  return { logs: typeof logs === 'string' ? logs : '' };
+}));
+
+/** Pod 实时指标（metrics-server 快照；历史曲线由前端停留期间轮询采样） */
+router.get('/pods/:ns/:name/metrics', wrap(async (req: Request) => {
+  const res = await metricsClient().getPodMetrics(req.params.ns);
+  const it = (res.items || []).find((x: any) => x.metadata?.name === req.params.name);
+  return {
+    available: true,
+    containers: (it?.containers || []).map((c: any) => ({
+      name: c.name,
+      cpuCores: parseQuantity(c.usage?.cpu),
+      memBytes: parseQuantity(c.usage?.memory),
+    })),
+  };
+}));
+
+/** Deployment 列表 */
+router.get('/deployments', wrap(async (req: Request) => {
+  const res = await appsApi().listDeploymentForAllNamespaces();
+  return {
+    deployments: filterNs(res.items, nsParam(req)).map((d: any) => ({
+      name: d.metadata?.name,
+      namespace: d.metadata?.namespace,
+      replicasDesired: d.spec?.replicas,
+      replicasReady: d.status?.readyReplicas ?? 0,
+      createdAt: d.metadata?.creationTimestamp ? new Date(d.metadata.creationTimestamp).getTime() : null,
+    })),
+  };
+}));
+
+/** Service 列表 */
+router.get('/services', wrap(async (req: Request) => {
+  const res = await coreApi().listServiceForAllNamespaces();
+  return {
+    services: filterNs(res.items, nsParam(req)).map((s: any) => ({
+      name: s.metadata?.name,
+      namespace: s.metadata?.namespace,
+      type: s.spec?.type,
+      clusterIP: s.spec?.clusterIP,
+      ports: (s.spec?.ports || []).map((pt: any) => `${pt.port}/${pt.protocol || 'TCP'}`),
+    })),
+  };
+}));
+
+/** PVC 列表 */
+router.get('/pvc', wrap(async (req: Request) => {
+  const res = await coreApi().listPersistentVolumeClaimForAllNamespaces();
+  return {
+    pvcs: filterNs(res.items, nsParam(req)).map((v: any) => ({
+      name: v.metadata?.name,
+      namespace: v.metadata?.namespace,
+      status: v.status?.phase,
+      capacity: v.status?.capacity?.storage,
+      storageClass: v.spec?.storageClassName,
+    })),
+  };
+}));
+
+/** 集群事件 */
+router.get('/events', wrap(async (req: Request) => {
+  const ns = nsParam(req);
+  const core = coreApi();
+  const res = ns ? await core.listNamespacedEvent({ namespace: ns }) : await core.listEventForAllNamespaces();
+  return {
+    events: (res.items || []).map((e: any) => ({
+      type: e.type,
+      reason: e.reason,
+      message: e.message,
+      object: e.involvedObject?.name,
+      kind: e.involvedObject?.kind,
+      count: e.count,
+      lastAt: e.lastTimestamp ? new Date(e.lastTimestamp).getTime() : null,
+    })),
+  };
+}));
+
+export default router;
