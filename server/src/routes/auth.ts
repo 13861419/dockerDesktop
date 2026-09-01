@@ -75,9 +75,14 @@ router.post(
       });
     }
 
-    // IP 白名单检查（用户级优先，其次全局）
-    const sec = getUserSecurity(user);
-    if (!isIpAllowed(ip, sec.ipAllowlist)) {
+    // IP 白名单检查（用户级优先，其次全局；用户不存在时仅应用全局白名单）
+    let sec: ReturnType<typeof getUserSecurity> | null = null;
+    try {
+      sec = getUserSecurity(user);
+    } catch {
+      // 用户不存在：交给下方密码校验返回 401
+    }
+    if (sec && !isIpAllowed(ip, sec.ipAllowlist)) {
       return res.status(403).json({ error: '当前 IP 不在允许访问的白名单内' });
     }
 
@@ -95,13 +100,13 @@ router.post(
     }
 
     // 密码过期策略：过期时置强制改密标记，登录响应提示
-    const mustChange = auth.mustChangePassword || isPasswordExpired(sec.pwdChangedAt);
-    if (isPasswordExpired(sec.pwdChangedAt)) {
+    const mustChange = auth.mustChangePassword || isPasswordExpired(sec?.pwdChangedAt);
+    if (isPasswordExpired(sec?.pwdChangedAt)) {
       setMustChangePassword(user, true);
     }
 
     // 2FA 第一步：密码通过后签发票据，等待验证码
-    if (sec.totpEnabled) {
+    if (sec?.totpEnabled) {
       const t = createTotpTicket(user);
       return res.json({ totpRequired: true, ticket: t, username: user, mustChangePassword: mustChange });
     }
