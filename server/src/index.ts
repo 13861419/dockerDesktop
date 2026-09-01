@@ -13,6 +13,7 @@ import { startEventMonitor } from './docker/events';
 import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
 import { startSelfHeal, stopSelfHeal } from './selfheal';
+import { startMetricsHistory } from './metricsHistory';
 import { initStorage, closeDb } from './storage';
 import { ensureInitialUser } from './users';
 import { ensureBuiltinRoles } from './rbac';
@@ -52,6 +53,15 @@ const server = app.listen(PORT, HOST, () => {
       console.error('容器指标采集器启动失败:', err);
     }
   }, 700);
+
+  // 启动指标小时级聚合器（1.2.0 长周期历史留存，30/90 天曲线数据源）
+  setTimeout(() => {
+    try {
+      startMetricsHistory();
+    } catch (err) {
+      console.error('指标聚合器启动失败:', err);
+    }
+  }, 750);
 
   // 启动 Docker 事件采集器（异步，不影响服务启动）
   setTimeout(() => {

@@ -49,7 +49,7 @@ interface MonitorHistory {
 }
 
 /** 历史趋势时间范围（与后端 MetricsRange 一致） */
-type MetricsRange = '10m' | '1h' | '24h' | '7d';
+type MetricsRange = '10m' | '1h' | '24h' | '7d' | '30d' | '90d';
 
 /** /api/monitor/history/range 返回的精简监控点（剔除 disks/gpu/alerts 等嵌套结构） */
 interface MetricPoint {
@@ -112,6 +112,8 @@ const RANGE_OPTIONS: Array<{ value: MetricsRange; label: string }> = [
   { value: '1h', label: '1小时' },
   { value: '24h', label: '24小时' },
   { value: '7d', label: '7天' },
+  { value: '30d', label: '30天' },
+  { value: '90d', label: '90天' },
 ];
 
 /**

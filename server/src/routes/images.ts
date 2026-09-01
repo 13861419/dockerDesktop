@@ -14,6 +14,7 @@ import { requireAdmin, requireAuth, requireOperator } from '../auth';
 import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { scanImage } from '../trivyCli';
+import { listVulnHistory } from '../vulnScan';
 
 const router = Router();
 
@@ -517,6 +518,20 @@ router.post(
     const name = String(req.params.name || '');
     const result = await scanImage(name);
     res.json(result);
+  }),
+);
+
+/**
+ * GET /api/images/vuln-history?name=xxx
+ * 漏洞扫描历史：指定镜像时返回该镜像全部记录，缺省返回最近 50 条（跨镜像）
+ * 注意：需在 /:name 形态的路由之前定义，避免 vuln-history 被捕获为镜像名
+ */
+router.get(
+  '/vuln-history',
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = req.query.name ? String(req.query.name) : undefined;
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    res.json({ items: listVulnHistory(name, limit) });
   }),
 );
 

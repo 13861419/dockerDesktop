@@ -13,6 +13,7 @@ import { getDockerClient } from './client';
 import { isWindows } from '../platform/detect';
 import { getDiskPartitions, DiskPartition } from '../platform/diskMonitor';
 import { getDb } from '../storage';
+import { queryHourly, type HourlyRow } from '../metricsHistory';
 
 /**
  * 告警条目标注
@@ -507,7 +508,7 @@ export interface MetricPoint {
 }
 
 /** 历史趋势查询支持的时间范围 */
-export type MetricsRange = '10m' | '1h' | '24h' | '7d';
+export type MetricsRange = '10m' | '1h' | '24h' | '7d' | '30d' | '90d';
 
 /** 各时间范围对应的回溯毫秒数 */
 const RANGE_MS: Record<MetricsRange, number> = {
@@ -515,6 +516,8 @@ const RANGE_MS: Record<MetricsRange, number> = {
   '1h': 60 * 60 * 1000,
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+  '90d': 90 * 24 * 60 * 60 * 1000,
 };
 
 /** 各时间范围降采样桶大小（毫秒）；10m 直接用内存缓冲无需降采样 */
@@ -522,6 +525,8 @@ const RANGE_BUCKET_MS: Record<Exclude<MetricsRange, '10m'>, number> = {
   '1h': 60 * 1000, // 每 60 秒一点，最多 60 点
   '24h': 600 * 1000, // 每 600 秒一点，最多 144 点
   '7d': 1800 * 1000, // 每 1800 秒一点，最多 336 点
+  '30d': 6 * 3600 * 1000, // 每 6 小时一点，最多 120 点
+  '90d': 12 * 3600 * 1000, // 每 12 小时一点，最多 180 点
 };
 
 /**
@@ -636,10 +641,28 @@ function mapHostMetricRow(r: HostMetricRow): MetricPoint {
 }
 
 /**
+ * 将小时级聚合行映射为精简 MetricPoint（30d / 90d 长周期曲线用）
+ * @param r 聚合表行
+ * @returns 精简监控点（net 为该小时的字节增量，disk used/total 以百分比近似）
+ */
+function mapHourlyRow(r: HourlyRow): MetricPoint {
+  return {
+    timestamp: r.ts_hour,
+    cpu: { percent: r.cpu_avg, cores: r.cpu_cores },
+    mem: { percent: r.memp_avg, used: r.mem_avg, total: r.mem_total },
+    disk: { percent: r.disk_avg, used: 0, total: 0 },
+    net: { rx: r.rx_sum, tx: r.tx_sum },
+    containers: { running: Math.round(r.ctn_avg), total: Math.round(r.ctn_avg) },
+    images: Math.round(r.img_avg),
+  };
+}
+
+/**
  * 查询指定时间范围的历史监控趋势
  *
  * - 10m：直接返回内存缓冲（与 getMonitorHistory(10) 一致，实时性好）
  * - 1h/24h/7d：从 host_metrics 查询并按桶降采样，避免返回过多点
+ * - 30d/90d：从小时级聚合表 metrics_hourly 读取（原始采样仅保留 7 天）
  *
  * @param range 时间范围，默认 1h
  * @returns 精简监控点数组（按时间升序）
@@ -648,8 +671,23 @@ export function getMetricsRange(range: MetricsRange = '1h'): MetricPoint[] {
   if (range === '10m') {
     return getMonitorHistory(10).map(mapMonitorPoint);
   }
+  // 30d / 90d：从小时级聚合表读取（原始采样表仅保留 7 天）
+  if (range === '30d' || range === '90d') {
+    const since = Date.now() - RANGE_MS[range];
+    const bucketMs = RANGE_BUCKET_MS[range];
+    const rows = queryHourly('host', 'host', since);
+    const out: MetricPoint[] = [];
+    let lastBucket = -1;
+    for (const r of rows) {
+      const bucket = Math.floor(r.ts_hour / bucketMs);
+      if (bucket === lastBucket) continue;
+      lastBucket = bucket;
+      out.push(mapHourlyRow(r));
+    }
+    return out;
+  }
   const since = Date.now() - RANGE_MS[range];
-  const bucketMs = RANGE_BUCKET_MS[range];
+  const bucketMs = RANGE_BUCKET_MS[range as Exclude<MetricsRange, '10m' | '30d' | '90d'>];
   let rows: HostMetricRow[] = [];
   try {
     rows = getDb()

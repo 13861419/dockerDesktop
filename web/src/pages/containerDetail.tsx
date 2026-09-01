@@ -99,7 +99,7 @@ interface ContainerMetricPoint {
 }
 
 /** 资源监控时间范围：实时 / 1 小时 / 24 小时 / 7 天 */
-type StatsRange = 'realtime' | '1h' | '24h' | '7d';
+type StatsRange = 'realtime' | '1h' | '24h' | '7d' | '30d' | '90d';
 
 /**
  * 将毫秒时间戳格式化为历史曲线 X 轴标签（MM-DD HH:mm）
@@ -1729,7 +1729,7 @@ export default function ContainerDetailPage() {
                 title={t('资源曲线')}
                 extra={
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {(['realtime', '1h', '24h', '7d'] as StatsRange[]).map((r) => (
+                    {(['realtime', '1h', '24h', '7d', '30d', '90d'] as StatsRange[]).map((r) => (
                       <button
                         key={r}
                         onClick={() => setStatsRange(r)}

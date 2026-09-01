@@ -45,6 +45,7 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'baselineScan', label: '安全基线扫描', badge: 'red' },
   { value: 'imageGc', label: '镜像清理', badge: 'orange' },
   { value: 'sqliteBackup', label: '数据库备份', badge: 'blue' },
+  { value: 'vulnScan', label: '漏洞定时扫描', badge: 'violet' },
 ];
 
 /** cron 表达式快捷预设：说明 + 表达式 */
@@ -1187,6 +1188,45 @@ function ConfigEditor({
           ))}
         </div>
       </Field>
+    );
+  }
+
+  // vulnScan：可选镜像列表（留空 = 本地镜像前 N 个）与扫描上限
+  if (type === 'vulnScan') {
+    return (
+      <>
+        <Field
+          label={t('镜像列表（可选）')}
+          hint={t('多个镜像用英文逗号分隔，如 nginx:latest,redis:7；留空则自动扫描本地镜像')}
+        >
+          <TextArea
+            value={Array.isArray(config.images) ? config.images.join(',') : config.images || ''}
+            placeholder={t('nginx:latest,redis:7')}
+            onChange={(e) => setKey('images', e.target.value)}
+          />
+        </Field>
+        <Field label={t('扫描上限')} hint={t('未指定镜像列表时最多扫描的本地镜像数量，默认 20')}>
+          <Input
+            type="number"
+            min={1}
+            value={config.maxImages ?? ''}
+            placeholder={t('如 20')}
+            onChange={(e) => setKey('maxImages', e.target.value === '' ? undefined : Number(e.target.value))}
+          />
+        </Field>
+        <Field label={t('新增高危时推送告警')}>
+          <div className="tasks__checks">
+            <label className="tasks__check">
+              <input
+                type="checkbox"
+                checked={config.notify !== false}
+                onChange={(e) => setKey('notify', e.target.checked)}
+              />
+              {t('发现新增 Critical / High 漏洞时推送到全部启用渠道')}
+            </label>
+          </div>
+        </Field>
+      </>
     );
   }
 

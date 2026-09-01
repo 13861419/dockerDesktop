@@ -2758,4 +2758,24 @@ export const en: Record<string, string> = {
   "登录被提示「当前 IP 不在允许访问的白名单内」？": "Login says \"Your IP is not in the allowlist\"?",
   "管理员开启了 IP 白名单（全局或按用户）。请确认你的出口 IP 在白名单 CIDR 范围内；若全局白名单把管理机自身也排除导致自锁，需在服务器数据目录的 SQLite 设置表中清空 security.ipAllowlist 键恢复访问。配置时务必先加入当前管理机 IP。": "An IP allowlist (global or per-user) is enabled. Make sure your egress IP falls within the allowlisted CIDRs. If a global allowlist excludes the admin workstation itself, clear the security.ipAllowlist key in the panel SQLite settings table on the server to regain access. Always add the admin workstation IP first.",
   "账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、界面语言切换、备份、AI 配置、系统参数、用户管理": "Accounts, role management (RBAC), 2FA verification, active sessions, IP allowlist, password policy, UI language, backups, AI config, system parameters, user management",
+  
+  // 1.2.0 可观测性（长周期指标 / 漏洞定时扫描）
+  "漏洞定时扫描": "Scheduled Vulnerability Scan",
+  "镜像列表（可选）": "Image list (optional)",
+  "多个镜像用英文逗号分隔，如 nginx:latest,redis:7；留空则自动扫描本地镜像": "Comma-separated image names, e.g. nginx:latest,redis:7; leave empty to scan local images",
+  "扫描上限": "Scan limit",
+  "未指定镜像列表时最多扫描的本地镜像数量，默认 20": "Max number of local images to scan when no list is given (default 20)",
+  "新增高危时推送告警": "Notify on new high-severity CVEs",
+  "发现新增 Critical / High 漏洞时推送到全部启用渠道": "Push an alert to all enabled channels when new Critical / High vulnerabilities are found",
+  "扫描历史（定时任务）": "Scan history (scheduled tasks)",
+  "较上次新增高危": "New high-severity",
+  "无新增": "No new findings",
+  "30天": "30d",
+  "90天": "90d",
+  
+  // 1.2.0 帮助中心（长周期曲线 / 定时漏洞扫描）
+  "如何查看 30 天 / 90 天的历史资源曲线？": "How to view 30d / 90d resource history curves?",
+  "总览「资源监控」与容器详情「资源曲线」的时间窗支持 10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天。7 天内为原始采样（30 秒粒度），30/90 天来自小时级聚合（自动保留 90 天），可观察周级 / 月级容量与负载趋势。": "The time windows of overview \"Resource Monitoring\" and container detail \"Resource Curves\" support 10m / 1h / 24h / 7d / 30d / 90d. Data within 7 days is raw sampling (30s granularity); 30d/90d come from hourly rollups (kept for 90 days) for week- and month-scale trends.",
+  "如何让面板定时做漏洞扫描并在出现新漏洞时提醒？": "How to schedule vulnerability scans and get alerted on new findings?",
+  "「计划任务」新建类型为「漏洞定时扫描」的任务：镜像列表可留空（自动扫描本地镜像前 N 个），建议按周配置 cron 并勾选「新增高危时推送告警」。每次扫描与上次按 CVE id 差集对比，新增 Critical / High 即推送到全部启用渠道；历史结果在镜像详情页「漏洞扫描」卡片中查看。": "Create a scheduled task of type \"Scheduled Vulnerability Scan\": leave the image list empty to auto-scan the first N local images, pick a weekly cron and check \"Notify on new high-severity findings\". Each run diffs CVE ids against the previous scan and pushes new Critical / High findings to all enabled channels; history lives in the image detail page's scan card.",
   };

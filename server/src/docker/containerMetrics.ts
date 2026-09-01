@@ -12,6 +12,7 @@
 import { getDockerClient } from './client';
 import { getDb } from '../storage';
 import { parseStats } from './stats';
+import { queryHourly } from '../metricsHistory';
 
 /** 采集间隔（毫秒）：每 5 秒采集一次所有运行中容器的 stats */
 const INTERVAL_MS = 5000;
@@ -200,13 +201,15 @@ export interface ContainerMetricPoint {
 }
 
 /** 历史趋势查询支持的时间范围 */
-export type ContainerMetricsRange = '1h' | '24h' | '7d';
+export type ContainerMetricsRange = '1h' | '24h' | '7d' | '30d' | '90d';
 
 /** 各时间范围对应的回溯毫秒数 */
 const RANGE_MS: Record<ContainerMetricsRange, number> = {
   '1h': 60 * 60 * 1000,
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+  '90d': 90 * 24 * 60 * 60 * 1000,
 };
 
 /** 各时间范围降采样桶大小（毫秒） */
@@ -214,6 +217,8 @@ const RANGE_BUCKET_MS: Record<ContainerMetricsRange, number> = {
   '1h': 60 * 1000,
   '24h': 600 * 1000,
   '7d': 1800 * 1000,
+  '30d': 6 * 3600 * 1000,
+  '90d': 12 * 3600 * 1000,
 };
 
 /** container_metrics 表行结构（仅供内部查询映射使用，字段与表定义一一对应） */
@@ -287,6 +292,31 @@ export function getContainerMetricsHistory(
   containerId: string,
   range: ContainerMetricsRange = '1h',
 ): ContainerMetricPoint[] {
+  // 30d / 90d：从小时级聚合表读取（原始采样表仅保留 7 天）
+  if (range === '30d' || range === '90d') {
+    const since = Date.now() - RANGE_MS[range];
+    const bucketMs = RANGE_BUCKET_MS[range];
+    const rows = queryHourly('container', containerId, since);
+    const out: ContainerMetricPoint[] = [];
+    let lastBucket = -1;
+    for (const r of rows) {
+      const bucket = Math.floor(r.ts_hour / bucketMs);
+      if (bucket === lastBucket) continue;
+      lastBucket = bucket;
+      out.push({
+        timestamp: r.ts_hour,
+        cpuPercent: r.cpu_avg,
+        memUsage: r.mem_avg,
+        memLimit: 0,
+        memPercent: r.memp_avg,
+        netRx: 0,
+        netTx: 0,
+        rxDelta: r.rx_sum,
+        txDelta: r.tx_sum,
+      });
+    }
+    return out;
+  }
   const since = Date.now() - RANGE_MS[range];
   const bucketMs = RANGE_BUCKET_MS[range];
   let rows: ContainerMetricRow[] = [];

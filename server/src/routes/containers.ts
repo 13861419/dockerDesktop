@@ -1264,7 +1264,7 @@ router.get(
   '/:id/stats/history',
   asyncHandler(async (req: Request, res: Response) => {
     const rawRange = String(req.query.range || '1h');
-    const range = rawRange === '24h' || rawRange === '7d' ? rawRange : '1h';
+    const range = ['24h', '7d', '30d', '90d'].includes(rawRange) ? (rawRange as '24h' | '7d' | '30d' | '90d') : '1h';
     const points = getContainerMetricsHistory(req.params.id, range);
     res.json({ points });
   }),

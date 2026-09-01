@@ -365,7 +365,8 @@ export type TaskType =
   | 'git-pull-build'
   | 'imageGc'
   | 'baselineScan'
-  | 'sqliteBackup';
+  | 'sqliteBackup'
+  | 'vulnScan';
 
 /** 计划任务（/api/tasks 返回） */
 export interface CronTask {

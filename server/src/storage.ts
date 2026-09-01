@@ -412,6 +412,45 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_host_metrics_ts ON host_metrics(ts DESC);
 
+    -- 指标小时级聚合表：1.2.0 起对 host_metrics / container_metrics 做小时级 rollup，
+    -- 支撑 30 天 / 90 天长周期历史曲线（原始采样表仅保留 7 天）
+    CREATE TABLE IF NOT EXISTS metrics_hourly (
+      scope      TEXT NOT NULL,                        -- 'host' | 'container'
+      key        TEXT NOT NULL,                        -- host 固定 'host'；container 为容器 id
+      ts_hour    INTEGER NOT NULL,                     -- 小时起点（毫秒，UTC 整点）
+      samples    INTEGER NOT NULL,                     -- 该小时内的采样条数
+      cpu_avg    REAL NOT NULL,
+      cpu_max    REAL NOT NULL,
+      mem_avg    REAL NOT NULL,                        -- 字节（host: mem_used；container: mem_usage）
+      mem_max    REAL NOT NULL,
+      memp_avg   REAL NOT NULL,                        -- 内存使用率均值
+      disk_avg   REAL NOT NULL,                        -- 磁盘使用率均值（容器侧记 0）
+      rx_sum     REAL NOT NULL,                        -- 周期内网络接收增量之和（字节）
+      tx_sum     REAL NOT NULL,                        -- 周期内网络发送增量之和（字节）
+      cpu_cores  INTEGER NOT NULL DEFAULT 0,           -- host: CPU 核数（容器侧 0）
+      mem_total  INTEGER NOT NULL DEFAULT 0,           -- host: 内存总量（容器侧 0）
+      ctn_avg    REAL NOT NULL DEFAULT 0,              -- host: 运行容器数均值（容器侧 0）
+      img_avg    REAL NOT NULL DEFAULT 0,              -- host: 镜像数均值（容器侧 0）
+      PRIMARY KEY (scope, key, ts_hour)
+    );
+
+    -- 镜像漏洞扫描历史表：Trivy 定时扫描留存 + 新增高危漏洞对比
+    CREATE TABLE IF NOT EXISTS vuln_scans (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      image      TEXT NOT NULL,                        -- 镜像名（含 tag）
+      scanned_at INTEGER NOT NULL,                     -- 扫描时间（毫秒）
+      critical   INTEGER NOT NULL DEFAULT 0,
+      high       INTEGER NOT NULL DEFAULT 0,
+      medium     INTEGER NOT NULL DEFAULT 0,
+      low        INTEGER NOT NULL DEFAULT 0,
+      unknown    INTEGER NOT NULL DEFAULT 0,
+      total      INTEGER NOT NULL DEFAULT 0,
+      new_cves   TEXT NOT NULL DEFAULT '',             -- 较上次新增的高危 CVE id（CSV，供推送与展示）
+      cve_ids    TEXT NOT NULL DEFAULT '',             -- 本轮全部 CVE id（CSV，上限 500 条，供下轮差集对比）
+      summary    TEXT NOT NULL DEFAULT ''              -- 摘要说明（供任务详情/列表展示）
+    );
+    CREATE INDEX IF NOT EXISTS idx_vuln_scans_image ON vuln_scans(image, scanned_at DESC);
+
     -- 容器资源指标采样表：采集器对每个运行中容器降采样落库，供容器详情页历史趋势查询
     CREATE TABLE IF NOT EXISTS container_metrics (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,

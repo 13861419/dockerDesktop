@@ -86,6 +86,21 @@ interface ImageScan {
   notAvailableReason?: string;
 }
 
+/** 漏洞扫描历史条目（/api/images/vuln-history 返回） */
+interface VulnHistoryRow {
+  id: number;
+  image: string;
+  scannedAt: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+  total: number;
+  newCves: string[];
+  summary: string;
+}
+
 /** 使用该镜像的容器列表条目（/api/containers 返回结构） */
 interface ContainerBrief {
   Id: string;
@@ -260,6 +275,23 @@ export default function ImageDetailPage() {
     }
   }, [name, showToast]);
 
+  /** 漏洞扫描历史（定时扫描任务留存） */
+  const [vulnHistory, setVulnHistory] = useState<VulnHistoryRow[]>([]);
+
+  /** 拉取该镜像的扫描历史（最近 10 条） */
+  const fetchVulnHistory = useCallback(async () => {
+    if (!name) return;
+    try {
+      const data = await get<{ items: VulnHistoryRow[] }>(
+        '/api/images/vuln-history?limit=10&name=' + encodeURIComponent(name),
+      );
+      setVulnHistory(data?.items || []);
+    } catch {
+      // 静默：旧版本后端无此接口时隐藏历史区
+      setVulnHistory([]);
+    }
+  }, [name]);
+
   /** 执行镜像漏洞扫描（Trivy） */
   const handleScan = useCallback(async () => {
     if (!name) return;
@@ -267,13 +299,14 @@ export default function ImageDetailPage() {
     try {
       const r = await post<ImageScan>('/api/images/' + encodeURIComponent(name) + '/scan');
       setScanResult(r);
+      fetchVulnHistory();
     } catch (e: any) {
       showToast(e?.message || t('漏洞扫描失败'), 'error');
       setScanResult(null);
     } finally {
       setScanLoading(false);
     }
-  }, [name, showToast]);
+  }, [name, showToast, fetchVulnHistory]);
 
   /** 拉取该镜像的层空间分析 */
   const fetchLayers = useCallback(async () => {
@@ -306,7 +339,8 @@ export default function ImageDetailPage() {
     fetchHistory();
     fetchLayers();
     fetchContainers();
-  }, [fetchImage, fetchHistory, fetchLayers, fetchContainers]);
+    fetchVulnHistory();
+  }, [fetchImage, fetchHistory, fetchLayers, fetchContainers, fetchVulnHistory]);
 
   /** 镜像展示名称：优先取 RepoTags，否则取名称 */
   const displayName = image?.RepoTags?.[0] || name || '<none>';
@@ -682,6 +716,44 @@ export default function ImageDetailPage() {
                   </span>
                 ))}
               </div>
+              {/* 扫描历史（定时任务留存） */}
+              {vulnHistory.length > 0 && (
+                <>
+                  <div className="desc-label" style={{ marginTop: 12, marginBottom: 6 }}>{t('扫描历史（定时任务）')}</div>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>{t('时间')}</th>
+                        <th>{t('严重')}</th>
+                        <th>{t('高危')}</th>
+                        <th>{t('中危')}</th>
+                        <th>{t('低危')}</th>
+                        <th>{t('较上次新增高危')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vulnHistory.slice(0, 5).map((h) => (
+                        <tr key={h.id}>
+                          <td>{new Date(h.scannedAt).toLocaleString()}</td>
+                          <td>{h.critical}</td>
+                          <td>{h.high}</td>
+                          <td>{h.medium}</td>
+                          <td>{h.low}</td>
+                          <td>
+                            {h.newCves.length > 0 ? (
+                              <span style={{ color: '#e11d48' }}>
+                                +{h.newCves.length}（{h.newCves.slice(0, 3).join(', ')}）
+                              </span>
+                            ) : (
+                              t('无新增')
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
               {/* 漏洞明细 */}
               {scanResult.vulnerabilities && scanResult.vulnerabilities.length > 0 ? (
                 <table className="data-table">

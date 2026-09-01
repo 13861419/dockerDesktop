@@ -54,7 +54,7 @@ router.get(
 );
 
 /** 合法的时间范围取值，用于校验 query 参数 */
-const VALID_RANGES: MetricsRange[] = ['10m', '1h', '24h', '7d'];
+const VALID_RANGES: MetricsRange[] = ['10m', '1h', '24h', '7d', '30d', '90d'];
 
 /**
  * GET /api/monitor/history/range?range=1h
