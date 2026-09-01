@@ -105,6 +105,11 @@ BuildArch:      ${ARCH_LABEL}
 Requires:       docker-ce
 Requires:       nodejs >= 22
 
+# Node.js 应用为纯 JS 文件：禁用 brp-strip / 调试包，避免 rpmbuild strip 遇到
+# node_modules 内非本架构 ELF（预编译二进制）时报 "Unable to recognise the format"
+%global __os_install_post %{nil}
+%global debug_package %{nil}
+
 %description
 A web-based Docker management interface similar to 1Panel.
 Supports container, image, volume, network, compose, and host file management.
@@ -146,9 +151,10 @@ fi
 /usr/local/bin/docker-manager-install
 SPECEOF
 
-  # 构建 RPM（架构已在 spec 中设置 BuildArch）
+  # 构建 RPM（架构已在 spec 中设置 BuildArch；--target 允许在 x86_64 宿主上打包 aarch64 纯文件包）
   rpmbuild -bb "$RPM_DIR/SPECS/${PKG_NAME}.spec" \
-    --define "_topdir $RPM_DIR" 2>&1 || {
+    --define "_topdir $RPM_DIR" \
+    --target "${ARCH_LABEL}" 2>&1 || {
       info "rpmbuild 失败，尝试用 fpm ..."
       if command -v fpm &>/dev/null; then
         fpm -s dir -t rpm \
