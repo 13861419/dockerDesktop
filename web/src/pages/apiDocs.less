@@ -1,0 +1,58 @@
+/** API 文档页样式（1.4.0） */
+
+.api-docs {
+  &__search {
+    margin-bottom: 14px;
+
+    input {
+      width: 100%;
+    }
+  }
+
+  &__group {
+    margin-bottom: 18px;
+  }
+
+  &__tag {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: var(--text-2, #374151);
+  }
+
+  &__method {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+  }
+
+  code {
+    font-size: 12px;
+  }
+
+  &__params {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  &__param {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--bg-body, #f3f4f6);
+    color: var(--text-3, #6b7280);
+  }
+
+  &__empty {
+    padding: 24px 0;
+    text-align: center;
+    color: var(--text-3, #9ca3af);
+    font-size: 13px;
+  }
+}

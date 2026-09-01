@@ -10,7 +10,6 @@ export const en: Record<string, string> = {
   '健康体检': 'Health Check',
   '容器': 'Containers',
   '容器模板': 'Container Templates',
-  '编排': 'Orchestration',
   'AI 助手': 'AI Assistant',
   '镜像': 'Images',
   '镜像GC': 'Image GC',
@@ -21,7 +20,6 @@ export const en: Record<string, string> = {
   '网络': 'Networks',
   '网络拓扑': 'Network Topology',
   '应用商店': 'App Store',
-  '计划任务': 'Scheduled Tasks',
   '文件管理': 'File Manager',
   '宿主机文件': 'Host Files',
   '宿主机终端': 'Host Terminal',
@@ -2786,4 +2784,22 @@ export const en: Record<string, string> = {
   "系统参数「安全」组的「两级审批动作」填入动作类型（如 container.delete），该动作的审批单需两级签批：第一级运维或管理员、末级必须管理员；审批中心会显示「第 1/2 级」进度与 AP- 单号，每次签批均留痕并推送通知。待审批超过 TTL 的 3/4 时自动催办一次。": "List action types in \"Two-step approval actions\" (System Parameters → Security), e.g. container.delete. Those tickets require two sign-offs: level 1 by an operator or admin, the final level by an admin. The approval center shows \"Level 1/2\" progress and an AP- ticket number; every decision is logged and pushed. A reminder is sent once when 3/4 of the TTL has elapsed.",
   
   // 1.3.0 帮助中心（多级审批）
+  
+  // 1.4.0 API 文档页
+  "面板后端 OpenAPI 3.0 接口骨架，可用于二次开发与自动化对接（完整字段以路由实现为准）。": "OpenAPI 3.0 skeleton of the panel backend for integration and automation (fields follow the route implementations).",
+  "API 文档": "API Docs",
+  "搜索路径 / 说明 / 分组": "Search path / summary / group",
+  "加载 API 文档失败": "Failed to load API docs",
+  "无匹配的端点": "No matching endpoints",
+  "方法": "Method",
+  "认证 / 会话": "Auth / Sessions",
+  "卷 / 网络": "Volumes / Networks",
+  "编排": "Compose",
+  "计划任务": "Scheduled Tasks",
+  "审批": "Approvals",
+  "系统管理": "System",
+  
+  // 1.4.0 帮助中心（OpenAPI）
+  "面板提供 OpenAPI 接口文档吗？": "Does the panel ship OpenAPI docs?",
+  "「侧栏 → API 文档」页（或 GET /api/openapi.json）提供 OpenAPI 3.0 核心端点骨架：按业务域分组展示方法 / 路径 / 说明 / 查询参数，支持搜索；除登录外均需携带 Authorization: Bearer Token，可用于脚本与自动化对接。": "The sidebar \"API Docs\" page (or GET /api/openapi.json) provides an OpenAPI 3.0 skeleton of core endpoints grouped by domain with methods / paths / summaries / query parameters and search. Everything except login requires an Authorization: Bearer token — handy for scripts and automation.",
   };

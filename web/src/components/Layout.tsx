@@ -440,6 +440,17 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/api-docs',
+    label: 'API 文档',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M8 6 3.5 12 8 18" />
+        <path d="M16 6l4.5 6L16 18" />
+        <path d="M13 5l-2 14" />
+      </svg>
+    ),
+  },
 ];
 
 /**

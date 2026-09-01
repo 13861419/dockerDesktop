@@ -17,6 +17,7 @@ import { I18nProvider } from './i18n';
 
 // ---- 路由级懒加载：各页面独立 chunk，进入路由时才加载 ----
 const LoginPage = lazy(() => import('./pages/login'));
+const ApiDocsPage = lazy(() => import('./pages/apiDocs'));
 const OverviewPage = lazy(() => import('./pages/overview'));
 const ContainersPage = lazy(() => import('./pages/containers'));
 const ContainerDetailPage = lazy(() => import('./pages/containerDetail'));
@@ -418,6 +419,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <HelpPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/api-docs"
+                element={
+                  <PageSuspense>
+                    <ApiDocsPage />
                   </PageSuspense>
                 }
               />

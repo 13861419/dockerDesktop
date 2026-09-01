@@ -55,6 +55,7 @@
 - **可观测性**：主机 / 容器指标 7 天原始采样 + 90 天小时级聚合长周期曲线（30d/90d 时间窗）；Trivy 漏洞定时扫描计划任务，按 CVE id 差集对比、新增 Critical / High 自动推送告警，镜像详情内置扫描历史对比
 - **AI 智能助手**（可选）：多模型配置中心（任意 OpenAI 兼容端点：云端 / Ollama / LM Studio 等，密钥加密存储）、AI 对话、文件分析、智能巡检、告警诊断、周报生成、知识库、Token 用量治理；未配置时入口自动隐藏，零常驻依赖
 - **帮助中心**：内置快速上手指南、常见问题 FAQ 与全功能速查表
+- **OpenAPI 接口文档**：`GET /api/openapi.json` 输出 OpenAPI 3.0 核心端点骨架（认证 / 监控 / 容器 / 镜像 / 审批等 34 路径），侧栏「API 文档」页按域分组浏览与搜索，便于二次开发与自动化对接
 - **系统参数中心化**：面板级参数（安全开关、抓取 Token、压缩配置等）统一在「设置 → 系统参数」管理，带类型与分组描述
 
 ## 🧰 技术栈
@@ -257,7 +258,7 @@ npm run package
 npm run package:installer
 ```
 
-生成 `DockerManager-setup-1.3.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
+生成 `DockerManager-setup-1.4.0.exe` 安装包，在目标 Windows 电脑上运行即完成安装。
 
 #### Linux（Ubuntu 24 / RHEL 9 系）
 

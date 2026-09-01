@@ -83,8 +83,8 @@ test('approvalChain: 待审批超时前提醒一次', async () => {
   const db = getDb();
   const prevTtl = getSetting<number>('approvals.ttlHours');
   setSetting('approvals.ttlHours', 4);
-  // 直接插入一条 3 小时前提交的待审批（超过 3/4 TTL）
-  const created = Date.now() - 3 * 3600_000;
+  // 直接插入一条 3.5 小时前提交的待审批（已超过 3/4 TTL = 3 小时催办线）
+  const created = Date.now() - 3.5 * 3600_000;
   const r = db
     .prepare(
       "INSERT INTO approvals (username, action_type, target, payload, status, reason, created_at, ticket_no) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)",
