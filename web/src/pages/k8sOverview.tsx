@@ -10,6 +10,7 @@ import Card from '../components/Card';
 import Empty from '../components/Empty';
 import Button from '../components/Button';
 import { Select } from '../components/Form';
+import LineChart from '../components/LineChart';
 import { translateNow as t } from '../i18n';
 import './k8s.less';
 
@@ -58,20 +59,26 @@ export default function K8sOverview() {
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const [ns, setNs] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+  const [histDuration, setHistDuration] = useState('7d');
+  const [histPoints, setHistPoints] = useState<Array<{ bucket: number; cpuMillicores: number; memKib: number }>>([]);
+  const [histAvailable, setHistAvailable] = useState(true);
 
   /** 加载 status + 概览 */
-  const load = useCallback(async (nsArg: string) => {
+  const load = useCallback(async (nsArg: string, histDur: string) => {
     setLoading(true);
     try {
       const st = await get<K8sStatus>('/api/k8s/status');
       setStatus(st);
       if (st.available) {
-        const [ov, nss] = await Promise.all([
+        const [ov, nss, hist] = await Promise.all([
           get<K8sOverview>(`/api/k8s/overview`),
           get<{ namespaces: string[] }>(`/api/k8s/namespaces`),
+          get<{ points: Array<{ bucket: number; cpuMillicores: number; memKib: number }> }>(`/api/k8s/metrics-history?duration=${histDur}`).catch(() => null),
         ]);
         setOverview(ov);
         setNamespaces(nss.namespaces || []);
+        setHistPoints(hist?.points || []);
+        setHistAvailable(!!hist);
       }
     } catch {
       setStatus((s) => s ?? { available: false, contexts: [], context: '', reason: null });
@@ -81,14 +88,14 @@ export default function K8sOverview() {
   }, []);
 
   useEffect(() => {
-    void load(ns);
-  }, [load, ns]);
+    void load(ns, histDuration);
+  }, [load, ns, histDuration]);
 
   /** 切换 context */
   const switchContext = async (name: string) => {
     try {
       await post('/api/k8s/context', { context: name });
-      await load(ns);
+      await load(ns, histDuration);
     } catch {
       /* toast 由全局错误处理 */
     }
@@ -143,7 +150,7 @@ export default function K8sOverview() {
               </option>
             ))}
           </Select>
-          <Button variant="ghost" onClick={() => void load(ns)}>
+          <Button variant="ghost" onClick={() => void load(ns, histDuration)}>
             {t('刷新')}
           </Button>
         </div>
@@ -170,13 +177,39 @@ export default function K8sOverview() {
                 <span className="k8s__stat-label">{t('Service')}</span>
               </div>
             </Card>
-            <Card>
-              <div className="k8s__stat">
-                <span className="k8s__stat-num">{overview.counts.pvc}</span>
-                <span className="k8s__stat-label">{t('存储卷 (PVC)')}</span>
-              </div>
-            </Card>
-          </div>
+          <Card>
+            <div className="k8s__stat">
+              <span className="k8s__stat-num">{overview.counts.pvc}</span>
+              <span className="k8s__stat-label">{t('存储卷 (PVC)')}</span>
+            </div>
+          </Card>
+        </div>
+
+        <Card
+          title={t('节点资源趋势')}
+          extra={
+            <Select className="k8s__select" value={histDuration} onChange={(e) => setHistDuration(e.target.value)}>
+              <option value="1d">1d</option>
+              <option value="7d">7d</option>
+              <option value="30d">30d</option>
+              <option value="90d">90d</option>
+            </Select>
+          }
+        >
+          {histAvailable && histPoints.length > 0 ? (
+            <LineChart
+              series={[
+                { name: t('CPU 总量'), color: '#6366f1', data: histPoints.map((p) => p.cpuMillicores) },
+                { name: t('内存总量'), color: '#2e9e5b', data: histPoints.map((p) => Math.round(p.memKib / 1024)) },
+              ]}
+              labels={histPoints.map((p) => new Date(p.bucket).toLocaleString())}
+              height={180}
+              unit="m"
+            />
+          ) : (
+            <Empty title={t('暂无历史数据：采样器运行约 1 小时后可用')} />
+          )}
+        </Card>
 
           <Card title={t('节点')}>
             {overview.nodes.length === 0 ? (

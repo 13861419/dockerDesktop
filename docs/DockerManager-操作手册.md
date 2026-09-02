@@ -1318,7 +1318,8 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 
 - 顶部统计卡：节点 / Pod / Service / PVC 数量；
 - 节点表：名称、角色（control-plane / worker）、Ready 状态、CPU 与内存占用条、kubelet 版本、内网 IP；
-- 资源占用数据来自 metrics-server；集群未安装 metrics-server 时该列自动降级为「—」并给出提示。
+- 资源占用数据来自 metrics-server；集群未安装 metrics-server 时该列自动降级为「—」并给出提示；
+- **节点资源趋势**（1.9.0）：节点快照定时采样（60 秒）落库并接入小时级聚合（保留 90 天），支持 1d / 7d / 30d / 90d 时间窗查看集群 CPU 与内存总量曲线。
 
 ![K8s 集群概览](../images/k8s-overview.png)
 

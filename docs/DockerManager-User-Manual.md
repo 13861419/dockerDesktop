@@ -1284,7 +1284,8 @@ If the kubeconfig contains multiple contexts (multiple clusters), switch them at
 
 - Stat cards: nodes / pods / services / PVCs;
 - Node table: name, role (control-plane / worker), Ready status, CPU and memory usage bars, kubelet version, internal IP;
-- Usage data comes from metrics-server; if it is not installed, the column degrades to "—" with a hint.
+- Usage data comes from metrics-server; if it is not installed, the column degrades to "—" with a hint;
+- **Node resource trend** (1.9.0): node snapshots are sampled every 60s into hourly rollups retained for 90 days, viewable as cluster CPU / memory totals over 1d / 7d / 30d / 90d windows.
 
 ![K8s Cluster Overview](../images/k8s-overview.png)
 

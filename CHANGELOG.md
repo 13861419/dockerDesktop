@@ -3,6 +3,24 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.9.0] - 2026-09-02
+
+本版本为 **K8s 指标持久化**：节点资源快照定时采样落库，接入 90 天小时级聚合与长周期趋势曲线。
+
+### Added（新增）
+
+- **K8s 节点指标采样器**：`k8s/metrics.ts` 每 60 秒经 metrics-server 采集各节点 CPU（核）与内存（字节）写入 `k8s_metrics` 原始表（保留 7 天）；K8s 不可用时静默跳过
+- **小时级聚合**：复用 metrics_hourly 机制（scope='k8s-node'，key=节点名），rollup 定时器自动聚合，保留 90 天
+- **曲线端点**：`GET /api/k8s/metrics-history?duration=1d|7d|30d|90d` 返回集群级 CPU（毫核）/内存（KiB）聚合曲线
+- **前端**：集群概览新增「节点资源趋势」卡片（时间窗切换 + 双曲线），采样器运行约 1 小时后出图
+
+### Test（测试）
+
+- 新增单测 k8sMetrics.test.ts（2 例）：节点采样小时级聚合（多节点分组）与集群求和查询；单测累计 **298/298**
+- 假 apiserver 冒烟 3/3（曲线端点结构 + 概览回归）；E2E 5/5；docs:check 86 图 0 缺失
+
+## [1.8.0] - 2026-09-02
+
 ## [1.8.0] - 2026-09-02
 
 本版本为 **K8s 巡检扩展**：ConfigMap / Secret（脱敏）/ Ingress 只读巡检。

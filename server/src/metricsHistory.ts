@@ -113,6 +113,13 @@ export function runHourlyRollup(): number {
     const prevHour = hourStart(Date.now() - 3600_000);
     total += rollupHour('host', prevHour);
     total += rollupHour('container', prevHour);
+    // K8s 节点指标聚合（无集群时 rollupK8sHour 聚合 0 行，静默）
+    try {
+      const { rollupK8sHour } = require('./k8s/metrics') as typeof import('./k8s/metrics');
+      total += rollupK8sHour(prevHour);
+    } catch {
+      /* k8s 表未就绪时忽略 */
+    }
     // 每约 24 次执行（约 6 小时）清一次过期聚合行
     const db = getDb();
     rollupCount += 1;
@@ -135,6 +142,12 @@ export function startMetricsHistory(): void {
   // 启动时先补聚合一次（覆盖停机期间错过的小时）
   rollupHour('host', hourStart(Date.now() - 3600_000));
   rollupHour('container', hourStart(Date.now() - 3600_000));
+  try {
+    const { rollupK8sHour } = require('./k8s/metrics') as typeof import('./k8s/metrics');
+    rollupK8sHour(hourStart(Date.now() - 3600_000));
+  } catch {
+    /* k8s 表未就绪时忽略 */
+  }
   const timer = setInterval(runHourlyRollup, 15 * 60 * 1000);
   if (timer.unref) timer.unref();
   console.log('[metricsHistory] 指标小时级聚合器已启动 (间隔 15min)');

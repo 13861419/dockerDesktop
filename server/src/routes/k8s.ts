@@ -300,6 +300,28 @@ router.get('/ingresses', wrap(async (req: Request) => {
   };
 }));
 
+/** 节点资源历史曲线（小时级聚合，duration=1d|7d|30d|90d，缺省 7d） */
+router.get('/metrics-history', wrap(async (req: Request) => {
+  const { queryK8sClusterHourly } = await import('../k8s/metrics');
+  const duration = String(req.query.duration || '7d');
+  const ms: Record<string, number> = {
+    '1d': 24 * 3600_000,
+    '7d': 7 * 24 * 3600_000,
+    '30d': 30 * 24 * 3600_000,
+    '90d': 90 * 24 * 3600_000,
+  };
+  const since = Date.now() - (ms[duration] || ms['7d']);
+  const points = queryK8sClusterHourly(since);
+  return {
+    duration,
+    points: points.map((p) => ({
+      bucket: p.bucket,
+      cpuMillicores: Math.round(p.cpuCores * 1000),
+      memKib: Math.round(p.memBytes / 1024),
+    })),
+  };
+}));
+
 /** 集群事件 */
 router.get('/events', wrap(async (req: Request) => {
   const ns = nsParam(req);
