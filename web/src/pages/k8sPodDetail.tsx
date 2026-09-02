@@ -14,6 +14,7 @@ import Empty from '../components/Empty';
 import Button from '../components/Button';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Select } from '../components/Form';
+import ContainerTerminal from '../components/ContainerTerminal';
 import LineChart from '../components/LineChart';
 import { translateNow as t } from '../i18n';
 import './k8s.less';
@@ -80,6 +81,7 @@ export default function K8sPodDetail() {
   const [error, setError] = useState<string | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
 
   /** 停留采样曲线（内存态，最多 120 点） */
   const [cpuSeries, setCpuSeries] = useState<Array<{ bucket: number; value: number }>>([]);
@@ -205,6 +207,11 @@ export default function K8sPodDetail() {
             {t('返回工作负载')}
           </Button>
           {admin ? (
+            <Button variant={showTerminal ? 'primary' : 'secondary'} onClick={() => setShowTerminal((v) => !v)}>
+              {showTerminal ? t('关闭终端') : t('打开终端')}
+            </Button>
+          ) : null}
+          {admin ? (
             <Button variant="danger" onClick={() => setConfirmDelete(true)}>
               {t('删除 Pod')}
             </Button>
@@ -280,6 +287,20 @@ export default function K8sPodDetail() {
           </div>
         )}
       </Card>
+
+      {showTerminal && pod ? (
+        <Card title={`${t('Pod 终端')} · ${pod.containers.find((c) => c.name === (container || pod.containers[0]?.name))?.name || container}`}>
+          {container ? (
+            <ContainerTerminal
+              containerId={`${ns}-${name}`}
+              wsPath={`/ws/k8sterminal/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${encodeURIComponent(container)}`}
+              height={420}
+            />
+          ) : (
+            <Empty title={t('暂无容器')} />
+          )}
+        </Card>
+      ) : null}
 
       <Card
         title={t('日志')}

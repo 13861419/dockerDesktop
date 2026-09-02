@@ -3,6 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.0] - 2026-09-02
+
+本版本为 **Kubernetes Pod 终端**：Pod 详情页新增交互式 Web 终端（xterm.js + WebSocket exec），与 Docker 容器终端同款体验。
+
+### Added（新增）
+
+- **Pod 交互式终端**
+  - 新增 `/ws/k8sterminal/:ns/:pod/:container` WebSocket：client-node Exec（TTY 模式）在 Pod 容器内启动 /bin/sh，双向数据桥接至前端 xterm.js
+  - Pod 详情页「打开终端 / 关闭终端」按钮（管理员可见），多容器默认连接首个
+  - 与 Docker 终端一致鉴权（登录且 operator/admin），错误信息友好化（Pod 不存在 / 容器未运行 / 无可用 shell / 集群不支持 exec）
+  - 注：client-node 1.x Exec 暂不支持运行期 resize，终端尺寸由前端自适应
+
+### Test（测试）
+
+- WebSocket 冒烟：未认证升级 401 拒绝；E2E 5/5；docs:check 86 图 0 缺失
+
+
 ## [1.6.0] - 2026-09-02
 
 本版本为 **Kubernetes 有限写操作（二期）**：扩缩容、滚动重启与删除 Pod 全链路接入既有高危操作审批流。

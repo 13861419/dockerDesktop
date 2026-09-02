@@ -2847,4 +2847,7 @@ export const en: Record<string, string> = {
   '确认删除该 Pod？受 Deployment 管理的 Pod 会被自动重建；独立 Pod 将被直接移除。': 'Delete this pod? Pods managed by a Deployment will be recreated automatically; standalone pods are removed permanently.',
   '删除 K8s Pod': 'Delete K8s Pod',
   'Pod 已删除': 'Pod deleted',
+  '打开终端': 'Open Terminal',
+  '关闭终端': 'Close Terminal',
+  'Pod 终端': 'Pod Terminal',
 };

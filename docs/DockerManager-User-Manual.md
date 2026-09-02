@@ -1303,7 +1303,8 @@ Four tabs: **Pod / Deployment / Service / PVC**, all supporting namespace filter
 - Containers: Ready flag, image and restarts per container;
 - Logs: switchable per container when multiple exist, last 500 lines by default (max 2000), manual refresh;
 - Resource charts: CPU (millicores) and memory (KiB), sampled every 15 seconds while the page stays open (in-memory only, not persisted);
-- Related events: Warning / Normal events attached to this pod.
+- Related events: Warning / Normal events attached to this pod;
+- **Pod Terminal** (1.7.0, admin visible): the "Open Terminal" button starts an interactive shell via `/ws/k8sterminal/:ns/:pod/:container` (xterm.js + WebSocket exec); with multiple containers the first one is used by default.
 
 ### 43.5 Write Operations (1.6.0)
 

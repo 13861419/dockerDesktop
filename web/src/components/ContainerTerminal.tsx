@@ -14,23 +14,26 @@ import { getToken } from '../api/auth';
 interface ContainerTerminalProps {
   containerId: string;
   height?: number;
+  /** 自定义 WebSocket 路径（如 K8s Pod 终端 /ws/k8sterminal/:ns/:pod/:container），缺省为 Docker 容器终端 */
+  wsPath?: string;
 }
 
 /**
  * 计算 WebSocket URL（基于当前页面协议，附带登录 token 供后端鉴权）
  */
-function buildWsUrl(containerId: string): string {
+function buildWsUrl(containerId: string, wsPath?: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = getToken();
   const qs = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${protocol}//${window.location.host}/ws/terminal/${encodeURIComponent(containerId)}${qs}`;
+  const path = wsPath || `/ws/terminal/${encodeURIComponent(containerId)}`;
+  return `${protocol}//${window.location.host}${path}${qs}`;
 }
 
 /**
  * 容器终端组件
  * @param param0 组件属性
  */
-export default function ContainerTerminal({ containerId, height = 360 }: ContainerTerminalProps) {
+export default function ContainerTerminal({ containerId, height = 360, wsPath }: ContainerTerminalProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -68,7 +71,7 @@ export default function ContainerTerminal({ containerId, height = 360 }: Contain
     let ws: WebSocket;
     let alive = true;
     try {
-      ws = new WebSocket(buildWsUrl(containerId));
+      ws = new WebSocket(buildWsUrl(containerId, wsPath));
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -143,7 +146,7 @@ export default function ContainerTerminal({ containerId, height = 360 }: Contain
       setErrorMsg((err as Error).message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerId]);
+  }, [containerId, wsPath]);
 
   return (
     <div className="cterm" style={{ height }}>

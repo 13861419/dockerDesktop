@@ -1337,7 +1337,8 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 - 容器列表：每个容器的 Ready / 镜像 / 重启次数；
 - 日志：多容器时可切换容器，默认返回最近 500 行（上限 2000），可手动刷新；
 - 资源曲线：CPU（毫核）与内存（KiB），在页面停留期间每 15 秒采样一次（不落库，离开页面即停止）；
-- 相关事件：与该 Pod 相关的 Warning / Normal 事件。
+- 相关事件：与该 Pod 相关的 Warning / Normal 事件；
+- **Pod 终端**（1.7.0，管理员可见）：详情页「打开终端」按钮启动 xterm.js 交互式 shell（`/ws/k8sterminal/:ns/:pod/:container`，client-node Exec TTY 模式），多容器时默认连接首个，输入 exit 或关闭按钮退出。
 
 ### 43.5 写操作（1.6.0 二期）
 
