@@ -3,6 +3,25 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.8.0] - 2026-09-02
+
+本版本为 **K8s 巡检扩展**：ConfigMap / Secret（脱敏）/ Ingress 只读巡检。
+
+### Added（新增）
+
+- **配置与网络资源巡检**（工作负载页新增标签页）
+  - `GET /api/k8s/configmaps`：ConfigMap 列表（键名与各值字节量，不含值）
+  - `GET /api/k8s/secrets`：Secret 列表（**安全脱敏**：仅返回键名与类型，永不返回值）
+  - `GET /api/k8s/ingresses`：Ingress 列表（Class / Hosts / TLS 状态）
+  - 前端工作负载页新增「ConfigMap」（含 Secret 脱敏表）与「Ingress」标签页，支持命名空间过滤与搜索
+  - 新增 `k8sClient.networkingApi()` 导出（NetworkingV1 API）
+
+### Test（测试）
+
+- 假 apiserver 全链路冒烟 6/6（configmaps 键名+字节量、secrets 脱敏断言、ingresses hosts/TLS、既有端点回归）；E2E 5/5；docs:check 86 图 0 缺失
+
+## [1.7.0] - 2026-09-02
+
 ## [1.7.0] - 2026-09-02
 
 本版本为 **Kubernetes Pod 终端**：Pod 详情页新增交互式 Web 终端（xterm.js + WebSocket exec），与 Docker 容器终端同款体验。

@@ -148,6 +148,11 @@ export async function deletePod(namespace: string, name: string): Promise<string
   return `Pod ${namespace}/${name} 已删除`;
 }
 
+/** NetworkingV1 API 客户端（Ingress 等） */
+export function networkingApi(): k8s.NetworkingV1Api {
+  return loadKubeConfig().makeApiClient(k8s.NetworkingV1Api);
+}
+
 /**
  * K8s 资源量（Quantity）转数值：
  * - CPU：'500m'（毫核）→ 0.5 核；'2500m' → 2.5

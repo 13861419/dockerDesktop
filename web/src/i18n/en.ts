@@ -2850,4 +2850,9 @@ export const en: Record<string, string> = {
   '打开终端': 'Open Terminal',
   '关闭终端': 'Close Terminal',
   'Pod 终端': 'Pod Terminal',
+  'ConfigMap': 'ConfigMap',
+  '暂无 ConfigMap': 'No ConfigMaps',
+  'Secret（仅显示键名，值已脱敏）': 'Secrets (keys only, values masked)',
+  '暂无 Secret': 'No secrets',
+  '暂无 Ingress': 'No ingresses',
 };

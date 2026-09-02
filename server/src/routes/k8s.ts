@@ -256,6 +256,50 @@ router.get('/pvc', wrap(async (req: Request) => {
   };
 }));
 
+/** ConfigMap 列表（只读，含 data 键名与字节量，不含值） */
+router.get('/configmaps', wrap(async (req: Request) => {
+  const res = await coreApi().listConfigMapForAllNamespaces();
+  return {
+    configmaps: filterNs(res.items, nsParam(req)).map((m: any) => ({
+      name: m.metadata?.name,
+      namespace: m.metadata?.namespace,
+      keys: Object.keys(m.data || {}),
+      sizes: Object.fromEntries(Object.entries(m.data || {}).map(([k, v]) => [k, String(v).length])),
+      createdAt: m.metadata?.creationTimestamp ? new Date(m.metadata.creationTimestamp).getTime() : null,
+    })),
+  };
+}));
+
+/** Secret 列表（安全脱敏：仅返回键名，永不返回值） */
+router.get('/secrets', wrap(async (req: Request) => {
+  const res = await coreApi().listSecretForAllNamespaces();
+  return {
+    secrets: filterNs(res.items, nsParam(req)).map((s: any) => ({
+      name: s.metadata?.name,
+      namespace: s.metadata?.namespace,
+      type: s.type,
+      keys: Object.keys(s.data || {}),
+      createdAt: s.metadata?.creationTimestamp ? new Date(s.metadata.creationTimestamp).getTime() : null,
+    })),
+  };
+}));
+
+/** Ingress 列表（只读） */
+router.get('/ingresses', wrap(async (req: Request) => {
+  const { networkingApi } = await import('../k8s/k8sClient');
+  const res = await networkingApi().listIngressForAllNamespaces();
+  return {
+    ingresses: filterNs(res.items, nsParam(req)).map((i: any) => ({
+      name: i.metadata?.name,
+      namespace: i.metadata?.namespace,
+      className: i.spec?.ingressClassName,
+      hosts: (i.spec?.rules || []).map((r: any) => r.host).filter(Boolean),
+      tls: (i.spec?.tls || []).flatMap((t: any) => t.hosts || []),
+      createdAt: i.metadata?.creationTimestamp ? new Date(i.metadata.creationTimestamp).getTime() : null,
+    })),
+  };
+}));
+
 /** 集群事件 */
 router.get('/events', wrap(async (req: Request) => {
   const ns = nsParam(req);

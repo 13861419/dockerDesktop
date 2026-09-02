@@ -56,7 +56,35 @@ interface K8sPvc {
   storageClass: string;
 }
 
-type TabKey = 'pods' | 'deployments' | 'services' | 'pvc';
+/** ConfigMap 视图 */
+interface K8sConfigMap {
+  name: string;
+  namespace: string;
+  keys: string[];
+  sizes: Record<string, number>;
+  createdAt: number | null;
+}
+
+/** Secret 视图（脱敏：仅键名） */
+interface K8sSecret {
+  name: string;
+  namespace: string;
+  type: string;
+  keys: string[];
+  createdAt: number | null;
+}
+
+/** Ingress 视图 */
+interface K8sIngress {
+  name: string;
+  namespace: string;
+  className: string;
+  hosts: string[];
+  tls: string[];
+  createdAt: number | null;
+}
+
+type TabKey = 'pods' | 'deployments' | 'services' | 'pvc' | 'configmaps' | 'ingresses';
 
 /** Pod 状态徽标 class */
 function podStatusClass(status: string): string {
@@ -83,22 +111,31 @@ export default function K8sWorkloads() {
   const [scaleTarget, setScaleTarget] = useState<K8sDeployment | null>(null);
   const [scaleReplicas, setScaleReplicas] = useState('3');
   const [restartTarget, setRestartTarget] = useState<K8sDeployment | null>(null);
+  const [configmaps, setConfigmaps] = useState<K8sConfigMap[]>([]);
+  const [secrets, setSecrets] = useState<K8sSecret[]>([]);
+  const [ingresses, setIngresses] = useState<K8sIngress[]>([]);
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
     try {
       const q = nsArg && nsArg !== 'all' ? `?namespace=${encodeURIComponent(nsArg)}` : '';
-      const [podRes, depRes, svcRes, pvcRes, nsRes] = await Promise.all([
+      const [podRes, depRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes] = await Promise.all([
         get<{ pods: K8sPod[] }>(`/api/k8s/pods${q}`),
         get<{ deployments: K8sDeployment[] }>(`/api/k8s/deployments${q}`),
         get<{ services: K8sService[] }>(`/api/k8s/services${q}`),
         get<{ pvcs: K8sPvc[] }>(`/api/k8s/pvc${q}`),
         get<{ namespaces: string[] }>(`/api/k8s/namespaces`),
+        get<{ configmaps: K8sConfigMap[] }>(`/api/k8s/configmaps${q}`),
+        get<{ secrets: K8sSecret[] }>(`/api/k8s/secrets${q}`),
+        get<{ ingresses: K8sIngress[] }>(`/api/k8s/ingresses${q}`),
       ]);
       setPods(podRes.pods || []);
       setDeployments(depRes.deployments || []);
       setServices(svcRes.services || []);
       setPvcs(pvcRes.pvcs || []);
+      setConfigmaps(cmRes.configmaps || []);
+      setSecrets(secretRes.secrets || []);
+      setIngresses(ingRes.ingresses || []);
       setNamespaces(nsRes.namespaces || []);
       setUnavailable(false);
     } catch (err) {
@@ -155,14 +192,17 @@ export default function K8sWorkloads() {
   /** 关键字过滤 */
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase();
-    if (!kw) return { pods, deployments, services, pvcs };
+    if (!kw) return { pods, deployments, services, pvcs, configmaps, secrets, ingresses };
     return {
       pods: pods.filter((p) => `${p.namespace}/${p.name}`.toLowerCase().includes(kw)),
       deployments: deployments.filter((d) => `${d.namespace}/${d.name}`.toLowerCase().includes(kw)),
       services: services.filter((s) => `${s.namespace}/${s.name}`.toLowerCase().includes(kw)),
       pvcs: pvcs.filter((v) => `${v.namespace}/${v.name}`.toLowerCase().includes(kw)),
+      configmaps: configmaps.filter((m) => `${m.namespace}/${m.name}`.toLowerCase().includes(kw)),
+      secrets: secrets.filter((s) => `${s.namespace}/${s.name}`.toLowerCase().includes(kw)),
+      ingresses: ingresses.filter((i) => `${i.namespace}/${i.name}`.toLowerCase().includes(kw)),
     };
-  }, [search, pods, deployments, services, pvcs]);
+  }, [search, pods, deployments, services, pvcs, configmaps, secrets, ingresses]);
 
   if (unavailable) {
     return (
@@ -207,6 +247,8 @@ export default function K8sWorkloads() {
               ['deployments', `Deployment (${filtered.deployments.length})`],
               ['services', `Service (${filtered.services.length})`],
               ['pvc', `PVC (${filtered.pvcs.length})`],
+              ['configmaps', `ConfigMap (${filtered.configmaps.length})`],
+              ['ingresses', `Ingress (${filtered.ingresses.length})`],
             ] as Array<[TabKey, string]>
           ).map(([key, label]) => (
             <button
@@ -366,6 +408,96 @@ export default function K8sWorkloads() {
                         </td>
                         <td>{v.capacity || '—'}</td>
                         <td>{v.storageClass || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            ) : null}
+
+            {tab === 'configmaps' ? (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 600, margin: '6px 0' }}>{t('ConfigMap')}</div>
+                {filtered.configmaps.length === 0 ? (
+                  <Empty title={t('暂无 ConfigMap')} />
+                ) : (
+                  <table className="k8s__table" style={{ marginBottom: 16 }}>
+                    <thead>
+                      <tr>
+                        <th>{t('名称')}</th>
+                        <th>{t('命名空间')}</th>
+                        <th>{t('键')}</th>
+                        <th>{t('创建时间')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.configmaps.map((m) => (
+                        <tr key={`${m.namespace}/${m.name}`}>
+                          <td className="k8s__mono">{m.name}</td>
+                          <td>{m.namespace}</td>
+                          <td style={{ whiteSpace: 'normal' }}>
+                            {m.keys.map((k) => `${k} (${m.sizes[k] ?? 0}B)`).join(', ') || '—'}
+                          </td>
+                          <td>{m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div style={{ fontSize: 13, fontWeight: 600, margin: '6px 0' }}>{t('Secret（仅显示键名，值已脱敏）')}</div>
+                {filtered.secrets.length === 0 ? (
+                  <Empty title={t('暂无 Secret')} />
+                ) : (
+                  <table className="k8s__table">
+                    <thead>
+                      <tr>
+                        <th>{t('名称')}</th>
+                        <th>{t('命名空间')}</th>
+                        <th>{t('类型')}</th>
+                        <th>{t('键')}</th>
+                        <th>{t('创建时间')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.secrets.map((s) => (
+                        <tr key={`${s.namespace}/${s.name}`}>
+                          <td className="k8s__mono">{s.name}</td>
+                          <td>{s.namespace}</td>
+                          <td>{s.type || '—'}</td>
+                          <td style={{ whiteSpace: 'normal' }}>{s.keys.join(', ') || '—'}</td>
+                          <td>{s.createdAt ? new Date(s.createdAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            ) : null}
+
+            {tab === 'ingresses' ? (
+              filtered.ingresses.length === 0 ? (
+                <Empty title={t('暂无 Ingress')} />
+              ) : (
+                <table className="k8s__table">
+                  <thead>
+                    <tr>
+                      <th>{t('名称')}</th>
+                      <th>{t('命名空间')}</th>
+                      <th>Class</th>
+                      <th>{t('主机')}</th>
+                      <th>TLS</th>
+                      <th>{t('创建时间')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.ingresses.map((i) => (
+                      <tr key={`${i.namespace}/${i.name}`}>
+                        <td className="k8s__mono">{i.name}</td>
+                        <td>{i.namespace}</td>
+                        <td>{i.className || '—'}</td>
+                        <td>{i.hosts.join(', ') || '—'}</td>
+                        <td>{i.tls.length > 0 ? t('已启用') : '—'}</td>
+                        <td>{i.createdAt ? new Date(i.createdAt).toLocaleString() : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -1290,7 +1290,7 @@ If the kubeconfig contains multiple contexts (multiple clusters), switch them at
 
 ### 43.3 Workloads (/k8s/workloads)
 
-Four tabs: **Pod / Deployment / Service / PVC**, all supporting namespace filtering and keyword search.
+Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress**, all supporting namespace filtering and keyword search. Secrets are listed under the ConfigMap tab with **values masked** (keys and type only, 1.8.0).
 
 - The Pod list shows status (including container-level reasons such as CrashLoopBackOff), ready containers, restarts and node; click any row for details;
 - Deployments show desired / ready replicas; services show type, ClusterIP and ports; PVCs show Bound status, capacity and StorageClass.
