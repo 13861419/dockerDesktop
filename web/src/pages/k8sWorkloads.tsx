@@ -5,10 +5,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { get } from '../api/client';
+import { get, post } from '../api/client';
+import { isAdmin } from '../api/auth';
+import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
 import Button from '../components/Button';
+import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
 import { Select } from '../components/Form';
 import { translateNow as t } from '../i18n';
 import './k8s.less';
@@ -64,6 +68,8 @@ function podStatusClass(status: string): string {
 
 export default function K8sWorkloads() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const admin = isAdmin();
   const [tab, setTab] = useState<TabKey>('pods');
   const [ns, setNs] = useState('');
   const [namespaces, setNamespaces] = useState<string[]>([]);
@@ -74,6 +80,9 @@ export default function K8sWorkloads() {
   const [pvcs, setPvcs] = useState<K8sPvc[]>([]);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
+  const [scaleTarget, setScaleTarget] = useState<K8sDeployment | null>(null);
+  const [scaleReplicas, setScaleReplicas] = useState('3');
+  const [restartTarget, setRestartTarget] = useState<K8sDeployment | null>(null);
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
@@ -103,6 +112,45 @@ export default function K8sWorkloads() {
   useEffect(() => {
     void load(ns);
   }, [load, ns]);
+
+  /** 扩缩容提交（后端可能转 202 审批） */
+  const doScale = async () => {
+    if (!scaleTarget) return;
+    try {
+      const body = await post<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+        `/api/k8s/deployments/${encodeURIComponent(scaleTarget.namespace)}/${encodeURIComponent(scaleTarget.name)}/scale`,
+        { replicas: Number(scaleReplicas) },
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准后执行')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('副本数已调整'), 'success');
+      }
+      setScaleTarget(null);
+      void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** 滚动重启提交 */
+  const doRestart = async () => {
+    if (!restartTarget) return;
+    try {
+      const body = await post<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+        `/api/k8s/deployments/${encodeURIComponent(restartTarget.namespace)}/${encodeURIComponent(restartTarget.name)}/restart`,
+        {},
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('已触发滚动重启'), 'success');
+      }
+      setRestartTarget(null);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
 
   /** 关键字过滤 */
   const filtered = useMemo(() => {
@@ -226,6 +274,7 @@ export default function K8sWorkloads() {
                       <th>{t('命名空间')}</th>
                       <th>{t('副本')}</th>
                       <th>{t('创建时间')}</th>
+                      {admin ? <th>{t('操作')}</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -237,6 +286,24 @@ export default function K8sWorkloads() {
                           {d.replicasReady}/{d.replicasDesired}
                         </td>
                         <td>{d.createdAt ? new Date(d.createdAt).toLocaleString() : '—'}</td>
+                        {admin ? (
+                          <td>
+                            <span style={{ display: 'inline-flex', gap: 6 }}>
+                              <Button
+                                variant="ghost"
+                                onClick={() => {
+                                  setScaleTarget(d);
+                                  setScaleReplicas(String(d.replicasDesired ?? 1));
+                                }}
+                              >
+                                {t('扩缩容')}
+                              </Button>
+                              <Button variant="ghost" onClick={() => setRestartTarget(d)}>
+                                {t('滚动重启')}
+                              </Button>
+                            </span>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -308,6 +375,39 @@ export default function K8sWorkloads() {
           </div>
         )}
       </Card>
+
+      <Modal open={!!scaleTarget} title={`${t('扩缩容')} · ${scaleTarget?.name || ''}`} onClose={() => setScaleTarget(null)} width={400}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 13, opacity: 0.7 }}>
+            {t('调整副本数（0-500）：')}
+          </div>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            max={500}
+            value={scaleReplicas}
+            onChange={(e) => setScaleReplicas(e.target.value)}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button variant="secondary" onClick={() => setScaleTarget(null)}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" onClick={() => void doScale()}>
+              {t('确认')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!restartTarget}
+        title={t('滚动重启')}
+        message={t(`确认滚动重启 Deployment ${restartTarget?.namespace || ''}/${restartTarget?.name || ''}？将触发滚动更新并逐步替换 Pod。`)}
+        confirmText={t('确认重启')}
+        onConfirm={() => void doRestart()}
+        onCancel={() => setRestartTarget(null)}
+      />
     </div>
   );
 }

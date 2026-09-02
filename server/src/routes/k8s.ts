@@ -17,11 +17,16 @@ import {
   setK8sContext,
   currentK8sContextName,
   parseQuantity,
+  scaleDeployment,
+  restartDeployment,
+  deletePod,
 } from '../k8s/k8sClient';
+import { maybeGate } from '../approvals';
+import { logOperation } from '../operationLog';
 const router = Router();
 
 /** 统一错误包装：K8s 不可用 → 503 引导；K8s API 404/403 等透传状态码 */
-function wrap(handler: (req: Request) => Promise<any>) {
+function wrap(handler: (req: Request, res: Response) => Promise<any>) {
   return async (req: Request, res: Response) => {
     if (!isK8sAvailable()) {
       res.status(503).json({
@@ -33,7 +38,9 @@ function wrap(handler: (req: Request) => Promise<any>) {
       return;
     }
     try {
-      const data = await handler(req);
+      const data = await handler(req, res);
+      // 门禁拦截（maybeGate 202）等场景已发送响应，避免 ERR_HTTP_HEADERS_SENT
+      if (res.writableEnded) return;
       res.json(data ?? { ok: true });
     } catch (err: any) {
       const status = err?.statusCode || err?.response?.statusCode || 500;
@@ -265,6 +272,41 @@ router.get('/events', wrap(async (req: Request) => {
       lastAt: e.lastTimestamp ? new Date(e.lastTimestamp).getTime() : null,
     })),
   };
+}));
+
+/** Deployment 扩缩容（非管理员且无 k8s.write 权限时转审批） */
+router.post('/deployments/:ns/:name/scale', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const replicas = Math.floor(Number(req.body?.replicas));
+  if (!Number.isFinite(replicas) || replicas < 0 || replicas > 500) {
+    res.status(400).json({ error: `副本数不合法: ${req.body?.replicas}（应为 0-500 整数）` });
+    return;
+  }
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.deployment.scale', target, { replicas })) return;
+  await scaleDeployment(ns, name, replicas);
+  logOperation(res.locals.username, 'K8s 扩缩容', 'k8s-deployment', target, `replicas=${replicas}`);
+  res.json({ ok: true, message: `副本数已调整为 ${replicas}` });
+}));
+
+/** Deployment 滚动重启（非管理员且无 k8s.write 权限时转审批） */
+router.post('/deployments/:ns/:name/restart', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.deployment.restart', target, {})) return;
+  await restartDeployment(ns, name);
+  logOperation(res.locals.username, 'K8s 滚动重启', 'k8s-deployment', target);
+  res.json({ ok: true, message: '已触发滚动重启' });
+}));
+
+/** 删除 Pod（非管理员且无 k8s.delete 权限时转审批） */
+router.delete('/pods/:ns/:name', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.pod.delete', target, {})) return;
+  await deletePod(ns, name);
+  logOperation(res.locals.username, '删除 K8s Pod', 'k8s-pod', target);
+  res.json({ ok: true, message: 'Pod 已删除' });
 }));
 
 export default router;

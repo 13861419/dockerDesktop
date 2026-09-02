@@ -56,7 +56,7 @@
 - **AI 智能助手**（可选）：多模型配置中心（任意 OpenAI 兼容端点：云端 / Ollama / LM Studio 等，密钥加密存储）、AI 对话、文件分析、智能巡检、告警诊断、周报生成、知识库、Token 用量治理；未配置时入口自动隐藏，零常驻依赖
 - **帮助中心**：内置快速上手指南、常见问题 FAQ 与全功能速查表
 - **OpenAPI 接口文档**：`GET /api/openapi.json` 输出 OpenAPI 3.0 核心端点骨架（认证 / 监控 / 容器 / 镜像 / 审批等 34 路径），侧栏「API 文档」页按域分组浏览与搜索，便于二次开发与自动化对接
-- **Kubernetes 只读巡检**：配置 kubeconfig 即可接入一个或多个 K8s 集群（多 context 切换、Pod 部署自动 InCluster）；集群概览（节点状态 / metrics-server 资源占用）、工作负载巡检（Pod / Deployment / Service / PVC）、Pod 详情（容器状态 / 日志 / CPU 与内存实时曲线）、集群事件；一期为纯只读，不影响 Docker 管理功能
+- **Kubernetes 只读巡检**：配置 kubeconfig 即可接入一个或多个 K8s 集群（多 context 切换、Pod 部署自动 InCluster）；集群概览（节点状态 / metrics-server 资源占用）、工作负载巡检（Pod / Deployment / Service / PVC）、Pod 详情（容器状态 / 日志 / CPU 与内存实时曲线）、集群事件；支持有限写操作（扩缩容 / 滚动重启 / 删除 Pod，接入高危操作审批流），不影响 Docker 管理功能
 - **系统参数中心化**：面板级参数（安全开关、抓取 Token、压缩配置等）统一在「设置 → 系统参数」管理，带类型与分组描述
 
 ## 🧰 技术栈
@@ -66,7 +66,7 @@
 | 前端        | React 18 · TypeScript · Vite · Less · xterm.js · ECharts(LineChart) |
 | 后端        | Node.js ≥ 22 · TypeScript · Express 4 · ws（WebSocket）              |
 | Docker 交互 | dockerode（Docker Engine API）                                        |
-| K8s 交互   | @kubernetes/client-node（kubeconfig / InCluster，只读）                |
+| K8s 交互   | @kubernetes/client-node（kubeconfig / InCluster）                     |
 | 数据存储      | SQLite（node:sqlite，零依赖）                                          |
 | 打包发布      | Windows: NSIS + NSSM + TrayApp · Linux: deb/rpm + systemd          |
 

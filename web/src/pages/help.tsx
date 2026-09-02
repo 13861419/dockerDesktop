@@ -109,7 +109,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: t('如何接入 Kubernetes 集群？'),
-    a: t('将 kubeconfig 放置在面板运行用户的 ~/.kube/config，或设置环境变量 KUBECONFIG 后重启面板；面板以 Pod 部署时自动使用 InCluster 配置。kubeconfig 内多个 context（多集群）可在「K8s 集群」页顶部下拉随时切换。一期为纯只读巡检：集群概览、工作负载、Pod 日志与实时曲线、集群事件，不含任何写操作。'),
+    a: t('将 kubeconfig 放置在面板运行用户的 ~/.kube/config，或设置环境变量 KUBECONFIG 后重启面板；面板以 Pod 部署时自动使用 InCluster 配置。kubeconfig 内多个 context（多集群）可在「K8s 集群」页顶部下拉随时切换。支持只读巡检（集群概览、工作负载、Pod 日志与实时曲线、集群事件）与有限写操作（扩缩容 / 滚动重启 / 删除 Pod，管理员直接执行，非管理员可按系统参数「高危操作审批流」转入审批）。'),
   },
 ];
 

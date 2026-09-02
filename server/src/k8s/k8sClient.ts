@@ -119,6 +119,36 @@ export function metricsClient(): k8s.Metrics {
 }
 
 /**
+ * 调整 Deployment 副本数（1.6.0 二期写操作）
+ * @returns 执行说明（审批执行器与路由共用）
+ */
+export async function scaleDeployment(namespace: string, name: string, replicas: number): Promise<string> {
+  const n = Math.floor(replicas);
+  if (!Number.isFinite(n) || n < 0 || n > 500) throw new Error(`副本数不合法: ${replicas}（应为 0-500 整数）`);
+  const body = { spec: { replicas: n } };
+  await appsApi().patchNamespacedDeployment({ name, namespace, body });
+  return `Deployment ${namespace}/${name} 副本数已调整为 ${n}`;
+}
+
+/**
+ * 滚动重启 Deployment（更新 restartedAt 注解触发滚动）
+ */
+export async function restartDeployment(namespace: string, name: string): Promise<string> {
+  const now = new Date().toISOString();
+  const body = { spec: { template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': now } } } } };
+  await appsApi().patchNamespacedDeployment({ name, namespace, body });
+  return `Deployment ${namespace}/${name} 已触发滚动重启`;
+}
+
+/**
+ * 删除 Pod（受 Deployment 管理时会被自动重建；独立 Pod 直接移除）
+ */
+export async function deletePod(namespace: string, name: string): Promise<string> {
+  await coreApi().deleteNamespacedPod({ name, namespace });
+  return `Pod ${namespace}/${name} 已删除`;
+}
+
+/**
  * K8s 资源量（Quantity）转数值：
  * - CPU：'500m'（毫核）→ 0.5 核；'2500m' → 2.5
  * - 内存：'128Mi' / '1Gi' 等二进制单位 → 字节

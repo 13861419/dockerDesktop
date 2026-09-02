@@ -3,6 +3,26 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-09-02
+
+本版本为 **Kubernetes 有限写操作（二期）**：扩缩容、滚动重启与删除 Pod 全链路接入既有高危操作审批流。
+
+### Added（新增）
+
+- **K8s 写操作（三个只读→可写端点）**
+  - `POST /api/k8s/deployments/:ns/:name/scale`：调整 Deployment 副本数（0-500 整数校验）
+  - `POST /api/k8s/deployments/:ns/:name/restart`：滚动重启（更新 restartedAt 注解触发滚动更新）
+  - `DELETE /api/k8s/pods/:ns/:name`：删除 Pod（受 Deployment 管理的 Pod 自动重建）
+- **高危操作审批流集成**：新增动作类型 `k8s.deployment.scale`（调整 K8s 副本数）、`k8s.deployment.restart`（重启 K8s Deployment）、`k8s.pod.delete`（删除 K8s Pod），与 Docker 动作共用审批中心、单号、多级签批与通知推送；支持在系统参数「高危操作审批流 → 两级审批动作」中将其升级为两级双签
+- **RBAC 新增 Kubernetes 权限组**：`k8s.write`（扩缩容/滚动重启）、`k8s.delete`（删除 Pod）；内置 operator 角色默认含 `k8s.write`（启动时对存量 system 角色做增量合并，只增不删），删除 Pod 默认仅管理员
+- **前端操作入口**（管理员可见）：工作负载页 Deployment 行「扩缩容 / 滚动重启」、Pod 详情页「删除 Pod」；非管理员操作被门禁拦截时提示已转审批并携带 AP- 单号
+
+### Test（测试）
+
+- 新增单测 k8sApproval.test.ts（4 例）：GATE_ACTIONS 注册、admin/operator/user 三类角色门禁判定（含 k8s.write 放行与 k8s.delete 拦截）、k8s 审批单提交与通过后执行器触发、rbac 增量合并；单测累计 **296/296**
+- 假 apiserver 全链路冒烟 9/9：scale / restart / delete pod 写操作、非法副本数 400、只读端点回归
+- E2E 5/5 无回归
+
 ## [1.5.0] - 2026-09-02
 
 本版本为 **Kubernetes 只读巡检（一期）**：新增独立的 K8s 服务域，支持多集群概览、工作负载巡检、Pod 日志与实时指标，零 Docker 重构。

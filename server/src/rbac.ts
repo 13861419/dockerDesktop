@@ -28,6 +28,8 @@ export const PERMISSIONS: Array<{ key: string; label: string; group: string }> =
   { key: 'compose.write', label: '编排部署/重启/构建', group: '编排' },
   { key: 'compose.down', label: '停止编排项目', group: '编排' },
   { key: 'selfheal.manage', label: '容器自愈规则（查看/创建/修改/删除/手动巡检）', group: '自愈' },
+  { key: 'k8s.write', label: 'K8s 写操作（扩缩容/滚动重启）', group: 'Kubernetes' },
+  { key: 'k8s.delete', label: '删除 K8s Pod', group: 'Kubernetes' },
 ];
 
 /** 内置角色默认权限 */
@@ -42,6 +44,7 @@ const BUILTIN_ROLES: Array<{ name: string; permissions: string[]; system: 0 | 1 
       'volumes.write',
       'networks.write',
       'compose.write',
+      'k8s.write',
     ],
     system: 1,
   },
@@ -59,12 +62,29 @@ export interface RoleRow {
 /** 权限缓存（角色名 -> 权限数组；写操作时失效） */
 const cache = new Map<string, string[]>();
 
-/** 启动时确保内置角色存在（幂等） */
+/** 启动时确保内置角色存在（幂等）；system 角色对新增内置权限做增量合并（版本升级语义：只增不删） */
 export function ensureBuiltinRoles(): void {
   const d = getDb();
   const ins = d.prepare('INSERT OR IGNORE INTO roles (name, permissions, system, created_at) VALUES (?, ?, ?, ?)');
+  const upd = d.prepare('UPDATE roles SET permissions = ? WHERE name = ? AND system = 1');
   for (const r of BUILTIN_ROLES) {
     ins.run(r.name, JSON.stringify(r.permissions), r.system, Date.now());
+    if (r.system !== 1) continue;
+    // 版本升级时为存量 system 角色补新增内置权限（管理员自定义修改保留，只增不删）
+    const row = d.prepare('SELECT permissions FROM roles WHERE name = ? AND system = 1').get(r.name) as
+      | { permissions: string }
+      | undefined;
+    if (!row) continue;
+    let existing: string[] = [];
+    try {
+      existing = JSON.parse(row.permissions) || [];
+    } catch {
+      existing = [];
+    }
+    const missing = r.permissions.filter((p) => !existing.includes(p));
+    if (missing.length > 0) {
+      upd.run(JSON.stringify([...existing, ...missing]), r.name);
+    }
   }
   cache.clear();
 }

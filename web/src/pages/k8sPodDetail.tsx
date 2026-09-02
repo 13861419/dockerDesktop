@@ -6,10 +6,13 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { get } from '../api/client';
+import { get, del } from '../api/client';
+import { isAdmin } from '../api/auth';
+import { useToast } from '../components/Toast';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
 import Button from '../components/Button';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Select } from '../components/Form';
 import LineChart from '../components/LineChart';
 import { translateNow as t } from '../i18n';
@@ -68,12 +71,15 @@ function fmtBytes(b: number): string {
 export default function K8sPodDetail() {
   const { ns = '', name = '' } = useParams<{ ns: string; name: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const admin = isAdmin();
   const [pod, setPod] = useState<K8sPodDetail | null>(null);
   const [logs, setLogs] = useState('');
   const [container, setContainer] = useState('');
   const [events, setEvents] = useState<K8sEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   /** 停留采样曲线（内存态，最多 120 点） */
   const [cpuSeries, setCpuSeries] = useState<Array<{ bucket: number; value: number }>>([]);
@@ -172,6 +178,24 @@ export default function K8sPodDetail() {
 
   if (!pod) return <div className="k8s__loading">{t('加载中…')}</div>;
 
+  /** 删除 Pod（后端可能转 202 审批） */
+  const doDelete = async () => {
+    try {
+      const body = await del<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+        `/api/k8s/pods/${encodeURIComponent(ns)}/${encodeURIComponent(name)}`,
+      );
+      setConfirmDelete(false);
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('Pod 已删除'), 'success');
+        navigate('/k8s/workloads');
+      }
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
   return (
     <div className="k8s">
       <div className="k8s__toolbar">
@@ -180,6 +204,11 @@ export default function K8sPodDetail() {
           <Button variant="ghost" onClick={() => navigate('/k8s/workloads')}>
             {t('返回工作负载')}
           </Button>
+          {admin ? (
+            <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+              {t('删除 Pod')}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -308,6 +337,16 @@ export default function K8sPodDetail() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t('删除 Pod')}
+        message={t('确认删除该 Pod？受 Deployment 管理的 Pod 会被自动重建；独立 Pod 将被直接移除。')}
+        confirmText={t('确认删除')}
+        danger
+        onConfirm={() => void doDelete()}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }

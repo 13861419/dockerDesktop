@@ -33,6 +33,9 @@ export const GATE_ACTIONS: Record<string, { label: string; targetType: string }>
   'network.prune': { label: '清理网络', targetType: 'network' },
   'compose.down': { label: '停止编排项目', targetType: 'compose' },
   'container.fix': { label: '修复容器配置', targetType: 'container' },
+  'k8s.pod.delete': { label: '删除 K8s Pod', targetType: 'k8s-pod' },
+  'k8s.deployment.scale': { label: '调整 K8s 副本数', targetType: 'k8s-deployment' },
+  'k8s.deployment.restart': { label: '重启 K8s Deployment', targetType: 'k8s-deployment' },
 };
 
 /** 审批记录行 */
@@ -222,6 +225,9 @@ const GATE_PERM_MAP: Record<string, string> = {
   'volume.prune': 'volumes.prune',
   'network.prune': 'networks.prune',
   'compose.down': 'compose.down',
+  'k8s.pod.delete': 'k8s.delete',
+  'k8s.deployment.scale': 'k8s.write',
+  'k8s.deployment.restart': 'k8s.write',
 };
 
 /**
@@ -727,6 +733,21 @@ const executors: Record<string, Executor> = {
     const r = await applyPolicyFix(String(payload.containerId || target), String(payload.ruleId || ''), payload.params || {});
     if (!r.ok) throw new Error(r.message);
     return r.message;
+  },
+  'k8s.deployment.scale': async (target, payload) => {
+    const { scaleDeployment } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return scaleDeployment(ns, name, Number(payload.replicas));
+  },
+  'k8s.deployment.restart': async (target) => {
+    const { restartDeployment } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return restartDeployment(ns, name);
+  },
+  'k8s.pod.delete': async (target) => {
+    const { deletePod } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return deletePod(ns, name);
   },
 };
 

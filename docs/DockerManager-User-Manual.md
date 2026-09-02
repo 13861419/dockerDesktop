@@ -1261,7 +1261,7 @@ Three built-in blocks: **Quick Start** (six-step guide), **FAQ** (password reset
 
 ## 43. Kubernetes Read-only Inspection
 
-> Added in 1.5.0. For teams that also maintain Kubernetes clusters: read-only cluster inspection without touching any Docker management features. Phase one contains no write operations.
+> Read-only inspection added in 1.5.0; limited write operations since 1.6.0. For teams that also maintain Kubernetes clusters: inspect clusters and perform scaling / restarts / pod deletion without touching Docker management features.
 
 | Project | Description |
 | --- | --- |
@@ -1305,7 +1305,17 @@ Four tabs: **Pod / Deployment / Service / PVC**, all supporting namespace filter
 - Resource charts: CPU (millicores) and memory (KiB), sampled every 15 seconds while the page stays open (in-memory only, not persisted);
 - Related events: Warning / Normal events attached to this pod.
 
-### 43.5 Cluster Events (/k8s/events)
+### 43.5 Write Operations (1.6.0)
+
+| Endpoint | Description |
+| --- | --- |
+| Scale | Adjust Deployment replicas (0-500) — admin, or roles with `k8s.write` |
+| Rolling restart | Trigger a rolling update — admin, or roles with `k8s.write` |
+| Delete Pod | Delete a pod (Deployment-managed pods are recreated) — admin, or roles with `k8s.delete` |
+
+When the high-risk approval flow is enabled, operations without direct permission are routed to the Approval Center with an AP- ticket; scale/restart/delete can be configured as two-level approval in system parameters. Frontend entry points (admin visible): Scale / Rolling Restart buttons on Deployment rows in Workloads, and the Delete Pod button on the Pod detail page.
+
+### 43.6 Cluster Events (/k8s/events)
 
 Filter cluster events by namespace, level (Warning / Normal) and keyword, showing object, reason, message, count and last-seen time — useful alongside workload inspection for troubleshooting.
 
