@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { get } from '../api/client';
+import { getToken } from '../api/auth';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
 import Button from '../components/Button';
@@ -31,6 +32,8 @@ export default function K8sEvents() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
+  const [live, setLive] = useState(false);
+  const [liveCount, setLiveCount] = useState(0);
 
   const load = useCallback(async (nsArg: string, levelArg: string) => {
     setLoading(true);
@@ -62,6 +65,27 @@ export default function K8sEvents() {
   useEffect(() => {
     void load(ns, level);
   }, [load, ns, level]);
+
+  // 实时事件流（WebSocket）：开启时建立连接，新事件插到表头
+  useEffect(() => {
+    if (!live) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const token = getToken();
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/k8sevents${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+    ws.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data?.type === 'event' && data.event) {
+          setEvents((prev) => [data.event, ...events]);
+          setLiveCount((c) => c + 1);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    return () => ws.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live]);
 
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase();
@@ -103,6 +127,9 @@ export default function K8sEvents() {
               </option>
             ))}
           </Select>
+          <Button variant={live ? 'primary' : 'ghost'} onClick={() => setLive((v) => !v)}>
+            {live ? `${t('实时已开启')}${liveCount ? ` (+${liveCount})` : ''}` : t('实时')}
+          </Button>
           <Button variant="ghost" onClick={() => void load(ns, level)}>
             {t('刷新')}
           </Button>

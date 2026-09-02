@@ -8,6 +8,7 @@ import { startMonitor } from './docker/monitor';
 import { startContainerMetrics } from './docker/containerMetrics';
 import { setupTerminalServer } from './docker/terminal';
 import { setupK8sTerminalServer } from './k8s/terminal';
+import { setupK8sEventWatcher } from './k8s/eventWatcher';
 import { startK8sMetricsCollector } from './k8s/metrics';
 import { setupEventWsServer } from './docker/eventWs';
 import { setupHostTerminalServer } from './docker/hostTerminalWs';
@@ -116,6 +117,7 @@ const server = app.listen(PORT, HOST, () => {
 try {
   setupTerminalServer(server);
   setupK8sTerminalServer(server);
+  setupK8sEventWatcher(server);
   startK8sMetricsCollector(60_000);
 } catch (err) {
   console.error('终端 WebSocket 挂载失败:', err);

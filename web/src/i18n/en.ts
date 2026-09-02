@@ -2855,4 +2855,5 @@ export const en: Record<string, string> = {
   'Secret（仅显示键名，值已脱敏）': 'Secrets (keys only, values masked)',
   '暂无 Secret': 'No secrets',
   '暂无 Ingress': 'No ingresses',
+  '实时已开启': 'Live ON',
 };

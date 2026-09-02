@@ -1319,7 +1319,7 @@ When the high-risk approval flow is enabled, operations without direct permissio
 
 ### 43.6 Cluster Events (/k8s/events)
 
-Filter cluster events by namespace, level (Warning / Normal) and keyword, showing object, reason, message, count and last-seen time — useful alongside workload inspection for troubleshooting.
+Filter cluster events by namespace, level (Warning / Normal) and keyword, showing object, reason, message, count and last-seen time — useful alongside workload inspection for troubleshooting. Since 1.10.0 a "Live" toggle streams new events over WebSocket in real time (backend auto-reconnects).
 
 ![K8s Cluster Events](../images/k8s-events.png)
 

@@ -289,9 +289,23 @@ export default function K8sPodDetail() {
       </Card>
 
       {showTerminal && pod ? (
-        <Card title={`${t('Pod 终端')} · ${pod.containers.find((c) => c.name === (container || pod.containers[0]?.name))?.name || container}`}>
+        <Card
+          title={`${t('Pod 终端')}`}
+          extra={
+            pod.containers.length > 1 ? (
+              <Select className="k8s__select" value={container} onChange={(e) => setContainer(e.target.value)}>
+                {pod.containers.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            ) : null
+          }
+        >
           {container ? (
             <ContainerTerminal
+              key={`${container}-${showTerminal}`}
               containerId={`${ns}-${name}`}
               wsPath={`/ws/k8sterminal/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${encodeURIComponent(container)}`}
               height={420}
