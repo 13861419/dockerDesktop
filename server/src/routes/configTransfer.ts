@@ -35,6 +35,10 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
         typeof err?.json === 'function' && err.json?.message
           ? err.json.message
           : err?.message || '服务器内部错误';
+      if (status >= 500) {
+        // 输出堆栈便于排查偶发 500（如并发导入时的数据竞争）
+        console.error('[configTransfer] import/export 失败:', err);
+      }
       res.status(status).json({ error: message });
     });
   };
