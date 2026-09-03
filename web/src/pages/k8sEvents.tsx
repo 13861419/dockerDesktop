@@ -32,6 +32,7 @@ export default function K8sEvents() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
+  const [fromHistory, setFromHistory] = useState(false);
   const [live, setLive] = useState(false);
   const [liveCount, setLiveCount] = useState(0);
 
@@ -45,9 +46,23 @@ export default function K8sEvents() {
       if (levelArg !== 'all') list = list.filter((e) => e.type === levelArg);
       setEvents(list);
       setUnavailable(false);
+      setFromHistory(false);
     } catch (err) {
       const msg = (err as Error)?.message || '';
-      if (msg.includes('503') || msg.includes('不可用')) setUnavailable(true);
+      if (msg.includes('503') || msg.includes('不可用')) {
+        // 集群不可达：回退本地历史事件（1.12.0 落库，最近 7 天）
+        try {
+          const params = new URLSearchParams();
+          if (nsArg && nsArg !== 'all') params.set('namespace', nsArg);
+          const hist = await get<{ events: K8sEvent[] }>(`/api/k8s/events-history?${params.toString()}`);
+          let list = hist.events || [];
+          if (levelArg !== 'all') list = list.filter((e) => e.type === levelArg);
+          setEvents(list);
+          setFromHistory(true);
+        } catch {
+          setUnavailable(true);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -106,7 +121,10 @@ export default function K8sEvents() {
   return (
     <div className="k8s">
       <div className="k8s__toolbar">
-        <h2 className="k8s__title">{t('集群事件')}</h2>
+        <h2 className="k8s__title">
+          {t('集群事件')}
+          {fromHistory && <span className="k8s__badge k8s__badge--warn" style={{ marginLeft: 8 }}>{t('本地历史（集群不可达）')}</span>}
+        </h2>
         <div className="k8s__toolbar-controls">
           <input
             className="input k8s__search"

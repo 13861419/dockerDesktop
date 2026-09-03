@@ -3,6 +3,25 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.12.0] - 2026-09-03
+
+本版本为 **K8s 事件流持久化**：事件本地落库（7 天），集群不可达时仍可回看，并修复测试进程内存配置。
+
+### Added（新增）
+
+- **K8s 事件本地持久化**：事件 Watch 采集与订阅者解耦，服务启动即持续写入 `k8s_events` 表（uid 去重 UPSERT，保留 7 天）；新增 `GET /api/k8s/events-history`（命名空间过滤 + limit）
+- **事件页历史回退**：集群不可达（503）时自动回退展示本地历史事件，并标注"本地历史（集群不可达）"徽标
+
+### Changed（变更）
+
+- test:api 脚本补齐 `NODE_OPTIONS=--max-old-space-size=4096`（与 test:unit 一致），修复本机大数据量下测试进程 OOM
+
+### Test（测试）
+
+- 单测 **300/300**（新增 k8sEvents.test.ts 2 例：uid 去重 UPSERT / 命名空间过滤）；E2E 5/5；docs:check 86 图 0 缺失
+
+## [1.11.0] - 2026-09-02
+
 ## [1.11.0] - 2026-09-02
 
 本版本为 **K8s 巡检深化**：节点详情页、Pod 级指标落库与 Helm Release 只读展示，并补齐 K8s 路由 API 集成测试。

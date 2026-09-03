@@ -2856,4 +2856,5 @@ export const en: Record<string, string> = {
   '暂无 Secret': 'No secrets',
   '暂无 Ingress': 'No ingresses',
   '实时已开启': 'Live ON',
+  '本地历史（集群不可达）': 'Local history (cluster unreachable)',
 };

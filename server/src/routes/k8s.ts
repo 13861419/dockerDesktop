@@ -428,6 +428,15 @@ router.get('/events', wrap(async (req: Request) => {
   };
 }));
 
+/** 本地历史事件（1.12.0 落库）：集群不可达时仍可回看最近 7 天事件 */
+router.get('/events-history', wrap(async (req: Request) => {
+  const { queryK8sEventsHistory } = await import('../k8s/eventWatcher');
+  const ns = nsParam(req);
+  const limit = Number(req.query.limit) || 200;
+  return { events: queryK8sEventsHistory(ns || undefined, limit) };
+}));
+
+
 /** Deployment 扩缩容（非管理员且无 k8s.write 权限时转审批） */
 router.post('/deployments/:ns/:name/scale', wrap(async (req: Request, res: Response) => {
   const { ns, name } = req.params;
