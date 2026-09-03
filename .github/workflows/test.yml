@@ -66,7 +66,8 @@ jobs:
           echo "backend did not become healthy"
           tail -50 server.log
           exit 1
-      - run: npm run test:server:api
+      # CI 2 核低资源：顺序执行避免并发竞争（configTransfer 等全量导入用例对并发敏感）
+      - run: npm run test:server:api -- --test-concurrency=1
       - name: Dump server log
         if: failure()
         run: tail -100 server.log
