@@ -47,6 +47,15 @@ function wrap(handler: (req: Request, res: Response) => Promise<any>) {
       res.json(data ?? { ok: true });
     } catch (err: any) {
       const status = err?.statusCode || err?.response?.statusCode || 500;
+      // 集群连接失败（kubeconfig 存在但集群不可达）与未配置一致，统一 503 引导
+      const code = err?.code || err?.cause?.code || '';
+      if (['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'CERT_HAS_EXPIRED'].includes(code)) {
+        res.status(503).json({
+          error: 'Kubernetes 不可用',
+          reason: `集群连接失败（${code}）：请确认集群已启动且 kubeconfig 指向正确地址`,
+        });
+        return;
+      }
       res.status(typeof status === 'number' ? status : 500).json({ error: err?.message || 'K8s 请求失败' });
     }
   };
