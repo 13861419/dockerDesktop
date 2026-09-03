@@ -5,6 +5,7 @@
  * 集群不可用（无 kubeconfig 且非 InCluster）时展示配置引导。
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { get, post } from '../api/client';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
@@ -54,6 +55,7 @@ function UsageBar({ percent }: { percent: number | null }) {
 }
 
 export default function K8sOverview() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<K8sStatus | null>(null);
   const [overview, setOverview] = useState<K8sOverview | null>(null);
   const [namespaces, setNamespaces] = useState<string[]>([]);
@@ -231,8 +233,7 @@ export default function K8sOverview() {
                   <tbody>
                     {overview.nodes.map((n) => (
                       <tr key={n.name}>
-                        <td className="k8s__mono">{n.name}</td>
-                        <td>{n.roles.join(', ') || '—'}</td>
+                        <td className="k8s__mono" style={{ cursor: 'pointer' }} onClick={() => navigate(`/k8s/node/${encodeURIComponent(n.name)}`)}>{n.name}</td>
                         <td>
                           <span className={`k8s__badge ${n.status === 'Ready' ? 'k8s__badge--ok' : 'k8s__badge--bad'}`}>
                             {n.status}

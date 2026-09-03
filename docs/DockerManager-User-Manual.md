@@ -1285,13 +1285,14 @@ If the kubeconfig contains multiple contexts (multiple clusters), switch them at
 - Stat cards: nodes / pods / services / PVCs;
 - Node table: name, role (control-plane / worker), Ready status, CPU and memory usage bars, kubelet version, internal IP;
 - Usage data comes from metrics-server; if it is not installed, the column degrades to "—" with a hint;
-- **Node resource trend** (1.9.0): node snapshots are sampled every 60s into hourly rollups retained for 90 days, viewable as cluster CPU / memory totals over 1d / 7d / 30d / 90d windows.
+- **Node resource trend** (1.9.0): node snapshots are sampled every 60s into hourly rollups retained for 90 days, viewable as cluster CPU / memory totals over 1d / 7d / 30d / 90d windows;
+- **Node detail page** (1.11.0): click a node name to open `/k8s/node/:name` with node metadata and a per-node trend chart.
 
 ![K8s Cluster Overview](../images/k8s-overview.png)
 
 ### 43.3 Workloads (/k8s/workloads)
 
-Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress**, all supporting namespace filtering and keyword search. Secrets are listed under the ConfigMap tab with **values masked** (keys and type only, 1.8.0).
+Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm**, all supporting namespace filtering and keyword search. Secrets are listed under the ConfigMap tab with **values masked** (keys and type only, 1.8.0).
 
 - The Pod list shows status (including container-level reasons such as CrashLoopBackOff), ready containers, restarts and node; click any row for details;
 - Deployments show desired / ready replicas; services show type, ClusterIP and ports; PVCs show Bound status, capacity and StorageClass.

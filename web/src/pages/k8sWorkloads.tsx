@@ -74,6 +74,14 @@ interface K8sSecret {
   createdAt: number | null;
 }
 
+/** Helm Release 视图（只读元信息） */
+interface K8sHelmRelease {
+  name: string;
+  namespace: string;
+  revision: number;
+  updatedAt: number | null;
+}
+
 /** Ingress 视图 */
 interface K8sIngress {
   name: string;
@@ -84,7 +92,7 @@ interface K8sIngress {
   createdAt: number | null;
 }
 
-type TabKey = 'pods' | 'deployments' | 'services' | 'pvc' | 'configmaps' | 'ingresses';
+type TabKey = 'pods' | 'deployments' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm';
 
 /** Pod 状态徽标 class */
 function podStatusClass(status: string): string {
@@ -114,12 +122,13 @@ export default function K8sWorkloads() {
   const [configmaps, setConfigmaps] = useState<K8sConfigMap[]>([]);
   const [secrets, setSecrets] = useState<K8sSecret[]>([]);
   const [ingresses, setIngresses] = useState<K8sIngress[]>([]);
+  const [helm, setHelm] = useState<K8sHelmRelease[]>([]);
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
     try {
       const q = nsArg && nsArg !== 'all' ? `?namespace=${encodeURIComponent(nsArg)}` : '';
-      const [podRes, depRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes] = await Promise.all([
+      const [podRes, depRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes] = await Promise.all([
         get<{ pods: K8sPod[] }>(`/api/k8s/pods${q}`),
         get<{ deployments: K8sDeployment[] }>(`/api/k8s/deployments${q}`),
         get<{ services: K8sService[] }>(`/api/k8s/services${q}`),
@@ -128,6 +137,7 @@ export default function K8sWorkloads() {
         get<{ configmaps: K8sConfigMap[] }>(`/api/k8s/configmaps${q}`),
         get<{ secrets: K8sSecret[] }>(`/api/k8s/secrets${q}`),
         get<{ ingresses: K8sIngress[] }>(`/api/k8s/ingresses${q}`),
+        get<{ releases: K8sHelmRelease[] }>(`/api/k8s/helm-releases${q}`),
       ]);
       setPods(podRes.pods || []);
       setDeployments(depRes.deployments || []);
@@ -136,6 +146,7 @@ export default function K8sWorkloads() {
       setConfigmaps(cmRes.configmaps || []);
       setSecrets(secretRes.secrets || []);
       setIngresses(ingRes.ingresses || []);
+      setHelm(helmRes.releases || []);
       setNamespaces(nsRes.namespaces || []);
       setUnavailable(false);
     } catch (err) {

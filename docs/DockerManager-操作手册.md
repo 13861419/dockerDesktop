@@ -1319,13 +1319,14 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 - 顶部统计卡：节点 / Pod / Service / PVC 数量；
 - 节点表：名称、角色（control-plane / worker）、Ready 状态、CPU 与内存占用条、kubelet 版本、内网 IP；
 - 资源占用数据来自 metrics-server；集群未安装 metrics-server 时该列自动降级为「—」并给出提示；
-- **节点资源趋势**（1.9.0）：节点快照定时采样（60 秒）落库并接入小时级聚合（保留 90 天），支持 1d / 7d / 30d / 90d 时间窗查看集群 CPU 与内存总量曲线。
+- **节点资源趋势**（1.9.0）：节点快照定时采样（60 秒）落库并接入小时级聚合（保留 90 天），支持 1d / 7d / 30d / 90d 时间窗查看集群 CPU 与内存总量曲线；
+- **节点详情页**（1.11.0）：点击节点名称进入 `/k8s/node/:name`，展示节点元信息（角色 / 可分配资源 / OS / 版本）与单节点趋势曲线。
 
 ![K8s 集群概览](../images/k8s-overview.png)
 
 ### 43.3 工作负载（/k8s/workloads)
 
-标签页：**Pod / Deployment / Service / PVC / ConfigMap / Ingress**，均支持命名空间过滤与关键字搜索。Secret 列表与 ConfigMap 同页展示，**值已脱敏**（仅显示键名与类型，1.8.0）。
+标签页：**Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm**，均支持命名空间过滤与关键字搜索。Secret 列表与 ConfigMap 同页展示，**值已脱敏**（仅显示键名与类型，1.8.0）。
 
 - Pod 列表展示状态（含 CrashLoopBackOff 等容器级细化原因）、就绪容器数、重启次数、所在节点；点击任意行进入 Pod 详情；
 - Deployment 展示期望 / 就绪副本数；Service 展示类型、ClusterIP 与端口；PVC 展示 Bound 状态、容量与 StorageClass。
@@ -1339,6 +1340,7 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 - 日志：多容器时可切换容器，默认返回最近 500 行（上限 2000），可手动刷新；
 - 资源曲线：CPU（毫核）与内存（KiB），在页面停留期间每 15 秒采样一次（不落库，离开页面即停止）；
 - 相关事件：与该 Pod 相关的 Warning / Normal 事件；
+- **Pod 历史曲线**（1.11.0）：Pod 级指标采样落库（小时级聚合，保留 90 天），经 `/api/k8s/pods/:ns/:name/metrics-history` 查询。
 - **Pod 终端**（1.7.0，管理员可见）：详情页「打开终端」按钮启动 xterm.js 交互式 shell（`/ws/k8sterminal/:ns/:pod/:container`，client-node Exec TTY 模式），多容器时默认连接首个，输入 exit 或关闭按钮退出。
 
 ### 43.5 写操作（1.6.0 二期）

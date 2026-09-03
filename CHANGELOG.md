@@ -3,6 +3,27 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.11.0] - 2026-09-02
+
+本版本为 **K8s 巡检深化**：节点详情页、Pod 级指标落库与 Helm Release 只读展示，并补齐 K8s 路由 API 集成测试。
+
+### Added（新增）
+
+- **节点详情页**（`/k8s/node/:name`，点击概览节点行进入）：角色 / 状态 / 可分配 CPU 与内存 / Pod 容量 / OS / kubelet 版本 / 架构等元信息 + 单节点 CPU / 内存小时级趋势曲线（1d-90d）
+- **Pod 级指标落库**：采样器同时采集 Pod 级快照写入 `k8s_pod_metrics`（保留 7 天），rollup 聚合至 metrics_hourly（scope='k8s-pod'，key=ns/pod，保留 90 天）；新增 `GET /api/k8s/pods/:ns/:name/metrics-history` 历史曲线端点
+- **Helm Release 只读列表**：`GET /api/k8s/helm-releases` 解析 Helm release secret（sh.helm.release.v1.*）展示名称 / 命名空间 / 最新 revision / 更新时间；工作负载页新增「Helm」标签页
+- **API 集成测试**：新增 api-k8s.test.ts（未认证 401、status 结构、8 个列表端点 200/503 结构断言），登记至 test:api
+
+### Fixed（修复）
+
+- K8s 指标聚合 INSERT 补齐 metrics_hourly NOT NULL 列默认值（memp_avg/disk_avg/rx_sum/tx_sum），修复聚合时 constraint failed
+
+### Test（测试）
+
+- 单测 **298/298**（含 k8sMetrics 聚合 2 例）；api-k8s.test.ts 3/3；假 apiserver 冒烟 9/9；E2E 5/5；docs:check 86 图 0 缺失
+
+## [1.10.0] - 2026-09-02
+
 ## [1.10.0] - 2026-09-02
 
 本版本为 **K8s 事件流实时化**：集群事件页支持 WebSocket 实时推送，Pod 终端支持多容器切换。

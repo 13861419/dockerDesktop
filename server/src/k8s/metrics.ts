@@ -6,7 +6,7 @@
  * - 无 kubeconfig（K8s 不可用）时采样静默跳过，不影响面板其他功能
  */
 import { getDb } from '../storage';
-import { isK8sAvailable, metricsClient, parseQuantity } from './k8sClient';
+import { coreApi, isK8sAvailable, metricsClient, parseQuantity } from './k8sClient';
 
 /** 原始采样保留 7 天（与 host_metrics / container_metrics 一致） */
 const RAW_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -27,8 +27,8 @@ export function ensureK8sMetricsTable(): void {
 }
 
 /** 采样一轮：metrics-server 快照 → k8s_metrics（集群不可用时静默跳过） */
-export async function sampleK8sMetrics(): Promise<number> {
-  if (!isK8sAvailable()) return 0;
+export async function sampleK8sMetrics(): Promise<void> {
+  if (!isK8sAvailable()) return;
   try {
     const m = await metricsClient().getNodeMetrics();
     const ts = Date.now();
@@ -52,10 +52,8 @@ export async function sampleK8sMetrics(): Promise<number> {
     if (Math.random() < 0.0167) {
       db.prepare('DELETE FROM k8s_metrics WHERE ts < ?').run(ts - RAW_RETENTION_MS);
     }
-    return n;
   } catch {
     // metrics-server 未安装 / 集群临时不可达：静默跳过本轮
-    return 0;
   }
 }
 
@@ -131,6 +129,113 @@ export function queryK8sClusterHourly(since: number): Array<{ bucket: number; cp
       )
       .all(since) as unknown as Array<{ ts_hour: number; cpu: number; mem: number }>;
     return rows.map((r) => ({ bucket: r.ts_hour, cpuCores: r.cpu || 0, memBytes: r.mem || 0 }));
+  } catch {
+    return [];
+  }
+}
+
+/** 确保 k8s_pod_metrics 原始采样表存在 */
+export function ensureK8sPodMetricsTable(): void {
+  getDb()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS k8s_pod_metrics (
+         ts INTEGER NOT NULL,
+         ns TEXT NOT NULL,
+         pod TEXT NOT NULL,
+         cpu_cores REAL NOT NULL,
+         mem_bytes INTEGER NOT NULL
+       )`,
+    )
+    .run();
+  getDb().prepare('CREATE INDEX IF NOT EXISTS idx_k8s_pod_metrics_ts ON k8s_pod_metrics (ts)').run();
+}
+
+/** 采样一轮 Pod 级指标：metrics-server 快照 → k8s_pod_metrics（集群不可用时静默跳过） */
+export async function sampleK8sPodMetrics(): Promise<number> {
+  if (!isK8sAvailable()) return 0;
+  try {
+    const mc = metricsClient();
+    const nsRes = await coreApi().listNamespace();
+    const namespaces = (nsRes.items || []).map((n: any) => n.metadata?.name).filter(Boolean) as string[];
+    const ts = Date.now();
+    const db = getDb();
+    const ins = db.prepare('INSERT INTO k8s_pod_metrics (ts, ns, pod, cpu_cores, mem_bytes) VALUES (?, ?, ?, ?)');
+    let n = 0;
+    db.exec('BEGIN');
+    try {
+      for (const ns of namespaces) {
+        try {
+          const m = await mc.getPodMetrics(ns);
+          for (const it of m.items || []) {
+            let cpu = 0;
+            let mem = 0;
+            for (const c of it.containers || []) {
+              cpu += parseQuantity(c.usage?.cpu);
+              mem += parseQuantity(c.usage?.memory);
+            }
+            ins.run(ts, ns, it.metadata?.name, cpu, Math.round(mem));
+            n++;
+          }
+        } catch {
+          /* 单命名空间失败（如无权限）跳过 */
+        }
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 聚合一个小时的 K8s Pod 指标到 metrics_hourly（scope='k8s-pod'，key='ns/pod'，幂等）
+ */
+export function rollupK8sPodHour(tsHour: number): number {
+  ensureK8sPodMetricsTable();
+  const db = getDb();
+  const start = tsHour;
+  const end = tsHour + 3600_000;
+  const rows = db
+    .prepare(
+      `SELECT ns || '/' || pod AS key, count(*) AS samples,
+              avg(cpu_cores) AS cpu_avg, max(cpu_cores) AS cpu_max,
+              avg(mem_bytes) AS mem_avg, max(mem_bytes) AS mem_max
+       FROM k8s_pod_metrics WHERE ts >= ? AND ts < ?
+       GROUP BY ns, pod`,
+    )
+    .all(start, end) as unknown as Array<{ key: string; samples: number; cpu_avg: number; cpu_max: number; mem_avg: number; mem_max: number }>;
+  const stmt = db.prepare(
+    `INSERT OR REPLACE INTO metrics_hourly
+      (scope, key, ts_hour, samples, cpu_avg, cpu_max, mem_avg, mem_max, memp_avg, disk_avg, rx_sum, tx_sum)
+     VALUES ('k8s-pod', ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)`,
+  );
+  db.exec('BEGIN');
+  try {
+    for (const r of rows) {
+      stmt.run(r.key, start, r.samples, r.cpu_avg, r.cpu_max, r.mem_avg, r.mem_max);
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return rows.reduce((acc, r) => acc + r.samples, 0);
+}
+
+/** 查询单 Pod 的小时级聚合曲线（key = ns/pod） */
+export function queryK8sPodHourly(key: string, since: number): K8sHourlyRow[] {
+  try {
+    return getDb()
+      .prepare(
+        `SELECT ts_hour, samples, cpu_avg, cpu_max, mem_avg, mem_max
+         FROM metrics_hourly WHERE scope = 'k8s-pod' AND key = ? AND ts_hour >= ?
+         ORDER BY ts_hour ASC`,
+      )
+      .all(key, since) as unknown as K8sHourlyRow[];
   } catch {
     return [];
   }

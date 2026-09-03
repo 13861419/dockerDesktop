@@ -322,6 +322,94 @@ router.get('/metrics-history', wrap(async (req: Request) => {
   };
 }));
 
+/** 节点详情（基本信息 + 可调度状态） */
+router.get('/nodes/:name', wrap(async (req: Request) => {
+  const core = coreApi();
+  const res = await core.readNode({ name: req.params.name });
+  const n = res.body;
+  return {
+    node: {
+      name: n.metadata?.name,
+      roles: Object.keys(n.metadata?.labels || {})
+        .filter((k) => k.startsWith('node-role.kubernetes.io/'))
+        .map((k) => k.split('/')[1]),
+      status: (n.status?.conditions || []).find((c: any) => c.type === 'Ready')?.status === 'True' ? 'Ready' : 'NotReady',
+      version: n.status?.nodeInfo?.kubeletVersion || '',
+      internalIP: (n.status?.addresses || []).find((a: any) => a.type === 'InternalIP')?.address || '',
+      os: n.status?.nodeInfo?.osImage || '',
+      architecture: n.status?.nodeInfo?.architecture || '',
+      unschedulable: n.spec?.unschedulable === true,
+      cpuAllocatable: parseQuantity(n.status?.allocatable?.cpu),
+      memAllocatable: parseQuantity(n.status?.allocatable?.memory),
+      podCapacity: Number(n.status?.capacity?.pods) || 0,
+      createdAt: n.metadata?.creationTimestamp ? new Date(n.metadata.creationTimestamp).getTime() : null,
+    },
+  };
+}));
+
+/** 单节点资源历史曲线（小时级聚合） */
+router.get('/nodes/:name/metrics-history', wrap(async (req: Request) => {
+  const { queryK8sNodeHourly } = await import('../k8s/metrics');
+  const duration = String(req.query.duration || '7d');
+  const ms: Record<string, number> = {
+    '1d': 24 * 3600_000,
+    '7d': 7 * 24 * 3600_000,
+    '30d': 30 * 24 * 3600_000,
+    '90d': 90 * 24 * 3600_000,
+  };
+  const since = Date.now() - (ms[duration] || ms['7d']);
+  const points = queryK8sNodeHourly(req.params.name, since);
+  return {
+    duration,
+    node: req.params.name,
+    points: points.map((p) => ({
+      bucket: p.ts_hour,
+      cpuMillicores: Math.round(p.cpu_avg * 1000),
+      memKib: Math.round(p.mem_avg / 1024),
+    })),
+  };
+}));
+
+/** Pod 资源历史曲线（小时级聚合，k8s-pod scope） */
+router.get('/pods/:ns/:name/metrics-history', wrap(async (req: Request) => {
+  const { queryK8sPodHourly } = await import('../k8s/metrics');
+  const duration = String(req.query.duration || '1d');
+  const ms: Record<string, number> = {
+    '1d': 24 * 3600_000,
+    '7d': 7 * 24 * 3600_000,
+    '30d': 30 * 24 * 3600_000,
+    '90d': 90 * 24 * 3600_000,
+  };
+  const since = Date.now() - (ms[duration] || ms['7d']);
+  const points = queryK8sPodHourly(`${req.params.ns}/${req.params.name}`, since);
+  return {
+    duration,
+    points: points.map((p) => ({
+      bucket: p.ts_hour,
+      cpuMillicores: Math.round(p.cpu_avg * 1000),
+      memKib: Math.round(p.mem_avg / 1024),
+    })),
+  };
+}));
+
+/** Helm Release 只读列表（解析 helm release secret 名：sh.helm.release.v1.<name>.v<rev>；仅元信息） */
+router.get('/helm-releases', wrap(async () => {
+  const res = await coreApi().listSecretForAllNamespaces({ labelSelector: 'owner=helm' });
+  const seen = new Map<string, { name: string; namespace: string; revision: number; updatedAt: number | null }>();
+  for (const s of res.items || []) {
+    const m = String(s.metadata?.name || '').match(/^sh\.helm\.release\.v1\.(.+)\.v(\d+)$/);
+    if (!m) continue;
+    const key = `${s.metadata?.namespace}/${m[1]}`;
+    const rev = Number(m[2]) || 0;
+    const updatedAt = s.metadata?.creationTimestamp ? new Date(s.metadata.creationTimestamp).getTime() : null;
+    const prev = seen.get(key);
+    if (!prev || rev > prev.revision) {
+      seen.set(key, { name: m[1], namespace: s.metadata?.namespace, revision: rev, updatedAt });
+    }
+  }
+  return { releases: [...seen.values()].sort((a, b) => b.revision - a.revision) };
+}));
+
 /** 集群事件 */
 router.get('/events', wrap(async (req: Request) => {
   const ns = nsParam(req);

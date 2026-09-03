@@ -61,6 +61,7 @@ const K8sOverviewPage = lazy(() => import('./pages/k8sOverview'));
 const K8sWorkloadsPage = lazy(() => import('./pages/k8sWorkloads'));
 const K8sPodDetailPage = lazy(() => import('./pages/k8sPodDetail'));
 const K8sEventsPage = lazy(() => import('./pages/k8sEvents'));
+const K8sNodeDetailPage = lazy(() => import('./pages/k8sNodeDetail'));
 
 /**
  * 路由级 Suspense 包装：懒加载页面加载期间展示页面级加载态
@@ -439,6 +440,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <K8sPodDetailPage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/k8s/node/:name"
+                element={
+                  <PageSuspense>
+                    <K8sNodeDetailPage />
                   </PageSuspense>
                 }
               />
