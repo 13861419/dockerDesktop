@@ -1326,7 +1326,7 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 
 ### 43.3 工作负载（/k8s/workloads)
 
-标签页：**Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm**，均支持命名空间过滤与关键字搜索。Secret 列表与 ConfigMap 同页展示，**值已脱敏**（仅显示键名与类型，1.8.0）。
+标签页：**Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm**，均支持命名空间过滤与关键字搜索。「Helm」标签页展示 Release 名称 / 命名空间 / Revision / 状态（deployed 等）/ 最近发布时间（1.13.0）。Secret 列表与 ConfigMap 同页展示，**值已脱敏**（仅显示键名与类型，1.8.0）。
 
 - Pod 列表展示状态（含 CrashLoopBackOff 等容器级细化原因）、就绪容器数、重启次数、所在节点；点击任意行进入 Pod 详情；
 - Deployment 展示期望 / 就绪副本数；Service 展示类型、ClusterIP 与端口；PVC 展示 Bound 状态、容量与 StorageClass。

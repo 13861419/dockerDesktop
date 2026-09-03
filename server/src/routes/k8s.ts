@@ -392,19 +392,21 @@ router.get('/pods/:ns/:name/metrics-history', wrap(async (req: Request) => {
   };
 }));
 
-/** Helm Release 只读列表（解析 helm release secret 名：sh.helm.release.v1.<name>.v<rev>；仅元信息） */
+/** Helm Release 只读列表（解析 helm release secret 名与 labels：sh.helm.release.v1.<name>.v<rev>；仅元信息） */
 router.get('/helm-releases', wrap(async () => {
   const res = await coreApi().listSecretForAllNamespaces({ labelSelector: 'owner=helm' });
-  const seen = new Map<string, { name: string; namespace: string; revision: number; updatedAt: number | null }>();
+  const seen = new Map<string, { name: string; namespace: string; revision: number; status: string; updatedAt: number | null }>();
   for (const s of res.items || []) {
     const m = String(s.metadata?.name || '').match(/^sh\.helm\.release\.v1\.(.+)\.v(\d+)$/);
     if (!m) continue;
     const key = `${s.metadata?.namespace}/${m[1]}`;
     const rev = Number(m[2]) || 0;
     const updatedAt = s.metadata?.creationTimestamp ? new Date(s.metadata.creationTimestamp).getTime() : null;
+    // Helm 3 release secret 自带 labels：name / owner / status / version
+    const labelStatus = String(s.metadata?.labels?.status || '');
     const prev = seen.get(key);
     if (!prev || rev > prev.revision) {
-      seen.set(key, { name: m[1], namespace: s.metadata?.namespace || '', revision: rev, updatedAt });
+      seen.set(key, { name: m[1], namespace: s.metadata?.namespace || '', revision: rev, status: labelStatus, updatedAt });
     }
   }
   return { releases: [...seen.values()].sort((a, b) => b.revision - a.revision) };

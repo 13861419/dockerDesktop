@@ -2857,4 +2857,6 @@ export const en: Record<string, string> = {
   '暂无 Ingress': 'No ingresses',
   '实时已开启': 'Live ON',
   '本地历史（集群不可达）': 'Local history (cluster unreachable)',
+  '暂无 Helm Release': 'No Helm releases',
+  '最近发布': 'Last deploy',
 };

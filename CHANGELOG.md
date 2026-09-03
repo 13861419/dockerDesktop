@@ -3,6 +3,25 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.13.0] - 2026-09-03
+
+本版本补齐 **Helm Release 状态展示与 K8s 页面 E2E**。
+
+### Added（新增）
+
+- **Helm Release 状态列**：`/api/k8s/helm-releases` 解析 Helm 3 release secret labels（status），工作负载「Helm」标签页新增状态徽标（deployed 绿色 / 其他警示色）与最近发布时间列
+- **K8s 页面 E2E**：新增 k8s.spec.ts（概览 / 工作负载 / 事件三页路由可达性断言，兼容无集群引导态）
+
+### Fixed（修复）
+
+- 工作负载「Helm」标签页补齐缺失的渲染块与搜索过滤（1.11.0 遗漏：仅注册了 Tab 与数据获取，切换后无内容）
+
+### Test（测试）
+
+- 单测 **300/300**；E2E **8/8**（k8s 3 + smoke 4 + tasks 1）；docs:check 86 图 0 缺失
+
+## [1.12.0] - 2026-09-03
+
 ## [1.12.0] - 2026-09-03
 
 本版本为 **K8s 事件流持久化**：事件本地落库（7 天），集群不可达时仍可回看，并修复测试进程内存配置。

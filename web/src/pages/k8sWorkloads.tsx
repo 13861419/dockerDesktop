@@ -79,6 +79,7 @@ interface K8sHelmRelease {
   name: string;
   namespace: string;
   revision: number;
+  status: string;
   updatedAt: number | null;
 }
 
@@ -203,7 +204,7 @@ export default function K8sWorkloads() {
   /** 关键字过滤 */
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase();
-    if (!kw) return { pods, deployments, services, pvcs, configmaps, secrets, ingresses };
+    if (!kw) return { pods, deployments, services, pvcs, configmaps, secrets, ingresses, helm };
     return {
       pods: pods.filter((p) => `${p.namespace}/${p.name}`.toLowerCase().includes(kw)),
       deployments: deployments.filter((d) => `${d.namespace}/${d.name}`.toLowerCase().includes(kw)),
@@ -212,8 +213,9 @@ export default function K8sWorkloads() {
       configmaps: configmaps.filter((m) => `${m.namespace}/${m.name}`.toLowerCase().includes(kw)),
       secrets: secrets.filter((s) => `${s.namespace}/${s.name}`.toLowerCase().includes(kw)),
       ingresses: ingresses.filter((i) => `${i.namespace}/${i.name}`.toLowerCase().includes(kw)),
+      helm: helm.filter((h) => `${h.namespace}/${h.name}`.toLowerCase().includes(kw)),
     };
-  }, [search, pods, deployments, services, pvcs, configmaps, secrets, ingresses]);
+  }, [search, pods, deployments, services, pvcs, configmaps, secrets, ingresses, helm]);
 
   if (unavailable) {
     return (
@@ -260,6 +262,7 @@ export default function K8sWorkloads() {
               ['pvc', `PVC (${filtered.pvcs.length})`],
               ['configmaps', `ConfigMap (${filtered.configmaps.length})`],
               ['ingresses', `Ingress (${filtered.ingresses.length})`],
+              ['helm', `Helm (${filtered.helm.length})`],
             ] as Array<[TabKey, string]>
           ).map(([key, label]) => (
             <button
@@ -509,6 +512,39 @@ export default function K8sWorkloads() {
                         <td>{i.hosts.join(', ') || '—'}</td>
                         <td>{i.tls.length > 0 ? t('已启用') : '—'}</td>
                         <td>{i.createdAt ? new Date(i.createdAt).toLocaleString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            ) : null}
+
+            {tab === 'helm' ? (
+              filtered.helm.length === 0 ? (
+                <Empty title={t('暂无 Helm Release')} />
+              ) : (
+                <table className="k8s__table">
+                  <thead>
+                    <tr>
+                      <th>{t('名称')}</th>
+                      <th>{t('命名空间')}</th>
+                      <th>Revision</th>
+                      <th>{t('状态')}</th>
+                      <th>{t('最近发布')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.helm.map((h) => (
+                      <tr key={`${h.namespace}/${h.name}`}>
+                        <td className="k8s__mono">{h.name}</td>
+                        <td>{h.namespace}</td>
+                        <td>v{h.revision}</td>
+                        <td>
+                          <span className={h.status === 'deployed' ? 'k8s__badge k8s__badge--ok' : 'k8s__badge k8s__badge--warn'}>
+                            {h.status || '—'}
+                          </span>
+                        </td>
+                        <td>{h.updatedAt ? new Date(h.updatedAt).toLocaleString() : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
