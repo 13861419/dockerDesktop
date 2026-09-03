@@ -35,6 +35,10 @@ ensureBuiltinRoles();
 
 // 启动 HTTP 服务，并挂载容器 WebSocket 终端
 const server = app.listen(PORT, HOST, () => {
+  // keepAliveTimeout 需大于客户端 keep-alive 空闲窗口（Express 默认 5s，
+  // 客户端复用 5s 后的连接会撞上服务端关闭产生 ECONNRESET）
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
   console.log('==========================================');
   console.log('  Docker 管理面板后端已启动');
   console.log(`  本地访问: http://localhost:${PORT}/api/health`);

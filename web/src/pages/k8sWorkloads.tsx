@@ -80,6 +80,9 @@ interface K8sHelmRelease {
   namespace: string;
   revision: number;
   status: string;
+  chartName: string;
+  chartVersion: string;
+  lastDeployedAt: number | null;
   updatedAt: number | null;
 }
 
@@ -528,6 +531,7 @@ export default function K8sWorkloads() {
                     <tr>
                       <th>{t('名称')}</th>
                       <th>{t('命名空间')}</th>
+                      <th>Chart</th>
                       <th>Revision</th>
                       <th>{t('状态')}</th>
                       <th>{t('最近发布')}</th>
@@ -538,13 +542,14 @@ export default function K8sWorkloads() {
                       <tr key={`${h.namespace}/${h.name}`}>
                         <td className="k8s__mono">{h.name}</td>
                         <td>{h.namespace}</td>
+                        <td className="k8s__mono">{h.chartName ? (h.chartVersion ? `${h.chartName}-${h.chartVersion}` : h.chartName) : '—'}</td>
                         <td>v{h.revision}</td>
                         <td>
                           <span className={h.status === 'deployed' ? 'k8s__badge k8s__badge--ok' : 'k8s__badge k8s__badge--warn'}>
                             {h.status || '—'}
                           </span>
                         </td>
-                        <td>{h.updatedAt ? new Date(h.updatedAt).toLocaleString() : '—'}</td>
+                        <td>{(() => { const t = h.lastDeployedAt ?? h.updatedAt; return t ? new Date(t).toLocaleString() : '—'; })()}</td>
                       </tr>
                     ))}
                   </tbody>

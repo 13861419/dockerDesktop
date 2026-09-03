@@ -66,7 +66,7 @@
 | Node.js | ≥ 22 | Auto-installed by install script |
 | Docker Engine | Latest stable | Auto-installed by install script |
 | Docker Compose | v2 plugin | Auto-installed by install script |
-| OS | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ / macOS 13+ | |
+| OS | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ / macOS 13+ / macOS 13+ / macOS 13+ | |
 
 > Default credentials: `admin` / `admin888`. Change the password immediately after first login.
 
@@ -1287,6 +1287,8 @@ If the kubeconfig contains multiple contexts (multiple clusters), switch them at
 - Usage data comes from metrics-server; if it is not installed, the column degrades to "—" with a hint;
 - **Node resource trend** (1.9.0): node snapshots are sampled every 60s into hourly rollups retained for 90 days, viewable as cluster CPU / memory totals over 1d / 7d / 30d / 90d windows;
 - **Node detail page** (1.11.0): click a node name to open `/k8s/node/:name` with node metadata and a per-node trend chart.
+
+![Node detail](../images/k8s-node-detail.png)
 
 ![K8s Cluster Overview](../images/k8s-overview.png)
 

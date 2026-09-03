@@ -3,6 +3,28 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.16.0] - 2026-09-03
+
+本版本完成三项收尾：**Helm Release 深度解码**、**K8s 页面截图**与 **test:api 稳定性治理**。
+
+### Added（新增）
+
+- **Helm Release 深度解码**：无依赖迷你 protobuf 解析器解析 release secret 的 `data.release`（含 gzip 兼容），提取 chart 名 / 版本 / 状态（hapi status 枚举）/ 最近部署时间；解析失败自动降级 secret labels 信息；工作负载「Helm」标签页新增 Chart 列
+- **K8s 节点详情页截图**：capture 新增 `k8s-node-detail.png` 并纳入中英文手册
+
+### Fixed（修复）
+
+- **test:api 稳定性治理（35 → 0 失败）**：
+  - HTTP keepAliveTimeout 提升至 65s（修复客户端 keep-alive 复用与 Express 默认 5s 关闭窗口的竞态 ECONNRESET）
+  - 测试并发降至 `--test-concurrency=4`，消除 43 文件全并发轰炸单后端导致的批量超时
+  - `test:api` 全量 **628/628 全绿**（本机实测）
+
+### Test（测试）
+
+- 单测 **302/302**（新增 helmDecode 2 例）；E2E 8/8；docs:check 88 图 0 缺失
+
+## [1.15.0] - 2026-09-03
+
 ## [1.15.0] - 2026-09-03
 
 本版本新增 **macOS 平台支持**。

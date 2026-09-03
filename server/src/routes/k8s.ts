@@ -392,21 +392,39 @@ router.get('/pods/:ns/:name/metrics-history', wrap(async (req: Request) => {
   };
 }));
 
-/** Helm Release 只读列表（解析 helm release secret 名与 labels：sh.helm.release.v1.<name>.v<rev>；仅元信息） */
+/** Helm Release 只读列表（解析 helm release secret 名与 labels + 深度解码 protobuf payload） */
 router.get('/helm-releases', wrap(async () => {
   const res = await coreApi().listSecretForAllNamespaces({ labelSelector: 'owner=helm' });
-  const seen = new Map<string, { name: string; namespace: string; revision: number; status: string; updatedAt: number | null }>();
+  const { decodeHelmRelease } = await import('../k8s/helmDecode');
+  const seen = new Map<string, {
+    name: string; namespace: string; revision: number; status: string;
+    chartName: string; chartVersion: string; lastDeployedAt: number | null; updatedAt: number | null;
+  }>();
   for (const s of res.items || []) {
     const m = String(s.metadata?.name || '').match(/^sh\.helm\.release\.v1\.(.+)\.v(\d+)$/);
     if (!m) continue;
     const key = `${s.metadata?.namespace}/${m[1]}`;
     const rev = Number(m[2]) || 0;
     const updatedAt = s.metadata?.creationTimestamp ? new Date(s.metadata.creationTimestamp).getTime() : null;
-    // Helm 3 release secret 自带 labels：name / owner / status / version
+    // Helm 3 release secret 自带 labels：name / owner / status / version；data.release 为 protobuf 深度解码源
     const labelStatus = String(s.metadata?.labels?.status || '');
+    let chartName = '';
+    let chartVersion = '';
+    let status = labelStatus;
+    let lastDeployedAt: number | null = null;
+    const payload = (s.data as Record<string, string> | undefined)?.release;
+    if (payload) {
+      const decoded = decodeHelmRelease(payload);
+      if (decoded) {
+        chartName = decoded.chartName;
+        chartVersion = decoded.chartVersion;
+        if (decoded.status) status = decoded.status;
+        if (decoded.lastDeployedAt) lastDeployedAt = decoded.lastDeployedAt;
+      }
+    }
     const prev = seen.get(key);
     if (!prev || rev > prev.revision) {
-      seen.set(key, { name: m[1], namespace: s.metadata?.namespace || '', revision: rev, status: labelStatus, updatedAt });
+      seen.set(key, { name: m[1], namespace: s.metadata?.namespace || '', revision: rev, status, chartName, chartVersion, lastDeployedAt, updatedAt });
     }
   }
   return { releases: [...seen.values()].sort((a, b) => b.revision - a.revision) };
