@@ -92,6 +92,15 @@ EOF
   cd "$ROOT_DIR"
 
   # 创建 spec 文件（使用预解压的 staging 目录）
+  # Ubuntu rpmbuild 交叉构建限制：spec 同时写 BuildArch + --target 会报
+  # "No compatible architectures found for build"（x86_64 宿主打 aarch64 包时）。
+  # 非 x86_64 轮次省略 BuildArch 行，仅用 --target 指定架构（产物 arch 正确）。
+  if [ "${ARCH_LABEL}" = "x86_64" ]; then
+    BUILDARCH_LINE="BuildArch:      ${ARCH_LABEL}"
+  else
+    BUILDARCH_LINE=""
+  fi
+
   cat > "$RPM_DIR/SPECS/${PKG_NAME}.spec" <<SPECEOF
 Name:           ${PKG_NAME}
 Version:        ${VERSION}
@@ -101,7 +110,7 @@ License:        MIT
 URL:            https://github.com/13861419/dockerDesktop
 Source0:        ${PKG_NAME}-${VERSION}.tar.gz
 
-BuildArch:      ${ARCH_LABEL}
+${BUILDARCH_LINE}
 Requires:       docker-ce
 Requires:       nodejs >= 22
 

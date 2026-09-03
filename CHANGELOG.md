@@ -3,6 +3,24 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.14.0] - 2026-09-03
+
+本版本修复最后两项平台级遗留：**Pod 终端运行期 resize** 与 **aarch64 .rpm 包**。
+
+### Added（新增）
+
+- **Pod 终端运行期 resize**：client-node 1.4 Exec 内置 ResizeStream 通道，后端桥接前端 `RESIZE,<cols>,<rows>` 消息至终端尺寸通道，窗口/容器尺寸变化实时生效，无需重连
+
+### Fixed（修复）
+
+- **aarch64 .rpm 包恢复产出**：Ubuntu 24.04 rpmbuild 交叉构建时 spec 同时含 `BuildArch` 与 `--target` 会报 "No compatible architectures found for build"；改为非 x86_64 轮次省略 spec 的 BuildArch 行（仅用 --target 指定架构），aarch64 .rpm 恢复为 Release 六件套
+
+### Test（测试）
+
+- 单测 300/300；E2E 8/8；Ubuntu 24.04 容器内 rpmbuild 交叉构建实测通过（arch=aarch64）；docs:check 86 图 0 缺失
+
+## [1.13.0] - 2026-09-03
+
 ## [1.13.0] - 2026-09-03
 
 本版本补齐 **Helm Release 状态展示与 K8s 页面 E2E**。

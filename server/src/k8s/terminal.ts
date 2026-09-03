@@ -6,7 +6,7 @@
  *  - 后端用 client-node Exec（tty 模式）启动 /bin/sh，并将双向数据桥接
  *
  * 复用 docker/terminal.ts 的 wsRouter 注册与鉴权模式（requireOperator）。
- * 注：client-node 1.x Exec 不支持运行期 resize，终端尺寸由前端 xterm 自适应。
+ * 注：1.14.0 起支持运行期 resize（client-node 1.4 Exec 内置 ResizeStream 通道）。
  */
 import type { Server as HttpServer } from 'http';
 import { Writable, Readable } from 'stream';
@@ -68,12 +68,15 @@ async function handleTerminal(ws: WebSocket, ns: string, pod: string, container:
     const exec = new Exec(kc);
 
     // stdout/stderr 桥：K8s → 浏览器
+    // 1.14.0：带 rows/columns 属性使 client-node isResizable() 通过，启用 ResizeStream 通道
     const stdout = new Writable({
       write(chunk, _enc, cb) {
         send(chunk);
         cb();
       },
-    });
+    }) as Writable & { rows: number; columns: number };
+    stdout.rows = 24;
+    stdout.columns = 80;
     const stderr = new Writable({
       write(chunk, _enc, cb) {
         send(chunk);
@@ -106,8 +109,17 @@ async function handleTerminal(ws: WebSocket, ns: string, pod: string, container:
     ws.on('message', (data) => {
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
       if (buf.length === 0) return;
-      // RESIZE 消息忽略（client-node 1.x 不支持运行期终端尺寸调整）
-      if (buf.subarray(0, 6).toString('utf8').startsWith('RESIZE')) return;
+      const text = buf.subarray(0, 64).toString('utf8');
+      // RESIZE,<cols>,<rows>：运行期终端尺寸调整（1.14.0，经 client-node ResizeStream 通道）
+      if (text.startsWith('RESIZE,')) {
+        const m = text.match(/^RESIZE,(\d+),(\d+)/);
+        if (m) {
+          stdout.columns = Math.max(2, Math.min(Number(m[1]) || 80, 500));
+          stdout.rows = Math.max(2, Math.min(Number(m[2]) || 24, 500));
+          stdout.emit('resize');
+        }
+        return;
+      }
       if (stdinPush) stdinPush(buf);
     });
 
