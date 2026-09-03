@@ -2859,4 +2859,9 @@ export const en: Record<string, string> = {
   '本地历史（集群不可达）': 'Local history (cluster unreachable)',
   '暂无 Helm Release': 'No Helm releases',
   '最近发布': 'Last deploy',
+  '扩容 PVC': 'Resize PVC',
+  '输入新容量（仅支持增大，示例：10Gi）：': 'New capacity (increase only, e.g. 10Gi):',
+  '扩容请求已提交': 'Resize request submitted',
+  '回滚': 'Rollback',
+  '扩容': 'Resize',
 };

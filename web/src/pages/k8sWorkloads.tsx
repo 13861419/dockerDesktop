@@ -123,6 +123,8 @@ export default function K8sWorkloads() {
   const [scaleTarget, setScaleTarget] = useState<K8sDeployment | null>(null);
   const [scaleReplicas, setScaleReplicas] = useState('3');
   const [restartTarget, setRestartTarget] = useState<K8sDeployment | null>(null);
+  const [resizeTarget, setResizeTarget] = useState<K8sPvc | null>(null);
+  const [resizeStorage, setResizeStorage] = useState('');
   const [configmaps, setConfigmaps] = useState<K8sConfigMap[]>([]);
   const [secrets, setSecrets] = useState<K8sSecret[]>([]);
   const [ingresses, setIngresses] = useState<K8sIngress[]>([]);
@@ -199,6 +201,44 @@ export default function K8sWorkloads() {
         showToast(body?.message || t('已触发滚动重启'), 'success');
       }
       setRestartTarget(null);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** 回滚到上一个版本（1.17.0） */
+  const doRollback = async (d: K8sDeployment) => {
+    try {
+      const body = await post<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+        `/api/k8s/deployments/${encodeURIComponent(d.namespace)}/${encodeURIComponent(d.name)}/rollback`,
+        {},
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('已触发回滚'), 'success');
+      }
+      void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** PVC 扩容提交 */
+  const doResize = async () => {
+    if (!resizeTarget) return;
+    try {
+      const body = await post<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+        `/api/k8s/pvc/${encodeURIComponent(resizeTarget.namespace)}/${encodeURIComponent(resizeTarget.name)}/resize`,
+        { storage: resizeStorage },
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('扩容请求已提交'), 'success');
+      }
+      setResizeTarget(null);
+      void load(ns);
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
     }
@@ -360,6 +400,9 @@ export default function K8sWorkloads() {
                               <Button variant="ghost" onClick={() => setRestartTarget(d)}>
                                 {t('滚动重启')}
                               </Button>
+                              <Button variant="ghost" onClick={() => void doRollback(d)}>
+                                {t('回滚')}
+                              </Button>
                             </span>
                           </td>
                         ) : null}
@@ -411,6 +454,7 @@ export default function K8sWorkloads() {
                       <th>{t('状态')}</th>
                       <th>{t('容量')}</th>
                       <th>StorageClass</th>
+                      {admin ? <th>{t('操作')}</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -425,6 +469,19 @@ export default function K8sWorkloads() {
                         </td>
                         <td>{v.capacity || '—'}</td>
                         <td>{v.storageClass || '—'}</td>
+                        {admin ? (
+                          <td>
+                            <Button
+                              variant="ghost"
+                              onClick={() => {
+                                setResizeTarget(v);
+                                setResizeStorage(v.capacity || '');
+                              }}
+                            >
+                              {t('扩容')}
+                            </Button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -578,6 +635,26 @@ export default function K8sWorkloads() {
               {t('取消')}
             </Button>
             <Button variant="primary" onClick={() => void doScale()}>
+              {t('确认')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!resizeTarget} title={`${t('扩容 PVC')} · ${resizeTarget?.name || ''}`} onClose={() => setResizeTarget(null)} width={400}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 13, opacity: 0.7 }}>{t('输入新容量（仅支持增大，示例：10Gi）：')}</div>
+          <input
+            className="input"
+            value={resizeStorage}
+            onChange={(e) => setResizeStorage(e.target.value)}
+            placeholder="10Gi"
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button variant="secondary" onClick={() => setResizeTarget(null)}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" onClick={() => void doResize()}>
               {t('确认')}
             </Button>
           </div>

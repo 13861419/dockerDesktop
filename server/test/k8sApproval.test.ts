@@ -35,6 +35,20 @@ test('k8sApproval: GATE_ACTIONS 注册三个 K8s 动作', () => {
   assert.ok(hasExecutor('k8s.deployment.restart'));
 });
 
+test('k8sApproval: 1.17.0 新动作注册（回滚/扩容/重建）', () => {
+  setSetting('approvals.enabled', true);
+  assert.ok('k8s.deployment.rollback' in GATE_ACTIONS);
+  assert.ok('k8s.pvc.resize' in GATE_ACTIONS);
+  assert.ok('k8s.pod.recreate' in GATE_ACTIONS);
+  assert.ok(hasExecutor('k8s.deployment.rollback'));
+  assert.ok(hasExecutor('k8s.pvc.resize'));
+  assert.ok(hasExecutor('k8s.pod.recreate'));
+  // 权限映射：rollback/resize → k8s.write，recreate → k8s.delete
+  assert.strictEqual(shouldGate('operator', 'k8s.deployment.rollback'), false);
+  assert.strictEqual(shouldGate('operator', 'k8s.pvc.resize'), false);
+  assert.strictEqual(shouldGate('operator', 'k8s.pod.recreate'), true);
+});
+
 test('k8sApproval: admin 放行、operator 持 k8s.write 放行 scale、user 被拦截', () => {
   setSetting('approvals.enabled', true);
   // admin 恒放行

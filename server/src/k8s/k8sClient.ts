@@ -148,6 +148,82 @@ export async function deletePod(namespace: string, name: string): Promise<string
   return `Pod ${namespace}/${name} 已删除`;
 }
 
+/**
+ * 删除 Pod 并由其控制器自动重建（1.17.0）。
+ * 独立 Pod（无 ownerReferences）不支持重建，直接报错。
+ */
+export async function recreatePod(namespace: string, name: string): Promise<string> {
+  const pod = await coreApi().readNamespacedPod({ name, namespace });
+  const owners = (pod as any)?.metadata?.ownerReferences || [];
+  if (!Array.isArray(owners) || owners.length === 0) {
+    throw new Error('独立 Pod（无所属控制器）不支持重建，请直接删除或通过编排方式管理');
+  }
+  await coreApi().deleteNamespacedPod({ name, namespace });
+  const owner = owners[0]?.kind || '';
+  return `Pod ${namespace}/${name} 已删除，${owner} 控制器将自动重建`;
+}
+
+/**
+ * Deployment 回滚到指定 revision（缺省回滚到上一个）。
+ * 通过比对 ReplicaSet 的 revision 注解找到目标模板并 patch Deployment。
+ */
+export async function rolloutUndoDeployment(namespace: string, name: string, targetRevision?: number): Promise<string> {
+  const apps = appsApi();
+  const current = await apps.readNamespacedDeployment({ name, namespace });
+  const dep: any = current;
+  const currentRevision = Number(dep?.metadata?.annotations?.['deployment.kubernetes.io/revision']) || 0;
+  const selector = dep?.spec?.selector?.matchLabels || {};
+  // 找出属于该 Deployment 的 ReplicaSet（ownerReferences 匹配）
+  const rsList = await apps.listNamespacedReplicaSet({ namespace });
+  const owned = (rsList.items || []).filter((rs: any) =>
+    (rs.metadata?.ownerReferences || []).some((o: any) => o.kind === 'Deployment' && o.name === name),
+  );
+  const revisionOf = (rs: any) => Number(rs.metadata?.annotations?.['deployment.kubernetes.io/revision']) || 0;
+  const candidates = owned
+    .filter((rs: any) => revisionOf(rs) > 0 && revisionOf(rs) !== currentRevision)
+    .sort((a: any, b: any) => revisionOf(b) - revisionOf(a));
+  let target: any;
+  if (targetRevision) {
+    target = owned.find((rs: any) => revisionOf(rs) === targetRevision);
+    if (!target) throw new Error(`未找到 revision ${targetRevision} 对应的历史版本`);
+  } else {
+    target = candidates[0];
+  }
+  if (!target) throw new Error('没有可回滚的历史版本');
+  const targetRevision2 = revisionOf(target);
+  const body = {
+    spec: {
+      template: target.spec?.template,
+      replicas: target.spec?.replicas ?? dep?.spec?.replicas,
+    },
+  };
+  await apps.patchNamespacedDeployment({ name, namespace, body });
+  return `Deployment ${namespace}/${name} 已回滚到 revision ${revisionOf(target)}`;
+}
+
+/**
+ * PVC 扩容（仅支持增大容量；K8s 不允许缩小存储）。
+ */
+export async function resizePvc(namespace: string, name: string, storage: string): Promise<string> {
+  if (!/^\d+(\.\d+)?\s*(Mi|Gi|Ti)$/i.test(storage.trim())) {
+    throw new Error(`容量格式非法: ${storage}（示例：10Gi）`);
+  }
+  const pvc = await coreApi().readNamespacedPersistentVolumeClaim({ name, namespace });
+  const current = String((pvc as any)?.spec?.resources?.requests?.storage || '');
+  const parseGi = (s: string): number => {
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*(Mi|Gi|Ti)$/i);
+    if (!m) return 0;
+    const mult: Record<string, number> = { Mi: 1 / 1024, Gi: 1, Ti: 1024 };
+    return Number(m[1]) * (mult[m[2]] || 1);
+  };
+  if (current && parseGi(storage) < parseGi(current)) {
+    throw new Error(`不允许缩小容量（当前 ${current}，目标 ${storage}）`);
+  }
+  const body = { spec: { resources: { requests: { storage: storage.trim() } } } };
+  await coreApi().patchNamespacedPersistentVolumeClaim({ name, namespace, body });
+  return `PVC ${namespace}/${name} 扩容请求已提交（${current || '?'} → ${storage}）`;
+}
+
 /** NetworkingV1 API 客户端（Ingress 等） */
 export function networkingApi(): k8s.NetworkingV1Api {
   return loadKubeConfig().makeApiClient(k8s.NetworkingV1Api);

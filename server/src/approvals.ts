@@ -34,8 +34,11 @@ export const GATE_ACTIONS: Record<string, { label: string; targetType: string }>
   'compose.down': { label: '停止编排项目', targetType: 'compose' },
   'container.fix': { label: '修复容器配置', targetType: 'container' },
   'k8s.pod.delete': { label: '删除 K8s Pod', targetType: 'k8s-pod' },
+  'k8s.pod.recreate': { label: '重建 K8s Pod', targetType: 'k8s-pod' },
   'k8s.deployment.scale': { label: '调整 K8s 副本数', targetType: 'k8s-deployment' },
   'k8s.deployment.restart': { label: '重启 K8s Deployment', targetType: 'k8s-deployment' },
+  'k8s.deployment.rollback': { label: '回滚 K8s Deployment', targetType: 'k8s-deployment' },
+  'k8s.pvc.resize': { label: '扩容 K8s PVC', targetType: 'k8s-pvc' },
 };
 
 /** 审批记录行 */
@@ -226,8 +229,11 @@ const GATE_PERM_MAP: Record<string, string> = {
   'network.prune': 'networks.prune',
   'compose.down': 'compose.down',
   'k8s.pod.delete': 'k8s.delete',
+  'k8s.pod.recreate': 'k8s.delete',
   'k8s.deployment.scale': 'k8s.write',
   'k8s.deployment.restart': 'k8s.write',
+  'k8s.deployment.rollback': 'k8s.write',
+  'k8s.pvc.resize': 'k8s.write',
 };
 
 /**
@@ -748,6 +754,22 @@ const executors: Record<string, Executor> = {
     const { deletePod } = await import('./k8s/k8sClient');
     const [ns, name] = target.split('/');
     return deletePod(ns, name);
+  },
+  'k8s.deployment.rollback': async (target, payload) => {
+    const { rolloutUndoDeployment } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    const rev = payload.revision ? Number(payload.revision) : undefined;
+    return rolloutUndoDeployment(ns, name, rev);
+  },
+  'k8s.pvc.resize': async (target, payload) => {
+    const { resizePvc } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return resizePvc(ns, name, String(payload.storage || ''));
+  },
+  'k8s.pod.recreate': async (target) => {
+    const { recreatePod } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return recreatePod(ns, name);
   },
 };
 

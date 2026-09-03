@@ -3,6 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.17.0] - 2026-09-03
+
+本版本为 **K8s 写操作扩展**：Deployment 回滚、PVC 扩容与 Pod 重建，全部纳入审批门禁框架。
+
+### Added（新增）
+
+- **Deployment 回滚**：`POST /api/k8s/deployments/:ns/:name/rollback`——通过 ReplicaSet revision 注解定位历史版本（缺省回滚到上一个）并 patch Deployment 模板
+- **PVC 扩容**：`POST /api/k8s/pvc/:ns/:name/resize`——merge patch `spec.resources.requests.storage`，仅允许增大（K8s 不允许缩小），拒绝非法容量格式
+- **Pod 重建**：`POST /api/k8s/pods/:ns/:name/recreate`——删除 Pod 由所属控制器（Deployment/StatefulSet 等）自动重建，独立 Pod（无 ownerReferences）返回 400
+- **审批门禁扩展**：新增 `k8s.deployment.rollback` / `k8s.pvc.resize`（→ k8s.write）与 `k8s.pod.recreate`（→ k8s.delete）三个门禁动作与执行器；工作负载页新增回滚 / 扩容按钮与扩容弹窗
+
+### Test（测试）
+
+- 单测 **303/303**（新增 1.17.0 动作注册与权限映射断言）；E2E 8/8；docs:check 88 图 0 缺失
+
+## [1.16.0] - 2026-09-03
+
 ## [1.16.0] - 2026-09-03
 
 本版本完成三项收尾：**Helm Release 深度解码**、**K8s 页面截图**与 **test:api 稳定性治理**。

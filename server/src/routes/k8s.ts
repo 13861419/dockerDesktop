@@ -20,6 +20,9 @@ import {
   scaleDeployment,
   restartDeployment,
   deletePod,
+  rolloutUndoDeployment,
+  resizePvc,
+  recreatePod,
 } from '../k8s/k8sClient';
 import { maybeGate } from '../approvals';
 import { logOperation } from '../operationLog';
@@ -490,6 +493,46 @@ router.delete('/pods/:ns/:name', wrap(async (req: Request, res: Response) => {
   await deletePod(ns, name);
   logOperation(res.locals.username, '删除 K8s Pod', 'k8s-pod', target);
   res.json({ ok: true, message: 'Pod 已删除' });
+}));
+
+/** Deployment 回滚到指定 revision（1.17.0，缺省回滚到上一个版本） */
+router.post('/deployments/:ns/:name/rollback', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const target = `${ns}/${name}`;
+  const revision = req.body?.revision ? Number(req.body.revision) : undefined;
+  if (revision !== undefined && (!Number.isFinite(revision) || revision < 1)) {
+    res.status(400).json({ error: `revision 不合法: ${req.body?.revision}` });
+    return;
+  }
+  if (maybeGate(req, res, 'k8s.deployment.rollback', target, { revision: revision || null })) return;
+  const message = await rolloutUndoDeployment(ns, name, revision);
+  logOperation(res.locals.username, 'K8s Deployment 回滚', 'k8s-deployment', target, message);
+  res.json({ ok: true, message });
+}));
+
+/** PVC 扩容（1.17.0，仅允许增大容量） */
+router.post('/pvc/:ns/:name/resize', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const storage = String(req.body?.storage || '').trim();
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.pvc.resize', target, { storage })) return;
+  try {
+    const message = await resizePvc(ns, name, storage);
+    logOperation(res.locals.username, 'K8s PVC 扩容', 'k8s-pvc', target, `${storage}`);
+    res.json({ ok: true, message });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || '扩容失败' });
+  }
+}));
+
+/** Pod 重建（1.17.0，删除后由控制器自动重建；独立 Pod 不支持） */
+router.post('/pods/:ns/:name/recreate', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.pod.recreate', target, {})) return;
+  const message = await recreatePod(ns, name);
+  logOperation(res.locals.username, '重建 K8s Pod', 'k8s-pod', target);
+  res.json({ ok: true, message });
 }));
 
 export default router;
