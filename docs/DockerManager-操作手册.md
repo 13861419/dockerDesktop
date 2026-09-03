@@ -63,7 +63,7 @@
 | Node.js | ≥ 22 | 安装脚本会自动安装 |
 | Docker Engine | 最新稳定版 | 安装脚本会自动安装 |
 | Docker Compose | v2 插件 | 安装脚本会自动安装 |
-| 操作系统 | Ubuntu 24.04 / Debian 12+ / RHEL 9 系（AlmaLinux / Rocky）/ Windows 10+（Node 22 要求 glibc ≥ 2.28，CentOS 7 无法运行） | |
+| 操作系统 | Ubuntu 24.04 / Debian 12+ / RHEL 9 系（AlmaLinux / Rocky）/ Windows 10+ / macOS 13+（Node 22）（Node 22 要求 glibc ≥ 2.28，CentOS 7 无法运行） | |
 
 > 默认账号 `admin` / `admin888`，默认端口 `9528`。首次登录后请立即修改密码。
 

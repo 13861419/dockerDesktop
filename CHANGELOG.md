@@ -3,6 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.15.0] - 2026-09-03
+
+本版本新增 **macOS 平台支持**。
+
+### Added（新增）
+
+- **macOS 发布包**（`DockerManager-macos.zip`）：解压即用，含 `start.sh` / `stop.sh` 启动脚本与安装说明；要求 Node.js >= 22（依赖均为纯 JS，与构建机平台无关）
+- **macOS Docker 端点自动探测**：新增 darwin 平台分支，优先探测 Docker Desktop for Mac 默认 socket（`~/.docker/run/docker.sock`），回退 `/var/run/docker.sock`；仍支持 `DOCKER_HOST` 覆盖
+- **macOS 默认 shell**：宿主终端默认使用 zsh（回退 sh）
+- **Release CI 新增 build-macos job**：产出 macos zip 并纳入 sha256sums
+
+### Test（测试）
+
+- 单测 300/300；E2E 8/8；macOS 包在 node:22 容器（bash 环境）端到端实测：start.sh 启动 → 登录页 200 → 登录成功；docs:check 86 图 0 缺失
+
+## [1.14.0] - 2026-09-03
+
 ## [1.14.0] - 2026-09-03
 
 本版本修复最后两项平台级遗留：**Pod 终端运行期 resize** 与 **aarch64 .rpm 包**。

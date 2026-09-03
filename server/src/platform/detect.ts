@@ -74,7 +74,8 @@ export type ShellName = 'powershell' | 'cmd' | 'bash' | 'sh' | 'zsh';
 export function getDefaultShells(): ShellName[] {
   if (isWindows()) return ['cmd', 'powershell'];
   if (isLinux()) return ['bash', 'sh'];
-  return ['sh'];
+  // macOS（darwin）：默认 zsh
+  return ['zsh', 'sh'];
 }
 
 /** 当前平台默认 shell */

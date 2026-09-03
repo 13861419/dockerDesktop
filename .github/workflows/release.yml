@@ -78,8 +78,25 @@ jobs:
         with:
           files: dist-release/docker-manager-*.rpm
 
+  build-macos:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - run: npm run build --workspace web
+      - run: npx tsc --project server/tsconfig.json
+      - name: Build macOS zip
+        run: node packaging/build-macos.js
+      - name: Create release zip
+        run: cd dist-release && zip -qry DockerManager-macos.zip DockerManager
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/DockerManager-macos.zip
+
   checksums:
-    needs: [build-windows, build-ubuntu, build-centos]
+    needs: [build-windows, build-ubuntu, build-centos, build-macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Download release assets

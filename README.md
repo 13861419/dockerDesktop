@@ -1,6 +1,6 @@
 # Docker Manager（Docker 管理面板）
 
-一个跨平台的 Docker 容器管理面板（类似 1Panel），支持 **Windows**、**Ubuntu 24** 和 **RHEL 9 系**（AlmaLinux / Rocky），提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
+一个跨平台的 Docker 容器管理面板（类似 1Panel），支持 **Windows**、**Ubuntu 24**、**RHEL 9 系**（AlmaLinux / Rocky）和 **macOS**，提供浏览器可视化管理 Docker 引擎的能力。支持容器、镜像、数据卷、网络、Compose、应用商店、Docker Hub 镜像搜索/拉取、实时监控、容器终端等核心功能。
 
 ## ✨ 功能特性
 
@@ -68,7 +68,7 @@
 | Docker 交互 | dockerode（Docker Engine API）                                        |
 | K8s 交互   | @kubernetes/client-node（kubeconfig / InCluster）                     |
 | 数据存储      | SQLite（node:sqlite，零依赖）                                          |
-| 打包发布      | Windows: NSIS + NSSM + TrayApp · Linux: deb/rpm + systemd          |
+| 打包发布      | Windows: NSIS + NSSM + TrayApp · Linux: deb/rpm + systemd · macOS: zip + start.sh          |
 
 ## 💾 数据存储说明（SQLite，无第三方数据库服务）
 

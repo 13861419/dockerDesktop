@@ -9,12 +9,14 @@
  * 注意：Windows named pipe 无法用 fs.existsSync 检测，必须通过真实连接验证。
  */
 import Dockerode from 'dockerode';
-import { isWindows, isLinux } from '../platform/detect';
+import os from 'os';
+import path from 'path';
+import { isWindows, isLinux, getPlatform } from '../platform/detect';
 import { getDb } from '../storage';
 
 /**
  * 常见 Docker 访问端点的探测顺序，按平台优先级排列
- * Windows：named pipe 优先；Linux：unix socket 优先
+ * Windows：named pipe 优先；Linux / macOS：unix socket 优先
  */
 function getDefaultEndpoints(): string[] {
   if (isLinux()) {
@@ -22,6 +24,14 @@ function getDefaultEndpoints(): string[] {
       'unix:///var/run/docker.sock',
       'npipe:////./pipe/dockerDesktopLinuxEngine',
       'npipe:////./pipe/docker_engine',
+    ];
+  }
+  if (getPlatform() === 'darwin') {
+    // macOS Docker Desktop：默认 socket 位于 ~/.docker/run/docker.sock
+    const homeSock = `unix://${path.join(os.homedir(), '.docker', 'run', 'docker.sock')}`;
+    return [
+      homeSock,
+      'unix:///var/run/docker.sock',
     ];
   }
   // Windows（默认）

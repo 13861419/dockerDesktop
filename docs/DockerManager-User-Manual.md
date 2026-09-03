@@ -66,7 +66,7 @@
 | Node.js | ≥ 22 | Auto-installed by install script |
 | Docker Engine | Latest stable | Auto-installed by install script |
 | Docker Compose | v2 plugin | Auto-installed by install script |
-| OS | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ | |
+| OS | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ / macOS 13+ | |
 
 > Default credentials: `admin` / `admin888`. Change the password immediately after first login.
 
