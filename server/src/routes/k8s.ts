@@ -325,8 +325,8 @@ router.get('/metrics-history', wrap(async (req: Request) => {
 /** 节点详情（基本信息 + 可调度状态） */
 router.get('/nodes/:name', wrap(async (req: Request) => {
   const core = coreApi();
-  const res = await core.readNode({ name: req.params.name });
-  const n = res.body;
+  const res: any = await core.readNode({ name: req.params.name });
+  const n: any = (res && typeof res.body === 'object' ? res.body : res) || {};
   return {
     node: {
       name: n.metadata?.name,
@@ -404,7 +404,7 @@ router.get('/helm-releases', wrap(async () => {
     const updatedAt = s.metadata?.creationTimestamp ? new Date(s.metadata.creationTimestamp).getTime() : null;
     const prev = seen.get(key);
     if (!prev || rev > prev.revision) {
-      seen.set(key, { name: m[1], namespace: s.metadata?.namespace, revision: rev, updatedAt });
+      seen.set(key, { name: m[1], namespace: s.metadata?.namespace || '', revision: rev, updatedAt });
     }
   }
   return { releases: [...seen.values()].sort((a, b) => b.revision - a.revision) };
