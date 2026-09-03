@@ -151,6 +151,12 @@ function startWatch(): void {
           } catch {
             /* ignore */
           }
+          // Warning 事件 → 告警联动（1.18.0，alerts.k8sEvents 开关 + 5 分钟去重）
+          if (ev.type === 'Warning') {
+            import('../alerting')
+              .then((m) => m.reportK8sEventWarning(event))
+              .catch(() => {});
+          }
           broadcast({ type: 'event', event });
         },
         (err: Error | null) => {

@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.18.0] - 2026-09-03
+
+本版本新增 **K8s 告警联动**：集群 Warning 事件自动推送到通知渠道。
+
+### Added（新增）
+
+- **K8s Warning 事件告警**：eventWatcher 采集到 Warning 级事件时自动派发到告警渠道（复用 notifications 体系），消息含命名空间 / 对象 / 原因 / 摘要与发生次数
+- **防抖去重**：同 namespace/kind/object/reason 组合 5 分钟内只告警一次，防事件风暴；防抖表自动清理
+- **设置开关**：新增 `alerts.k8sEvents`（默认开启，分组：通知），可在设置页关闭
+
+### Test（测试）
+
+- 单测 **305/305**（新增 k8sAlert 2 例：派发落库 + 去重 + 开关）；E2E 8/8；docs:check 88 图 0 缺失
+
+## [1.17.0] - 2026-09-03
+
 ## [1.17.0] - 2026-09-03
 
 本版本为 **K8s 写操作扩展**：Deployment 回滚、PVC 扩容与 Pod 重建，全部纳入审批门禁框架。

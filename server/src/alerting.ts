@@ -20,7 +20,7 @@ import { listChannels, sendAlert, type ChannelInfo } from './notify';
 import { createPushAggregator } from './pushAggregator';
 
 /** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
-export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net';
+export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net' | 'k8s';
 /** 告警级别 */
 export type AlertLevel = 'warn' | 'danger' | 'recovery';
 
@@ -412,6 +412,43 @@ async function fireRecovery(type: AlertType, value: number): Promise<void> {
   const names: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络带宽' };
   const unit = type === 'net' ? ' Mbps' : '%';
   await emitAlert(type, 'recovery', `Docker 面板【${names[type]}】已恢复正常：${value.toFixed(1)}${unit}`, value);
+}
+
+/** K8s Warning 事件防抖表：key → 最近告警时间 */
+const k8sAlertSeen = new Map<string, number>();
+
+/** K8s Warning 事件防抖窗口（同源事件 5 分钟内只告警一次） */
+const K8S_ALERT_DEDUPE_MS = 5 * 60_000;
+
+/**
+ * K8s Warning 事件告警入口（1.18.0）
+ *
+ * 由 eventWatcher 在集群产生 Warning 事件时调用；受 alerts.k8sEvents 设置开关控制，
+ * 同 namespace/kind/object/reason 组合 5 分钟内去重，避免事件风暴刷屏。
+ * @param event Warning 事件摘要
+ */
+export async function reportK8sEventWarning(event: {
+  namespace?: string;
+  object?: string;
+  kind?: string;
+  reason?: string;
+  message?: string;
+  count?: number;
+}): Promise<void> {
+  if (getSetting<boolean>('alerts.k8sEvents') === false) return;
+  const key = `${event.namespace}/${event.kind}/${event.object}/${event.reason}`;
+  const now = Date.now();
+  const last = k8sAlertSeen.get(key) || 0;
+  if (now - last < K8S_ALERT_DEDUPE_MS) return;
+  k8sAlertSeen.set(key, now);
+  // 防抖表清理：超过 30 分钟未出现的条目移除
+  if (k8sAlertSeen.size > 500) {
+    for (const [k, t] of k8sAlertSeen) {
+      if (now - t > 30 * 60_000) k8sAlertSeen.delete(k);
+    }
+  }
+  const message = `Docker 面板【K8s 告警】${event.namespace || 'default'} ${event.kind || ''}/${event.object || ''}：${event.reason || ''} — ${String(event.message || '').slice(0, 200)}${(event.count || 1) > 1 ? `（已发生 ${event.count} 次）` : ''}`;
+  await emitAlert('k8s', 'warn', message, null);
 }
 
 /**

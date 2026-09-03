@@ -330,6 +330,14 @@ registerSettings([
     group: 'notification',
   },
   {
+    key: 'alerts.k8sEvents',
+    label: 'K8s Warning 事件告警',
+    hint: 'Kubernetes 集群产生 Warning 级事件时推送到告警渠道（同源事件 5 分钟内去重），需已配置通知渠道',
+    type: 'bool',
+    def: true,
+    group: 'notification',
+  },
+  {
     key: 'alerts.pushAggWindowSec',
     label: '告警推送聚合窗口（秒）',
     hint: '窗口内多条 warn/danger 推送合并为一条摘要防止消息风暴，0 = 关闭聚合逐条推送；恢复通知始终即时推送；聚合推送不触发 AI 诊断',
