@@ -432,8 +432,15 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
           continue;
         }
         const now = Date.now();
+        // id 冲突处理：导出 id 可能与库内既有行冲突（skip 跳过 / overwrite 生成新 id）
+        let newId = String(t.id || `ct-${now}-${Math.random().toString(36).slice(2, 8)}`);
+        if (exists('SELECT id FROM compose_templates WHERE id = ?', [newId])) {
+          if (conflict === 'skip') { count('composeTemplates', 0); continue; }
+          if (conflict === 'error') throw new Error(`Compose 模板 ID 冲突: ${t.name}`);
+          newId = `ct-${now}-${Math.random().toString(36).slice(2, 8)}`;
+        }
         d.prepare('INSERT INTO compose_templates (id, name, description, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-          t.id || `ct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, t.name, t.description || '', t.content || '', now, now,
+          newId, t.name, t.description || '', t.content || '', now, now,
         );
         count('composeTemplates', 1);
       }
@@ -451,8 +458,15 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
           continue;
         }
         const now = Date.now();
+        // id 冲突处理（同 compose_templates）
+        let newId = String(t.id || `tpl-${now}-${Math.random().toString(36).slice(2, 8)}`);
+        if (exists('SELECT id FROM container_templates WHERE id = ?', [newId])) {
+          if (conflict === 'skip') { count('containerTemplates', 0); continue; }
+          if (conflict === 'error') throw new Error(`容器模板 ID 冲突: ${t.name}`);
+          newId = `tpl-${now}-${Math.random().toString(36).slice(2, 8)}`;
+        }
         d.prepare('INSERT INTO container_templates (id, name, description, image, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-          t.id || `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, t.name, t.description || '', t.image || '', t.config || '{}', now, now,
+          newId, t.name, t.description || '', t.image || '', t.config || '{}', now, now,
         );
         count('containerTemplates', 1);
       }
