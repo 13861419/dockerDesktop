@@ -40,13 +40,28 @@ test('k8sApproval: 1.17.0 新动作注册（回滚/扩容/重建）', () => {
   assert.ok('k8s.deployment.rollback' in GATE_ACTIONS);
   assert.ok('k8s.pvc.resize' in GATE_ACTIONS);
   assert.ok('k8s.pod.recreate' in GATE_ACTIONS);
-  assert.ok(hasExecutor('k8s.deployment.rollback'));
-  assert.ok(hasExecutor('k8s.pvc.resize'));
-  assert.ok(hasExecutor('k8s.pod.recreate'));
   // 权限映射：rollback/resize → k8s.write，recreate → k8s.delete
   assert.strictEqual(shouldGate('operator', 'k8s.deployment.rollback'), false);
   assert.strictEqual(shouldGate('operator', 'k8s.pvc.resize'), false);
   assert.strictEqual(shouldGate('operator', 'k8s.pod.recreate'), true);
+});
+
+test('k8sApproval: 1.19.0 新动作注册（CM/Secret 编辑 + STS/DS 重启）', () => {
+  setSetting('approvals.enabled', true);
+  assert.ok('k8s.configmap.edit' in GATE_ACTIONS);
+  assert.ok('k8s.secret.edit' in GATE_ACTIONS);
+  assert.ok('k8s.sts.restart' in GATE_ACTIONS);
+  assert.ok('k8s.ds.restart' in GATE_ACTIONS);
+  assert.ok(hasExecutor('k8s.configmap.edit'));
+  assert.ok(hasExecutor('k8s.secret.edit'));
+  assert.ok(hasExecutor('k8s.sts.restart'));
+  assert.ok(hasExecutor('k8s.ds.restart'));
+  // 权限映射：CM/Secret 编辑与 STS/DS 重启 → k8s.write（operator 放行）
+  assert.strictEqual(shouldGate('operator', 'k8s.configmap.edit'), false);
+  assert.strictEqual(shouldGate('operator', 'k8s.secret.edit'), false);
+  assert.strictEqual(shouldGate('operator', 'k8s.sts.restart'), false);
+  assert.strictEqual(shouldGate('operator', 'k8s.ds.restart'), false);
+  assert.strictEqual(shouldGate('admin', 'k8s.configmap.edit'), false);
 });
 
 test('k8sApproval: admin 放行、operator 持 k8s.write 放行 scale、user 被拦截', () => {
