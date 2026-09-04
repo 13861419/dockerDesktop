@@ -84,7 +84,7 @@ test('POST /api/system/config/import: 导出后导入（skip 策略）', async (
     conflict: 'skip',
   }, { Authorization: `Bearer ${adminToken}` });
   // Accept 200 or 413 (payload too large for full config export)
-  assert.ok(res.status === 200 || res.status === 413, `expected 200 or 413, got ${res.status}`);
+  assert.ok(res.status === 200 || res.status === 413, `expected 200 or 413, got ${res.status}: ${JSON.stringify(res.data)?.slice(0, 300)}`);
   if (res.status === 200) {
     assert.ok(res.data.ok);
     assert.strictEqual(res.data.conflict, 'skip');
@@ -99,7 +99,7 @@ test('POST /api/system/config/import: overwrite 策略', async () => {
     conflict: 'overwrite',
   }, { Authorization: `Bearer ${adminToken}` });
   // Accept 200 or 413 (payload too large for full config export)
-  assert.ok(res.status === 200 || res.status === 413, `expected 200 or 413, got ${res.status}`);
+  assert.ok(res.status === 200 || res.status === 413, `expected 200 or 413, got ${res.status}: ${JSON.stringify(res.data)?.slice(0, 300)}`);
   if (res.status === 200) {
     assert.ok(res.data.ok);
     assert.strictEqual(res.data.conflict, 'overwrite');
