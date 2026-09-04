@@ -618,6 +618,50 @@ router.post('/pods/:ns/:name/recreate', wrap(async (req: Request, res: Response)
   res.json({ ok: true, message });
 }));
 
+/** Helm Release 历史版本（1.20.0：列出该 release 的全部 revision，含深度解码元信息） */
+router.get('/helm-history/:ns/:name', wrap(async (req: Request) => {
+  const { ns, name } = req.params;
+  const res = await coreApi().listSecretForAllNamespaces({
+    labelSelector: 'owner=helm',
+  });
+  const { decodeHelmRelease } = await import('../k8s/helmDecode');
+  const history: Array<{
+    revision: number; status: string; chartName: string; chartVersion: string;
+    chartNameDecoded: boolean; lastDeployedAt: number | null; updatedAt: number | null;
+  }> = [];
+  for (const s of res.items || []) {
+    if (s.metadata?.namespace !== ns) continue;
+    const m = String(s.metadata?.name || '').match(/^sh\.helm\.release\.v1\.(.+)\.v(\d+)$/);
+    if (!m || m[1] !== name) continue;
+    const updatedAt = s.metadata?.creationTimestamp ? new Date(s.metadata.creationTimestamp).getTime() : null;
+    const labelStatus = String(s.metadata?.labels?.status || '');
+    let chartName = '';
+    let chartVersion = '';
+    let status = labelStatus;
+    let lastDeployedAt: number | null = null;
+    const payload = (s.data as Record<string, string> | undefined)?.release;
+    if (payload) {
+      const decoded = decodeHelmRelease(payload);
+      if (decoded) {
+        chartName = decoded.chartName;
+        chartVersion = decoded.chartVersion;
+        if (decoded.status) status = decoded.status;
+        if (decoded.lastDeployedAt) lastDeployedAt = decoded.lastDeployedAt;
+      }
+    }
+    history.push({
+      revision: Number(m[2]) || 0,
+      status,
+      chartName,
+      chartVersion,
+      chartNameDecoded: !!chartName,
+      lastDeployedAt,
+      updatedAt,
+    });
+  }
+  return { history: history.sort((a, b) => b.revision - a.revision) };
+}));
+
 /** StatefulSet 滚动重启（1.19.0） */
 router.post('/statefulsets/:ns/:name/restart', wrap(async (req: Request, res: Response) => {
   const { ns, name } = req.params;

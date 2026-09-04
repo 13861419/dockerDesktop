@@ -2868,4 +2868,6 @@ export const en: Record<string, string> = {
   '编辑 Secret': 'Edit Secret',
   '期望/就绪': 'Desired/Ready',
   '就绪/期望': 'Ready/Desired',
+  'Helm 历史版本': 'Helm release history',
+  '暂无历史版本': 'No release history',
 };

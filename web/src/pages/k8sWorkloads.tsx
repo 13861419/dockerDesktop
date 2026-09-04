@@ -132,6 +132,10 @@ export default function K8sWorkloads() {
   const [editNs, setEditNs] = useState('');
   const [editName, setEditName] = useState('');
   const [editData, setEditData] = useState<Record<string, string>>({});
+  const [helmHistoryOpen, setHelmHistoryOpen] = useState(false);
+  const [helmHistoryNs, setHelmHistoryNs] = useState('');
+  const [helmHistoryName, setHelmHistoryName] = useState('');
+  const [helmHistory, setHelmHistory] = useState<Array<{ revision: number; status: string; chartName: string; chartVersion: string; lastDeployedAt: number | null; updatedAt: number | null }>>([]);
   const [configmaps, setConfigmaps] = useState<K8sConfigMap[]>([]);
   const [secrets, setSecrets] = useState<K8sSecret[]>([]);
   const [ingresses, setIngresses] = useState<K8sIngress[]>([]);
@@ -285,6 +289,21 @@ export default function K8sWorkloads() {
       }
       setEditOpen(false);
       void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** Helm release 历史版本查看（1.20.0） */
+  const openHelmHistory = async (ns2: string, name: string) => {
+    try {
+      const res = await get<{ history: Array<{ revision: number; status: string; chartName: string; chartVersion: string; lastDeployedAt: number | null; updatedAt: number | null }> }>(
+        `/api/k8s/helm-history/${encodeURIComponent(ns2)}/${encodeURIComponent(name)}`,
+      );
+      setHelmHistoryNs(ns);
+      setHelmHistoryName(name);
+      setHelmHistory(res.history || []);
+      setHelmHistoryOpen(true);
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
     }
@@ -721,7 +740,11 @@ export default function K8sWorkloads() {
                   </thead>
                   <tbody>
                     {filtered.helm.map((h) => (
-                      <tr key={`${h.namespace}/${h.name}`}>
+                      <tr
+                        key={`${h.namespace}/${h.name}`}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => void openHelmHistory(h.namespace, h.name)}
+                      >
                         <td className="k8s__mono">{h.name}</td>
                         <td>{h.namespace}</td>
                         <td className="k8s__mono">{h.chartName ? (h.chartVersion ? `${h.chartName}-${h.chartVersion}` : h.chartName) : '—'}</td>
@@ -731,7 +754,7 @@ export default function K8sWorkloads() {
                             {h.status || '—'}
                           </span>
                         </td>
-                        <td>{(() => { const t = h.lastDeployedAt ?? h.updatedAt; return t ? new Date(t).toLocaleString() : '—'; })()}</td>
+                        <td>{(() => { const ts = h.lastDeployedAt ?? h.updatedAt; return ts ? new Date(ts).toLocaleString() : '—'; })()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -815,6 +838,44 @@ export default function K8sWorkloads() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={helmHistoryOpen}
+        title={`${t('Helm 历史版本')} · ${helmHistoryNs}/${helmHistoryName}`}
+        onClose={() => setHelmHistoryOpen(false)}
+        width={640}
+      >
+        {helmHistory.length === 0 ? (
+          <Empty title={t('暂无历史版本')} />
+        ) : (
+          <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
+            <table className="k8s__table">
+              <thead>
+                <tr>
+                  <th>Revision</th>
+                  <th>Chart</th>
+                  <th>{t('状态')}</th>
+                  <th>{t('最近发布')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {helmHistory.map((v) => (
+                  <tr key={v.revision}>
+                    <td>v{v.revision}</td>
+                    <td className="k8s__mono">{v.chartName ? (v.chartVersion ? `${v.chartName}-${v.chartVersion}` : v.chartName) : '—'}</td>
+                    <td>
+                      <span className={v.status === 'deployed' ? 'k8s__badge k8s__badge--ok' : 'k8s__badge k8s__badge--warn'}>
+                        {v.status || '—'}
+                      </span>
+                    </td>
+                    <td>{(v.lastDeployedAt) ? new Date(v.lastDeployedAt).toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog
