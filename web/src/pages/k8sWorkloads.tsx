@@ -96,7 +96,7 @@ interface K8sIngress {
   createdAt: number | null;
 }
 
-type TabKey = 'pods' | 'deployments' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm';
+type TabKey = 'pods' | 'deployments' | 'statefulsets' | 'daemonsets' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm';
 
 /** Pod 状态徽标 class */
 function podStatusClass(status: string): string {
@@ -116,6 +116,8 @@ export default function K8sWorkloads() {
   const [search, setSearch] = useState('');
   const [pods, setPods] = useState<K8sPod[]>([]);
   const [deployments, setDeployments] = useState<K8sDeployment[]>([]);
+  const [statefulsets, setStatefulsets] = useState<K8sDeployment[]>([]);
+  const [daemonsets, setDaemonsets] = useState<K8sDeployment[]>([]);
   const [services, setServices] = useState<K8sService[]>([]);
   const [pvcs, setPvcs] = useState<K8sPvc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,6 +127,11 @@ export default function K8sWorkloads() {
   const [restartTarget, setRestartTarget] = useState<K8sDeployment | null>(null);
   const [resizeTarget, setResizeTarget] = useState<K8sPvc | null>(null);
   const [resizeStorage, setResizeStorage] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [editKind, setEditKind] = useState<'cm' | 'secret' | null>(null);
+  const [editNs, setEditNs] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editData, setEditData] = useState<Record<string, string>>({});
   const [configmaps, setConfigmaps] = useState<K8sConfigMap[]>([]);
   const [secrets, setSecrets] = useState<K8sSecret[]>([]);
   const [ingresses, setIngresses] = useState<K8sIngress[]>([]);
@@ -134,9 +141,11 @@ export default function K8sWorkloads() {
     setLoading(true);
     try {
       const q = nsArg && nsArg !== 'all' ? `?namespace=${encodeURIComponent(nsArg)}` : '';
-      const [podRes, depRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes] = await Promise.all([
+      const [podRes, depRes, stsRes, dsRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes] = await Promise.all([
         get<{ pods: K8sPod[] }>(`/api/k8s/pods${q}`),
         get<{ deployments: K8sDeployment[] }>(`/api/k8s/deployments${q}`),
+        get<{ statefulsets: K8sDeployment[] }>(`/api/k8s/statefulsets${q}`),
+        get<{ daemonsets: K8sDeployment[] }>(`/api/k8s/daemonsets${q}`),
         get<{ services: K8sService[] }>(`/api/k8s/services${q}`),
         get<{ pvcs: K8sPvc[] }>(`/api/k8s/pvc${q}`),
         get<{ namespaces: string[] }>(`/api/k8s/namespaces`),
@@ -147,6 +156,8 @@ export default function K8sWorkloads() {
       ]);
       setPods(podRes.pods || []);
       setDeployments(depRes.deployments || []);
+      setStatefulsets(stsRes.statefulsets || []);
+      setDaemonsets(dsRes.daemonsets || []);
       setServices(svcRes.services || []);
       setPvcs(pvcRes.pvcs || []);
       setConfigmaps(cmRes.configmaps || []);
@@ -244,13 +255,51 @@ export default function K8sWorkloads() {
     }
   };
 
+  /** ConfigMap/Secret 在线编辑（1.19.0） */
+  const openEdit = async (kind: 'cm' | 'secret', ns2: string, name: string) => {
+    try {
+      const res = await get<{ data: Record<string, string> }>(
+        `/api/k8s/workload-config/${kind}/${encodeURIComponent(ns2)}/${encodeURIComponent(name)}`,
+      );
+      setEditKind(kind);
+      setEditNs(ns2);
+      setEditName(name);
+      setEditData({ ...(res.data || {}) });
+      setEditOpen(true);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  const doSaveEdit = async () => {
+    if (!editKind || !editNs || !editName) return;
+    try {
+      const body = await post<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+        `/api/k8s/workload-config/${editKind}/${encodeURIComponent(editNs)}/${encodeURIComponent(editName)}`,
+        { data: editData },
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('已保存'), 'success');
+      }
+      setEditOpen(false);
+      void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
   /** 关键字过滤 */
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase();
-    if (!kw) return { pods, deployments, services, pvcs, configmaps, secrets, ingresses, helm };
+    const match = (s: string) => s.toLowerCase().includes(kw);
+    if (!kw) return { pods, deployments, statefulsets, daemonsets, services, pvcs, configmaps, secrets, ingresses, helm };
     return {
       pods: pods.filter((p) => `${p.namespace}/${p.name}`.toLowerCase().includes(kw)),
       deployments: deployments.filter((d) => `${d.namespace}/${d.name}`.toLowerCase().includes(kw)),
+      statefulsets: statefulsets.filter((d) => `${d.namespace}/${d.name}`.toLowerCase().includes(kw)),
+      daemonsets: daemonsets.filter((d) => `${d.namespace}/${d.name}`.toLowerCase().includes(kw)),
       services: services.filter((s) => `${s.namespace}/${s.name}`.toLowerCase().includes(kw)),
       pvcs: pvcs.filter((v) => `${v.namespace}/${v.name}`.toLowerCase().includes(kw)),
       configmaps: configmaps.filter((m) => `${m.namespace}/${m.name}`.toLowerCase().includes(kw)),
@@ -258,7 +307,7 @@ export default function K8sWorkloads() {
       ingresses: ingresses.filter((i) => `${i.namespace}/${i.name}`.toLowerCase().includes(kw)),
       helm: helm.filter((h) => `${h.namespace}/${h.name}`.toLowerCase().includes(kw)),
     };
-  }, [search, pods, deployments, services, pvcs, configmaps, secrets, ingresses, helm]);
+  }, [search, pods, deployments, statefulsets, daemonsets, services, pvcs, configmaps, secrets, ingresses, helm]);
 
   if (unavailable) {
     return (
@@ -301,6 +350,8 @@ export default function K8sWorkloads() {
             [
               ['pods', `Pod (${filtered.pods.length})`],
               ['deployments', `Deployment (${filtered.deployments.length})`],
+              ['statefulsets', `StatefulSet (${filtered.statefulsets.length})`],
+              ['daemonsets', `DaemonSet (${filtered.daemonsets.length})`],
               ['services', `Service (${filtered.services.length})`],
               ['pvc', `PVC (${filtered.pvcs.length})`],
               ['configmaps', `ConfigMap (${filtered.configmaps.length})`],
@@ -413,6 +464,64 @@ export default function K8sWorkloads() {
               )
             ) : null}
 
+            {tab === 'statefulsets' || tab === 'daemonsets' ? (
+              (tab === 'statefulsets' ? filtered.statefulsets : filtered.daemonsets).length === 0 ? (
+                <Empty title={tab === 'statefulsets' ? t('暂无 StatefulSet') : t('暂无 DaemonSet')} />
+              ) : (
+                <table className="k8s__table">
+                  <thead>
+                    <tr>
+                      <th>{t('名称')}</th>
+                      <th>{t('命名空间')}</th>
+                      <th>{tab === 'statefulsets' ? t('期望/就绪') : t('就绪/期望')}</th>
+                      <th>{t('创建时间')}</th>
+                      {admin ? <th>{t('操作')}</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tab === 'statefulsets' ? filtered.statefulsets : filtered.daemonsets).map((d) => (
+                      <tr key={`${d.namespace}/${d.name}`}>
+                        <td className="k8s__mono">{d.name}</td>
+                        <td>{d.namespace}</td>
+                        <td>
+                          {d.replicasReady}/{d.replicasDesired}
+                        </td>
+                        <td>{d.createdAt ? new Date(d.createdAt).toLocaleString() : '—'}</td>
+                        {admin ? (
+                          <td>
+                            <Button
+                              variant="ghost"
+                              onClick={() =>
+                                void (async () => {
+                                  try {
+                                    const kindPath = tab === 'statefulsets' ? 'statefulsets' : 'daemonsets';
+                                    const body = await post<{ approvalPending?: boolean; message?: string; ticketNo?: string }>(
+                                      `/api/k8s/${kindPath}/${encodeURIComponent(d.namespace)}/${encodeURIComponent(d.name)}/restart`,
+                                      {},
+                                    );
+                                    if (body?.approvalPending) {
+                                      showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+                                    } else {
+                                      showToast(body?.message || t('已触发滚动重启'), 'success');
+                                    }
+                                    void load(ns);
+                                  } catch (err) {
+                                    showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+                                  }
+                                })()
+                              }
+                            >
+                              {t('滚动重启')}
+                            </Button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            ) : null}
+
             {tab === 'services' ? (
               filtered.services.length === 0 ? (
                 <Empty title={t('暂无 Service')} />
@@ -502,6 +611,7 @@ export default function K8sWorkloads() {
                         <th>{t('命名空间')}</th>
                         <th>{t('键')}</th>
                         <th>{t('创建时间')}</th>
+                        {admin ? <th>{t('操作')}</th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -513,6 +623,13 @@ export default function K8sWorkloads() {
                             {m.keys.map((k) => `${k} (${m.sizes[k] ?? 0}B)`).join(', ') || '—'}
                           </td>
                           <td>{m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}</td>
+                          {admin ? (
+                            <td>
+                              <Button variant="ghost" onClick={() => void openEdit('cm', m.namespace, m.name)}>
+                                {t('编辑')}
+                              </Button>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>
@@ -530,6 +647,7 @@ export default function K8sWorkloads() {
                         <th>{t('类型')}</th>
                         <th>{t('键')}</th>
                         <th>{t('创建时间')}</th>
+                        {admin ? <th>{t('操作')}</th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -540,6 +658,13 @@ export default function K8sWorkloads() {
                           <td>{s.type || '—'}</td>
                           <td style={{ whiteSpace: 'normal' }}>{s.keys.join(', ') || '—'}</td>
                           <td>{s.createdAt ? new Date(s.createdAt).toLocaleString() : '—'}</td>
+                          {admin ? (
+                            <td>
+                              <Button variant="ghost" onClick={() => void openEdit('secret', s.namespace, s.name)}>
+                                {t('编辑')}
+                              </Button>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>
@@ -656,6 +781,37 @@ export default function K8sWorkloads() {
             </Button>
             <Button variant="primary" onClick={() => void doResize()}>
               {t('确认')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={editOpen}
+        title={`${editKind === 'secret' ? t('编辑 Secret') : t('编辑 ConfigMap')} · ${editNs}/${editName}`}
+        onClose={() => setEditOpen(false)}
+        width={640}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '60vh', overflow: 'auto' }}>
+          {Object.entries(editData).map(([k, v]) => (
+            <div key={k}>
+              <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }} className="k8s__mono">
+                {k}
+              </div>
+              <textarea
+                className="input"
+                style={{ width: '100%', minHeight: 80, fontFamily: 'monospace' }}
+                value={v}
+                onChange={(e) => setEditData((prev) => ({ ...prev, [k]: e.target.value }))}
+              />
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button variant="secondary" onClick={() => setEditOpen(false)}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" onClick={() => void doSaveEdit()}>
+              {t('保存')}
             </Button>
           </div>
         </div>

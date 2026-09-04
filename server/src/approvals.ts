@@ -39,6 +39,10 @@ export const GATE_ACTIONS: Record<string, { label: string; targetType: string }>
   'k8s.deployment.restart': { label: '重启 K8s Deployment', targetType: 'k8s-deployment' },
   'k8s.deployment.rollback': { label: '回滚 K8s Deployment', targetType: 'k8s-deployment' },
   'k8s.pvc.resize': { label: '扩容 K8s PVC', targetType: 'k8s-pvc' },
+  'k8s.configmap.edit': { label: '编辑 K8s ConfigMap', targetType: 'k8s-configmap' },
+  'k8s.secret.edit': { label: '编辑 K8s Secret', targetType: 'k8s-secret' },
+  'k8s.sts.restart': { label: '重启 K8s StatefulSet', targetType: 'k8s-statefulset' },
+  'k8s.ds.restart': { label: '重启 K8s DaemonSet', targetType: 'k8s-daemonset' },
 };
 
 /** 审批记录行 */
@@ -234,6 +238,10 @@ const GATE_PERM_MAP: Record<string, string> = {
   'k8s.deployment.restart': 'k8s.write',
   'k8s.deployment.rollback': 'k8s.write',
   'k8s.pvc.resize': 'k8s.write',
+  'k8s.configmap.edit': 'k8s.write',
+  'k8s.secret.edit': 'k8s.write',
+  'k8s.sts.restart': 'k8s.write',
+  'k8s.ds.restart': 'k8s.write',
 };
 
 /**
@@ -770,6 +778,32 @@ const executors: Record<string, Executor> = {
     const { recreatePod } = await import('./k8s/k8sClient');
     const [ns, name] = target.split('/');
     return recreatePod(ns, name);
+  },
+  'k8s.configmap.edit': async (target, payload) => {
+    const { updateConfigMap } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return updateConfigMap(ns, name, payload.data || {});
+  },
+  'k8s.secret.edit': async (target, payload) => {
+    const { updateSecret } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    // 审批执行时 payload.data 为明文，统一 base64 编码后写入
+    const plain: Record<string, string> = payload.data || {};
+    const encoded: Record<string, string> = {};
+    for (const [k, v] of Object.entries(plain)) {
+      encoded[k] = Buffer.from(String(v), 'utf8').toString('base64');
+    }
+    return updateSecret(ns, name, encoded);
+  },
+  'k8s.sts.restart': async (target) => {
+    const { restartStatefulSet } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return restartStatefulSet(ns, name);
+  },
+  'k8s.ds.restart': async (target) => {
+    const { restartDaemonSet } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    return restartDaemonSet(ns, name);
   },
 };
 

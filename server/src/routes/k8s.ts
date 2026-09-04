@@ -23,6 +23,10 @@ import {
   rolloutUndoDeployment,
   resizePvc,
   recreatePod,
+  updateConfigMap,
+  updateSecret,
+  restartStatefulSet,
+  restartDaemonSet,
 } from '../k8s/k8sClient';
 import { maybeGate } from '../approvals';
 import { logOperation } from '../operationLog';
@@ -238,6 +242,76 @@ router.get('/deployments', wrap(async (req: Request) => {
       createdAt: d.metadata?.creationTimestamp ? new Date(d.metadata.creationTimestamp).getTime() : null,
     })),
   };
+}));
+
+/** StatefulSet 列表（1.19.0） */
+router.get('/statefulsets', wrap(async (req: Request) => {
+  const res = await appsApi().listStatefulSetForAllNamespaces();
+  return {
+    statefulsets: filterNs(res.items, nsParam(req)).map((d: any) => ({
+      name: d.metadata?.name,
+      namespace: d.metadata?.namespace,
+      replicasDesired: d.spec?.replicas,
+      replicasReady: d.status?.readyReplicas ?? 0,
+      createdAt: d.metadata?.creationTimestamp ? new Date(d.metadata.creationTimestamp).getTime() : null,
+    })),
+  };
+}));
+
+/** DaemonSet 列表（1.19.0） */
+router.get('/daemonsets', wrap(async (req: Request) => {
+  const res = await appsApi().listDaemonSetForAllNamespaces();
+  return {
+    daemonsets: filterNs(res.items, nsParam(req)).map((d: any) => ({
+      name: d.metadata?.name,
+      namespace: d.metadata?.namespace,
+      replicasDesired: d.status?.desiredNumberScheduled,
+      replicasReady: d.status?.numberReady ?? 0,
+      createdAt: d.metadata?.creationTimestamp ? new Date(d.metadata.creationTimestamp).getTime() : null,
+    })),
+  };
+}));
+
+/** ConfigMap/Secret 详情（编辑用，1.19.0） */
+router.get('/workload-config/:kind/:ns/:name', wrap(async (req: Request) => {
+  const kind = req.params.kind === 'secret' ? 'secret' : 'configmap';
+  if (kind === 'secret') {
+    const s = await coreApi().readNamespacedSecret({ name: req.params.name, namespace: req.params.ns });
+    const data: Record<string, string> = {};
+    for (const [k, v] of Object.entries((s as any)?.data || {})) {
+      data[k] = Buffer.from(String(v), 'base64').toString('utf8');
+    }
+    return { data, type: (s as any)?.type || '' };
+  }
+  const cm = await coreApi().readNamespacedConfigMap({ name: req.params.name, namespace: req.params.ns });
+  return { data: (cm as any)?.data || {} };
+}));
+
+/** ConfigMap/Secret 更新（编辑用，1.19.0；门禁 k8s.configmap.edit / k8s.secret.edit） */
+router.put('/workload-config/:kind/:ns/:name', wrap(async (req: Request, res: Response) => {
+  const kind = req.params.kind === 'secret' ? 'secret' : 'configmap';
+  const { ns, name } = req.params;
+  const data = req.body?.data;
+  if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
+    res.status(400).json({ error: 'data 不能为空' });
+    return;
+  }
+  const target = `${ns}/${name}`;
+  const action = kind === 'secret' ? 'k8s.secret.edit' : 'k8s.configmap.edit';
+  if (maybeGate(req, res, kind === 'secret' ? 'k8s.secret.edit' : 'k8s.configmap.edit', target, { keys: Object.keys(data) })) return;
+  let message: string;
+  if (kind === 'secret') {
+    const encoded: Record<string, string> = {};
+    for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+      encoded[k] = Buffer.from(String(v), 'utf8').toString('base64');
+    }
+    message = await updateSecret(ns, name, encoded);
+    logOperation(res.locals.username, '编辑 K8s Secret', 'k8s-secret', target);
+  } else {
+    message = await updateConfigMap(ns, name, data);
+    logOperation(res.locals.username, '编辑 K8s ConfigMap', 'k8s-configmap', target);
+  }
+  res.json({ ok: true, message });
 }));
 
 /** Service 列表 */
@@ -541,6 +615,26 @@ router.post('/pods/:ns/:name/recreate', wrap(async (req: Request, res: Response)
   if (maybeGate(req, res, 'k8s.pod.recreate', target, {})) return;
   const message = await recreatePod(ns, name);
   logOperation(res.locals.username, '重建 K8s Pod', 'k8s-pod', target);
+  res.json({ ok: true, message });
+}));
+
+/** StatefulSet 滚动重启（1.19.0） */
+router.post('/statefulsets/:ns/:name/restart', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.sts.restart', target, {})) return;
+  const message = await restartStatefulSet(ns, name);
+  logOperation(res.locals.username, 'K8s StatefulSet 重启', 'k8s-statefulset', target);
+  res.json({ ok: true, message });
+}));
+
+/** DaemonSet 滚动重启（1.19.0） */
+router.post('/daemonsets/:ns/:name/restart', wrap(async (req: Request, res: Response) => {
+  const { ns, name } = req.params;
+  const target = `${ns}/${name}`;
+  if (maybeGate(req, res, 'k8s.ds.restart', target, {})) return;
+  const message = await restartDaemonSet(ns, name);
+  logOperation(res.locals.username, 'K8s DaemonSet 重启', 'k8s-daemonset', target);
   res.json({ ok: true, message });
 }));
 

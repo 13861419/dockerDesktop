@@ -3,6 +3,21 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.19.0] - 2026-09-04
+
+本版本为 **K8s 写操作再扩展**：ConfigMap/Secret 在线编辑与 StatefulSet/DaemonSet 滚动重启。
+
+### Added（新增）
+
+- **ConfigMap/Secret 在线编辑**：工作负载页 ConfigMap/Secret 名称新增编辑按钮（管理员），弹窗内按键编辑值（Secret 后端透明处理 base64 编解码）；更新经门禁 `k8s.configmap.edit` / `k8s.secret.edit` 转审批
+- **StatefulSet/DaemonSet 巡检与重启**：新增列表端点与工作负载页标签页（期望/就绪副本），支持滚动重启（门禁 `k8s.sts.restart` / `k8s.ds.restart`）
+
+### Test（测试）
+
+- 单测 305/305；E2E 8/8；docs:check 88 图 0 缺失
+
+## [1.18.0] - 2026-09-03
+
 ## [1.18.0] - 2026-09-03
 
 本版本新增 **K8s 告警联动**：集群 Warning 事件自动推送到通知渠道。

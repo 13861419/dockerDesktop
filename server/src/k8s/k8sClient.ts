@@ -149,6 +149,45 @@ export async function deletePod(namespace: string, name: string): Promise<string
 }
 
 /**
+ * 触发 StatefulSet 滚动重启（1.19.0，restartedAt 注解）
+ */
+export async function restartStatefulSet(namespace: string, name: string): Promise<string> {
+  const now = new Date().toISOString();
+  const body = { spec: { template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': now } } } } };
+  await appsApi().patchNamespacedStatefulSet({ name, namespace, body });
+  return `StatefulSet ${namespace}/${name} 已触发滚动重启`;
+}
+
+/**
+ * 触发 DaemonSet 滚动重启（1.19.0，restartedAt 注解）
+ */
+export async function restartDaemonSet(namespace: string, name: string): Promise<string> {
+  const now = new Date().toISOString();
+  const body = { spec: { template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': now } } } } };
+  await appsApi().patchNamespacedDaemonSet({ name, namespace, body });
+  return `DaemonSet ${namespace}/${name} 已触发滚动重启`;
+}
+
+/**
+ * 更新 ConfigMap 数据（1.19.0，整体替换 data）
+ */
+export async function updateConfigMap(namespace: string, name: string, data: Record<string, string>): Promise<string> {
+  await coreApi().patchNamespacedConfigMap({ name, namespace, body: { data } });
+  return `ConfigMap ${namespace}/${name} 已更新（${Object.keys(data).length} 个键）`;
+}
+
+/**
+ * 更新 Secret 数据（1.19.0，data 值须为 base64；整体替换）
+ */
+export async function updateSecret(namespace: string, name: string, data: Record<string, string>): Promise<string> {
+  for (const v of Object.values(data)) {
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(v)) throw new Error('Secret 值必须为 base64 编码');
+  }
+  await coreApi().patchNamespacedSecret({ name, namespace, body: { data } });
+  return `Secret ${namespace}/${name} 已更新（${Object.keys(data).length} 个键）`;
+}
+
+/**
  * 删除 Pod 并由其控制器自动重建（1.17.0）。
  * 独立 Pod（无 ownerReferences）不支持重建，直接报错。
  */

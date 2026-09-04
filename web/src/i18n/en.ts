@@ -2864,4 +2864,8 @@ export const en: Record<string, string> = {
   '扩容请求已提交': 'Resize request submitted',
   '回滚': 'Rollback',
   '扩容': 'Resize',
+  '编辑 ConfigMap': 'Edit ConfigMap',
+  '编辑 Secret': 'Edit Secret',
+  '期望/就绪': 'Desired/Ready',
+  '就绪/期望': 'Ready/Desired',
 };
