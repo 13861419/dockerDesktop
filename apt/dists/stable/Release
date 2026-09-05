@@ -1,0 +1,13 @@
+Origin: Docker Manager
+Label: Docker Manager
+Suite: stable
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: Docker Manager - Container Management Panel
+Date: Sat, 05 Sep 2026 11:10:21 +0000
+SHA256:
+ 3346bc24ae98b116d4d8faa4a3065560ba7cab88b564ed228df2771f38dc92f5 29 dists/stable/main/binary-arm64/Packages.gz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 dists/stable/main/binary-arm64/Packages
+ 3346bc24ae98b116d4d8faa4a3065560ba7cab88b564ed228df2771f38dc92f5 29 dists/stable/main/binary-amd64/Packages.gz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 dists/stable/main/binary-amd64/Packages

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>Docker Manager - Package Repository</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; }
+    h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+    code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    a { color: #3b82f6; }
+    .badge { display: inline-block; background: #10b981; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Docker Manager 包仓库</h1>
+  <p>由 GitHub Pages 自动托管，包含 APT (Debian/Ubuntu) 和 YUM (CentOS/RHEL) 仓库。</p>
+  <h2>快速安装</h2>
+  <h3>Ubuntu / Debian</h3>
+  <pre>
+# 添加仓库源
+echo "deb https://13861419.github.io/dockerDesktop/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/docker-manager.list
+
+sudo apt update && sudo apt install docker-manager</pre>
+  <h3>CentOS / RHEL / Fedora</h3>
+  <pre>
+# 添加仓库源
+cat > /etc/yum.repos.d/docker-manager.repo <<EOF
+[docker-manager]
+name=Docker Manager
+baseurl=https://13861419.github.io/dockerDesktop/yum
+enabled=1
+gpgcheck=0
+EOF
+
+sudo yum install docker-manager</pre>
+  <h2>其他安装方式</h2>
+  <ul>
+    <li><a href="https://github.com/13861419/dockerDesktop/releases/latest">GitHub Releases</a> — 直接下载 deb/rpm/exe</li>
+    <li><a href="https://ghcr.io/13861419/docker-desktop">ghcr.io</a> — Docker 镜像 <span class="badge">推荐</span></li>
+  </ul>
+</body>
+</html>

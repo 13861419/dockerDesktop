@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<repomd xmlns="http://linux.duke.edu/metadata/repo">
+  <revision>1788606621</revision>
+  <data>
+    <location href="repodata/primary.xml"/>
+    <checksum type="sha256">placeholder</checksum>
+    <timestamp>1788606621</timestamp>
+    <size>0</size>
+    <open-checksum type="sha256">placeholder</open-checksum>
+  </data>
+</repomd>
