@@ -136,7 +136,7 @@ test('GET /api/images/:name/save: 导出镜像', async () => {
 });
 
 test('POST /api/images/pull: 拉取镜像', async () => {
-  if (process.env.NETWORK_E2E !== '1') { console.log('跳过真实拉取（设置 NETWORK_E2E=1 启用）'); return; }
+  if (process.env.NETWORK_E2E !== '1') { console.log('skip real pull (set NETWORK_E2E=1 to enable)'); return; }
   const res = await req('POST', '/api/images/pull', { ref: 'alpine:latest' }, { Authorization: `Bearer ${adminToken}` });
   assert.ok(res.status < 500, `不应返回服务器错误，实际 ${res.status}`);
   if (res.status === 200) {
@@ -150,7 +150,7 @@ test('POST /api/images/pull: 缺少 ref 返回 400', async () => {
 });
 
 test('POST /api/images/search: 搜索镜像', async () => {
-    if (process.env.NETWORK_E2E !== '1') { console.log('跳过真实搜索（设置 NETWORK_E2E=1 启用）'); return; }
+    if (process.env.NETWORK_E2E !== '1') { console.log('skip real search (set NETWORK_E2E=1 to enable)'); return; }
   // Docker Hub 可达性探测：离线/网络受限环境下跳过，避免网络抖动造成假失败
   let reachable = false;
   for (let i = 0; i < 3 && !reachable; i++) {
