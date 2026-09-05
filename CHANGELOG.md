@@ -3,6 +3,19 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.22.0] - 2026-09-05
+
+本版本新增 **CRD / 自定义资源查看**。
+
+### Added（新增）
+
+- **CRD 巡检**：`GET /api/k8s/crds` 列出集群中的 CustomResourceDefinition（group / version / kind / 作用域 / 创建时间）；`GET /api/k8s/crds/:name/resources` 查询某 CRD 的资源实例（name / namespace / labels / spec JSON 预览，上限 500 条）
+- 工作负载页新增「CRD」标签页，行内「查看资源」按钮弹窗展示实例与 spec JSON，便于巡检 Prometheus、Argo 等 Operator 应用
+
+### Test（测试）
+
+- 新增 crd.test.ts（本地假 apiserver 验证 CRD 提取与实例查询 2 例）；单测 312/312
+
 ## [1.21.0] - 2026-09-05
 
 本版本新增 **K8s 资源删除操作补全**与 **Prometheus 指标暴露**。

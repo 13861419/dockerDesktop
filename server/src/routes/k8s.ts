@@ -27,6 +27,8 @@ import {
   updateSecret,
   restartStatefulSet,
   restartDaemonSet,
+  listCrds,
+  listCrdResources,
 } from '../k8s/k8sClient';
 import { maybeGate } from '../approvals';
 import { logOperation } from '../operationLog';
@@ -514,6 +516,17 @@ router.get('/helm-releases', wrap(async () => {
     }
   }
   return { releases: [...seen.values()].sort((a, b) => b.revision - a.revision) };
+}));
+
+/** CRD 定义列表（1.22.0，只读） */
+router.get('/crds', wrap(async () => {
+  return { crds: await listCrds() };
+}));
+
+/** 某个 CRD 的自定义资源实例（1.22.0，只读） */
+router.get('/crds/:name/resources', wrap(async (req: Request) => {
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
+  return { items: await listCrdResources(req.params.name, limit) };
 }));
 
 /** 集群事件 */

@@ -96,7 +96,7 @@ interface K8sIngress {
   createdAt: number | null;
 }
 
-type TabKey = 'pods' | 'deployments' | 'statefulsets' | 'daemonsets' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm';
+type TabKey = 'pods' | 'deployments' | 'statefulsets' | 'daemonsets' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm' | 'crds';
 
 /** Pod 状态徽标 class */
 function podStatusClass(status: string): string {
@@ -141,12 +141,15 @@ export default function K8sWorkloads() {
   const [secrets, setSecrets] = useState<K8sSecret[]>([]);
   const [ingresses, setIngresses] = useState<K8sIngress[]>([]);
   const [helm, setHelm] = useState<K8sHelmRelease[]>([]);
+  const [crds, setCrds] = useState<Array<{ name: string; group: string; version: string; kind: string; plural: string; scope: string; createdAt: number | null }>>([]);
+  const [crdItems, setCrdItems] = useState<Array<Record<string, unknown>> | null>(null);
+  const [crdTitle, setCrdTitle] = useState('');
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
     try {
       const q = nsArg && nsArg !== 'all' ? `?namespace=${encodeURIComponent(nsArg)}` : '';
-      const [podRes, depRes, stsRes, dsRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes] = await Promise.all([
+      const [podRes, depRes, stsRes, dsRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes, crdRes] = await Promise.all([
         get<{ pods: K8sPod[] }>(`/api/k8s/pods${q}`),
         get<{ deployments: K8sDeployment[] }>(`/api/k8s/deployments${q}`),
         get<{ statefulsets: K8sDeployment[] }>(`/api/k8s/statefulsets${q}`),
@@ -158,6 +161,7 @@ export default function K8sWorkloads() {
         get<{ secrets: K8sSecret[] }>(`/api/k8s/secrets${q}`),
         get<{ ingresses: K8sIngress[] }>(`/api/k8s/ingresses${q}`),
         get<{ releases: K8sHelmRelease[] }>(`/api/k8s/helm-releases${q}`),
+        get<{ crds: Array<{ name: string; group: string; version: string; kind: string; plural: string; scope: string; createdAt: number | null }> }>(`/api/k8s/crds`),
       ]);
       setPods(podRes.pods || []);
       setDeployments(depRes.deployments || []);
@@ -169,6 +173,7 @@ export default function K8sWorkloads() {
       setSecrets(secretRes.secrets || []);
       setIngresses(ingRes.ingresses || []);
       setHelm(helmRes.releases || []);
+      setCrds(crdRes.crds || []);
       setNamespaces(nsRes.namespaces || []);
       setUnavailable(false);
     } catch (err) {
@@ -274,6 +279,19 @@ export default function K8sWorkloads() {
       }
       setDelTarget(null);
       void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** 查看某 CRD 的自定义资源实例（1.22.0） */
+  const openCrd = async (name: string) => {
+    try {
+      const res = await get<{ items: Array<Record<string, unknown>> }>(
+        `/api/k8s/crds/${encodeURIComponent(name)}/resources`,
+      );
+      setCrdTitle(name);
+      setCrdItems(res.items || []);
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
     }
@@ -396,6 +414,7 @@ export default function K8sWorkloads() {
               ['configmaps', `ConfigMap (${filtered.configmaps.length})`],
               ['ingresses', `Ingress (${filtered.ingresses.length})`],
               ['helm', `Helm (${filtered.helm.length})`],
+              ['crds', `CRD (${crds.length})`],
             ] as Array<[TabKey, string]>
           ).map(([key, label]) => (
             <button
@@ -803,6 +822,43 @@ export default function K8sWorkloads() {
                 </table>
               )
             ) : null}
+
+            {tab === 'crds' ? (
+              crds.length === 0 ? (
+                <Empty title={t('暂无 CRD')} />
+              ) : (
+                <table className="k8s__table">
+                  <thead>
+                    <tr>
+                      <th>{t('名称')}</th>
+                      <th>Group</th>
+                      <th>{t('版本')}</th>
+                      <th>Kind</th>
+                      <th>{t('作用域')}</th>
+                      <th>{t('创建时间')}</th>
+                      <th>{t('操作')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crds.map((c) => (
+                      <tr key={c.name}>
+                        <td className="k8s__mono">{c.name}</td>
+                        <td>{c.group || '—'}</td>
+                        <td>{c.version || '—'}</td>
+                        <td>{c.kind || '—'}</td>
+                        <td>{c.scope === 'Namespaced' ? t('命名空间') : t('集群')}</td>
+                        <td>{c.createdAt ? new Date(c.createdAt).toLocaleString() : '—'}</td>
+                        <td>
+                          <Button variant="ghost" onClick={() => void openCrd(c.name)}>
+                            {t('查看资源')}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            ) : null}
           </div>
         )}
       </Card>
@@ -928,6 +984,39 @@ export default function K8sWorkloads() {
         onConfirm={() => void doRestart()}
         onCancel={() => setRestartTarget(null)}
       />
+
+      <Modal open={!!crdItems} title={`${t('自定义资源')} · ${crdTitle}`} onClose={() => setCrdItems(null)} width={720}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {(crdItems || []).length === 0 ? (
+            <div style={{ fontSize: 13, opacity: 0.7 }}>{t('该 CRD 暂无资源实例')}</div>
+          ) : (
+            (crdItems || []).map((it, idx) => {
+              const meta = it as { name?: string; namespace?: string; createdAt?: number | null; spec?: unknown };
+              return (
+                <div key={idx} style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                    <span className="k8s__mono">{meta.name || '—'}</span>
+                    {meta.namespace ? <span style={{ opacity: 0.6 }}> · {meta.namespace}</span> : null}
+                    <span style={{ opacity: 0.5 }}> · {meta.createdAt ? new Date(meta.createdAt).toLocaleString() : '—'}</span>
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      maxHeight: 200,
+                      overflow: 'auto',
+                      fontSize: 12,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {JSON.stringify(meta.spec ?? {}, null, 2)}
+                  </pre>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={!!delTarget}

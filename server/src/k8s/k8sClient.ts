@@ -118,6 +118,68 @@ export function metricsClient(): k8s.Metrics {
   return new k8s.Metrics(loadKubeConfig());
 }
 
+/** ApiextensionsV1 API 客户端（CRD 定义，1.22.0） */
+export function apiextensionsApi(): k8s.ApiextensionsV1Api {
+  return loadKubeConfig().makeApiClient(k8s.ApiextensionsV1Api);
+}
+
+/** CustomObjects API 客户端（自定义资源实例，1.22.0） */
+export function customObjectsApi(): k8s.CustomObjectsApi {
+  return loadKubeConfig().makeApiClient(k8s.CustomObjectsApi);
+}
+
+/** CRD 摘要 */
+export interface K8sCrdSummary {
+  name: string;
+  group: string;
+  version: string;
+  kind: string;
+  plural: string;
+  scope: string;
+  createdAt: number | null;
+}
+
+/** 列出集群中的 CRD 定义（1.22.0） */
+export async function listCrds(): Promise<K8sCrdSummary[]> {
+  const res = await apiextensionsApi().listCustomResourceDefinition();
+  return (res.items || []).map((crd: any) => {
+    const spec: any = (crd as any).spec || {};
+    const versions = spec.versions || [];
+    const stored = versions.find((v: any) => v.storage) || versions[0] || {};
+    return {
+      name: (crd as any).metadata?.name || '',
+      group: spec.group || '',
+      version: stored.name || '',
+      kind: spec.names?.kind || '',
+      plural: spec.names?.plural || '',
+      scope: spec.scope || '',
+      createdAt: (crd as any).metadata?.creationTimestamp
+        ? new Date((crd as any).metadata.creationTimestamp).getTime()
+        : null,
+    };
+  });
+}
+
+/** 列出某 CRD 的自定义资源实例（仅支持集群作用域名称为 name 的 CRD，1.22.0） */
+export async function listCrdResources(crdName: string, limit = 100): Promise<Array<Record<string, unknown>>> {
+  const crds = await listCrds();
+  const crd = crds.find((c) => c.name === crdName);
+  if (!crd) throw new Error(`CRD 不存在: ${crdName}`);
+  const obj = (await customObjectsApi().listClusterCustomObject({
+    group: crd.group,
+    version: crd.version,
+    plural: crd.plural,
+  })) as { items?: Array<any> };
+  return (obj.items || []).slice(0, limit).map((it) => ({
+    name: it.metadata?.name || '',
+    namespace: it.metadata?.namespace || '',
+    kind: it.kind || crd.kind,
+    createdAt: it.metadata?.creationTimestamp ? new Date(it.metadata.creationTimestamp).getTime() : null,
+    labels: it.metadata?.labels || {},
+    spec: it.spec ?? {},
+  }));
+}
+
 /**
  * 调整 Deployment 副本数（1.6.0 二期写操作）
  * @returns 执行说明（审批执行器与路由共用）

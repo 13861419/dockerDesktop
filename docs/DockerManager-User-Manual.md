@@ -1303,10 +1303,11 @@ If the kubeconfig contains multiple contexts (multiple clusters), switch them at
 
 ### 43.3 Workloads (/k8s/workloads)
 
-Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm**, all supporting namespace filtering and keyword search. The "Helm" tab shows release name / namespace / revision / status / last deploy time (1.13.0). Secrets are listed under the ConfigMap tab with **values masked** (keys and type only, 1.8.0).
+Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm / CRD**, all supporting namespace filtering and keyword search. The "Helm" tab shows release name / namespace / revision / status / last deploy time (1.13.0). Secrets are listed under the ConfigMap tab with **values masked** (keys and type only, 1.8.0).
 
 - The Pod list shows status (including container-level reasons such as CrashLoopBackOff), ready containers, restarts and node; click any row for details;
-- Deployments show desired / ready replicas; services show type, ClusterIP and ports; PVCs show Bound status, capacity and StorageClass.
+- Deployments show desired / ready replicas; services show type, ClusterIP and ports; PVCs show Bound status, capacity and StorageClass;
+- **CRD tab** (1.22.0): lists the CustomResourceDefinitions in the cluster (name / group / version / kind / scope / creation time); the "View Resources" button opens a modal showing the CRD's resource instances with spec JSON — handy for inspecting Operators such as Prometheus or Argo.
 
 ![Workloads](../images/k8s-workloads.png)
 
