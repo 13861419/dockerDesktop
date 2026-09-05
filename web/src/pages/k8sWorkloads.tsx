@@ -96,7 +96,7 @@ interface K8sIngress {
   createdAt: number | null;
 }
 
-type TabKey = 'pods' | 'deployments' | 'statefulsets' | 'daemonsets' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm' | 'crds';
+type TabKey = 'pods' | 'deployments' | 'statefulsets' | 'daemonsets' | 'services' | 'pvc' | 'configmaps' | 'ingresses' | 'helm' | 'crds' | 'quotas';
 
 /** Pod 状态徽标 class */
 function podStatusClass(status: string): string {
@@ -144,6 +144,11 @@ export default function K8sWorkloads() {
   const [crds, setCrds] = useState<Array<{ name: string; group: string; version: string; kind: string; plural: string; scope: string; createdAt: number | null }>>([]);
   const [crdItems, setCrdItems] = useState<Array<Record<string, unknown>> | null>(null);
   const [crdTitle, setCrdTitle] = useState('');
+  const [quotaData, setQuotaData] = useState<{
+    quotas: Array<{ name: string; namespace: string; hard: Record<string, string>; used: Record<string, string>; createdAt: number | null }>;
+    limitRanges: Array<{ name: string; namespace: string; limits: Array<{ type: string; min?: string; max?: string; default?: string; defaultRequest?: string }>; createdAt: number | null }>;
+    netPolicies: Array<{ name: string; namespace: string; policyTypes: string[]; podSelector: string; ingress: number; egress: number; createdAt: number | null }>;
+  }>({ quotas: [], limitRanges: [], netPolicies: [] });
   const [helmOpen, setHelmOpen] = useState(false);
   const [helmForm, setHelmForm] = useState<{ name: string; namespace: string; chart: string; version: string; set: string }>({ name: '', namespace: 'default', chart: '', version: '', set: '' });
 
@@ -151,7 +156,7 @@ export default function K8sWorkloads() {
     setLoading(true);
     try {
       const q = nsArg && nsArg !== 'all' ? `?namespace=${encodeURIComponent(nsArg)}` : '';
-      const [podRes, depRes, stsRes, dsRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes, crdRes] = await Promise.all([
+      const [podRes, depRes, stsRes, dsRes, svcRes, pvcRes, nsRes, cmRes, secretRes, ingRes, helmRes, crdRes, quotaRes] = await Promise.all([
         get<{ pods: K8sPod[] }>(`/api/k8s/pods${q}`),
         get<{ deployments: K8sDeployment[] }>(`/api/k8s/deployments${q}`),
         get<{ statefulsets: K8sDeployment[] }>(`/api/k8s/statefulsets${q}`),
@@ -164,6 +169,7 @@ export default function K8sWorkloads() {
         get<{ ingresses: K8sIngress[] }>(`/api/k8s/ingresses${q}`),
         get<{ releases: K8sHelmRelease[] }>(`/api/k8s/helm-releases${q}`),
         get<{ crds: Array<{ name: string; group: string; version: string; kind: string; plural: string; scope: string; createdAt: number | null }> }>(`/api/k8s/crds`),
+        get<{ quotas: Array<{ name: string; namespace: string; hard: Record<string, string>; used: Record<string, string>; createdAt: number | null }>; limitRanges: Array<{ name: string; namespace: string; limits: Array<{ type: string; min?: string; max?: string; default?: string; defaultRequest?: string }>; createdAt: number | null }>; netPolicies: Array<{ name: string; namespace: string; policyTypes: string[]; podSelector: string; ingress: number; egress: number; createdAt: number | null }> }>(`/api/k8s/quotas`),
       ]);
       setPods(podRes.pods || []);
       setDeployments(depRes.deployments || []);
@@ -176,6 +182,7 @@ export default function K8sWorkloads() {
       setIngresses(ingRes.ingresses || []);
       setHelm(helmRes.releases || []);
       setCrds(crdRes.crds || []);
+      setQuotaData({ quotas: quotaRes.quotas || [], limitRanges: quotaRes.limitRanges || [], netPolicies: quotaRes.netPolicies || [] });
       setNamespaces(nsRes.namespaces || []);
       setUnavailable(false);
     } catch (err) {
@@ -449,6 +456,7 @@ export default function K8sWorkloads() {
               ['ingresses', `Ingress (${filtered.ingresses.length})`],
               ['helm', `Helm (${filtered.helm.length})`],
               ['crds', `CRD (${crds.length})`],
+              ['quotas', t('配额')],
             ] as Array<[TabKey, string]>
           ).map(([key, label]) => (
             <button
@@ -899,6 +907,100 @@ export default function K8sWorkloads() {
                   </tbody>
                 </table>
               )
+            ) : null}
+
+            {tab === 'quotas' ? (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 600, margin: '6px 0' }}>ResourceQuota</div>
+                {quotaData.quotas.length === 0 ? (
+                  <Empty title={t('暂无 ResourceQuota')} />
+                ) : (
+                  <table className="k8s__table" style={{ marginBottom: 16 }}>
+                    <thead>
+                      <tr>
+                        <th>{t('名称')}</th>
+                        <th>{t('命名空间')}</th>
+                        <th>{t('用量 / 上限')}</th>
+                        <th>{t('创建时间')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quotaData.quotas.map((q) => (
+                        <tr key={`${q.namespace}/${q.name}`}>
+                          <td className="k8s__mono">{q.name}</td>
+                          <td>{q.namespace}</td>
+                          <td style={{ whiteSpace: 'normal' }}>
+                            {Object.keys(q.hard)
+                              .map((k) => `${k}: ${q.used[k] ?? 0} / ${q.hard[k]}`)
+                              .join(', ') || '—'}
+                          </td>
+                          <td>{q.createdAt ? new Date(q.createdAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div style={{ fontSize: 13, fontWeight: 600, margin: '6px 0' }}>LimitRange</div>
+                {quotaData.limitRanges.length === 0 ? (
+                  <Empty title={t('暂无 LimitRange')} />
+                ) : (
+                  <table className="k8s__table" style={{ marginBottom: 16 }}>
+                    <thead>
+                      <tr>
+                        <th>{t('名称')}</th>
+                        <th>{t('命名空间')}</th>
+                        <th>{t('限制')}</th>
+                        <th>{t('创建时间')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quotaData.limitRanges.map((lr) => (
+                        <tr key={`${lr.namespace}/${lr.name}`}>
+                          <td className="k8s__mono">{lr.name}</td>
+                          <td>{lr.namespace}</td>
+                          <td style={{ whiteSpace: 'normal' }}>
+                            {lr.limits
+                              .map((l) => `[${l.type}] ${[l.min, l.max, l.default, l.defaultRequest].filter(Boolean).join(' ')}`)
+                              .join(' | ') || '—'}
+                          </td>
+                          <td>{lr.createdAt ? new Date(lr.createdAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div style={{ fontSize: 13, fontWeight: 600, margin: '6px 0' }}>NetworkPolicy</div>
+                {quotaData.netPolicies.length === 0 ? (
+                  <Empty title={t('暂无 NetworkPolicy')} />
+                ) : (
+                  <table className="k8s__table">
+                    <thead>
+                      <tr>
+                        <th>{t('名称')}</th>
+                        <th>{t('命名空间')}</th>
+                        <th>{t('策略类型')}</th>
+                        <th>{t('Pod 选择器')}</th>
+                        <th>Ingress / Egress</th>
+                        <th>{t('创建时间')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quotaData.netPolicies.map((np) => (
+                        <tr key={`${np.namespace}/${np.name}`}>
+                          <td className="k8s__mono">{np.name}</td>
+                          <td>{np.namespace}</td>
+                          <td>{np.policyTypes.join(', ') || '—'}</td>
+                          <td className="k8s__mono">{np.podSelector}</td>
+                          <td>
+                            {np.ingress} / {np.egress}
+                          </td>
+                          <td>{np.createdAt ? new Date(np.createdAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
             ) : null}
           </div>
         )}

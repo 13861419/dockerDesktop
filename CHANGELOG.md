@@ -3,6 +3,26 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.24.0] - 2026-09-05
+
+本版本新增 **K8s 配额巡检**（ResourceQuota / LimitRange / NetworkPolicy）。
+
+### Added（新增）
+
+- **配额巡检**：`GET /api/k8s/quotas` 一次性返回三类资源（只读）：
+  - **ResourceQuota**：每配额的硬上限与实际用量（`requests.cpu: 1500m / 4` 形式逐项展示）
+  - **LimitRange**：容器级 min / max / default / defaultRequest 限制
+  - **NetworkPolicy**：策略类型（Ingress / Egress）、Pod 选择器与规则数量
+- 工作负载页新增「配额」标签页，三段式表格展示
+
+### Fixed（修复）
+
+- 兼容 client-node 1.4 将保留字 `default` 反序列化为 `_default` 的行为（LimitRange 默认值展示缺失）
+
+### Test（测试）
+
+- 新增 quota.test.ts（本地假 apiserver 3 例）；单测 317/317
+
 ## [1.23.0] - 2026-09-05
 
 本版本新增 **Helm CLI 集成（Chart 部署）**。

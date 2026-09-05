@@ -29,6 +29,9 @@ import {
   restartDaemonSet,
   listCrds,
   listCrdResources,
+  listResourceQuotas,
+  listLimitRanges,
+  listNetworkPolicies,
 } from '../k8s/k8sClient';
 import { maybeGate } from '../approvals';
 import { logOperation } from '../operationLog';
@@ -527,6 +530,16 @@ router.get('/crds', wrap(async () => {
 router.get('/crds/:name/resources', wrap(async (req: Request) => {
   const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
   return { items: await listCrdResources(req.params.name, limit) };
+}));
+
+/** 配额巡检：ResourceQuota / LimitRange / NetworkPolicy（1.24.0，只读） */
+router.get('/quotas', wrap(async () => {
+  const [quotas, limitRanges, netPolicies] = await Promise.all([
+    listResourceQuotas(),
+    listLimitRanges(),
+    listNetworkPolicies(),
+  ]);
+  return { quotas, limitRanges, netPolicies };
 }));
 
 /** Helm CLI 可用性检测（1.23.0） */

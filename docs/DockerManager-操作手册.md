@@ -1337,11 +1337,12 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 
 ### 43.3 工作负载（/k8s/workloads)
 
-标签页：**Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm / CRD**，均支持命名空间过滤与关键字搜索。「Helm」标签页展示 Release 名称 / 命名空间 / Revision / 状态（deployed 等）/ 最近发布时间（1.13.0）。Secret 列表与 ConfigMap 同页展示，**值已脱敏**（仅显示键名与类型，1.8.0）。
+标签页：**Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm / CRD / 配额**，均支持命名空间过滤与关键字搜索。「Helm」标签页展示 Release 名称 / 命名空间 / Revision / 状态（deployed 等）/ 最近发布时间（1.13.0）。Secret 列表与 ConfigMap 同页展示，**值已脱敏**（仅显示键名与类型，1.8.0）。
 
 - Pod 列表展示状态（含 CrashLoopBackOff 等容器级细化原因）、就绪容器数、重启次数、所在节点；点击任意行进入 Pod 详情；
 - Deployment 展示期望 / 就绪副本数；Service 展示类型、ClusterIP 与端口；PVC 展示 Bound 状态、容量与 StorageClass；
-- **CRD 标签页**（1.22.0）：列出集群中的 CustomResourceDefinition（名称 / Group / 版本 / Kind / 作用域 / 创建时间），行内「查看资源」按钮弹窗展示该 CRD 的资源实例与 spec JSON，便于巡检 Prometheus、Argo 等 Operator 应用。
+- **CRD 标签页**（1.22.0）：列出集群中的 CustomResourceDefinition（名称 / Group / 版本 / Kind / 作用域 / 创建时间），行内「查看资源」按钮弹窗展示该 CRD 的资源实例与 spec JSON，便于巡检 Prometheus、Argo 等 Operator 应用；
+- **配额标签页**（1.24.0）：ResourceQuota（逐项展示用量 / 上限，如 `requests.cpu: 1500m / 4`）、LimitRange（容器级 min / max / default / defaultRequest）与 NetworkPolicy（策略类型 / Pod 选择器 / 规则数）三段式只读展示。
 
 ![工作负载](../images/k8s-workloads.png)
 

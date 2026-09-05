@@ -180,6 +180,81 @@ export async function listCrdResources(crdName: string, limit = 100): Promise<Ar
   }));
 }
 
+/** ResourceQuota 摘要（1.24.0） */
+export interface K8sQuotaSummary {
+  name: string;
+  namespace: string;
+  hard: Record<string, string>;
+  used: Record<string, string>;
+  createdAt: number | null;
+}
+
+/** 列出 ResourceQuota（1.24.0） */
+export async function listResourceQuotas(): Promise<K8sQuotaSummary[]> {
+  const res = await coreApi().listResourceQuotaForAllNamespaces();
+  return (res.items || []).map((q: any) => ({
+    name: q.metadata?.name || '',
+    namespace: q.metadata?.namespace || '',
+    hard: q.status?.hard || {},
+    used: q.status?.used || {},
+    createdAt: q.metadata?.creationTimestamp ? new Date(q.metadata.creationTimestamp).getTime() : null,
+  }));
+}
+
+/** LimitRange 摘要（1.24.0） */
+export interface K8sLimitRangeSummary {
+  name: string;
+  namespace: string;
+  limits: Array<{ type: string; min?: string; max?: string; default?: string; defaultRequest?: string }>;
+  createdAt: number | null;
+}
+
+/** 列出 LimitRange（1.24.0） */
+export async function listLimitRanges(): Promise<K8sLimitRangeSummary[]> {
+  const res = await coreApi().listLimitRangeForAllNamespaces();
+  return (res.items || []).map((lr: any) => ({
+    name: lr.metadata?.name || '',
+    namespace: lr.metadata?.namespace || '',
+    limits: (lr.spec?.limits || []).map((l: any) => ({
+      type: l.type || '',
+      min: l.min ? Object.entries(l.min).map(([k, v]) => `${k}=${v}`).join(', ') : undefined,
+      max: l.max ? Object.entries(l.max).map(([k, v]) => `${k}=${v}`).join(', ') : undefined,
+      default: (l._default ?? l.default) ? Object.entries(l._default ?? l.default).map(([k, v]) => `${k}=${v}`).join(', ') : undefined,
+      defaultRequest: l.defaultRequest ? Object.entries(l.defaultRequest).map(([k, v]) => `${k}=${v}`).join(', ') : undefined,
+    })),
+    createdAt: lr.metadata?.creationTimestamp ? new Date(lr.metadata.creationTimestamp).getTime() : null,
+  }));
+}
+
+/** NetworkPolicy 摘要（1.24.0） */
+export interface K8sNetPolicySummary {
+  name: string;
+  namespace: string;
+  policyTypes: string[];
+  podSelector: string;
+  ingress: number;
+  egress: number;
+  createdAt: number | null;
+}
+
+/** 列出 NetworkPolicy（1.24.0） */
+export async function listNetworkPolicies(): Promise<K8sNetPolicySummary[]> {
+  const res = await networkingApi().listNetworkPolicyForAllNamespaces();
+  return (res.items || []).map((np: any) => {
+    const sel = np.spec?.podSelector?.matchLabels || {};
+    return {
+      name: np.metadata?.name || '',
+      namespace: np.metadata?.namespace || '',
+      policyTypes: np.spec?.policyTypes || [],
+      podSelector: Object.keys(sel).length ? Object.entries(sel).map(([k, v]) => `${k}=${v}`).join(', ') : 'all pods',
+      ingress: (np.spec?.ingress || []).length,
+      egress: (np.spec?.egress || []).length,
+      createdAt: np.metadata?.creationTimestamp ? new Date(np.metadata.creationTimestamp).getTime() : null,
+    };
+  });
+}
+
+
 /**
  * 调整 Deployment 副本数（1.6.0 二期写操作）
  * @returns 执行说明（审批执行器与路由共用）
