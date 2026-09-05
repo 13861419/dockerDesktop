@@ -78,3 +78,67 @@ export async function helmInstall(opts: {
   if (opts.createNamespace !== false) args.push('--create-namespace');
   return run(args);
 }
+
+/** helm repo add（1.25.0，k8s.write 门禁） */
+export async function helmRepoAdd(name: string, url: string): Promise<string> {
+  const n = safeId(name, 'invalid repo name');
+  const u = String(url || '').trim();
+  if (!/^https?:\/\/[a-zA-Z0-9._/:?=&~-]+$/.test(u)) throw new Error('invalid repo url');
+  return run(['repo', 'add', n, u]);
+}
+
+/** helm repo remove（1.25.0，k8s.write 门禁） */
+export async function helmRepoRemove(name: string): Promise<string> {
+  const n = safeId(name, 'invalid repo name');
+  return run(['repo', 'remove', n]);
+}
+
+/** helm repo list（1.25.0） */
+export function helmRepoList(): Promise<Array<{ name: string; url: string }>> {
+  return new Promise((resolve, reject) => {
+    execFile(helmBin, ['repo', 'list', '--output', 'json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
+      // repo list 在没有任何仓库时以非零退出，视为空列表
+      if (err) {
+        resolve([]);
+        return;
+      }
+      try {
+        const rows = JSON.parse(String(stdout || '[]'));
+        resolve(
+          (Array.isArray(rows) ? rows : []).map((r: any) => ({ name: String(r.name || ''), url: String(r.url || '') })),
+        );
+      } catch (e) {
+        reject(new Error(String(stderr || (e as Error).message).trim()));
+      }
+    });
+  });
+}
+
+/** helm search repo（1.25.0） */
+export function helmRepoSearch(keyword: string, limit = 50): Promise<Array<{ name: string; chart: string; version: string; description: string }>> {
+  const kw = String(keyword || '').trim();
+  const args = ['search', 'repo'];
+  if (kw) args.push(kw);
+  args.push('--output', 'json', '--max-col-width', '120');
+  return new Promise((resolve, reject) => {
+    execFile(helmBin, args, { timeout: 60_000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(String(stderr || err.message).trim()));
+        return;
+      }
+      try {
+        const rows = JSON.parse(String(stdout || '[]')) as any[];
+        resolve(
+          rows.slice(0, limit).map((r) => ({
+            name: String(r.name || ''),
+            chart: String(r.chart || ''),
+            version: String(r.version || ''),
+            description: String(r.description || ''),
+          })),
+        );
+      } catch (e) {
+        reject(new Error(String((e as Error).message).trim()));
+      }
+    });
+  });
+}

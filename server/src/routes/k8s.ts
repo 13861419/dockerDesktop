@@ -532,6 +532,41 @@ router.get('/crds/:name/resources', wrap(async (req: Request) => {
   return { items: await listCrdResources(req.params.name, limit) };
 }));
 
+/** Helm 仓库列表（1.25.0） */
+router.get('/helm-cli/repos', wrap(async () => {
+  const { helmRepoList } = await import('../k8s/helmCli');
+  return { repos: await helmRepoList() };
+}));
+
+/** Helm 仓库添加（1.25.0，k8s.write 门禁） */
+router.post('/helm-cli/repos', wrap(async (req: Request, res: Response) => {
+  const { name, url } = req.body || {};
+  if (!name || !url) {
+    res.status(400).json({ error: 'name / url 为必填' });
+    return;
+  }
+  if (maybeGate(req, res, 'k8s.helm.install', name, { name, url })) return;
+  const { helmRepoAdd } = await import('../k8s/helmCli');
+  const output = await helmRepoAdd(name, url);
+  logOperation(res.locals.username, 'Helm 仓库添加', 'k8s-helm', name);
+  res.json({ ok: true, output });
+}));
+
+/** Helm 仓库删除（1.25.0，k8s.write 门禁） */
+router.delete('/helm-cli/repos/:name', wrap(async (req: Request, res: Response) => {
+  if (maybeGate(req, res, 'k8s.helm.install', req.params.name, {})) return;
+  const { helmRepoRemove } = await import('../k8s/helmCli');
+  const output = await helmRepoRemove(req.params.name);
+  logOperation(res.locals.username, 'Helm 仓库删除', 'k8s-helm', req.params.name);
+  res.json({ ok: true, output });
+}));
+
+/** Helm chart 仓库搜索（1.25.0） */
+router.get('/helm-cli/search', wrap(async (req: Request) => {
+  const { helmRepoSearch } = await import('../k8s/helmCli');
+  return { results: await helmRepoSearch(String(req.query.keyword || '')) };
+}));
+
 /** 配额巡检：ResourceQuota / LimitRange / NetworkPolicy（1.24.0，只读） */
 router.get('/quotas', wrap(async () => {
   const [quotas, limitRanges, netPolicies] = await Promise.all([

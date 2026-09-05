@@ -151,6 +151,11 @@ export default function K8sWorkloads() {
   }>({ quotas: [], limitRanges: [], netPolicies: [] });
   const [helmOpen, setHelmOpen] = useState(false);
   const [helmForm, setHelmForm] = useState<{ name: string; namespace: string; chart: string; version: string; set: string }>({ name: '', namespace: 'default', chart: '', version: '', set: '' });
+  const [repoList, setRepoList] = useState<Array<{ name: string; url: string }>>([]);
+  const [repoKeyword, setRepoKeyword] = useState('');
+  const [repoResults, setRepoResults] = useState<Array<{ name: string; chart: string; version: string; description: string }> | null>(null);
+  const [repoNew, setRepoNew] = useState({ name: '', url: '' });
+  const [repoOpen, setRepoOpen] = useState(false);
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
@@ -196,6 +201,20 @@ export default function K8sWorkloads() {
   useEffect(() => {
     void load(ns);
   }, [load, ns]);
+
+  /** 加载 Helm 仓库列表（1.25.0） */
+  const loadRepos = useCallback(async () => {
+    try {
+      const res = await get<{ repos: Array<{ name: string; url: string }> }>('/api/k8s/helm-cli/repos');
+      setRepoList(res.repos || []);
+    } catch {
+      /* helm CLI 不可用时静默 */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (admin) void loadRepos();
+  }, [admin, loadRepos]);
 
   /** 扩缩容提交（后端可能转 202 审批） */
   const doScale = async () => {
@@ -333,6 +352,52 @@ export default function K8sWorkloads() {
       }
       setHelmOpen(false);
       void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** Helm chart 仓库搜索（1.25.0） */
+  const doHelmSearch = async (kw?: string) => {
+    try {
+      const res = await get<{ results: Array<{ name: string; chart: string; version: string; description: string }> }>(
+        `/api/k8s/helm-cli/search?keyword=${encodeURIComponent(kw ?? repoKeyword)}`,
+      );
+      setRepoResults(res.results || []);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** Helm 仓库增删（1.25.0，后端可能转 202 审批） */
+  const doHelmRepoAdd = async () => {
+    try {
+      const body = await post<{ ok?: boolean; approvalPending?: boolean; ticketNo?: string }>(
+        '/api/k8s/helm-cli/repos',
+        { name: repoNew.name, url: repoNew.url },
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(t('仓库已添加'), 'success');
+      }
+      setRepoNew({ name: '', url: '' });
+      const res = await get<{ repos: Array<{ name: string; url: string }> }>('/api/k8s/helm-cli/repos');
+      setRepoList(res.repos || []);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  const doHelmRepoRemove = async (name: string) => {
+    try {
+      const body = await del<{ ok?: boolean; approvalPending?: boolean; ticketNo?: string }>(
+        `/api/k8s/helm-cli/repos/${encodeURIComponent(name)}`,
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      }
+      setRepoList((prev) => prev.filter((r) => r.name !== name));
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
     }
@@ -829,8 +894,38 @@ export default function K8sWorkloads() {
             {tab === 'helm' ? (
               <>
                 {admin ? (
-                  <div style={{ marginBottom: 8 }}>
+                  <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <Button onClick={() => setHelmOpen(true)}>{t('部署 Chart')}</Button>
+                    <Button variant="ghost" onClick={() => setRepoOpen(!repoOpen)}>
+                      {t('仓库管理')}
+                    </Button>
+                  </div>
+                ) : null}
+                {admin && repoOpen ? (
+                  <div style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{t('Helm 仓库')}</div>
+                    {repoList.length === 0 ? (
+                      <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 6 }}>{t('暂无仓库（可添加 bitnami、grafana 等官方 chart 仓库）')}</div>
+                    ) : (
+                      <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {repoList.map((r) => (
+                          <div key={r.name} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+                            <span className="k8s__mono" style={{ minWidth: 100 }}>{r.name}</span>
+                            <span style={{ opacity: 0.6, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.url}</span>
+                            <Button variant="ghost" onClick={() => void doHelmRepoRemove(r.name)}>
+                              {t('删除')}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input className="input" style={{ width: 120 }} value={repoNew.name} onChange={(e) => setRepoNew({ ...repoNew, name: e.target.value })} placeholder={t('仓库名')} />
+                      <input className="input" style={{ flex: 1 }} value={repoNew.url} onChange={(e) => setRepoNew({ ...repoNew, url: e.target.value })} placeholder="https://charts.example.com" />
+                      <Button variant="ghost" onClick={() => void doHelmRepoAdd()}>
+                        {t('添加')}
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
                 {filtered.helm.length === 0 ? (
@@ -1173,8 +1268,49 @@ export default function K8sWorkloads() {
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>Chart</div>
-            <input className="input" value={helmForm.chart} onChange={(e) => setHelmForm({ ...helmForm, chart: e.target.value })} placeholder="bitnami/nginx 或 https://.../nginx.tgz" />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input" style={{ flex: 1 }} value={helmForm.chart} onChange={(e) => setHelmForm({ ...helmForm, chart: e.target.value })} placeholder="bitnami/nginx 或 https://.../nginx.tgz" />
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setRepoKeyword('');
+                  setRepoResults(null);
+                  void doHelmSearch('');
+                }}
+              >
+                {t('浏览仓库')}
+              </Button>
+            </div>
           </div>
+          {repoResults ? (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input" style={{ flex: 1 }} value={repoKeyword} onChange={(e) => setRepoKeyword(e.target.value)} placeholder={t('关键字过滤，如 nginx')} />
+              <Button variant="ghost" onClick={() => void doHelmSearch()}>
+                {t('搜索')}
+              </Button>
+            </div>
+          ) : null}
+          {repoResults ? (
+            <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {(repoResults.length === 0 ? [{ name: t('无结果'), chart: '', version: '', description: '' }] : repoResults).map((r, i) =>
+                !r.chart ? (
+                  <div key="none" style={{ fontSize: 12, opacity: 0.6, padding: 4 }}>{t('无匹配结果')}</div>
+                ) : (
+                  <div
+                    key={`${r.name}-${r.version}-${i}`}
+                    style={{ padding: 4, cursor: 'pointer', borderRadius: 6, fontSize: 13 }}
+                    onClick={() => {
+                      setHelmForm({ ...helmForm, chart: r.name, version: r.version || '' });
+                      setRepoResults(null);
+                    }}
+                  >
+                    <span className="k8s__mono" style={{ fontWeight: 600 }}>{r.name}</span>
+                    <span style={{ opacity: 0.6 }}> · {r.version} · {r.description}</span>
+                  </div>
+                ),
+              )}
+            </div>
+          ) : null}
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>{t('Chart 版本')}（{t('可选')}）</div>
             <input className="input" value={helmForm.version} onChange={(e) => setHelmForm({ ...helmForm, version: e.target.value })} />

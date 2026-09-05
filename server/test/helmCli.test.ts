@@ -12,7 +12,7 @@ process.env.DOCKERMANAGER_DATA = tmpData;
 process.env.HELM_BIN = process.platform === 'win32' ? 'helm-not-exists-1.23' : '/nonexistent/helm-1.23';
 
 import { initStorage, closeDb } from '../src/storage';
-import { helmInstall } from '../src/k8s/helmCli';
+import { helmInstall, helmRepoAdd, helmRepoRemove } from '../src/k8s/helmCli';
 
 before(() => {
   initStorage();
@@ -44,6 +44,13 @@ test('helmCli: release 名称 / 命名空间 / chart 非法字符被拒绝', asy
     () => helmInstall({ name: 'app', namespace: 'default', chart: 'nginx', setArgs: { 'a b': '1' } }),
     /invalid set key/,
   );
+});
+
+test('helmCli: repo add URL 校验与 repo remove 名称校验', async () => {
+  await assert.rejects(() => helmRepoAdd('r1', 'not-a-url'), /invalid repo url/);
+  await assert.rejects(() => helmRepoAdd('r1', 'ftp://x'), /invalid repo url/);
+  await assert.rejects(() => helmRepoAdd('bad name', 'https://charts.example.com'), /invalid repo name/);
+  await assert.rejects(() => helmRepoRemove('bad;name'), /invalid repo name/);
 });
 
 test('helmCli: 合法参数不触发参数校验错误（helm 缺失时为 ENOENT 类错误）', async () => {

@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.25.0] - 2026-09-05
+
+本版本新增 **Helm chart 仓库管理**并**补全 OpenAPI Kubernetes 域文档**。
+
+### Added（新增）
+
+- **Helm 仓库管理**：`GET/POST /api/k8s/helm-cli/repos` 与 `DELETE /repos/:name`（helm repo list / add / remove，添加与删除走 `k8s.write` 审批门禁）；Helm 标签页「仓库管理」区块（管理员）
+- **chart 浏览与搜索**：`GET /api/k8s/helm-cli/search?keyword=`（helm search repo）；部署表单「浏览仓库」弹出仓库 chart 列表（名称 / 版本 / 描述），点击自动填充表单
+- **OpenAPI 补全 Kubernetes 域**：`/api/openapi.json` 新增「Kubernetes」分组 30+ 核心端点（巡检 / 写操作 / 配额 / CRD / Helm），API 文档页可直接浏览与搜索
+
+### Test（测试）
+
+- helmCli.test.ts 新增 repo URL 与名称白名单校验用例；单测 318/318
+
 ## [1.24.0] - 2026-09-05
 
 本版本新增 **K8s 配额巡检**（ResourceQuota / LimitRange / NetworkPolicy）。
