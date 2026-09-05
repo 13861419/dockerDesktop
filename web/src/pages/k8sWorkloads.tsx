@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { get, post } from '../api/client';
+import { del, get, post } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { useToast } from '../components/Toast';
 import Card from '../components/Card';
@@ -126,6 +126,7 @@ export default function K8sWorkloads() {
   const [scaleReplicas, setScaleReplicas] = useState('3');
   const [restartTarget, setRestartTarget] = useState<K8sDeployment | null>(null);
   const [resizeTarget, setResizeTarget] = useState<K8sPvc | null>(null);
+  const [delTarget, setDelTarget] = useState<{ kind: string; namespace: string; name: string } | null>(null);
   const [resizeStorage, setResizeStorage] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [editKind, setEditKind] = useState<'cm' | 'secret' | null>(null);
@@ -253,6 +254,25 @@ export default function K8sWorkloads() {
         showToast(body?.message || t('扩容请求已提交'), 'success');
       }
       setResizeTarget(null);
+      void load(ns);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** 资源删除（1.21.0，后端可能转 202 审批） */
+  const doDelete = async () => {
+    if (!delTarget) return;
+    try {
+      const body = await del<{ ok?: boolean; message?: string; approvalPending?: boolean; ticketNo?: string }>(
+        `/api/k8s/${delTarget.kind}/${encodeURIComponent(delTarget.namespace)}/${encodeURIComponent(delTarget.name)}`,
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(body?.message || t('已删除'), 'success');
+      }
+      setDelTarget(null);
       void load(ns);
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
@@ -553,6 +573,7 @@ export default function K8sWorkloads() {
                       <th>{t('类型')}</th>
                       <th>ClusterIP</th>
                       <th>{t('端口')}</th>
+                      {admin ? <th>{t('操作')}</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -563,6 +584,13 @@ export default function K8sWorkloads() {
                         <td>{s.type || '—'}</td>
                         <td className="k8s__mono">{s.clusterIP || '—'}</td>
                         <td>{s.ports.join(', ') || '—'}</td>
+                        {admin ? (
+                          <td>
+                            <Button variant="ghost" onClick={() => setDelTarget({ kind: 'services', namespace: s.namespace, name: s.name })}>
+                              {t('删除')}
+                            </Button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -607,6 +635,9 @@ export default function K8sWorkloads() {
                               }}
                             >
                               {t('扩容')}
+                            </Button>{' '}
+                            <Button variant="ghost" onClick={() => setDelTarget({ kind: 'pvc', namespace: v.namespace, name: v.name })}>
+                              {t('删除')}
                             </Button>
                           </td>
                         ) : null}
@@ -646,6 +677,9 @@ export default function K8sWorkloads() {
                             <td>
                               <Button variant="ghost" onClick={() => void openEdit('cm', m.namespace, m.name)}>
                                 {t('编辑')}
+                              </Button>{' '}
+                              <Button variant="ghost" onClick={() => setDelTarget({ kind: 'configmaps', namespace: m.namespace, name: m.name })}>
+                                {t('删除')}
                               </Button>
                             </td>
                           ) : null}
@@ -705,6 +739,7 @@ export default function K8sWorkloads() {
                       <th>{t('主机')}</th>
                       <th>TLS</th>
                       <th>{t('创建时间')}</th>
+                      {admin ? <th>{t('操作')}</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -716,6 +751,13 @@ export default function K8sWorkloads() {
                         <td>{i.hosts.join(', ') || '—'}</td>
                         <td>{i.tls.length > 0 ? t('已启用') : '—'}</td>
                         <td>{i.createdAt ? new Date(i.createdAt).toLocaleString() : '—'}</td>
+                        {admin ? (
+                          <td>
+                            <Button variant="ghost" onClick={() => setDelTarget({ kind: 'ingresses', namespace: i.namespace, name: i.name })}>
+                              {t('删除')}
+                            </Button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -885,6 +927,15 @@ export default function K8sWorkloads() {
         confirmText={t('确认重启')}
         onConfirm={() => void doRestart()}
         onCancel={() => setRestartTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={!!delTarget}
+        title={t('删除资源')}
+        message={t(`确认删除 ${delTarget?.kind || ''} ${delTarget?.namespace || ''}/${delTarget?.name || ''}？该操作不可恢复（可能需要管理员审批）。`)}
+        confirmText={t('确认删除')}
+        onConfirm={() => void doDelete()}
+        onCancel={() => setDelTarget(null)}
       />
     </div>
   );

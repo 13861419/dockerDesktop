@@ -1326,14 +1326,42 @@ Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm**, all sup
 | Scale | Adjust Deployment replicas (0-500) — admin, or roles with `k8s.write` |
 | Rolling restart | Trigger a rolling update — admin, or roles with `k8s.write` |
 | Delete Pod | Delete a pod (Deployment-managed pods are recreated) — admin, or roles with `k8s.delete` |
+| Deployment rollback (1.17.0) | Roll back to the previous revision — admin, or roles with `k8s.write` |
+| PVC resize (1.17.0) | Online capacity expansion — admin, or roles with `k8s.write` |
+| Pod recreate (1.17.0) | Delete and let the owning controller recreate — admin, or roles with `k8s.write` |
+| ConfigMap / Secret online editing (1.19.0) | Edit key/value pairs in place — admin, or roles with `k8s.write` |
+| StatefulSet / DaemonSet restart (1.19.0) | Rolling restart — admin, or roles with `k8s.write` |
+| Delete Ingress / Service / PVC / ConfigMap (1.21.0) | Delete the resource (irreversible) — admin, or roles with `k8s.delete` |
 
-When the high-risk approval flow is enabled, operations without direct permission are routed to the Approval Center with an AP- ticket; scale/restart/delete can be configured as two-level approval in system parameters. Frontend entry points (admin visible): Scale / Rolling Restart buttons on Deployment rows in Workloads, and the Delete Pod button on the Pod detail page.
+When the high-risk approval flow is enabled, operations without direct permission are routed to the Approval Center with an AP- ticket; scale/restart/delete can be configured as two-level approval in system parameters. Frontend entry points (admin visible): Scale / Rolling Restart / Rollback buttons on Deployment rows in Workloads, the Delete Pod button on the Pod detail page, and Delete buttons on Ingress / Service / PVC / ConfigMap rows.
 
 ### 43.6 Cluster Events (/k8s/events)
 
 Filter cluster events by namespace, level (Warning / Normal) and keyword, showing object, reason, message, count and last-seen time — useful alongside workload inspection for troubleshooting. Since 1.10.0 a "Live" toggle streams new events over WebSocket in real time (backend auto-reconnects).
 
 ![K8s Cluster Events](../images/k8s-events.png)
+
+### 43.7 Prometheus Metrics Exposure (1.21.0)
+
+The panel can act as a Prometheus exporter for existing Grafana stacks:
+
+| Item | Description |
+| --- | --- |
+| Endpoint | `GET /metrics` (Prometheus text format) |
+| Switch | "Settings → System Parameters → prometheus.enabled" (off by default) |
+| Auth | Optional: set the `PROMETHEUS_TOKEN` environment variable, then send `Authorization: Bearer <token>` or `?token=<token>` |
+| Metrics | dockermanager_host_cpu_percent / mem_percent / disk_percent (latest host metrics); dockermanager_k8s_node_cpu_cores / mem_bytes (latest K8s node samples, label: node) |
+
+Add the panel to `prometheus.yml` scrape targets:
+
+```yaml
+scrape_configs:
+  - job_name: dockermanager
+    metrics_path: /metrics
+    bearer_token: <PROMETHEUS_TOKEN>   # omit when PROMETHEUS_TOKEN is not set
+    static_configs:
+      - targets: ['<panel-host>:9528']
+```
 
 ---
 

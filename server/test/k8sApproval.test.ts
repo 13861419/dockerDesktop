@@ -78,6 +78,23 @@ test('k8sApproval: admin 放行、operator 持 k8s.write 放行 scale、user 被
   assert.strictEqual(shouldGate('user', 'k8s.pod.delete'), true);
 });
 
+test('k8sApproval: 1.21.0 删除动作注册（Ingress/Service/PVC/ConfigMap）', () => {
+  setSetting('approvals.enabled', true);
+  assert.ok('k8s.ingress.delete' in GATE_ACTIONS);
+  assert.ok('k8s.service.delete' in GATE_ACTIONS);
+  assert.ok('k8s.pvc.delete' in GATE_ACTIONS);
+  assert.ok('k8s.configmap.delete' in GATE_ACTIONS);
+  assert.ok(hasExecutor('k8s.ingress.delete'));
+  assert.ok(hasExecutor('k8s.service.delete'));
+  assert.ok(hasExecutor('k8s.pvc.delete'));
+  assert.ok(hasExecutor('k8s.configmap.delete'));
+  // 权限映射 → k8s.delete（operator 无该权限被拦截，admin 放行）
+  assert.strictEqual(shouldGate('operator', 'k8s.ingress.delete'), true);
+  assert.strictEqual(shouldGate('operator', 'k8s.pvc.delete'), true);
+  assert.strictEqual(shouldGate('admin', 'k8s.service.delete'), false);
+  assert.strictEqual(shouldGate('user', 'k8s.configmap.delete'), true);
+});
+
 test('k8sApproval: 提交 k8s 审批单并生成单号与执行器', async () => {
   const { submitApproval: submit, decideApproval: decide } = await import('../src/approvals');
   const { id, ticketNo } = submit({

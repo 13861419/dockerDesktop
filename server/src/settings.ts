@@ -219,6 +219,14 @@ registerSettings([
     group: 'security',
   },
   {
+    key: 'prometheus.enabled',
+    label: '暴露 Prometheus 指标',
+    hint: '开启后通过 GET /metrics（Prometheus 文本格式）暴露主机与 K8s 节点指标，供 Prometheus/Grafana 拉取',
+    type: 'bool',
+    def: false,
+    group: 'security',
+  },
+  {
     key: 'security.ipAllowlist',
     label: '全局 IP 白名单',
     hint: '逗号分隔的 IP/CIDR 列表（如 192.168.1.0/24,10.0.0.1），留空表示不限制；用户级白名单优先于全局',

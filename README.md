@@ -56,7 +56,8 @@
 - **AI 智能助手**（可选）：多模型配置中心（任意 OpenAI 兼容端点：云端 / Ollama / LM Studio 等，密钥加密存储）、AI 对话、文件分析、智能巡检、告警诊断、周报生成、知识库、Token 用量治理；未配置时入口自动隐藏，零常驻依赖
 - **帮助中心**：内置快速上手指南、常见问题 FAQ 与全功能速查表
 - **OpenAPI 接口文档**：`GET /api/openapi.json` 输出 OpenAPI 3.0 核心端点骨架（认证 / 监控 / 容器 / 镜像 / 审批等 34 路径），侧栏「API 文档」页按域分组浏览与搜索，便于二次开发与自动化对接
-- **Kubernetes 只读巡检**：配置 kubeconfig 即可接入一个或多个 K8s 集群（多 context 切换、Pod 部署自动 InCluster）；集群概览（节点状态 / metrics-server 资源占用 / 1d-90d 节点资源趋势，快照落库接入 90 天小时级聚合）、工作负载巡检（Pod / Deployment / Service / PVC / ConfigMap / Secret 脱敏 / Ingress / Helm Release 状态与历史版本）、节点详情与 Pod 级指标落库（1d-90d 曲线）、事件本地持久化（集群不可达时回看 7 天历史）、Pod 详情（容器状态 / 日志 / 交互式终端 / CPU 与内存实时曲线）、集群事件（支持 WebSocket 实时流）；支持有限写操作（扩缩容 / 滚动重启 / 删除 Pod，接入高危操作审批流），不影响 Docker 管理功能
+- **Kubernetes 只读巡检**：配置 kubeconfig 即可接入一个或多个 K8s 集群（多 context 切换、Pod 部署自动 InCluster）；集群概览（节点状态 / metrics-server 资源占用 / 1d-90d 节点资源趋势，快照落库接入 90 天小时级聚合）、工作负载巡检（Pod / Deployment / Service / PVC / ConfigMap / Secret 脱敏 / Ingress / Helm Release 状态与历史版本）、节点详情与 Pod 级指标落库（1d-90d 曲线）、事件本地持久化（集群不可达时回看 7 天历史）、Pod 详情（容器状态 / 日志 / 交互式终端 / CPU 与内存实时曲线）、集群事件（支持 WebSocket 实时流）；支持有限写操作（扩缩容 / 滚动重启 / 删除 Pod / Deployment 回滚 / PVC 扩容 / Pod 重建 / ConfigMap 与 Secret 在线编辑 / StatefulSet 与 DaemonSet 重启 / 删除 Ingress 与 Service 与 PVC 与 ConfigMap，接入高危操作审批流），不影响 Docker 管理功能
+- **Prometheus 指标暴露**：`GET /metrics` 输出主机与 K8s 节点指标（Prometheus 文本格式），`prometheus.enabled` 设置开关控制，支持 Token 鉴权，可直接接入 Prometheus / Grafana 监控体系
 - **系统参数中心化**：面板级参数（安全开关、抓取 Token、压缩配置等）统一在「设置 → 系统参数」管理，带类型与分组描述
 
 ## 🧰 技术栈

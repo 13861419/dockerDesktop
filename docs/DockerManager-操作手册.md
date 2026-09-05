@@ -1361,14 +1361,42 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 | 扩缩容 | 调整 Deployment 副本数（0-500 整数） | 管理员，或持 `k8s.write` 权限的角色 |
 | 滚动重启 | 更新 restartedAt 注解触发滚动更新 | 管理员，或持 `k8s.write` 权限的角色 |
 | 删除 Pod | 删除指定 Pod（Deployment 管理的 Pod 自动重建） | 管理员，或持 `k8s.delete` 权限的角色 |
+| Deployment 回滚（1.17.0） | 回滚到上一个 revision | 管理员，或持 `k8s.write` 权限的角色 |
+| PVC 扩容（1.17.0） | 在线扩容 PVC 容量 | 管理员，或持 `k8s.write` 权限的角色 |
+| Pod 重建（1.17.0） | 删除后由所属控制器重建 | 管理员，或持 `k8s.write` 权限的角色 |
+| ConfigMap / Secret 在线编辑（1.19.0） | 键值在线编辑保存 | 管理员，或持 `k8s.write` 权限的角色 |
+| StatefulSet / DaemonSet 重启（1.19.0） | 滚动重启 | 管理员，或持 `k8s.write` 权限的角色 |
+| 删除 Ingress / Service / PVC / ConfigMap（1.21.0） | 删除对应资源（不可恢复） | 管理员，或持 `k8s.delete` 权限的角色 |
 
-开启「高危操作审批流」后，无对应直接权限的操作会自动转入「审批中心」待审批（携带 AP- 单号），管理员批准后系统执行；删除 Pod 等破坏性操作可在系统参数中配置为两级双签。前端操作入口：工作负载页 Deployment 行「扩缩容 / 滚动重启」按钮、Pod 详情页「删除 Pod」按钮（管理员可见）。
+开启「高危操作审批流」后，无对应直接权限的操作会自动转入「审批中心」待审批（携带 AP- 单号），管理员批准后系统执行；删除 Pod 等破坏性操作可在系统参数中配置为两级双签。前端操作入口：工作负载页 Deployment 行「扩缩容 / 滚动重启 / 回滚」按钮、Pod 详情页「删除 Pod」按钮、Ingress / Service / PVC / ConfigMap 行「删除」按钮（管理员可见）。
 
 ### 43.6 集群事件（/k8s/events)
 
 按命名空间、级别（Warning / Normal）与关键字过滤集群事件，展示对象、原因、消息、发生次数与最近时间，便于配合工作负载巡检定位异常。1.10.0 起支持「实时」开关：开启后通过 WebSocket 接收新事件并实时插入列表（后端断线自动重连）。
 
 ![K8s 集群事件](../images/k8s-events.png)
+
+### 43.7 Prometheus 指标暴露（1.21.0）
+
+面板可作为 Prometheus exporter 输出指标，接入已有 Grafana 监控体系：
+
+| 项目 | 说明 |
+| --- | --- |
+| 端点 | `GET /metrics`（Prometheus 文本格式） |
+| 开关 | 「设置 → 系统参数 → prometheus.enabled」（默认关闭，开启前请评估暴露面） |
+| 鉴权 | 可选：设置环境变量 `PROMETHEUS_TOKEN` 后，请求需携带 `Authorization: Bearer <token>` 或 `?token=<token>` |
+| 指标 | dockermanager_host_cpu_percent / mem_percent / disk_percent（最新主机指标）；dockermanager_k8s_node_cpu_cores / mem_bytes（K8s 节点最新采样，label：node） |
+
+Prometheus 侧仅需在 `prometheus.yml` 中加入抓取目标即可：
+
+```yaml
+scrape_configs:
+  - job_name: dockermanager
+    metrics_path: /metrics
+    bearer_token: <PROMETHEUS_TOKEN>   # 未设置 PROMETHEUS_TOKEN 时可省略
+    static_configs:
+      - targets: ['<面板地址>:9528']
+```
 
 ---
 

@@ -3,6 +3,19 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.21.0] - 2026-09-05
+
+本版本新增 **K8s 资源删除操作补全**与 **Prometheus 指标暴露**。
+
+### Added（新增）
+
+- **资源删除补全**：新增 `DELETE /api/k8s/ingresses/:ns/:name`、`/services/:ns/:name`、`/pvc/:ns/:name`、`/configmaps/:ns/:name` 四个删除端点（全部纳入审批门禁 k8s.delete）；工作负载页 Ingress/Service/PVC/ConfigMap 表格新增「删除」按钮（管理员可见，二次确认）
+- **Prometheus 指标暴露**：新增 `GET /metrics`（Prometheus 文本格式），输出主机 CPU/内存/磁盘使用率与 K8s 节点最新 CPU 核数/内存用量；通过 `prometheus.enabled` 设置开关（默认关闭），支持 `PROMETHEUS_TOKEN` 环境变量鉴权（`Authorization: Bearer` 或 `?token=`）
+
+### Test（测试）
+
+- 新增 prometheus.test.ts（格式 / 最新值 / label 转义 3 例）与 1.21.0 删除动作门禁断言；单测 310/310
+
 ## [1.20.0] - 2026-09-04
 
 本版本新增 **Helm Release 历史版本查看**。

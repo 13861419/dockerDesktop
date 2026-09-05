@@ -43,6 +43,10 @@ export const GATE_ACTIONS: Record<string, { label: string; targetType: string }>
   'k8s.secret.edit': { label: '编辑 K8s Secret', targetType: 'k8s-secret' },
   'k8s.sts.restart': { label: '重启 K8s StatefulSet', targetType: 'k8s-statefulset' },
   'k8s.ds.restart': { label: '重启 K8s DaemonSet', targetType: 'k8s-daemonset' },
+  'k8s.ingress.delete': { label: '删除 K8s Ingress', targetType: 'k8s-ingress' },
+  'k8s.service.delete': { label: '删除 K8s Service', targetType: 'k8s-service' },
+  'k8s.pvc.delete': { label: '删除 K8s PVC', targetType: 'k8s-pvc' },
+  'k8s.configmap.delete': { label: '删除 K8s ConfigMap', targetType: 'k8s-configmap' },
 };
 
 /** 审批记录行 */
@@ -242,6 +246,10 @@ const GATE_PERM_MAP: Record<string, string> = {
   'k8s.secret.edit': 'k8s.write',
   'k8s.sts.restart': 'k8s.write',
   'k8s.ds.restart': 'k8s.write',
+  'k8s.ingress.delete': 'k8s.delete',
+  'k8s.service.delete': 'k8s.delete',
+  'k8s.pvc.delete': 'k8s.delete',
+  'k8s.configmap.delete': 'k8s.delete',
 };
 
 /**
@@ -804,6 +812,30 @@ const executors: Record<string, Executor> = {
     const { restartDaemonSet } = await import('./k8s/k8sClient');
     const [ns, name] = target.split('/');
     return restartDaemonSet(ns, name);
+  },
+  'k8s.ingress.delete': async (target) => {
+    const { networkingApi } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    await networkingApi().deleteNamespacedIngress({ name, namespace: ns });
+    return `Ingress ${target} 已删除`;
+  },
+  'k8s.service.delete': async (target) => {
+    const { coreApi } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    await coreApi().deleteNamespacedService({ name, namespace: ns });
+    return `Service ${target} 已删除`;
+  },
+  'k8s.pvc.delete': async (target) => {
+    const { coreApi } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    await coreApi().deleteNamespacedPersistentVolumeClaim({ name, namespace: ns });
+    return `PVC ${target} 已删除`;
+  },
+  'k8s.configmap.delete': async (target) => {
+    const { coreApi } = await import('./k8s/k8sClient');
+    const [ns, name] = target.split('/');
+    await coreApi().deleteNamespacedConfigMap({ name, namespace: ns });
+    return `ConfigMap ${target} 已删除`;
   },
 };
 

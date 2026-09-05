@@ -62,6 +62,8 @@ import rolesRouter from './routes/roles';
 import selfhealRouter from './routes/selfheal';
 import sqliteBackupRouter from './routes/sqliteBackup';
 import { requireAuth } from './auth';
+import { getSetting } from './settings';
+import { buildPrometheusText } from './prometheus';
 
 const app = express();
 
@@ -139,6 +141,24 @@ app.use('/api/approvals', requireAuth, approvalsRouter);
 app.use('/api/roles', requireAuth, rolesRouter);
 app.use('/api/selfheal', requireAuth, selfhealRouter);
 app.use('/api/sqlite-backups', requireAuth, sqliteBackupRouter);
+
+// Prometheus 指标暴露（1.21.0：prometheus.enabled 开关 + 可选 PROMETHEUS_TOKEN 鉴权）
+app.get('/metrics', (req, res) => {
+  if (!getSetting<boolean>('prometheus.enabled')) {
+    res.status(404).send('Not Found');
+    return;
+  }
+  const token = process.env.PROMETHEUS_TOKEN;
+  if (token) {
+    const auth = req.headers.authorization;
+    const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined;
+    if (req.query.token !== token && bearer !== token) {
+      res.status(401).send('Unauthorized');
+      return;
+    }
+  }
+  res.type('text/plain').send(buildPrometheusText());
+});
 
 
 // 生产模式：托管前端静态文件（单进程部署）

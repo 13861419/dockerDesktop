@@ -608,6 +608,53 @@ router.post('/pvc/:ns/:name/resize', wrap(async (req: Request, res: Response) =>
   }
 }));
 
+/** 资源删除（1.21.0：Ingress / Service / PVC / ConfigMap，门禁统一 k8s.delete） */
+const DELETE_KINDS: Array<{ kind: string; path: string; del: (ns: string, name: string) => Promise<unknown> }> = [
+  {
+    kind: 'ingress',
+    path: '/ingresses/:ns/:name',
+    del: async (ns, name) => {
+      const { networkingApi } = await import('../k8s/k8sClient');
+      await networkingApi().deleteNamespacedIngress({ name, namespace: ns });
+    },
+  },
+  {
+    kind: 'service',
+    path: '/services/:ns/:name',
+    del: async (ns, name) => {
+      const { coreApi } = await import('../k8s/k8sClient');
+      await coreApi().deleteNamespacedService({ name, namespace: ns });
+    },
+  },
+  {
+    kind: 'pvc',
+    path: '/pvc/:ns/:name',
+    del: async (ns, name) => {
+      const { coreApi } = await import('../k8s/k8sClient');
+      await coreApi().deleteNamespacedPersistentVolumeClaim({ name, namespace: ns });
+    },
+  },
+  {
+    kind: 'configmap',
+    path: '/configmaps/:ns/:name',
+    del: async (ns, name) => {
+      const { coreApi } = await import('../k8s/k8sClient');
+      await coreApi().deleteNamespacedConfigMap({ name, namespace: ns });
+    },
+  },
+];
+
+for (const { kind, path: p, del } of DELETE_KINDS) {
+  router.delete(p, wrap(async (req: Request, res: Response) => {
+    const { ns, name } = req.params;
+    const target = `${ns}/${name}`;
+    if (maybeGate(req, res, `k8s.${kind}.delete`, target, {})) return;
+    await del(ns, name);
+    logOperation(res.locals.username, `删除 K8s ${kind}`, `k8s-${kind}`, target);
+    res.json({ ok: true, message: `${kind} ${target} 已删除` });
+  }));
+}
+
 /** Pod 重建（1.17.0，删除后由控制器自动重建；独立 Pod 不支持） */
 router.post('/pods/:ns/:name/recreate', wrap(async (req: Request, res: Response) => {
   const { ns, name } = req.params;
