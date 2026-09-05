@@ -70,6 +70,15 @@
 | 数据存储      | SQLite（node:sqlite，零依赖）                                          |
 | 打包发布      | Windows: NSIS + NSSM + TrayApp · Linux: deb/rpm + systemd · macOS: zip + start.sh          |
 
+## 🍺 macOS Homebrew 安装
+
+```bash
+brew tap 13861419/dockerDesktop https://github.com/13861419/dockerDesktop
+brew install docker-manager
+```
+
+安装后执行 `docker-manager` 启动，浏览器打开 http://localhost:9528（需要 Node.js >= 22，`brew install node@22`）。
+
 ## 💾 数据存储说明（SQLite，无第三方数据库服务）
 
 > 本项目使用 **SQLite** 作为数据存储，基于 **Node.js 内置的** **`node:sqlite`** **模块**，**零第三方依赖、零编译**（无需安装 MySQL / PostgreSQL 等数据库服务）。
