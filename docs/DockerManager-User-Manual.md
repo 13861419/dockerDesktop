@@ -1333,8 +1333,13 @@ Tabs: **Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm / CRD**, a
 | ConfigMap / Secret online editing (1.19.0) | Edit key/value pairs in place — admin, or roles with `k8s.write` |
 | StatefulSet / DaemonSet restart (1.19.0) | Rolling restart — admin, or roles with `k8s.write` |
 | Delete Ingress / Service / PVC / ConfigMap (1.21.0) | Delete the resource (irreversible) — admin, or roles with `k8s.delete` |
+| Helm Chart deployment (1.23.0) | Run install/upgrade via the panel host's helm CLI — admin, or roles with `k8s.write` |
 
-When the high-risk approval flow is enabled, operations without direct permission are routed to the Approval Center with an AP- ticket; scale/restart/delete can be configured as two-level approval in system parameters. Frontend entry points (admin visible): Scale / Rolling Restart / Rollback buttons on Deployment rows in Workloads, the Delete Pod button on the Pod detail page, and Delete buttons on Ingress / Service / PVC / ConfigMap rows.
+When the high-risk approval flow is enabled, operations without direct permission are routed to the Approval Center with an AP- ticket; scale/restart/delete can be configured as two-level approval in system parameters. Frontend entry points (admin visible): Scale / Rolling Restart / Rollback buttons on Deployment rows in Workloads, the Delete Pod button on the Pod detail page, Delete buttons on Ingress / Service / PVC / ConfigMap rows, and the "Deploy Chart" button on the Helm tab.
+
+#### Helm Chart deployment (1.23.0)
+
+Click "Deploy Chart" on the Helm tab (admin visible) to open the deployment form: release name / namespace / chart (e.g. `bitnami/nginx` or a `.tgz` URL) / version (optional) / `--set` args (one `key=value` per line). On submit the panel host's helm CLI runs `helm upgrade --install` (upgrade when it already exists); helm must be installed on the panel host (use the `HELM_BIN` environment variable to point to a custom path). Without direct permission the request is routed to the approval flow. Execution uses a shell-less whitelist of arguments; release names and namespaces must not contain path separators.
 
 ### 43.6 Cluster Events (/k8s/events)
 

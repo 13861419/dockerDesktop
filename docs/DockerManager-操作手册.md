@@ -1368,8 +1368,13 @@ kubeconfig 中包含多个 context（多个集群）时，「集群概览」页�
 | ConfigMap / Secret 在线编辑（1.19.0） | 键值在线编辑保存 | 管理员，或持 `k8s.write` 权限的角色 |
 | StatefulSet / DaemonSet 重启（1.19.0） | 滚动重启 | 管理员，或持 `k8s.write` 权限的角色 |
 | 删除 Ingress / Service / PVC / ConfigMap（1.21.0） | 删除对应资源（不可恢复） | 管理员，或持 `k8s.delete` 权限的角色 |
+| Helm Chart 部署（1.23.0） | 调用面板主机 helm CLI 执行 install/upgrade | 管理员，或持 `k8s.write` 权限的角色 |
 
-开启「高危操作审批流」后，无对应直接权限的操作会自动转入「审批中心」待审批（携带 AP- 单号），管理员批准后系统执行；删除 Pod 等破坏性操作可在系统参数中配置为两级双签。前端操作入口：工作负载页 Deployment 行「扩缩容 / 滚动重启 / 回滚」按钮、Pod 详情页「删除 Pod」按钮、Ingress / Service / PVC / ConfigMap 行「删除」按钮（管理员可见）。
+开启「高危操作审批流」后，无对应直接权限的操作会自动转入「审批中心」待审批（携带 AP- 单号），管理员批准后系统执行；删除 Pod 等破坏性操作可在系统参数中配置为两级双签。前端操作入口：工作负载页 Deployment 行「扩缩容 / 滚动重启 / 回滚」按钮、Pod 详情页「删除 Pod」按钮、Ingress / Service / PVC / ConfigMap 行「删除」按钮、Helm 标签页「部署 Chart」按钮（管理员可见）。
+
+#### Helm Chart 部署（1.23.0）
+
+「Helm」标签页点击「部署 Chart」按钮（管理员可见）打开部署表单：release 名称 / 命名空间 / Chart（如 `bitnami/nginx` 或 `.tgz` 地址）/ 版本（可选）/ `--set` 参数（每行一个 `key=value`）。提交后通过面板主机的 helm CLI 执行 `helm upgrade --install`（已存在即升级），需面板主机已安装 helm（可用 `HELM_BIN` 环境变量指定路径）；无直接权限时自动转入审批流。部署过程为无 shell 的白名单参数执行，release 名称与命名空间不允许路径分隔符。
 
 ### 43.6 集群事件（/k8s/events)
 

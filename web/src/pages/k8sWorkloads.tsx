@@ -144,6 +144,8 @@ export default function K8sWorkloads() {
   const [crds, setCrds] = useState<Array<{ name: string; group: string; version: string; kind: string; plural: string; scope: string; createdAt: number | null }>>([]);
   const [crdItems, setCrdItems] = useState<Array<Record<string, unknown>> | null>(null);
   const [crdTitle, setCrdTitle] = useState('');
+  const [helmOpen, setHelmOpen] = useState(false);
+  const [helmForm, setHelmForm] = useState<{ name: string; namespace: string; chart: string; version: string; set: string }>({ name: '', namespace: 'default', chart: '', version: '', set: '' });
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
@@ -292,6 +294,38 @@ export default function K8sWorkloads() {
       );
       setCrdTitle(name);
       setCrdItems(res.items || []);
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** Helm 部署 Chart（1.23.0，后端可能转 202 审批） */
+  const doHelmInstall = async () => {
+    try {
+      const setArgs: Record<string, string> = {};
+      for (const line of helmForm.set.split('\n')) {
+        const t = line.trim();
+        if (!t) continue;
+        const eq = t.indexOf('=');
+        if (eq > 0) setArgs[t.slice(0, eq)] = t.slice(eq + 1);
+      }
+      const body = await post<{ ok?: boolean; output?: string; approvalPending?: boolean; ticketNo?: string }>(
+        '/api/k8s/helm-cli/install',
+        {
+          name: helmForm.name,
+          namespace: helmForm.namespace,
+          chart: helmForm.chart,
+          version: helmForm.version || undefined,
+          setArgs,
+        },
+      );
+      if (body?.approvalPending) {
+        showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
+      } else {
+        showToast(t('Helm 部署请求已提交'), 'success');
+      }
+      setHelmOpen(false);
+      void load(ns);
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
     }
@@ -785,9 +819,15 @@ export default function K8sWorkloads() {
             ) : null}
 
             {tab === 'helm' ? (
-              filtered.helm.length === 0 ? (
-                <Empty title={t('暂无 Helm Release')} />
-              ) : (
+              <>
+                {admin ? (
+                  <div style={{ marginBottom: 8 }}>
+                    <Button onClick={() => setHelmOpen(true)}>{t('部署 Chart')}</Button>
+                  </div>
+                ) : null}
+                {filtered.helm.length === 0 ? (
+                  <Empty title={t('暂无 Helm Release')} />
+                ) : (
                 <table className="k8s__table">
                   <thead>
                     <tr>
@@ -820,7 +860,8 @@ export default function K8sWorkloads() {
                     ))}
                   </tbody>
                 </table>
-              )
+                )}
+              </>
             ) : null}
 
             {tab === 'crds' ? (
@@ -1015,6 +1056,33 @@ export default function K8sWorkloads() {
               );
             })
           )}
+        </div>
+      </Modal>
+
+      <Modal open={helmOpen} title={t('Helm 部署 Chart')} onClose={() => setHelmOpen(false)} width={520}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>{t('Release 名称')}</div>
+            <input className="input" value={helmForm.name} onChange={(e) => setHelmForm({ ...helmForm, name: e.target.value })} placeholder="my-release" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>{t('命名空间')}</div>
+            <input className="input" value={helmForm.namespace} onChange={(e) => setHelmForm({ ...helmForm, namespace: e.target.value })} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>Chart</div>
+            <input className="input" value={helmForm.chart} onChange={(e) => setHelmForm({ ...helmForm, chart: e.target.value })} placeholder="bitnami/nginx 或 https://.../nginx.tgz" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>{t('Chart 版本')}（{t('可选')}）</div>
+            <input className="input" value={helmForm.version} onChange={(e) => setHelmForm({ ...helmForm, version: e.target.value })} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>{t('--set 参数')}（{t('每行一个 key=value，可选')}）</div>
+            <textarea className="input" rows={3} value={helmForm.set} onChange={(e) => setHelmForm({ ...helmForm, set: e.target.value })} placeholder={'replicaCount=2\nimage.tag=latest'} />
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.6 }}>{t('需面板主机已安装 helm CLI；无直接权限时自动转入审批流')}</div>
+          <Button onClick={() => void doHelmInstall()}>{t('部署')}</Button>
         </div>
       </Modal>
 

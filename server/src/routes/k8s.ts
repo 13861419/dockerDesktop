@@ -529,6 +529,26 @@ router.get('/crds/:name/resources', wrap(async (req: Request) => {
   return { items: await listCrdResources(req.params.name, limit) };
 }));
 
+/** Helm CLI 可用性检测（1.23.0） */
+router.get('/helm-cli/status', wrap(async () => {
+  const { helmCliStatus } = await import('../k8s/helmCli');
+  return helmCliStatus();
+}));
+
+/** helm install/upgrade（1.23.0，门禁 k8s.write） */
+router.post('/helm-cli/install', wrap(async (req: Request, res: Response) => {
+  const { name, namespace, chart, version, setArgs, createNamespace } = req.body || {};
+  if (!name || !namespace || !chart) {
+    res.status(400).json({ error: 'name / namespace / chart 为必填' });
+    return;
+  }
+  if (maybeGate(req, res, 'k8s.helm.install', `${namespace}/${name}`, { name, namespace, chart, version, setArgs, createNamespace })) return;
+  const { helmInstall } = await import('../k8s/helmCli');
+  const output = await helmInstall({ name, namespace, chart, version, setArgs, createNamespace });
+  logOperation(res.locals.username, 'Helm 部署 Chart', 'k8s-helm', `${namespace}/${name}`);
+  res.json({ ok: true, output });
+}));
+
 /** 集群事件 */
 router.get('/events', wrap(async (req: Request) => {
   const ns = nsParam(req);

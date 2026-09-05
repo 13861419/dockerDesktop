@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.23.0] - 2026-09-05
+
+本版本新增 **Helm CLI 集成（Chart 部署）**。
+
+### Added（新增）
+
+- **Helm 部署**：`GET /api/k8s/helm-cli/status` 检测面板主机 helm 可执行文件；`POST /api/k8s/helm-cli/install` 执行 install/upgrade（`helm upgrade --install`，支持 chart 版本 / --set 参数 / 自动创建命名空间），接入审批门禁 `k8s.write`
+- 工作负载「Helm」标签页新增「部署 Chart」按钮（管理员可见）与部署表单弹窗
+- **安全**：`execFile` 无 shell 执行 + 参数白名单校验（release 名称 / 命名空间 / set 键不允许路径分隔符，chart 允许 repo 子路径），支持 `HELM_BIN` 环境变量指定 helm 路径
+
+### Test（测试）
+
+- 新增 helmCli.test.ts（参数白名单校验 2 例）；单测 314/314；api-cloud 既有 flaky 用例加 retry 兜底
+
 ## [1.22.0] - 2026-09-05
 
 本版本新增 **CRD / 自定义资源查看**。

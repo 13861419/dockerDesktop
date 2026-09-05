@@ -47,6 +47,7 @@ export const GATE_ACTIONS: Record<string, { label: string; targetType: string }>
   'k8s.service.delete': { label: '删除 K8s Service', targetType: 'k8s-service' },
   'k8s.pvc.delete': { label: '删除 K8s PVC', targetType: 'k8s-pvc' },
   'k8s.configmap.delete': { label: '删除 K8s ConfigMap', targetType: 'k8s-configmap' },
+  'k8s.helm.install': { label: 'Helm 部署 Chart', targetType: 'k8s-helm' },
 };
 
 /** 审批记录行 */
@@ -250,6 +251,7 @@ const GATE_PERM_MAP: Record<string, string> = {
   'k8s.service.delete': 'k8s.delete',
   'k8s.pvc.delete': 'k8s.delete',
   'k8s.configmap.delete': 'k8s.delete',
+  'k8s.helm.install': 'k8s.write',
 };
 
 /**
@@ -836,6 +838,19 @@ const executors: Record<string, Executor> = {
     const [ns, name] = target.split('/');
     await coreApi().deleteNamespacedConfigMap({ name, namespace: ns });
     return `ConfigMap ${target} 已删除`;
+  },
+  'k8s.helm.install': async (target, payload) => {
+    const { helmInstall } = await import('./k8s/helmCli');
+    const [ns, name] = target.split('/');
+    const output = await helmInstall({
+      name,
+      namespace: ns,
+      chart: payload.chart,
+      version: payload.version,
+      setArgs: payload.setArgs,
+      createNamespace: payload.createNamespace,
+    });
+    return output || `Helm release ${target} 已部署`;
   },
 };
 
