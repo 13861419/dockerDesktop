@@ -114,6 +114,39 @@ jobs:
         with:
           files: sha256sums.txt
 
+  # Homebrew tap 自动更新：需在仓库 Secrets 配置 HOMEBREW_TAP_TOKEN（PAT，含 homebrew-dockerDesktop 仓库写权限）
+  update-tap:
+    runs-on: ubuntu-24.04
+    needs: [checksums]
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Skip if no token
+        if: env.TAP_TOKEN == ''
+        run: echo "HOMEBREW_TAP_TOKEN 未配置，跳过 tap 自动更新（可本地运行 scripts/update-tap.mjs）"
+      - uses: actions/checkout@v5
+        if: env.TAP_TOKEN != ''
+        with:
+          repository: 13861419/homebrew-dockerDesktop
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Update formula version & sha256
+        if: env.TAP_TOKEN != ''
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          SHA=$(curl -sL "https://github.com/13861419/dockerDesktop/releases/download/${GITHUB_REF_NAME}/sha256sums.txt" | grep 'DockerManager-macos.zip' | awk '{print $1}')
+          sed -i "s|releases/download/v[0-9.]*/DockerManager-macos.zip|releases/download/${GITHUB_REF_NAME}/DockerManager-macos.zip|" Formula/docker-manager.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/docker-manager.rb
+          git diff --stat
+      - name: Commit & push
+        if: env.TAP_TOKEN != ''
+        run: |
+          cd $GITHUB_WORKSPACE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update docker-manager to ${GITHUB_REF_NAME}" || echo "no changes"
+          git push
+
   # ==========================================================
   #  2. ghcr.io — Docker 多架构镜像
   # ==========================================================

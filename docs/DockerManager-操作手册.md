@@ -146,6 +146,15 @@ sudo yum install -y docker-manager-*.rpm
 
 运行 `DockerManager-setup-*.exe`，按向导完成安装，支持标准的「安装→卸载」流程。
 
+#### macOS（Homebrew）
+
+```bash
+brew tap 13861419/dockerDesktop https://github.com/13861419/dockerDesktop
+brew install docker-manager
+```
+
+安装后执行 `docker-manager` 启动，浏览器打开 `http://localhost:9528`；`docker-manager-stop` 停止。需要 Node.js ≥ 22（`brew install node@22`）。
+
 ### 0.6 方式五：Docker 运行
 
 ```bash

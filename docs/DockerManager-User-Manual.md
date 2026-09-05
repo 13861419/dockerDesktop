@@ -146,6 +146,15 @@ This registers a Windows service (via NSSM), adds a Start Menu shortcut, and sta
 
 Run `DockerManager-setup-*.exe` and follow the wizard for a standard install/uninstall flow.
 
+#### macOS (Homebrew)
+
+```bash
+brew tap 13861419/dockerDesktop https://github.com/13861419/dockerDesktop
+brew install docker-manager
+```
+
+Run `docker-manager` to start, then open `http://localhost:9528`; use `docker-manager-stop` to stop. Requires Node.js ≥ 22 (`brew install node@22`).
+
 ### 0.6 Option 5: Docker Run
 
 ```bash
