@@ -1342,6 +1342,8 @@ When the high-risk approval flow is enabled, operations without direct permissio
 
 Click "Deploy Chart" on the Helm tab (admin visible) to open the deployment form: release name / namespace / chart (e.g. `bitnami/nginx` or a `.tgz` URL) / version (optional) / `--set` args (one `key=value` per line). On submit the panel host's helm CLI runs `helm upgrade --install` (upgrade when it already exists); helm must be installed on the panel host (use the `HELM_BIN` environment variable to point to a custom path). Without direct permission the request is routed to the approval flow. Execution uses a shell-less whitelist of arguments; release names and namespaces must not contain path separators.
 
+**Local upload** (1.27.0): the "Upload" button in the deployment form accepts a local chart package (.tgz, up to 50MB); the file is stored in a server temp directory and the chart path is auto-filled for direct deployment. Uploaded files are auto-cleaned after 24 hours.
+
 **Repository management** (1.25.0): the "Repository Management" section on the Helm tab (admin) adds / removes chart repositories (`helm repo add/remove`, approval-gated); the "Browse Repositories" button in the deployment form lists charts from added repositories (name / version / description, with keyword search) and auto-fills the chart and version on click.
 
 ### 43.6 Cluster Events (/k8s/events)

@@ -7,6 +7,9 @@
  * - 超时默认 10 分钟。
  */
 import { execFile } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 /** helm 二进制名（可用 HELM_BIN 覆盖为绝对路径） */
 const helmBin = process.env.HELM_BIN || 'helm';
@@ -65,7 +68,9 @@ export async function helmInstall(opts: {
 }): Promise<string> {
   const name = safeId(opts.name, 'invalid release name:');
   const ns = safeId(opts.namespace, 'invalid namespace');
-  const chart = safeChart(opts.chart, 'invalid chart');
+  // 上传的 chart 为服务器本地路径（chartUploadDir 下），跳过 repo 命名白名单
+  const isUploadPath = opts.chart.startsWith(chartUploadDir);
+  const chart = isUploadPath ? opts.chart : safeChart(opts.chart, 'invalid chart');
   const args = ['upgrade', '--install', name, chart, '--namespace', ns, '--output', 'json'];
   if (opts.version) {
     const v = safeChart(opts.version, 'invalid chart version');
@@ -141,4 +146,33 @@ export function helmRepoSearch(keyword: string, limit = 50): Promise<Array<{ nam
       }
     });
   });
+}
+
+/** 上传 chart 包保存目录（1.27.0） */
+const chartUploadDir = path.join(os.tmpdir(), 'dm-helm-charts');
+
+/** 保存上传的 chart 包到临时目录并返回服务器绝对路径（1.27.0） */
+export function saveChartUpload(buf: Buffer): string {
+  fs.mkdirSync(chartUploadDir, { recursive: true });
+  // 清理超过 24 小时的旧上传（审批等待期内的文件保留）
+  try {
+    for (const f of fs.readdirSync(chartUploadDir)) {
+      const full = path.join(chartUploadDir, f);
+      if (Date.now() - fs.statSync(full).mtimeMs > 24 * 3600 * 1000) fs.rmSync(full, { force: true });
+    }
+  } catch {
+    /* ignore */
+  }
+  const file = path.join(chartUploadDir, `chart-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tgz`);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+/** 删除上传的 chart 包（仅允许删除上传目录内文件，1.27.0） */
+export function cleanChartUpload(p: string): void {
+  try {
+    if (String(p || '').startsWith(chartUploadDir)) fs.rmSync(p, { force: true });
+  } catch {
+    /* ignore */
+  }
 }

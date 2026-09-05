@@ -7,6 +7,7 @@
  * - client-node 1.x makeApiClient：方法接收单个参数对象，返回值即 body
  */
 import { Router, Request, Response } from 'express';
+import express from 'express';
 import {
   coreApi,
   appsApi,
@@ -566,6 +567,27 @@ router.get('/helm-cli/search', wrap(async (req: Request) => {
   const { helmRepoSearch } = await import('../k8s/helmCli');
   return { results: await helmRepoSearch(String(req.query.keyword || '')) };
 }));
+
+/** 上传本地 chart 包（1.27.0，k8s.write 门禁）：保存到服务器临时目录，返回 chart 路径 */
+router.post(
+  '/helm-cli/upload-chart',
+  express.raw({ type: 'application/octet-stream', limit: '50mb' }),
+  wrap(async (req: Request, res: Response) => {
+    const raw = req.body as Buffer | undefined;
+    if (!raw || !Buffer.isBuffer(raw) || raw.length === 0) {
+      return res.status(400).json({ error: '请求体为空，请上传 .tgz chart 包（application/octet-stream）' });
+    }
+    // gzip magic 校验（helm chart 包为 gzip 压缩）
+    if (!(raw[0] === 0x1f && raw[1] === 0x8b)) {
+      return res.status(400).json({ error: '文件不是有效的 gzip chart 包（.tgz）' });
+    }
+    if (maybeGate(req, res, 'k8s.helm.install', 'upload', { size: raw.length })) return;
+    const { saveChartUpload } = await import('../k8s/helmCli');
+    const chartPath = saveChartUpload(raw);
+    logOperation(res.locals.username, '上传 Helm chart 包', 'k8s-helm', chartPath.split(/[\\/]/).pop());
+    res.json({ ok: true, path: chartPath });
+  }),
+);
 
 /** 配额巡检：ResourceQuota / LimitRange / NetworkPolicy（1.24.0，只读） */
 router.get('/quotas', wrap(async () => {

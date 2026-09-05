@@ -156,6 +156,7 @@ export default function K8sWorkloads() {
   const [repoResults, setRepoResults] = useState<Array<{ name: string; chart: string; version: string; description: string }> | null>(null);
   const [repoNew, setRepoNew] = useState({ name: '', url: '' });
   const [repoOpen, setRepoOpen] = useState(false);
+  const [chartUploadOpen, setChartUploadOpen] = useState(false);
 
   const load = useCallback(async (nsArg: string) => {
     setLoading(true);
@@ -398,6 +399,24 @@ export default function K8sWorkloads() {
         showToast(`${t('已转审批：等待管理员批准')} (${body.ticketNo || ''})`, 'info');
       }
       setRepoList((prev) => prev.filter((r) => r.name !== name));
+    } catch (err) {
+      showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  /** 上传本地 chart 包（1.27.0），成功后自动填充服务器路径 */
+  const handleChartUpload = async (file: File) => {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const resp = await fetch('/api/k8s/helm-cli/upload-chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${token}` },
+        body: file,
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || t('上传失败'));
+      setHelmForm((f) => ({ ...f, chart: data.path }));
+      showToast(t('chart 包已上传'), 'success');
     } catch (err) {
       showToast(`${t('操作失败')}: ${(err as Error).message}`, 'error');
     }
@@ -1268,8 +1287,11 @@ export default function K8sWorkloads() {
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>Chart</div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
               <input className="input" style={{ flex: 1 }} value={helmForm.chart} onChange={(e) => setHelmForm({ ...helmForm, chart: e.target.value })} placeholder="bitnami/nginx 或 https://.../nginx.tgz" />
+              <Button variant="ghost" onClick={() => setChartUploadOpen(!chartUploadOpen)}>
+                {t('上传')}
+              </Button>
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -1281,6 +1303,19 @@ export default function K8sWorkloads() {
                 {t('浏览仓库')}
               </Button>
             </div>
+            {chartUploadOpen && (
+              <div style={{ marginBottom: 6 }}>
+                <input
+                  type="file"
+                  accept=".tgz"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleChartUpload(f);
+                    setChartUploadOpen(false);
+                  }}
+                />
+              </div>
+            )}
           </div>
           {repoResults ? (
             <div style={{ display: 'flex', gap: 6 }}>
