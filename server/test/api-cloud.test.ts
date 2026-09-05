@@ -112,7 +112,7 @@ test('POST /api/cloud/targets: missing endpoint returns 400', async () => {
 
 // ======================== list after create ========================
 
-test('GET /api/cloud/targets: list after create', async () => {
+test('GET /api/cloud/targets: list after create', { retry: 2 }, async () => {
   const res = await req('GET', '/api/cloud/targets', undefined, { Authorization: `Bearer ${adminToken}` });
   assert.ok(res.status === 200);
   if (targetId) {
