@@ -1481,6 +1481,8 @@ export default function AiAssistantPage() {
                             </td>
                           </tr>
               ))}
+                      </tbody>
+                    </table>
               <div className="ai-assistant__side-title" style={{ marginTop: 16 }}>{t('Prompt 模板')}</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Button size="sm" onClick={async () => {
@@ -1544,8 +1546,6 @@ export default function AiAssistantPage() {
 </Button>
 </div>
 ))}
-                      </tbody>
-                    </table>
                   </div>
                 )}
               </div>

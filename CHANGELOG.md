@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.25.1] - 2026-09-05
+
+### Fixed（修复）
+
+- 修复 AI 助手「配置模型 → 我的配置」中 Prompt 模板区块被错误放置在配置表格 `<tbody>` 内部，浏览器将其移出表格导致右侧大片留白的布局问题；现已移至表格下方正常文档流
+
 ## [1.25.0] - 2026-09-05
 
 本版本新增 **Helm chart 仓库管理**并**补全 OpenAPI Kubernetes 域文档**。
