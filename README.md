@@ -59,6 +59,7 @@
 - **Kubernetes 只读巡检**：配置 kubeconfig 即可接入一个或多个 K8s 集群（多 context 切换、Pod 部署自动 InCluster）；集群概览（节点状态 / metrics-server 资源占用 / 1d-90d 节点资源趋势，快照落库接入 90 天小时级聚合）、工作负载巡检（Pod / Deployment / Service / PVC / ConfigMap / Secret 脱敏 / Ingress / Helm Release 状态与历史版本 / CRD 与自定义资源实例 / 配额与网络策略）、节点详情与 Pod 级指标落库（1d-90d 曲线）、事件本地持久化（集群不可达时回看 7 天历史）、Pod 详情（容器状态 / 日志 / 交互式终端 / CPU 与内存实时曲线）、集群事件（支持 WebSocket 实时流）；支持有限写操作（扩缩容 / 滚动重启 / 删除 Pod / Deployment 回滚 / PVC 扩容 / Pod 重建 / ConfigMap 与 Secret 在线编辑 / StatefulSet 与 DaemonSet 重启 / 删除 Ingress 与 Service 与 PVC 与 ConfigMap / Helm Chart 部署（调用面板主机 helm CLI），接入高危操作审批流），不影响 Docker 管理功能
 - **Prometheus 指标暴露**：`GET /metrics` 输出主机与 K8s 节点指标（Prometheus 文本格式），`prometheus.enabled` 设置开关控制，支持 Token 鉴权，可直接接入 Prometheus / Grafana 监控体系
 - **系统参数中心化**：面板级参数（安全开关、抓取 Token、压缩配置等）统一在「设置 → 系统参数」管理，带类型与分组描述
+- **系统更新检查**：设置 → 关于页一键检查 GitHub Releases 最新版本，展示更新说明与按平台标注的更新包下载链接，支持配置镜像前缀加速（国内网络）
 
 ## 🧰 技术栈
 

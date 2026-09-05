@@ -21,6 +21,7 @@ import { requireAdmin, requireAuth } from '../auth';
 import { listRoles } from '../rbac';
 import { getUserSecurity, setTotpSecret, setIpAllowlist } from '../users';
 import { generateSecret, otpauthUri, verifyTotp } from '../totp';
+import { checkUpdate } from '../systemUpdate';
 
 const router = Router();
 
@@ -384,6 +385,29 @@ router.get(
       });
     } catch (e: any) {
       res.json({ available: false, error: e?.message || '检查更新失败' });
+    }
+  }),
+);
+
+/**
+ * GET /api/system/update/check
+ * 系统更新检查完整版（1.26.0）：最新版本 + 更新说明 + 按平台匹配的下载资产
+ * 支持 update.githubMirror 镜像前缀（设置 → 系统参数），结果缓存 10 分钟
+ */
+router.get(
+  '/update/check',
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      let current = '0.1.0';
+      try {
+        const pkg = require(path.join(__dirname, '..', '..', 'package.json'));
+        current = pkg.version || current;
+      } catch { /* ignore */ }
+      const result = await checkUpdate(current);
+      res.json({ ...result, available: result.hasUpdate });
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || '检查更新失败' });
     }
   }),
 );

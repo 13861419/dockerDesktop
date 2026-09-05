@@ -80,6 +80,9 @@ interface UpdateInfo {
   latest?: string;
   url?: string;
   error?: string;
+  notes?: string;
+  releaseUrl?: string;
+  assets?: Array<{ name: string; url: string; size: number; platform: string }>;
 }
 
 interface CurrentUserInfo {
@@ -427,7 +430,7 @@ export default function SettingsPage() {
   async function handleCheckUpdate() {
     setCheckingUpdate(true);
     try {
-      const info = await get<UpdateInfo>('/api/system/update-check');
+      const info = await get<UpdateInfo>('/api/system/update/check');
       setUpdateInfo(info);
     } catch (e: any) {
       setUpdateInfo({ available: false, error: e?.message || t('检查失败') });
@@ -1397,9 +1400,9 @@ export default function SettingsPage() {
               >
                 {updateInfo?.available ? t('有新版本可用') : updateInfo ? t('已是最新版') : t('检查更新')}
               </Button>
-              {updateInfo?.available && updateInfo.url && (
+              {updateInfo?.available && updateInfo.releaseUrl && (
                 <a
-                  href={updateInfo.url}
+                  href={updateInfo.releaseUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ marginLeft: 8, fontSize: 12, color: '#3b82f6' }}
@@ -1414,6 +1417,32 @@ export default function SettingsPage() {
               )}
             </span>
           </div>
+          {updateInfo?.available && (updateInfo.assets?.length || 0) > 0 && (
+            <div className="settings-info__row" style={{ alignItems: 'flex-start' }}>
+              <span>{t('更新包')}</span>
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                {(updateInfo.assets || []).map((a) => (
+                  <a
+                    key={a.name}
+                    href={a.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: '#3b82f6', wordBreak: 'break-all' }}
+                  >
+                    {a.name}（{Math.round(a.size / 1024 / 1024 * 10) / 10} MB）
+                  </a>
+                ))}
+              </span>
+            </div>
+          )}
+          {updateInfo?.available && updateInfo.notes && (
+            <div className="settings-info__row" style={{ alignItems: 'flex-start' }}>
+              <span>{t('更新说明')}</span>
+              <span style={{ fontSize: 12, opacity: 0.75, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflow: 'auto', maxWidth: 480 }}>
+                {updateInfo.notes}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 外观 / 主题切换 */}

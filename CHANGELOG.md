@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.26.0] - 2026-09-05
+
+本版本新增**系统更新检查完整版**。
+
+### Added（新增）
+
+- **系统更新检查**：`GET /api/system/update/check`（管理员）——对比当前与 GitHub Releases 最新版本，返回更新说明（Release Notes 摘要）与全部更新包资产（按平台标注，含大小）
+- 设置 → 关于页「检查更新」增强：有新版时展示全部更新包下载链接（按平台标注 windows / macos / linux）与更新说明
+- 新增系统参数 `update.githubMirror`（GitHub 镜像前缀）：检查与下载可走镜像加速，结果缓存 10 分钟避免频繁外呼
+
+### Test（测试）
+
+- 新增 update.test.ts（语义化版本比较与平台匹配 2 例）；单测 320/320
+
 ## [1.25.1] - 2026-09-05
 
 ### Fixed（修复）

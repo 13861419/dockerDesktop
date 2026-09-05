@@ -227,6 +227,14 @@ registerSettings([
     group: 'security',
   },
   {
+    key: 'update.githubMirror',
+    label: 'GitHub 镜像前缀',
+    hint: '系统更新检查与下载走该镜像（如 https://ghfast.top），留空直连 GitHub',
+    type: 'string',
+    def: '',
+    group: 'runtime',
+  },
+  {
     key: 'security.ipAllowlist',
     label: '全局 IP 白名单',
     hint: '逗号分隔的 IP/CIDR 列表（如 192.168.1.0/24,10.0.0.1），留空表示不限制；用户级白名单优先于全局',
