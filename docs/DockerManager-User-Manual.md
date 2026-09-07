@@ -51,6 +51,8 @@
 - [40. High-Risk Operation Approval Flow](#40-high-risk-operation-approval-flow)
 - [41. AI Assistant](#41-ai-assistant)
 - [42. Help Center](#42-help-center)
+- [44. Network Topology & Log Aggregation](#44-network-topology--log-aggregation)
+- [45. System Update](#45-system-update)
 - [43. Kubernetes Read-only Inspection](#43-kubernetes-read-only-inspection)
 
 > **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
@@ -1270,6 +1272,8 @@ When enabled:
 
 ---
 
+
+**Prompt template import / export**: the "Templates" section in the AI assistant supports **import / export** — export as an `ai-templates.json` backup file; import validates each entry (duplicates are skipped) and reports imported / skipped counts. The template list supports category filtering, and the "Use" button fills the template into the input box.
 ## 42. Help Center
 
 | Project | Description |
@@ -1391,6 +1395,33 @@ scrape_configs:
 
 ---
 
+---
+
+## 44. Network Topology & Log Aggregation
+
+### 44.1 Network Topology (/topology)
+
+- **Visual view**: graphically shows the container — network — port relationships with live connections;
+- Supports drag and zoom, useful for troubleshooting network reachability and port conflicts.
+
+### 44.2 Log Aggregation (/logs)
+
+- **Cross-container log search**: search output logs across containers at once, with keyword filtering and highlighting;
+- **Export**: search results can be exported for archiving and issue reporting.
+
+## 45. System Update
+
+Entry: **Settings → About → Check for updates** (admin)
+
+| Item | Description |
+| --- | --- |
+| Check | Compares the current version with the latest GitHub Releases version |
+| Packages | When a new version exists, lists all update package download links (labeled per platform: windows / macos / linux, with size) |
+| Release notes | Shows a summary of the latest release notes |
+| Mirror | The `update.githubMirror` system parameter sets a GitHub mirror prefix for both check and download (useful behind restricted networks) |
+| Cache | Check results are cached for 10 minutes |
+
+> How to update: download the package for your platform and replace the deployment (unzip the zip / deb rpm package manager upgrade / npm global update / Docker image swap). A config export from the Backup section is recommended first.
 ## Appendix: Modules & Routes
 
 | Menu | Route | Access |
