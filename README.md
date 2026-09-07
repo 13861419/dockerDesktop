@@ -53,7 +53,7 @@
 - **只读审计角色**：auditor 角色仅可查看监控 / 日志 / 审计信息，不可执行任何变更操作
 - **安全加固**：2FA 双因素认证（TOTP，登录二步验证）、在线会话管理（列表 / 撤销 / 并发上限）、IP 白名单（全局 + 按用户，IPv4 CIDR）、密码策略（最小长度 / 复杂度 / 有效期过期强制改密）
 - **可观测性**：主机 / 容器指标 7 天原始采样 + 90 天小时级聚合长周期曲线（30d/90d 时间窗）；Trivy 漏洞定时扫描计划任务，按 CVE id 差集对比、新增 Critical / High 自动推送告警，镜像详情内置扫描历史对比
-- **AI 智能助手**（可选）：多模型配置中心（任意 OpenAI 兼容端点：云端 / Ollama / LM Studio 等，密钥加密存储）、AI 对话、文件分析、智能巡检、告警诊断、周报生成、知识库、Token 用量治理；未配置时入口自动隐藏，零常驻依赖
+- **AI 智能助手**（可选）：多模型配置中心（任意 OpenAI 兼容端点：云端 / Ollama / LM Studio 等，密钥加密存储）、AI 对话、文件分析、智能巡检、告警诊断、周报生成、知识库、Prompt 模板（分类筛选 + JSON 导入导出）、Token 用量治理；未配置时入口自动隐藏，零常驻依赖
 - **帮助中心**：内置快速上手指南、常见问题 FAQ 与全功能速查表
 - **OpenAPI 接口文档**：`GET /api/openapi.json` 输出 OpenAPI 3.0 核心端点骨架（认证 / 监控 / 容器 / 镜像 / 审批等 34 路径），侧栏「API 文档」页按域分组浏览与搜索，便于二次开发与自动化对接
 - **Kubernetes 只读巡检**：配置 kubeconfig 即可接入一个或多个 K8s 集群（多 context 切换、Pod 部署自动 InCluster）；集群概览（节点状态 / metrics-server 资源占用 / 1d-90d 节点资源趋势，快照落库接入 90 天小时级聚合）、工作负载巡检（Pod / Deployment / Service / PVC / ConfigMap / Secret 脱敏 / Ingress / Helm Release 状态与历史版本 / CRD 与自定义资源实例 / 配额与网络策略）、节点详情与 Pod 级指标落库（1d-90d 曲线）、事件本地持久化（集群不可达时回看 7 天历史）、Pod 详情（容器状态 / 日志 / 交互式终端 / CPU 与内存实时曲线）、集群事件（支持 WebSocket 实时流）；支持有限写操作（扩缩容 / 滚动重启 / 删除 Pod / Deployment 回滚 / PVC 扩容 / Pod 重建 / ConfigMap 与 Secret 在线编辑 / StatefulSet 与 DaemonSet 重启 / 删除 Ingress 与 Service 与 PVC 与 ConfigMap / Helm Chart 部署（调用面板主机 helm CLI），接入高危操作审批流），不影响 Docker 管理功能
