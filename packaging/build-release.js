@@ -122,7 +122,8 @@ function main() {
     const envContent = [
       'PORT=9528',
       'HOST=0.0.0.0',
-      'WEB_DIR=/opt/docker-manager/static',
+      'NODE_ENV=production',
+      'STATIC_DIR=/opt/docker-manager/static',
       'DATA_DIR=/var/lib/docker-manager',
     ].join('\n');
     fs.writeFileSync(path.join(releaseServer, '.env'), envContent + '\n');

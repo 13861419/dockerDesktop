@@ -54,7 +54,8 @@ RUN mkdir -p /data && chown -R dockerman:docker /data /opt/docker-manager
 
 ENV PORT=9528
 ENV HOST=0.0.0.0
-ENV WEB_DIR=/opt/docker-manager/static
+ENV NODE_ENV=production
+ENV STATIC_DIR=/opt/docker-manager/static
 ENV DATA_DIR=/data
 
 EXPOSE 9528

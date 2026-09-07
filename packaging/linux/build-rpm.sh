@@ -69,7 +69,8 @@ docker run --rm --name "$CONTAINER_NAME" \
     cat > \"\$STAGE_DIR/opt/docker-manager/server/.env\" <<'ENVEOF'
 PORT=9528
 HOST=0.0.0.0
-WEB_DIR=/opt/docker-manager/static
+NODE_ENV=production
+STATIC_DIR=/opt/docker-manager/static
 DATA_DIR=/var/lib/docker-manager
 ENVEOF
 

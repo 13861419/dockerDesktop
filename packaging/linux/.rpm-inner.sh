@@ -34,7 +34,8 @@ chmod +x "$STAGE_DIR/opt/docker-manager/install.sh" 2>/dev/null || true
 cat > "$STAGE_DIR/opt/docker-manager/server/.env" <<'ENVEOF'
 PORT=9528
 HOST=0.0.0.0
-WEB_DIR=/opt/docker-manager/static
+NODE_ENV=production
+STATIC_DIR=/opt/docker-manager/static
 DATA_DIR=/var/lib/docker-manager
 ENVEOF
 

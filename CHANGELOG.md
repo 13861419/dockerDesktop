@@ -3,6 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.28.6] - 2026-09-07
+
+### Added（新增）
+
+- 总览「资源监控」新增 GPU 利用率趋势曲线：GPU 采样随主机指标一同落库（30 秒粒度 + 小时级聚合，保留 90 天），支持 10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天时间窗，与 CPU / 内存 / 磁盘曲线共用切换；未检测到 NVIDIA 显卡时不显示
+- 安装时支持自定义 Web 端口：Linux install.sh 交互询问 / `--port` 参数，Windows install.bat 交互输入 / 首个参数指定（默认 9528，含 1-65535 校验与端口占用提醒）；防火墙放行、.env 与安装完成后的访问地址提示联动所选端口
+
+### Fixed（修复）
+
+- 修复 Linux 包（.deb / .rpm / install.sh）与 Docker 镜像部署后首页返回「页面不存在」：生成的 .env 缺少 `NODE_ENV=production`，后端因此不托管前端静态文件（API 正常、仅页面 404）；同时将无效的 `WEB_DIR` 配置项更正为后端实际读取的 `STATIC_DIR`
+
 ## [1.28.5] - 2026-09-05
 
 ### Fixed（修复）

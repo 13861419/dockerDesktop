@@ -68,6 +68,27 @@
 | 操作系统 | Ubuntu 24.04 / Debian 12+ / RHEL 9 系（AlmaLinux / Rocky）/ Windows 10+ / macOS 13+（Node 22） / macOS 13+（Node 22） / macOS 13+（Node 22）（Node 22 要求 glibc ≥ 2.28，CentOS 7 无法运行） | |
 
 > 默认账号 `admin` / `admin888`，默认端口 `9528`。首次登录后请立即修改密码。
+>
+> **自定义端口**：一键安装脚本安装时交互询问端口（回车默认 `9528`），也可非交互指定 `bash install.sh --port 8080`（Windows：`install.bat 8080`）。deb/rpm 静默安装的，装完后修改 `/opt/docker-manager/server/.env` 中的 `PORT=` 并 `sudo systemctl restart docker-manager`，同时放行新端口防火墙；Docker 方式改端口映射 `-p 8080:9528` 即可。
+
+> **提示：若系统 Node.js 版本低于 22**（如 Ubuntu 24.04 自带 Node 18），服务会因缺少内置 `node:sqlite` 模块而启动失败（`ERR_UNKNOWN_BUILTIN_MODULE`）。可用 NodeSource 升级到 Node 22：
+>
+> ```bash
+> sudo apt-get remove -y nodejs
+> sudo apt-get install -y curl
+> curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+> sudo apt-get install -y nodejs
+> node -v    # 应显示 v22.x
+> sudo systemctl restart docker-manager
+> ```
+>
+> **查询本地系统 Node.js 版本**，必须运行：
+>
+> ```bash
+> apt list --installed | grep nodejs
+> ```
+>
+> 注意：`node -v` 只显示 PATH 中排在最前的 node（可能来自 nvm 等用户级安装），而 systemd 服务实际使用的是 apt 安装的系统级 Node。若查询结果显示版本低于 22（如 `nodejs/now 18.19.1`），请按上述命令升级。
 
 ### 0.2 方式一：APT 源安装（Ubuntu / Debian，推荐）
 
@@ -127,7 +148,7 @@ sudo rpm -ivh docker-manager-*.rpm
 sudo yum install -y docker-manager-*.rpm
 ```
 
-安装脚本会自动完成：创建用户、配置 systemd 服务、放行防火墙端口。
+安装脚本会自动完成：创建用户、配置 systemd 服务、放行防火墙端口。脚本安装时支持自定义 Web 端口：`bash install.sh --port 8080` 或交互输入（回车默认 `9528`）。
 
 ### 0.5 方式四：Windows 安装
 
@@ -265,7 +286,7 @@ journalctl -u docker-manager -f
 
 - **Docker 引擎信息**：版本、运行状态、容器 / 镜像 / 数据卷 / 网络数量统计。
 - **系统资源实时曲线**：CPU、内存、网络、磁盘分区使用情况（ECharts 曲线）。
-- **GPU 监控（可选）**：若宿主机为 NVIDIA 显卡，展示 GPU 利用率 / 显存 / 温度（调用 `nvidia-smi`）。
+- **GPU 监控（可选）**：若宿主机为 NVIDIA 显卡，展示 GPU 利用率 / 显存 / 温度（调用 `nvidia-smi`），并提供与其他资源共用时间窗（10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天）的利用率趋势曲线。
 
 所有数据随时间实时刷新，无需手动操作即可掌握集群健康度。
 

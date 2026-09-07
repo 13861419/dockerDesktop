@@ -230,6 +230,17 @@ dockerDesktop/
   - **Windows**：Docker Desktop（需开启 WSL2 后端）
   - **Linux**：docker-ce + docker-compose-plugin（Ubuntu 24 / Debian 12 / RHEL 9 系；Node 22 要求 glibc ≥ 2.28，CentOS 7 无法运行）
 
+> **提示：若 Linux 系统 Node.js 版本低于 22**（如 Ubuntu 24.04 自带 Node 18），服务会因缺少内置 `node:sqlite` 模块而启动失败（`ERR_UNKNOWN_BUILTIN_MODULE`）。可用 NodeSource 升级到 Node 22：
+>
+> ```bash
+> sudo apt-get remove -y nodejs
+> sudo apt-get install -y curl
+> curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+> sudo apt-get install -y nodejs
+> node -v    # 应显示 v22.x
+> sudo systemctl restart docker-manager
+> ```
+
 ## 🚀 安装与运行
 
 ### 方式一：源码开发模式

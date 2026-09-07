@@ -25,7 +25,20 @@ set "APP_DIR=%SERVER_DIR%"
 set "NSSM=%INSTALL_DIR%\nssm.exe"
 set "LOG_DIR=%INSTALL_DIR%\logs"
 set "STATIC_DIR=%INSTALL_DIR%\static"
+
+rem Web port: first arg wins (silent install), otherwise ask (Enter = 9528)
 set "PORT=9528"
+if not "%~1"=="" set "PORT=%~1"
+if "%~1"=="" (
+    echo Web port (press Enter for default 9528^)
+    set /p "USERPORT=Port: "
+    if not "!USERPORT!"=="" set "PORT=!USERPORT!"
+)
+rem Validate port: numeric only, 1-65535
+echo !PORT!| findstr /r "^[0-9][0-9]*$" >nul
+if errorlevel 1 ( echo [ERROR] Port must be a number, got "!PORT!" & pause & exit /b 1 )
+if !PORT! LSS 1 ( echo [ERROR] Port must be 1-65535 & pause & exit /b 1 )
+if !PORT! GTR 65535 ( echo [ERROR] Port must be 1-65535 & pause & exit /b 1 )
 
 echo ============================================
 echo   DockerManager install

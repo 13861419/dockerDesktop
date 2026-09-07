@@ -71,6 +71,19 @@
 | OS | Ubuntu 24.04 / Debian 12+ / CentOS 7+ / RHEL / Windows 10+ / macOS 13+ / macOS 13+ / macOS 13+ | |
 
 > Default credentials: `admin` / `admin888`. Change the password immediately after first login.
+>
+> **Custom port**: one-click install scripts ask for the port interactively (Enter = default `9528`), or pass it non-interactively via `bash install.sh --port 8080` (Windows: `install.bat 8080`). For silent deb/rpm installs, change `PORT=` in `/opt/docker-manager/server/.env` and run `sudo systemctl restart docker-manager` after installation (open the new port in the firewall); for Docker, just change the port mapping `-p 8080:9528`.
+
+> **Note: if the system Node.js is older than 22** (e.g. Node 18 shipped with Ubuntu 24.04), the service fails to start with `ERR_UNKNOWN_BUILTIN_MODULE` because the built-in `node:sqlite` module is missing. Upgrade to Node 22 via NodeSource:
+>
+> ```bash
+> sudo apt-get remove -y nodejs
+> sudo apt-get install -y curl
+> curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+> sudo apt-get install -y nodejs
+> node -v    # should print v22.x
+> sudo systemctl restart docker-manager
+> ```
 
 ### 0.2 Option 1: APT Repository (Ubuntu / Debian)
 
@@ -130,7 +143,7 @@ sudo rpm -ivh docker-manager-*.rpm
 sudo yum install -y docker-manager-*.rpm
 ```
 
-The install script automatically creates the service user, configures systemd, and opens the firewall port.
+The install script automatically creates the service user, configures systemd, and opens the firewall port. It supports a custom web port: `bash install.sh --port 8080` or interactive input (Enter = default `9528`).
 
 ### 0.5 Option 4: Windows Install
 
@@ -260,7 +273,7 @@ The default landing page shows:
 
 - **Docker engine info**: version, status, and counts of containers / images / volumes / networks.
 - **Live resource graphs**: CPU, memory, network, and disk usage (ECharts).
-- **GPU monitoring (optional)**: on NVIDIA hosts, GPU utilization / VRAM / temperature via `nvidia-smi`.
+- **GPU monitoring (optional)**: on NVIDIA hosts, GPU utilization / VRAM / temperature via `nvidia-smi`, plus a utilization trend chart sharing the same time windows (10m / 1h / 24h / 7d / 30d / 90d).
 
 All data refreshes in real time — no manual action needed.
 

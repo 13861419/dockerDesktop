@@ -27,7 +27,6 @@ SERVICE_NAME="docker-manager"
 SERVICE_USER="dockerman"
 NODE_MAJOR=22
 API_PORT=9528
-WEB_PORT=9526
 DEFAULT_USER="admin"
 DEFAULT_PASS="admin888"
 
@@ -56,6 +55,73 @@ need_root() {
   if [ "$(id -u)" -ne 0 ]; then
     fatal "请以 root 用户运行此脚本（sudo ./install.sh）"
   fi
+}
+
+# ============================================================
+#  端口设置：--port 参数 / 交互输入（回车默认 9528）
+# ============================================================
+usage() {
+  echo "用法: bash install.sh [--port 端口号]"
+  echo "  --port N    设置 Web 访问端口（1-65535，默认 9528）"
+  echo "  -h, --help  查看帮助"
+}
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --port|-p)
+        [ $# -ge 2 ] || fatal "--port 需要指定端口号（如 --port 8080）"
+        API_PORT="$2"
+        shift 2
+        ;;
+      --port=*)
+        API_PORT="${1#*=}"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fatal "未知参数: $1（--help 查看用法）"
+        ;;
+    esac
+  done
+}
+
+# 校验端口：纯数字且 1-65535
+validate_port() {
+  case "$1" in
+    ''|*[!0-9]*) fatal "端口必须是 1-65535 的纯数字: $1" ;;
+  esac
+  if [ "$1" -lt 1 ] || [ "$1" -gt 65535 ]; then
+    fatal "端口范围 1-65535: $1"
+  fi
+}
+
+# 交互式确认端口：回车取默认值；管道等非交互环境直接用默认值
+ask_port() {
+  validate_port "$API_PORT"
+  if [ -t 0 ]; then
+    while true; do
+      local input=""
+      read -r -p "请输入 Web 访问端口（回车使用默认 $API_PORT）: " input || true
+      [ -z "$input" ] && break
+      if ! echo "$input" | grep -qE '^[0-9]+$' || [ "$input" -lt 1 ] || [ "$input" -gt 65535 ]; then
+        warn "端口需为 1-65535 的数字，请重新输入"
+        continue
+      fi
+      API_PORT="$input"
+      break
+    done
+  else
+    info "非交互环境，使用默认端口"
+  fi
+  # 占用提示（不阻断：覆盖安装时端口被自身旧进程占用属正常）
+  if command -v ss &>/dev/null && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$API_PORT\$"; then
+    warn "端口 $API_PORT 已被占用；若为面板旧实例属正常，否则请更换端口重装"
+  fi
+  info "Web 访问端口: $API_PORT"
 }
 
 # ============================================================
@@ -213,7 +279,8 @@ install_app() {
 # Docker Manager 配置
 PORT=${API_PORT}
 HOST=0.0.0.0
-WEB_DIR=${INSTALL_DIR}/static
+NODE_ENV=production
+STATIC_DIR=${INSTALL_DIR}/static
 DATA_DIR=${DATA_DIR}
 EOF
   fi
@@ -275,16 +342,14 @@ UNIT
 #  防火墙放行
 # ============================================================
 configure_firewall() {
-  info "配置防火墙放行端口 $API_PORT, $WEB_PORT ..."
+  info "配置防火墙放行端口 $API_PORT ..."
   if command -v firewall-cmd &>/dev/null; then
     firewall-cmd --permanent --add-port=${API_PORT}/tcp 2>/dev/null || true
-    firewall-cmd --permanent --add-port=${WEB_PORT}/tcp 2>/dev/null || true
     firewall-cmd --reload 2>/dev/null || true
   elif command -v ufw &>/dev/null; then
     ufw allow ${API_PORT}/tcp 2>/dev/null || true
-    ufw allow ${WEB_PORT}/tcp 2>/dev/null || true
   else
-    warn "未检测到防火墙管理工具，请手动放行端口 $API_PORT/$WEB_PORT"
+    warn "未检测到防火墙管理工具，请手动放行端口 $API_PORT"
   fi
 }
 
@@ -300,7 +365,7 @@ print_summary() {
   echo -e "${GREEN}  Docker Manager 安装完成！${NC}"
   echo -e "${CYAN}============================================${NC}"
   echo ""
-  echo -e "  访问地址:  ${GREEN}http://${IP}:${WEB_PORT}${NC}"
+  echo -e "  访问地址:  ${GREEN}http://${IP}:${API_PORT}${NC}"
   echo -e "  默认账号:  ${YELLOW}${DEFAULT_USER} / ${DEFAULT_PASS}${NC}"
   echo ""
   echo -e "  安装目录:  ${INSTALL_DIR}"
@@ -322,7 +387,9 @@ main() {
   echo -e "${CYAN}============================================${NC}"
   echo ""
 
+  parse_args "$@"
   need_root
+  ask_port
   detect_distro
   install_docker
   install_node
