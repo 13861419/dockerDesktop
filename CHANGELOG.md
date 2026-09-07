@@ -10,6 +10,10 @@
 - 总览「资源监控」新增 GPU 利用率趋势曲线：GPU 采样随主机指标一同落库（30 秒粒度 + 小时级聚合，保留 90 天），支持 10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天时间窗，与 CPU / 内存 / 磁盘曲线共用切换；未检测到 NVIDIA 显卡时不显示
 - 安装时支持自定义 Web 端口：Linux install.sh 交互询问 / `--port` 参数，Windows install.bat 交互输入 / 首个参数指定（默认 9528，含 1-65535 校验与端口占用提醒）；防火墙放行、.env 与安装完成后的访问地址提示联动所选端口
 
+### Changed（变更）
+
+- Release CI 修复 Docker 多架构镜像发布：build-push-action 的 `platform` 输入更正为 `platforms`（此前 arm64 镜像被忽略参数后误以 amd64 构建），docker 系 Actions 升级至 node24 大版本（login v4 / metadata v6 / build-push v7 / setup-buildx v4 / setup-qemu v4），消除 Node 20 弃用告警
+
 ### Fixed（修复）
 
 - 修复 Linux 包（.deb / .rpm / install.sh）与 Docker 镜像部署后首页返回「页面不存在」：生成的 .env 缺少 `NODE_ENV=production`，后端因此不托管前端静态文件（API 正常、仅页面 404）；同时将无效的 `WEB_DIR` 配置项更正为后端实际读取的 `STATIC_DIR`
