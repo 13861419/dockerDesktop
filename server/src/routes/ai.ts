@@ -1833,8 +1833,7 @@ router.get(
   requireAuth,
   asyncHandler(async (_req: Request, res: Response) => {
     const templates = listTemplates(undefined, res.locals.username);
-    const custom = templates.filter((t) => !t.isSystem);
-    const data = custom.map((t) => ({ name: t.name, category: t.category, prompt: t.prompt }));
+    const data = templates.map((t) => ({ name: t.name, category: t.category, prompt: t.prompt, isSystem: !!t.isSystem }));
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="ai-templates.json"');
     res.json(data);

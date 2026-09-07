@@ -1545,7 +1545,7 @@ export default function AiAssistantPage() {
 {tp.name}
 {tp.isSystem && <span className="ai-assistant__cap-tag">{t('预置')}</span>}
 </div>
-<Button size="sm" onClick={() => { setInput(tp.prompt); }}>
+<Button size="sm" onClick={() => { setInput(tp.prompt); setShowConfig(false); }}>
 {t('使用')}
 </Button>
 </div>
