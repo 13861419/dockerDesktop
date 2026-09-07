@@ -225,7 +225,13 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@13861419'
       - run: npm install --ignore-scripts
-      - run: npm publish
+      - name: Publish (skip if version already exists)
+        run: |
+          if npm view "@13861419/docker-manager@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+            echo "Version ${GITHUB_REF_NAME#v} already published to npm, skipping"
+          else
+            npm publish
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
