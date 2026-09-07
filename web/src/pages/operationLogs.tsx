@@ -337,8 +337,8 @@ export default function OperationLogsPage() {
   const failCount = stats?.bySuccess.find((s) => s.success === 0)?.count || 0;
   const statsTotal = stats?.total || 0;
   // 结果占比（%）与最大目标类型计数（用于横向条形图宽度基准）
-  const successPct = statsTotal ? Math.round((successCount / statsTotal) * 100) : 0;
-  const failPct = statsTotal ? Math.round((failCount / statsTotal) * 100) : 0;
+const successPct = statsTotal ? Math.round((successCount / statsTotal) * 1000) / 10 : 0;
+const failPct = statsTotal ? Math.round((failCount / statsTotal) * 1000) / 10 : 0;
   const maxTypeCount = Math.max(1, ...(stats?.byType.map((t) => t.count) || []));
   // 审计报表条形图宽度基准（操作者排行 / 按天趋势）
   const maxUserCount = Math.max(1, ...byUserStats.map((u) => u.count));
@@ -480,7 +480,7 @@ export default function OperationLogsPage() {
                   <div className="oplog-stats__bar-track">
                     <div
                       className="oplog-stats__bar oplog-stats__bar--ok"
-                      style={{ width: `${successPct}%` }}
+                      style={{ width: `${Math.max(successPct, successCount > 0 ? 0.5 : 0)}%` }}
                     />
                   </div>
                 </div>
@@ -490,7 +490,7 @@ export default function OperationLogsPage() {
                   <div className="oplog-stats__bar-track">
                     <div
                       className="oplog-stats__bar oplog-stats__bar--fail"
-                      style={{ width: `${failPct}%` }}
+                      style={{ width: `${Math.max(failPct, failCount > 0 ? 0.5 : 0)}%` }}
                     />
                   </div>
                 </div>
