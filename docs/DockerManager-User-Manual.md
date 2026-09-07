@@ -290,6 +290,11 @@ Menu: **Containers** (`/containers`)
 3. Optionally choose **"Create from template"** and pick a template saved under **Container Templates** to reuse its configuration.
 4. Click **Create**.
 
+The "Resource limits" section at the bottom of the dialog can be set at creation time:
+
+- **Memory limit (MB)**: e.g. 512; leave empty for unlimited;
+- **CPU limit (millicores)**: 1000 = 1 core; leave empty for unlimited.
+
 ### 3.3 Container Actions
 
 The **Actions** column of each row offers:
@@ -302,7 +307,16 @@ The **Actions** column of each row offers:
 - **Logs / Details** — open the detail page.
 - **Restart policy** — `no` / `always` / `on-failure` / `unless-stopped`.
 
-### 3.4 Container Detail Page
+### 3.4 Resource Limit Adjustment (CPU / Memory)
+
+Change CPU / memory limits on existing containers (equivalent to `docker update`, applies **online without recreating or interrupting** the container). Two entry points:
+
+1. **Batch adjustment from the list**: select one or more containers in the list → the **"Edit resources"** button on the toolbar → fill in CPU (cores, e.g. 1 or 1.5) and memory (GB, e.g. 2) → Save. Leave a field empty to keep it unchanged, enter **0** to remove that limit. Requires the admin or operator role.
+2. **Single container**: use the CPU / memory limit fields on the container detail page (same rules: empty = unchanged, 0 = remove limit).
+
+> Note: limits are rounded up by the kernel to a valid granularity. When shrinking the memory limit of a running container, Docker requires the new value to be no less than the memory currently in use, otherwise the update fails with an error.
+
+### 3.5 Container Detail Page
 
 Click a container to open its detail page (`containerDetail`), which provides:
 
@@ -311,6 +325,7 @@ Click a container to open its detail page (`containerDetail`), which provides:
 3. **Built-in Web Terminal**: interact with the container's `sh` / `bash` (xterm.js + WebSocket).
 4. **Export config**: export the container configuration as JSON (can be saved as a template).
 5. **File browser**: see the Files section.
+6. **Resource limit adjustment**: online editing of CPU / memory limits, see 3.4.
 
 ![Container list](../images/containers.png)
 
