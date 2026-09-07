@@ -482,6 +482,7 @@ interface HostMetricRow {
   disk_percent: number;
   disk_used: number;
   disk_total: number;
+  gpu_percent: number | null;
   net_rx: number;
   net_tx: number;
   containers_running: number;
@@ -499,6 +500,8 @@ export interface MetricPoint {
   mem: { percent: number; used: number; total: number };
   /** 磁盘使用率与绝对值 */
   disk: { percent: number; used: number; total: number };
+  /** GPU 最大利用率（%，取所有显卡最大值；无 NVIDIA 卡时为 null） */
+  gpu: { percent: number | null };
   /** 网络累计收发字节 */
   net: { rx: number; tx: number };
   /** 容器运行/总数 */
@@ -545,9 +548,9 @@ function persistPoint(point: MonitorPoint): void {
     db.prepare(
       `INSERT INTO host_metrics
         (ts, cpu_percent, cpu_cores, mem_percent, mem_used, mem_total,
-         disk_percent, disk_used, disk_total, net_rx, net_tx,
+         disk_percent, disk_used, disk_total, gpu_percent, net_rx, net_tx,
          containers_running, containers_total, images)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       point.timestamp,
       point.cpu.percent,
@@ -558,6 +561,7 @@ function persistPoint(point: MonitorPoint): void {
       point.disk.percent,
       point.disk.used,
       point.disk.total,
+      gpuMaxUtil(point.gpu),
       point.net.rx,
       point.net.tx,
       point.containers.running,
@@ -607,6 +611,16 @@ function downsample(rows: HostMetricRow[], bucketMs: number): HostMetricRow[] {
 }
 
 /**
+ * 取所有 GPU 的最大利用率作为判定值（与告警判定口径一致）
+ * @param gpu GPU 采集信息数组
+ * @returns 最大利用率（%）；无 NVIDIA 卡时返回 null
+ */
+function gpuMaxUtil(gpu: GpuInfo[] | undefined): number | null {
+  if (!gpu || gpu.length === 0) return null;
+  return Math.max(...gpu.map((g) => g.utilization || 0));
+}
+
+/**
  * 将内存 MonitorPoint 映射为精简 MetricPoint
  * @param p 内存监控点
  * @returns 精简监控点
@@ -617,6 +631,7 @@ function mapMonitorPoint(p: MonitorPoint): MetricPoint {
     cpu: { percent: p.cpu.percent, cores: p.cpu.cores },
     mem: { percent: p.mem.percent, used: p.mem.used, total: p.mem.total },
     disk: { percent: p.disk.percent, used: p.disk.used, total: p.disk.total },
+    gpu: { percent: gpuMaxUtil(p.gpu) },
     net: { rx: p.net.rx, tx: p.net.tx },
     containers: { running: p.containers.running, total: p.containers.total },
     images: p.images,
@@ -634,6 +649,7 @@ function mapHostMetricRow(r: HostMetricRow): MetricPoint {
     cpu: { percent: r.cpu_percent, cores: r.cpu_cores },
     mem: { percent: r.mem_percent, used: r.mem_used, total: r.mem_total },
     disk: { percent: r.disk_percent, used: r.disk_used, total: r.disk_total },
+    gpu: { percent: r.gpu_percent },
     net: { rx: r.net_rx, tx: r.net_tx },
     containers: { running: r.containers_running, total: r.containers_total },
     images: r.images,
@@ -651,6 +667,7 @@ function mapHourlyRow(r: HourlyRow): MetricPoint {
     cpu: { percent: r.cpu_avg, cores: r.cpu_cores },
     mem: { percent: r.memp_avg, used: r.mem_avg, total: r.mem_total },
     disk: { percent: r.disk_avg, used: 0, total: 0 },
+    gpu: { percent: r.gpu_avg ?? null },
     net: { rx: r.rx_sum, tx: r.tx_sum },
     containers: { running: Math.round(r.ctn_avg), total: Math.round(r.ctn_avg) },
     images: Math.round(r.img_avg),
@@ -693,7 +710,7 @@ export function getMetricsRange(range: MetricsRange = '1h'): MetricPoint[] {
     rows = getDb()
       .prepare(
         `SELECT ts, cpu_percent, cpu_cores, mem_percent, mem_used, mem_total,
-                disk_percent, disk_used, disk_total, net_rx, net_tx,
+                disk_percent, disk_used, disk_total, gpu_percent, net_rx, net_tx,
                 containers_running, containers_total, images
          FROM host_metrics
          WHERE ts >= ?

@@ -2773,7 +2773,7 @@ export const en: Record<string, string> = {
   
   // 1.2.0 帮助中心（长周期曲线 / 定时漏洞扫描）
   "如何查看 30 天 / 90 天的历史资源曲线？": "How to view 30d / 90d resource history curves?",
-  "总览「资源监控」与容器详情「资源曲线」的时间窗支持 10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天。7 天内为原始采样（30 秒粒度），30/90 天来自小时级聚合（自动保留 90 天），可观察周级 / 月级容量与负载趋势。": "The time windows of overview \"Resource Monitoring\" and container detail \"Resource Curves\" support 10m / 1h / 24h / 7d / 30d / 90d. Data within 7 days is raw sampling (30s granularity); 30d/90d come from hourly rollups (kept for 90 days) for week- and month-scale trends.",
+  "总览「资源监控」与容器详情「资源曲线」的时间窗支持 10 分钟 / 1 小时 / 24 小时 / 7 天 / 30 天 / 90 天。7 天内为原始采样（30 秒粒度），30/90 天来自小时级聚合（自动保留 90 天），可观察周级 / 月级容量与负载趋势。NVIDIA 主机的 GPU 利用率趋势曲线共用同一时间窗。": "The time windows of overview \"Resource Monitoring\" and container detail \"Resource Curves\" support 10m / 1h / 24h / 7d / 30d / 90d. Data within 7 days is raw sampling (30s granularity); 30d/90d come from hourly rollups (kept for 90 days) for week- and month-scale trends. On NVIDIA hosts the GPU utilization trend shares the same time windows.",
   "如何让面板定时做漏洞扫描并在出现新漏洞时提醒？": "How to schedule vulnerability scans and get alerted on new findings?",
   "「计划任务」新建类型为「漏洞定时扫描」的任务：镜像列表可留空（自动扫描本地镜像前 N 个），建议按周配置 cron 并勾选「新增高危时推送告警」。每次扫描与上次按 CVE id 差集对比，新增 Critical / High 即推送到全部启用渠道；历史结果在镜像详情页「漏洞扫描」卡片中查看。": "Create a scheduled task of type \"Scheduled Vulnerability Scan\": leave the image list empty to auto-scan the first N local images, pick a weekly cron and check \"Notify on new high-severity findings\". Each run diffs CVE ids against the previous scan and pushes new Critical / High findings to all enabled channels; history lives in the image detail page's scan card.",
   

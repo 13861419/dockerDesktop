@@ -51,12 +51,13 @@ interface MonitorHistory {
 /** 历史趋势时间范围（与后端 MetricsRange 一致） */
 type MetricsRange = '10m' | '1h' | '24h' | '7d' | '30d' | '90d';
 
-/** /api/monitor/history/range 返回的精简监控点（剔除 disks/gpu/alerts 等嵌套结构） */
+/** /api/monitor/history/range 返回的精简监控点（剔除 disks/alerts 等嵌套结构） */
 interface MetricPoint {
   timestamp: number;
   cpu: { percent: number; cores: number };
   mem: { percent: number; used: number; total: number };
   disk: { percent: number; used: number; total: number };
+  gpu: { percent: number | null };
   net: { rx: number; tx: number };
   containers: { running: number; total: number };
   images: number;
@@ -88,12 +89,13 @@ interface TopStatsResponse {
   sortBy: string;
 }
 
-/** 曲线渲染所需的最小数据结构（MonitorPoint 与 MetricPoint 均结构兼容） */
+/** 曲线渲染所需的最小数据结构（实时点与历史点经归一化后生成） */
 interface ChartPoint {
   timestamp: number;
   cpu: { percent: number };
   mem: { percent: number };
   disk: { percent: number };
+  gpu: { percent: number | null };
 }
 
 /** 曲线所需的序列数据 */
@@ -346,11 +348,28 @@ export default function OverviewPage() {
   ].map((e) => ({ ...e, label: t(e.label) }));
 
   // ---- 监控数据换算 ----
-  // 曲线数据源：10m 用本地实时缓冲，长跨度用历史趋势；两者结构兼容 ChartPoint
-  const chartData: ChartPoint[] = range === '10m' ? hist : rangeHist;
+  // 曲线数据源：10m 用本地实时缓冲，长跨度用历史趋势。
+  // GPU 归一化：实时点取所有显卡最大利用率，历史点取落库的 gpu_percent（无 N 卡为 null）
+  const chartData: ChartPoint[] = (range === '10m' ? hist : rangeHist).map((p) => {
+    const gpuArr = (p as MonitorPoint).gpu;
+    return {
+      timestamp: p.timestamp,
+      cpu: { percent: p.cpu.percent },
+      mem: { percent: p.mem.percent },
+      disk: { percent: p.disk.percent },
+      gpu: {
+        percent: Array.isArray(gpuArr)
+          ? gpuArr.length > 0
+            ? Math.max(...gpuArr.map((g) => g.utilization || 0))
+            : null
+          : (p as MetricPoint).gpu?.percent ?? null,
+      },
+    };
+  });
   const cpuSeries: SeriesData = { name: 'CPU', color: 'var(--primary, #6366f1)', data: chartData.map((p) => p.cpu.percent) };
   const memSeries: SeriesData = { name: t('内存'), color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
   const diskSeries: SeriesData = { name: t('磁盘'), color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
+  const gpuSeries: SeriesData = { name: 'GPU', color: '#ec4899', data: chartData.map((p) => p.gpu.percent ?? 0) };
 
   // X 轴时间标签：10m 用 HH:MM:SS，长跨度用 MM-DD HH:mm
   const timeLabels = chartData.map((p) => formatTimeLabel(p.timestamp, range));
@@ -360,6 +379,9 @@ export default function OverviewPage() {
 
   // NVIDIA GPU 状态（来自实时监控点，无 GPU 时为空数组）
   const gpus = now?.gpu || [];
+
+  // GPU 趋势图可见性：检测到 N 卡（实时）或趋势数据中存在 GPU 采样（历史）
+  const hasGpuTrend = gpus.length > 0 || chartData.some((p) => p.gpu.percent != null);
 
   // 高占用告警条目（来自实时监控点，无告警时为空数组）
   const alerts = now?.alerts || [];
@@ -545,6 +567,11 @@ export default function OverviewPage() {
             <div className="monitor__chart">
               <LineChart series={[diskSeries]} labels={timeLabels} height={180} unit="%" max={100} />
             </div>
+            {hasGpuTrend && (
+              <div className="monitor__chart">
+                <LineChart series={[gpuSeries]} labels={timeLabels} height={180} unit="%" max={100} />
+              </div>
+            )}
           </div>
 
           {/* 各磁盘分区使用情况 */}

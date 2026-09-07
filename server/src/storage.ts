@@ -404,6 +404,7 @@ function createTables(): void {
       disk_percent       REAL NOT NULL,
       disk_used          INTEGER NOT NULL,
       disk_total         INTEGER NOT NULL,
+      gpu_percent        REAL,                         -- GPU 最大利用率（%，无 NVIDIA 卡时为 NULL）
       net_rx             INTEGER NOT NULL,             -- 累计接收字节
       net_tx             INTEGER NOT NULL,             -- 累计发送字节
       containers_running INTEGER NOT NULL,
@@ -431,6 +432,8 @@ function createTables(): void {
       mem_total  INTEGER NOT NULL DEFAULT 0,           -- host: 内存总量（容器侧 0）
       ctn_avg    REAL NOT NULL DEFAULT 0,              -- host: 运行容器数均值（容器侧 0）
       img_avg    REAL NOT NULL DEFAULT 0,              -- host: 镜像数均值（容器侧 0）
+      gpu_avg    REAL,                                 -- host: GPU 最大利用率均值（%，容器/k8s 侧 NULL）
+      gpu_max    REAL,                                 -- host: GPU 最大利用率峰值（容器/k8s 侧 NULL）
       PRIMARY KEY (scope, key, ts_hour)
     );
 
@@ -887,6 +890,23 @@ function createTables(): void {
   // 迁移：为 notify_channels 补充消息模板列（空=原样透传）
   try {
     d.exec("ALTER TABLE notify_channels ADD COLUMN template TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
+
+  // 迁移：为 host_metrics / metrics_hourly 补充 GPU 利用率列（1.28.6 GPU 历史趋势，无 N 卡时为 NULL）
+  try {
+    d.exec('ALTER TABLE host_metrics ADD COLUMN gpu_percent REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE metrics_hourly ADD COLUMN gpu_avg REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE metrics_hourly ADD COLUMN gpu_max REAL');
   } catch {
     // 列已存在则忽略
   }
