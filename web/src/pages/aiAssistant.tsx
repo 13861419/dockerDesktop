@@ -164,6 +164,7 @@ export default function AiAssistantPage() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
   const [showInspection, setShowInspection] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [inspectionList, setInspectionList] = useState<Array<{ id: number; status: number; summary: string; snapshot: string; createdAt: number }>>([]);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionRunning, setInspectionRunning] = useState(false);
@@ -1060,6 +1061,9 @@ export default function AiAssistantPage() {
 
             <div className="ai-assistant__main">
               <div className="ai-assistant__list-header">
+                <Button size="sm" variant="ghost" onClick={() => setShowTemplates(!showTemplates)}>
+                  {t('Prompt 模板')}
+                </Button>
                 <Select
                   className="ai-assistant__session-select"
                   value={currentSessionId ?? ''}
@@ -1556,6 +1560,61 @@ export default function AiAssistantPage() {
                 )}
               </div>
             )}
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {showTemplates && (
+        <div className="ai-assistant__config-overlay" onClick={() => setShowTemplates(false)}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <Card
+              className={`ai-assistant__usage${fsKey === 'templates' ? ' is-fullscreen' : ''}`}
+              title={t('Prompt 模板')}
+              extra={
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'templates' ? '' : 'templates')}>
+                    {fsKey === 'templates' ? t('还原') : t('全屏')}
+                  </Button>
+                  <Button size="sm" onClick={() => setShowTemplates(false)}>✕</Button>
+                </>
+              }
+            >
+              <div className="ai-assistant__usage-body">
+                {templateCategories.length > 0 && (
+                  <Select
+                    className="ai-assistant__cap-input"
+                    value={templateCategory}
+                    onChange={(e: any) => setTemplateCategory(e.target.value)}
+                    style={{ marginBottom: 10 }}
+                  >
+                    <option value="">{t('全部分类')}</option>
+                    {templateCategories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </Select>
+                )}
+                {templates.filter((tp) => !templateCategory || tp.category === templateCategory).length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 16, opacity: 0.6 }}>{t('暂无模板')}</div>
+                ) : (
+                  templates
+                    .filter((tp) => !templateCategory || tp.category === templateCategory)
+                    .map((tp) => (
+                      <div className="ai-assistant__cap" key={tp.id} style={{ marginBottom: 8 }}>
+                        <div className="ai-assistant__cap-label" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            {tp.name}
+                            {tp.isSystem && <span className="ai-assistant__cap-tag">{t('预置')}</span>}
+                          </div>
+                          <Button size="sm" onClick={() => { setInput(tp.prompt); setShowTemplates(false); showToast(t('已填入输入框'), 'success'); }}>
+                            {t('使用')}
+                          </Button>
+                        </div>
+                        <div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt}</div>
+                      </div>
+                    ))
+                )}
+              </div>
             </Card>
           </div>
         </div>

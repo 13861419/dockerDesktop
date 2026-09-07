@@ -3,11 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [1.27.4] - 2026-09-05
+## [1.28.0] - 2026-09-05
 
-### Fixed（修复）
+### Added（新增）
 
-- Prompt 模板说明完整展示：移除 120 字符截断，完整显示模板内容（自动换行）
+- **Prompt 模板独立入口**：对话区「新建对话」选择器左侧新增「Prompt 模板」按钮，打开模板选择弹框（分类筛选 + 完整说明 + 使用按钮），点「使用」自动填入输入框并关闭弹框；支持全屏切换
+- 配置模型内的模板管理（导入 / 导出 / 列表）保留不变
 
 ## [1.27.6] - 2026-09-05
 
@@ -23,6 +24,12 @@
 - 修复 AI 助手 Prompt 模板导出 / 导入报错：前端读取 localStorage 的 token 键名错误（应为 docker_manager_token），导致请求未携带有效凭证返回 401；现统一走 getToken()
 
 ## [1.27.4] - 2026-09-05
+
+### Fixed（修复）
+
+- Prompt 模板说明完整展示：移除 120 字符截断，完整显示模板内容（自动换行）
+
+## [1.27.3] - 2026-09-05
 
 ### Fixed（修复）
 
@@ -167,240 +174,29 @@
 
 ## [1.19.0] - 2026-09-04
 
-## [1.19.0] - 2026-09-04
-
-本版本为 **K8s 写操作再扩展**：ConfigMap/Secret 在线编辑与 StatefulSet/DaemonSet 滚动重启。
-
-### Added（新增）
-
-- **ConfigMap/Secret 在线编辑**：工作负载页 ConfigMap/Secret 名称新增编辑按钮（管理员），弹窗内按键编辑值（Secret 后端透明处理 base64 编解码）；更新经门禁 `k8s.configmap.edit` / `k8s.secret.edit` 转审批
-- **StatefulSet/DaemonSet 巡检与重启**：新增列表端点与工作负载页标签页（期望/就绪副本），支持滚动重启（门禁 `k8s.sts.restart` / `k8s.ds.restart`）
-
-### Test（测试）
-
-- 单测 305/305；E2E 8/8；docs:check 88 图 0 缺失
-
 ## [1.18.0] - 2026-09-03
-
-## [1.18.0] - 2026-09-03
-
-本版本新增 **K8s 告警联动**：集群 Warning 事件自动推送到通知渠道。
-
-### Added（新增）
-
-- **K8s Warning 事件告警**：eventWatcher 采集到 Warning 级事件时自动派发到告警渠道（复用 notifications 体系），消息含命名空间 / 对象 / 原因 / 摘要与发生次数
-- **防抖去重**：同 namespace/kind/object/reason 组合 5 分钟内只告警一次，防事件风暴；防抖表自动清理
-- **设置开关**：新增 `alerts.k8sEvents`（默认开启，分组：通知），可在设置页关闭
-
-### Test（测试）
-
-- 单测 **305/305**（新增 k8sAlert 2 例：派发落库 + 去重 + 开关）；E2E 8/8；docs:check 88 图 0 缺失
 
 ## [1.17.0] - 2026-09-03
 
-## [1.17.0] - 2026-09-03
-
-本版本为 **K8s 写操作扩展**：Deployment 回滚、PVC 扩容与 Pod 重建，全部纳入审批门禁框架。
-
-### Added（新增）
-
-- **Deployment 回滚**：`POST /api/k8s/deployments/:ns/:name/rollback`——通过 ReplicaSet revision 注解定位历史版本（缺省回滚到上一个）并 patch Deployment 模板
-- **PVC 扩容**：`POST /api/k8s/pvc/:ns/:name/resize`——merge patch `spec.resources.requests.storage`，仅允许增大（K8s 不允许缩小），拒绝非法容量格式
-- **Pod 重建**：`POST /api/k8s/pods/:ns/:name/recreate`——删除 Pod 由所属控制器（Deployment/StatefulSet 等）自动重建，独立 Pod（无 ownerReferences）返回 400
-- **审批门禁扩展**：新增 `k8s.deployment.rollback` / `k8s.pvc.resize`（→ k8s.write）与 `k8s.pod.recreate`（→ k8s.delete）三个门禁动作与执行器；工作负载页新增回滚 / 扩容按钮与扩容弹窗
-
-### Test（测试）
-
-- 单测 **303/303**（新增 1.17.0 动作注册与权限映射断言）；E2E 8/8；docs:check 88 图 0 缺失
-
 ## [1.16.0] - 2026-09-03
-
-## [1.16.0] - 2026-09-03
-
-本版本完成三项收尾：**Helm Release 深度解码**、**K8s 页面截图**与 **test:api 稳定性治理**。
-
-### Added（新增）
-
-- **Helm Release 深度解码**：无依赖迷你 protobuf 解析器解析 release secret 的 `data.release`（含 gzip 兼容），提取 chart 名 / 版本 / 状态（hapi status 枚举）/ 最近部署时间；解析失败自动降级 secret labels 信息；工作负载「Helm」标签页新增 Chart 列
-- **K8s 节点详情页截图**：capture 新增 `k8s-node-detail.png` 并纳入中英文手册
-
-### Fixed（修复）
-
-- **test:api 稳定性治理（35 → 0 失败）**：
-  - HTTP keepAliveTimeout 提升至 65s（修复客户端 keep-alive 复用与 Express 默认 5s 关闭窗口的竞态 ECONNRESET）
-  - 测试并发降至 `--test-concurrency=4`，消除 43 文件全并发轰炸单后端导致的批量超时
-  - `test:api` 全量 **628/628 全绿**（本机实测）
-
-### Test（测试）
-
-- 单测 **302/302**（新增 helmDecode 2 例）；E2E 8/8；docs:check 88 图 0 缺失
 
 ## [1.15.0] - 2026-09-03
 
-## [1.15.0] - 2026-09-03
-
-本版本新增 **macOS 平台支持**。
-
-### Added（新增）
-
-- **macOS 发布包**（`DockerManager-macos.zip`）：解压即用，含 `start.sh` / `stop.sh` 启动脚本与安装说明；要求 Node.js >= 22（依赖均为纯 JS，与构建机平台无关）
-- **macOS Docker 端点自动探测**：新增 darwin 平台分支，优先探测 Docker Desktop for Mac 默认 socket（`~/.docker/run/docker.sock`），回退 `/var/run/docker.sock`；仍支持 `DOCKER_HOST` 覆盖
-- **macOS 默认 shell**：宿主终端默认使用 zsh（回退 sh）
-- **Release CI 新增 build-macos job**：产出 macos zip 并纳入 sha256sums
-
-### Test（测试）
-
-- 单测 300/300；E2E 8/8；macOS 包在 node:22 容器（bash 环境）端到端实测：start.sh 启动 → 登录页 200 → 登录成功；docs:check 86 图 0 缺失
-
 ## [1.14.0] - 2026-09-03
-
-## [1.14.0] - 2026-09-03
-
-本版本修复最后两项平台级遗留：**Pod 终端运行期 resize** 与 **aarch64 .rpm 包**。
-
-### Added（新增）
-
-- **Pod 终端运行期 resize**：client-node 1.4 Exec 内置 ResizeStream 通道，后端桥接前端 `RESIZE,<cols>,<rows>` 消息至终端尺寸通道，窗口/容器尺寸变化实时生效，无需重连
-
-### Fixed（修复）
-
-- **aarch64 .rpm 包恢复产出**：Ubuntu 24.04 rpmbuild 交叉构建时 spec 同时含 `BuildArch` 与 `--target` 会报 "No compatible architectures found for build"；改为非 x86_64 轮次省略 spec 的 BuildArch 行（仅用 --target 指定架构），aarch64 .rpm 恢复为 Release 六件套
-
-### Test（测试）
-
-- 单测 300/300；E2E 8/8；Ubuntu 24.04 容器内 rpmbuild 交叉构建实测通过（arch=aarch64）；docs:check 86 图 0 缺失
 
 ## [1.13.0] - 2026-09-03
 
-## [1.13.0] - 2026-09-03
-
-本版本补齐 **Helm Release 状态展示与 K8s 页面 E2E**。
-
-### Added（新增）
-
-- **Helm Release 状态列**：`/api/k8s/helm-releases` 解析 Helm 3 release secret labels（status），工作负载「Helm」标签页新增状态徽标（deployed 绿色 / 其他警示色）与最近发布时间列
-- **K8s 页面 E2E**：新增 k8s.spec.ts（概览 / 工作负载 / 事件三页路由可达性断言，兼容无集群引导态）
-
-### Fixed（修复）
-
-- 工作负载「Helm」标签页补齐缺失的渲染块与搜索过滤（1.11.0 遗漏：仅注册了 Tab 与数据获取，切换后无内容）
-
-### Test（测试）
-
-- 单测 **300/300**；E2E **8/8**（k8s 3 + smoke 4 + tasks 1）；docs:check 86 图 0 缺失
-
 ## [1.12.0] - 2026-09-03
-
-## [1.12.0] - 2026-09-03
-
-本版本为 **K8s 事件流持久化**：事件本地落库（7 天），集群不可达时仍可回看，并修复测试进程内存配置。
-
-### Added（新增）
-
-- **K8s 事件本地持久化**：事件 Watch 采集与订阅者解耦，服务启动即持续写入 `k8s_events` 表（uid 去重 UPSERT，保留 7 天）；新增 `GET /api/k8s/events-history`（命名空间过滤 + limit）
-- **事件页历史回退**：集群不可达（503）时自动回退展示本地历史事件，并标注"本地历史（集群不可达）"徽标
-
-### Changed（变更）
-
-- test:api 脚本补齐 `NODE_OPTIONS=--max-old-space-size=4096`（与 test:unit 一致），修复本机大数据量下测试进程 OOM
-
-### Test（测试）
-
-- 单测 **300/300**（新增 k8sEvents.test.ts 2 例：uid 去重 UPSERT / 命名空间过滤）；E2E 5/5；docs:check 86 图 0 缺失
 
 ## [1.11.0] - 2026-09-02
 
-## [1.11.0] - 2026-09-02
-
-本版本为 **K8s 巡检深化**：节点详情页、Pod 级指标落库与 Helm Release 只读展示，并补齐 K8s 路由 API 集成测试。
-
-### Added（新增）
-
-- **节点详情页**（`/k8s/node/:name`，点击概览节点行进入）：角色 / 状态 / 可分配 CPU 与内存 / Pod 容量 / OS / kubelet 版本 / 架构等元信息 + 单节点 CPU / 内存小时级趋势曲线（1d-90d）
-- **Pod 级指标落库**：采样器同时采集 Pod 级快照写入 `k8s_pod_metrics`（保留 7 天），rollup 聚合至 metrics_hourly（scope='k8s-pod'，key=ns/pod，保留 90 天）；新增 `GET /api/k8s/pods/:ns/:name/metrics-history` 历史曲线端点
-- **Helm Release 只读列表**：`GET /api/k8s/helm-releases` 解析 Helm release secret（sh.helm.release.v1.*）展示名称 / 命名空间 / 最新 revision / 更新时间；工作负载页新增「Helm」标签页
-- **API 集成测试**：新增 api-k8s.test.ts（未认证 401、status 结构、8 个列表端点 200/503 结构断言），登记至 test:api
-
-### Fixed（修复）
-
-- K8s 指标聚合 INSERT 补齐 metrics_hourly NOT NULL 列默认值（memp_avg/disk_avg/rx_sum/tx_sum），修复聚合时 constraint failed
-
-### Test（测试）
-
-- 单测 **298/298**（含 k8sMetrics 聚合 2 例）；api-k8s.test.ts 3/3；假 apiserver 冒烟 9/9；E2E 5/5；docs:check 86 图 0 缺失
-
 ## [1.10.0] - 2026-09-02
-
-## [1.10.0] - 2026-09-02
-
-本版本为 **K8s 事件流实时化**：集群事件页支持 WebSocket 实时推送，Pod 终端支持多容器切换。
-
-### Added（新增）
-
-- **K8s 事件实时流**
-  - 新增 `/ws/k8sevents` WebSocket：后端以 client-node Watch 订阅集群事件（断线自动重连），广播至所有订阅前端
-  - 集群事件页新增「实时」开关：开启后新事件实时插入列表并计数；仅在有订阅者时建立 watch 连接
-- **Pod 终端多容器切换**：Pod 详情页终端卡片新增容器选择器（多容器 Pod），切换即重建终端会话
-
-### Test（测试）
-
-- WebSocket 冒烟：未认证升级 401 拒绝；假 apiserver 全链路回归 6/6 + 指标曲线 3/3；单测 298/298；E2E 5/5；docs:check 86 图 0 缺失
 
 ## [1.9.0] - 2026-09-02
 
-## [1.9.0] - 2026-09-02
-
-本版本为 **K8s 指标持久化**：节点资源快照定时采样落库，接入 90 天小时级聚合与长周期趋势曲线。
-
-### Added（新增）
-
-- **K8s 节点指标采样器**：`k8s/metrics.ts` 每 60 秒经 metrics-server 采集各节点 CPU（核）与内存（字节）写入 `k8s_metrics` 原始表（保留 7 天）；K8s 不可用时静默跳过
-- **小时级聚合**：复用 metrics_hourly 机制（scope='k8s-node'，key=节点名），rollup 定时器自动聚合，保留 90 天
-- **曲线端点**：`GET /api/k8s/metrics-history?duration=1d|7d|30d|90d` 返回集群级 CPU（毫核）/内存（KiB）聚合曲线
-- **前端**：集群概览新增「节点资源趋势」卡片（时间窗切换 + 双曲线），采样器运行约 1 小时后出图
-
-### Test（测试）
-
-- 新增单测 k8sMetrics.test.ts（2 例）：节点采样小时级聚合（多节点分组）与集群求和查询；单测累计 **298/298**
-- 假 apiserver 冒烟 3/3（曲线端点结构 + 概览回归）；E2E 5/5；docs:check 86 图 0 缺失
-
 ## [1.8.0] - 2026-09-02
 
-## [1.8.0] - 2026-09-02
-
-本版本为 **K8s 巡检扩展**：ConfigMap / Secret（脱敏）/ Ingress 只读巡检。
-
-### Added（新增）
-
-- **配置与网络资源巡检**（工作负载页新增标签页）
-  - `GET /api/k8s/configmaps`：ConfigMap 列表（键名与各值字节量，不含值）
-  - `GET /api/k8s/secrets`：Secret 列表（**安全脱敏**：仅返回键名与类型，永不返回值）
-  - `GET /api/k8s/ingresses`：Ingress 列表（Class / Hosts / TLS 状态）
-  - 前端工作负载页新增「ConfigMap」（含 Secret 脱敏表）与「Ingress」标签页，支持命名空间过滤与搜索
-  - 新增 `k8sClient.networkingApi()` 导出（NetworkingV1 API）
-
-### Test（测试）
-
-- 假 apiserver 全链路冒烟 6/6（configmaps 键名+字节量、secrets 脱敏断言、ingresses hosts/TLS、既有端点回归）；E2E 5/5；docs:check 86 图 0 缺失
-
 ## [1.7.0] - 2026-09-02
-
-## [1.7.0] - 2026-09-02
-
-本版本为 **Kubernetes Pod 终端**：Pod 详情页新增交互式 Web 终端（xterm.js + WebSocket exec），与 Docker 容器终端同款体验。
-
-### Added（新增）
-
-- **Pod 交互式终端**
-  - 新增 `/ws/k8sterminal/:ns/:pod/:container` WebSocket：client-node Exec（TTY 模式）在 Pod 容器内启动 /bin/sh，双向数据桥接至前端 xterm.js
-  - Pod 详情页「打开终端 / 关闭终端」按钮（管理员可见），多容器默认连接首个
-  - 与 Docker 终端一致鉴权（登录且 operator/admin），错误信息友好化（Pod 不存在 / 容器未运行 / 无可用 shell / 集群不支持 exec）
-  - 注：client-node 1.x Exec 暂不支持运行期 resize，终端尺寸由前端自适应
-
-### Test（测试）
-
-- WebSocket 冒烟：未认证升级 401 拒绝；E2E 5/5；docs:check 86 图 0 缺失
-
 
 ## [1.6.0] - 2026-09-02
 
