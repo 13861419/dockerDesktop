@@ -3,6 +3,25 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.27.1] - 2026-09-05
+
+### Fixed（修复）
+
+- 修复 AI 助手 Prompt 模板卡片描述文字显示不完全的问题：长英文 / URL 内容强制断行（word-break + line-clamp 两行优雅截断），预览长度由 40 字符提升至 120 字符
+
+## [1.27.0] - 2026-09-05
+
+本版本新增 **本地 chart 包上传部署**。
+
+### Added（新增）
+
+- **chart 上传部署**：`POST /api/k8s/helm-cli/upload-chart`（application/octet-stream，上限 50MB）接收本地 chart 包（.tgz），保存到服务器临时目录；部署表单「上传」按钮选择文件后自动填充 chart 路径，直接执行 install/upgrade
+- 安全：gzip magic 校验、上传目录内 24 小时自动清理、服务器生成路径不受 repo 命名白名单限制但也不可伪造（以受控目录为前缀）
+
+### Test（测试）
+
+- 单测 320/320
+
 ## [1.26.1] - 2026-09-05
 
 ### Fixed（修复）
