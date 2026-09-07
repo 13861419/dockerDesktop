@@ -1523,71 +1523,6 @@ export default function AiAssistantPage() {
               ))}
                       </tbody>
                     </table>
-              <div className="ai-assistant__side-title" style={{ marginTop: 16 }}>{t('Prompt 模板')}</div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <Button size="sm" onClick={async () => {
-                  try {
-                    const token = getToken();
-                    const resp = await fetch('/api/ai/templates/export', { headers: { Authorization: `Bearer ${token}` } });
-                    if (!resp.ok) throw new Error(t('导出失败'));
-                    const blob = await resp.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'ai-templates.json';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    showToast(t('已导出模板'));
-                  } catch (e: any) { showToast(e?.message || t('导出失败'), 'error'); }
-                }}>{t('导出')}</Button>
-                <Button size="sm" variant="ghost" onClick={async () => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '.json';
-                  input.onchange = async (e: any) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const text = await file.text();
-                      const templates = JSON.parse(text);
-                      if (!Array.isArray(templates)) throw new Error(t('格式错误'));
-                      const r = await post<{ imported: number; errors: string[] }>('/api/ai/templates/import', { templates });
-                      showToast(t('导入 {{v1}} 个模板', { v1: r.imported }));
-                      if (r.errors.length) showToast(t('{{v1}} 条跳过', { v1: r.errors.length }), 'error');
-                      loadAll();
-                    } catch (e: any) { showToast(e?.message || t('导入失败'), 'error'); }
-                  };
-                  input.click();
-                }}>{t('导入')}</Button>
-              </div>
-              {templateCategories.length > 0 && (
-                <Select
-                  className="ai-assistant__cap-input"
-                  value={templateCategory}
-                  onChange={(e: any) => setTemplateCategory(e.target.value)}
-                >
-                  <option value="">{t('全部分类')}</option>
-                  {templateCategories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </Select>
-              )}
-              {templates
-                .filter((t) => !templateCategory || t.category === templateCategory)
-.map((tp) => (
-<div className="ai-assistant__cap" key={tp.id}>
-<div className="ai-assistant__cap-label" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-<div>
-{tp.name}
-{tp.isSystem && <span className="ai-assistant__cap-tag">{t('预置')}</span>}
-</div>
-<Button size="sm" onClick={() => { setInput(tp.prompt); setShowConfig(false); }}>
-{t('使用')}
-</Button>
-</div>
-<div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt}</div>
-</div>
-))}
                   </div>
                 )}
               </div>
@@ -1605,6 +1540,40 @@ export default function AiAssistantPage() {
               title={t('Prompt 模板')}
               extra={
                 <>
+                  <Button size="sm" variant="ghost" onClick={async () => {
+                    try {
+                    const token = getToken();
+                    const resp = await fetch('/api/ai/templates/export', { headers: { Authorization: `Bearer ${token}` } });
+                    if (!resp.ok) throw new Error(t('导出失败'));
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'ai-templates.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showToast(t('已导出模板'));
+                  } catch (e: any) { showToast(e?.message || t('导出失败'), 'error'); }
+                  }}>{t('导出')}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.json';
+                    input.onchange = async (e: any) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const text = await file.text();
+                        const templates = JSON.parse(text);
+                        if (!Array.isArray(templates)) throw new Error(t('格式错误'));
+                        const r = await post<{ imported: number; errors: string[] }>('/api/ai/templates/import', { templates });
+                        showToast(t('导入 {{v1}} 个模板', { v1: r.imported }));
+                        if (r.errors.length) showToast(t('{{v1}} 条跳过', { v1: r.errors.length }), 'error');
+                        loadAll();
+                      } catch (e: any) { showToast(e?.message || t('导入失败'), 'error'); }
+                    };
+                    input.click();
+                  }}>{t('导入')}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'templates' ? '' : 'templates')}>
                     {fsKey === 'templates' ? t('还原') : t('全屏')}
                   </Button>
