@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.28.1] - 2026-09-05
+
+### Added（新增）
+
+- Prompt 模板选择弹框内置「新增模板」表单（名称 / 分类 / 内容），保存后自动刷新列表
+
 ## [1.28.0] - 2026-09-05
 
 ### Added（新增）

@@ -163,8 +163,40 @@ export default function AiAssistantPage() {
   const [dashboard, setDashboard] = useState<AiUsageDashboard | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
-  const [showInspection, setShowInspection] = useState(false);
+    const [showInspection, setShowInspection] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [newTplOpen, setNewTplOpen] = useState(false);
+  const [newTpl, setNewTpl] = useState({ name: '', category: '', prompt: '' });
+  const [newTplSaving, setNewTplSaving] = useState(false);
+
+  /** 新增模板提交（1.28.0） */
+  const doCreateTemplate = async () => {
+    if (!newTpl.name.trim() || !newTpl.prompt.trim()) {
+      showToast(t('名称与内容不能为空'), 'error');
+      return;
+    }
+    setNewTplSaving(true);
+    try {
+      await post('/api/ai/templates', {
+        name: newTpl.name.trim(),
+        category: newTpl.category.trim() || '自定义',
+        prompt: newTpl.prompt,
+      });
+      showToast(t('模板已创建'), 'success');
+      setNewTpl({ name: '', category: '', prompt: '' });
+      setNewTplOpen(false);
+      const [tplRes, catRes] = await Promise.all([
+        get<{ templates: AiPromptTemplate[] }>('/api/ai/templates'),
+        get<{ categories: string[] }>('/api/ai/templates/categories'),
+      ]);
+      setTemplates(tplRes.templates || []);
+      setTemplateCategories(catRes.categories || []);
+    } catch (e: any) {
+      showToast(`${t('操作失败')}: ${(e as Error).message}`, 'error');
+    } finally {
+      setNewTplSaving(false);
+    }
+  };
   const [inspectionList, setInspectionList] = useState<Array<{ id: number; status: number; summary: string; snapshot: string; createdAt: number }>>([]);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionRunning, setInspectionRunning] = useState(false);
@@ -1740,7 +1772,24 @@ export default function AiAssistantPage() {
               {loadingActions ? (
                 <div style={{ textAlign: 'center', padding: 16 }}><span style={{ opacity: 0.6 }}>{t('加载中...')}</span></div>
               ) : (actionView === 'pending' ? pendingActions : allActions).length > 0 ? (
-                <div className="ai-assistant__usage-body">
+              <div className="ai-assistant__usage-body">
+                <div style={{ marginBottom: 10 }}>
+                  <Button size="sm" variant="primary" onClick={() => setNewTplOpen(!newTplOpen)}>
+                    {newTplOpen ? t('收起') : t('+ 新增模板')}
+                  </Button>
+                </div>
+                {newTplOpen && (
+                  <div style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: 10, marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input className="input" style={{ flex: 1 }} value={newTpl.name} onChange={(e) => setNewTpl({ ...newTpl, name: e.target.value })} placeholder={t('模板名称')} />
+                      <input className="input" style={{ width: 140 }} value={newTpl.category} onChange={(e) => setNewTpl({ ...newTpl, category: e.target.value })} placeholder={t('分类（如 通用）')} />
+                    </div>
+                    <textarea className="input" rows={4} value={newTpl.prompt} onChange={(e) => setNewTpl({ ...newTpl, prompt: e.target.value })} placeholder={t('模板内容')} />
+                    <Button variant="primary" size="sm" loading={newTplSaving} onClick={() => void doCreateTemplate()}>
+                      {t('保存')}
+                    </Button>
+                  </div>
+                )}
                   <table className="ai-assistant__usage-table">
                     <thead>
                       <tr>
