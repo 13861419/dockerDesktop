@@ -6,7 +6,7 @@ import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del, postStream } from '../api/client';
-import { isAdmin } from '../api/auth';
+import { getToken, isAdmin } from '../api/auth';
 import type { AiSettings, AiCapability, AiProfile, AiPreset, ContainerListItem, AiUsageResponse, AiChatSessionLite, AiChatSession, AiPromptTemplate, AiAction, AiActionsResponse, AiLocalModelStatus, AiAnalysisResult, OllamaStatus, KnowledgeEntry, KnowledgeListResponse, AiUsageDashboard } from '../types';
 import { translateNow as t } from '../i18n';
 import './aiAssistant.less';
@@ -564,7 +564,7 @@ export default function AiAssistantPage() {
   const exportSession = useCallback(async () => {
     if (currentSessionId == null) return;
     try {
-      const token = localStorage.getItem('token') || '';
+      const token = getToken();
       const resp = await fetch(`/api/ai/sessions/${currentSessionId}/export`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -584,7 +584,7 @@ export default function AiAssistantPage() {
 
   const backupAllSessions = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token') || '';
+      const token = getToken();
       const resp = await fetch('/api/ai/sessions/backup', {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1491,7 +1491,7 @@ export default function AiAssistantPage() {
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Button size="sm" onClick={async () => {
                   try {
-                    const token = localStorage.getItem('token') || '';
+                    const token = getToken();
                     const resp = await fetch('/api/ai/templates/export', { headers: { Authorization: `Bearer ${token}` } });
                     if (!resp.ok) throw new Error(t('导出失败'));
                     const blob = await resp.blob();
