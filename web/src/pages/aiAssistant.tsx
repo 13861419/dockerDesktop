@@ -1540,14 +1540,16 @@ export default function AiAssistantPage() {
                 .filter((t) => !templateCategory || t.category === templateCategory)
 .map((tp) => (
 <div className="ai-assistant__cap" key={tp.id}>
-<div className="ai-assistant__cap-label">
+<div className="ai-assistant__cap-label" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+<div>
 {tp.name}
 {tp.isSystem && <span className="ai-assistant__cap-tag">{t('预置')}</span>}
 </div>
-<div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt.slice(0, 120)}…</div>
 <Button size="sm" onClick={() => { setInput(tp.prompt); }}>
 {t('使用')}
 </Button>
+</div>
+<div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt.slice(0, 120)}…</div>
 </div>
 ))}
                   </div>

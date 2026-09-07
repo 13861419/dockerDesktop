@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.27.3] - 2026-09-05
+
+### Fixed（修复）
+
+- AI 助手 Prompt 模板卡片布局优化：「使用」按钮移至模板名称同行（右侧），说明文字不再限制行数、自动换行完整展示
+
 ## [1.27.2] - 2026-09-05
 
 ### Added（新增）
