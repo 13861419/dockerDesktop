@@ -471,6 +471,20 @@
   overflow-y: auto;
 }
 
+/* 弹框全屏态（1.27.2）：全屏类对 config / usage 两种面板通用 */
+.ai-assistant__config.is-fullscreen,
+.ai-assistant__usage.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh;
+  max-height: none !important;
+  border-radius: 0;
+  z-index: 1001;
+  overflow-y: auto;
+}
+
 .ai-assistant__config-actions {
   display: flex;
   gap: 8px;

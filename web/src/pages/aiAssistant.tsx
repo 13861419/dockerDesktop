@@ -102,6 +102,7 @@ export default function AiAssistantPage() {
   const [currentModelId, setCurrentModelId] = useState<number | null>(null);
 
   const [showConfig, setShowConfig] = useState(false);
+  const [fsKey, setFsKey] = useState('');
   const [activeTab, setActiveTab] = useState<'preset' | 'mine'>('preset');
   const [editing, setEditing] = useState<AiProfile | null>(null);
   const [configForm, setConfigForm] = useState(EMPTY_FORM);
@@ -1219,12 +1220,15 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowConfig(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
           <Card
-            className="ai-assistant__config"
+            className={`ai-assistant__config${fsKey === 'config' ? ' is-fullscreen' : ''}`}
             title={t('模型配置')}
             extra={
-              <Button size="sm" onClick={() => setShowConfig(false)}>
-                {t('关闭')}
-              </Button>
+              <>
+                <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'config' ? '' : 'config')}>{fsKey === 'config' ? t('还原') : t('全屏')}</Button>
+                <Button size="sm" onClick={() => setShowConfig(false)}>
+                  {t('关闭')}
+                </Button>
+              </>
             }
           >
             <div className="ai-assistant__tabs">
@@ -1559,7 +1563,7 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowUsage(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'usage' ? ' is-fullscreen' : ''}`}
               title={t('AI 用量统计')}
               extra={
                 <div className="ai-assistant__usage-actions">
@@ -1568,6 +1572,9 @@ export default function AiAssistantPage() {
                       {t('清空统计')}
                     </Button>
                   )}
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'usage' ? '' : 'usage')}>
+                    {fsKey === 'usage' ? t('还原') : t('全屏')}
+                  </Button>
                   <Button size="sm" onClick={() => setShowUsage(false)}>
                     {t('关闭')}
                   </Button>
@@ -1656,12 +1663,15 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowActions(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'actions' ? ' is-fullscreen' : ''}`}
               title={t('AI 操作审批')}
               extra={
                 <div className="ai-assistant__usage-actions">
                   <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'pending' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('pending'); loadActions('pending'); }}>{t('待审批')}</span>
                   <span className="ai-assistant__cap-tag" style={{ cursor: 'pointer', color: actionView === 'all' ? 'var(--color-primary)' : undefined }} onClick={() => { setActionView('all'); loadActions('all'); }}>{t('全部')}</span>
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'actions' ? '' : 'actions')}>
+                    {fsKey === 'actions' ? t('还原') : t('全屏')}
+                  </Button>
                   <Button size="sm" onClick={() => setShowActions(false)}>✕</Button>
                 </div>
               }
@@ -1734,9 +1744,16 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowOllama(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'ollama' ? ' is-fullscreen' : ''}`}
               title={t('本地模型管理（Ollama）')}
-              extra={<Button size="sm" onClick={() => setShowOllama(false)}>✕</Button>}
+              extra={
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'ollama' ? '' : 'ollama')}>
+                    {fsKey === 'ollama' ? t('还原') : t('全屏')}
+                  </Button>
+                  <Button size="sm" onClick={() => setShowOllama(false)}>✕</Button>
+                </>
+              }
             >
               <div className="ai-assistant__usage-body">
                 <div style={{ marginBottom: 12 }}>
@@ -1819,11 +1836,14 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowKnowledge(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'knowledge' ? ' is-fullscreen' : ''}`}
               title={t('运维知识库')}
               extra={
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input type="file" ref={knowledgeImportRef} style={{ display: 'none' }} accept=".md,.txt,.yml,.yaml,.log,.conf,.json,.ini,.toml,.dockerfile" multiple onChange={(e) => handleBatchImport(e.target.files)} />
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'knowledge' ? '' : 'knowledge')}>
+                    {fsKey === 'knowledge' ? t('还原') : t('全屏')}
+                  </Button>
                   <Button size="sm" onClick={() => knowledgeImportRef.current?.click()}>{t('批量导入')}</Button>
                   <Button size="sm" variant="ghost" onClick={async () => {
                     try {
@@ -1938,9 +1958,16 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowDashboard(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'dashboard' ? ' is-fullscreen' : ''}`}
               title={t('AI 用量仪表盘')}
-              extra={<Button size="sm" onClick={() => setShowDashboard(false)}>✕</Button>}
+              extra={
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'dashboard' ? '' : 'dashboard')}>
+                    {fsKey === 'dashboard' ? t('还原') : t('全屏')}
+                  </Button>
+                  <Button size="sm" onClick={() => setShowDashboard(false)}>✕</Button>
+                </>
+              }
             >
               <div className="ai-assistant__usage-body">
                 {dashboardLoading ? (
@@ -2035,10 +2062,13 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => setShowInspection(false)}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'inspection' ? ' is-fullscreen' : ''}`}
               title={t('AI 定时巡检')}
               extra={
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'inspection' ? '' : 'inspection')}>
+                    {fsKey === 'inspection' ? t('还原') : t('全屏')}
+                  </Button>
                   <Button size="sm" variant="primary" loading={inspectionRunning} onClick={() => runInspectionNow(false)}>{t('立即巡检')}</Button>
                   <Button size="sm" variant="ghost" loading={inspectionRunning} onClick={() => runInspectionNow(true)}>{t('巡检并通知')}</Button>
                   <Button size="sm" onClick={() => setShowInspection(false)}>✕</Button>
@@ -2077,10 +2107,15 @@ export default function AiAssistantPage() {
         <div className="ai-assistant__config-overlay" onClick={() => { setShowAnalyze(false); setAnalyzeResult(null); }}>
           <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <Card
-              className="ai-assistant__usage"
+              className={`ai-assistant__usage${fsKey === 'analyze' ? ' is-fullscreen' : ''}`}
               title={t('文件分析结果')}
               extra={
-                <Button size="sm" onClick={() => { setShowAnalyze(false); setAnalyzeResult(null); }}>✕</Button>
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setFsKey(fsKey === 'analyze' ? '' : 'analyze')}>
+                    {fsKey === 'analyze' ? t('还原') : t('全屏')}
+                  </Button>
+                  <Button size="sm" onClick={() => { setShowAnalyze(false); setAnalyzeResult(null); }}>✕</Button>
+                </>
               }
             >
               <div className="ai-assistant__usage-body">
