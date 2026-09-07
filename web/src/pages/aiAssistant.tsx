@@ -1549,7 +1549,7 @@ export default function AiAssistantPage() {
 {t('使用')}
 </Button>
 </div>
-<div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt.slice(0, 120)}…</div>
+<div className="ai-assistant__cap-desc">{tp.category} · {tp.prompt}</div>
 </div>
 ))}
                   </div>

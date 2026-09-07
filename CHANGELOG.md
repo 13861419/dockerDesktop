@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.27.4] - 2026-09-05
+
+### Fixed（修复）
+
+- Prompt 模板说明完整展示：移除 120 字符截断，完整显示模板内容（自动换行）
+
 ## [1.27.3] - 2026-09-05
 
 ### Fixed（修复）
