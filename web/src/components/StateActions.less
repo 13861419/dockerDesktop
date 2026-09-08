@@ -77,12 +77,10 @@
   color: #fff;
 }
 
-/* 下拉菜单 */
+/* 下拉菜单：fixed 定位脱离表格 sticky/overflow 裁剪，坐标由组件按触发按钮视口位置计算 */
 .state-actions__menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 1000;
   min-width: 112px;
   padding: 4px;
   display: flex;

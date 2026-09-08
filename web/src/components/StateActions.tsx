@@ -46,6 +46,8 @@ export default function StateActions({ state, onAction }: StateActionsProps) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  /** 菜单 fixed 坐标（打开瞬间按触发按钮视口位置计算，避开表格 sticky/overflow 裁剪） */
+  const [menuPos, setMenuPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
   const pill = STATE_PILL[state] || { label: state || '未知', className: 'state-pill--stopped' };
   const avail = availableActions(state);
 
@@ -58,20 +60,44 @@ export default function StateActions({ state, onAction }: StateActionsProps) {
     { key: 'unpause', label: t('恢复') },
   ];
 
-  // 点击组件外部或按 Esc 关闭下拉
+  function toggle() {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const pos: { top: number; left?: number; right?: number } = { top: rect.bottom + 4, left: rect.left };
+      // 靠近视口右缘时改为右对齐展开，避免菜单溢出屏幕
+      if (rect.left + 140 > window.innerWidth) {
+        pos.left = undefined;
+        pos.right = Math.max(0, window.innerWidth - rect.right);
+      }
+      setMenuPos(pos);
+    }
+    setOpen(!open);
+  }
+
   useEffect(() => {
     if (!open) return;
+    // 所在单元格（sticky 列）提升到其它行 sticky 单元格之上，避免菜单被后续行遮住
+    const td = ref.current?.closest('td');
+    const prev = td?.style.zIndex ?? '';
+    if (td) td.style.zIndex = '60';
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
+    const onScroll = () => setOpen(false);
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
+    // 菜单为 fixed 定位，滚动时关闭避免与触发按钮错位
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
     return () => {
+      if (td) td.style.zIndex = prev;
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
     };
   }, [open]);
 
@@ -80,15 +106,18 @@ export default function StateActions({ state, onAction }: StateActionsProps) {
       <button
         type="button"
         className={`state-pill ${pill.className}${open ? ' is-open' : ''}`}
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         title={t('生命周期操作')}
       >
         <span className="state-pill__dot" />
         {t(pill.label)}
         <span className="state-pill__caret" />
       </button>
-      {open && (
-        <div className="state-actions__menu">
+      {open && menuPos && (
+        <div
+          className="state-actions__menu"
+          style={{ top: menuPos.top, left: menuPos.left ?? 'auto', right: menuPos.right ?? 'auto' }}
+        >
           {ACTIONS.map((a) => (
             <button
               key={a.key}
