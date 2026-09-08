@@ -33,7 +33,7 @@ interface DiskPartition {
 interface MonitorPoint {
   timestamp: number;
   cpu: { percent: number; cores: number; hostPercent?: number | null };
-  mem: { percent: number; used: number; total: number };
+  mem: { percent: number; used: number; total: number; containerUsed?: number };
   disk: { percent: number; used: number; total: number };
   disks: DiskPartition[];
   gpu: Array<{ index: number; name: string; utilization: number; memUsed: number; memTotal: number; temperature: number }>;
@@ -55,7 +55,7 @@ type MetricsRange = '10m' | '1h' | '24h' | '7d' | '30d' | '90d';
 interface MetricPoint {
   timestamp: number;
   cpu: { percent: number; cores: number; hostPercent?: number | null };
-  mem: { percent: number; used: number; total: number };
+  mem: { percent: number; used: number; total: number; containerUsed?: number | null };
   disk: { percent: number; used: number; total: number };
   gpu: { percent: number | null };
   net: { rx: number; tx: number };
@@ -89,11 +89,21 @@ interface TopStatsResponse {
   sortBy: string;
 }
 
+/** /api/containers/no-limit 返回单项：未配置 CPU/内存限制的运行中容器 */
+interface NoLimitContainer {
+  id: string;
+  name: string;
+  image: string;
+  cpuPercent: number;
+  /** 内存使用字节数 */
+  memUsed: number;
+}
+
 /** 曲线渲染所需的最小数据结构（实时点与历史点经归一化后生成） */
 interface ChartPoint {
   timestamp: number;
   cpu: { percent: number; hostPercent: number | null };
-  mem: { percent: number };
+  mem: { percent: number; containerUsed: number | null; total: number };
   disk: { percent: number };
   gpu: { percent: number | null };
 }
@@ -183,6 +193,11 @@ export default function OverviewPage() {
   const [topSort, setTopSort] = useState<'cpu' | 'mem'>('cpu');
   /** 容器看板是否加载中（首次） */
   const [topLoading, setTopLoading] = useState(true);
+
+  // ---- 无限制容器风险提示 ----
+  const [noLimit, setNoLimit] = useState<NoLimitContainer[]>([]);
+  /** 用户点击"知道了"后的会话内关闭（刷新页面后若仍有风险容器会重新提示） */
+  const [noLimitDismissed, setNoLimitDismissed] = useState(false);
 
   /**
    * 拉取总览数据
@@ -307,6 +322,25 @@ export default function OverviewPage() {
     };
   }, [topSort]);
 
+  // 无限制容器风险提示：每 60 秒刷新一次（后端另有 5 分钟缓存，避免批量 inspect 压力）
+  useEffect(() => {
+    let cancelled = false;
+    async function loadNoLimit() {
+      try {
+        const res = await get<NoLimitContainer[]>('/api/containers/no-limit');
+        if (!cancelled) setNoLimit(Array.isArray(res) ? res : []);
+      } catch {
+        // 拉取失败静默处理，不影响总览主功能
+      }
+    }
+    loadNoLimit();
+    const timer = setInterval(loadNoLimit, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   if (loading) return <PageLoading />;
 
   if (error) {
@@ -358,7 +392,7 @@ export default function OverviewPage() {
     return {
       timestamp: p.timestamp,
       cpu: { percent: p.cpu.percent, hostPercent },
-      mem: { percent: p.mem.percent },
+      mem: { percent: p.mem.percent, containerUsed: p.mem.containerUsed ?? null, total: p.mem.total },
       disk: { percent: p.disk.percent },
       gpu: {
         percent: Array.isArray(gpuArr)
@@ -377,7 +411,16 @@ export default function OverviewPage() {
     color: '#0ea5e9',
     data: chartData.map((p) => p.cpu.hostPercent ?? 0),
   };
-  const memSeries: SeriesData = { name: t('内存'), color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
+  const memSeries: SeriesData = { name: t('内存（宿主机）'), color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
+  // 容器内存合计占宿主机总内存的百分比：仅当窗口内存在容器内存采样时展示（旧数据无该指标）
+  const hasContainerMem = chartData.some((p) => p.mem.containerUsed != null);
+  const containerMemSeries: SeriesData = {
+    name: t('内存（容器）'),
+    color: '#a855f7',
+    data: chartData.map((p) =>
+      p.mem.containerUsed != null && p.mem.total > 0 ? Math.min(100, (p.mem.containerUsed / p.mem.total) * 100) : 0,
+    ),
+  };
   const diskSeries: SeriesData = { name: t('磁盘'), color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
   const gpuSeries: SeriesData = { name: 'GPU', color: '#ec4899', data: chartData.map((p) => p.gpu.percent ?? 0) };
 
@@ -399,13 +442,12 @@ export default function OverviewPage() {
   const monitorCards = [
     {
       label: 'CPU',
-      value: now ? formatPercent(now.cpu.percent) : '--',
+      // 主值为宿主机整机口径（0-100 归一化），首轮采样缺失时回退容器口径
+      value: now ? formatPercent(now.cpu.hostPercent ?? now.cpu.percent) : '--',
       extra: now
-        ? now.cpu.hostPercent != null
-          ? `${t('整机')} ${formatPercent(now.cpu.hostPercent)} · ${t('{{n}} 核', { n: now.cpu.cores })}`
-          : t('{{n}} 核', { n: now.cpu.cores })
+        ? `${t('容器')} ${formatPercent(now.cpu.percent)} · ${t('{{n}} 核', { n: now.cpu.cores })}`
         : '',
-      percent: now ? now.cpu.percent : undefined,
+      percent: now ? now.cpu.hostPercent ?? now.cpu.percent : undefined,
     },
     {
       label: '内存',
@@ -422,7 +464,11 @@ export default function OverviewPage() {
     {
       label: '容器',
       value: now ? `${now.containers.running} / ${now.containers.total}` : '--',
-      extra: now ? t('运行中 / 总数') : '',
+      extra: now
+        ? now.mem.containerUsed
+          ? `${t('运行中 / 总数')} · ${t('内存合计')} ${formatGB(now.mem.containerUsed)}`
+          : t('运行中 / 总数')
+        : '',
     },
     {
       label: '镜像',
@@ -512,6 +558,53 @@ export default function OverviewPage() {
         )}
       </div>
 
+      {/* 无限制容器风险提示：存在未配置 CPU/内存限制的运行容器时展示 */}
+      {!noLimitDismissed && noLimit.length > 0 && (
+        <div className="overview__monitor">
+          <Card
+            title={t('无资源限制的容器')}
+            extra={
+              <button
+                type="button"
+                onClick={() => setNoLimitDismissed(true)}
+                style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
+              >
+                {t('知道了')}
+              </button>
+            }
+          >
+            <div style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 10 }}>
+              {t('以下容器未配置 CPU / 内存限制，可能占满宿主机资源，建议在创建容器时配置限制。')}
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t('容器')}</th>
+                  <th style={{ width: 140 }}>CPU</th>
+                  <th style={{ width: 140 }}>{t('内存')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {noLimit.map((c) => (
+                  <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/containerDetail/${c.id}`)}>
+                    <td>
+                      <div className="ov-top__name" title={c.name}>
+                        {c.name}
+                      </div>
+                      <div className="ov-top__image" title={c.image}>
+                        {c.image}
+                      </div>
+                    </td>
+                    <td>{c.cpuPercent.toFixed(1)}%</td>
+                    <td>{formatGB(c.memUsed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      )}
+
       {/* 资源监控区 */}
       <div className="overview__monitor">
         <Card
@@ -576,7 +669,22 @@ export default function OverviewPage() {
           </div>
           <div className="monitor__charts">
             <div className="monitor__chart">
-              <LineChart series={hasHostCpu ? [cpuSeries, hostCpuSeries, memSeries] : [cpuSeries, memSeries]} labels={timeLabels} height={180} unit="%" max={100} />
+              <LineChart
+                series={hasHostCpu ? [cpuSeries, hostCpuSeries] : [cpuSeries]}
+                labels={timeLabels}
+                height={180}
+                unit="%"
+                max={100}
+              />
+            </div>
+            <div className="monitor__chart">
+              <LineChart
+                series={hasContainerMem ? [memSeries, containerMemSeries] : [memSeries]}
+                labels={timeLabels}
+                height={180}
+                unit="%"
+                max={100}
+              />
             </div>
             <div className="monitor__chart">
               <LineChart series={[diskSeries]} labels={timeLabels} height={180} unit="%" max={100} />

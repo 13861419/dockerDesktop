@@ -284,6 +284,67 @@ router.get(
   }),
 );
 
+// 无限制容器检测缓存（5 分钟）：避免总览每次轮询都批量 inspect + stats
+interface NoLimitEntry {
+  id: string;
+  name: string;
+  image: string;
+  cpuPercent: number;
+  memUsed: number;
+}
+let noLimitCache: { at: number; data: NoLimitEntry[] } | null = null;
+
+/**
+ * GET /api/containers/no-limit
+ * 列出未配置 CPU 与内存限制的运行中容器（风险提示用）。
+ * 判定口径：HostConfig.NanoCpus === 0 且 HostConfig.Memory === 0。
+ * 结果缓存 5 分钟，避免高频轮询对 Docker Engine 产生批量请求压力。
+ * 注意：该静态路由必须放在 /:id 之前，否则会被 /:id 遮蔽。
+ */
+router.get(
+  '/no-limit',
+  asyncHandler(async (_req: Request, res: Response) => {
+    if (noLimitCache && Date.now() - noLimitCache.at < 5 * 60_000) {
+      res.json(noLimitCache.data);
+      return;
+    }
+    const docker = await getDockerClient();
+    const containers = await docker.listContainers({ all: false });
+    const out: NoLimitEntry[] = [];
+    await Promise.all(
+      containers.map(async (c) => {
+        try {
+          const info = await docker.getContainer(c.Id).inspect();
+          const host = info.HostConfig || ({} as Dockerode.HostConfig);
+          if ((host.NanoCpus || 0) === 0 && (host.Memory || 0) === 0) {
+            let cpuPercent = 0;
+            let memUsed = 0;
+            try {
+              const stats = await docker.getContainer(c.Id).stats({ stream: false });
+              const parsed = parseStats(stats);
+              cpuPercent = Number(parsed.cpuPercent.toFixed(2));
+              memUsed = parsed.memory.usage;
+            } catch {
+              // stats 失败时保留 0 值，不影响列表返回
+            }
+            out.push({
+              id: c.Id.slice(0, 12),
+              name: (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, ''),
+              image: c.Image || '',
+              cpuPercent,
+              memUsed,
+            });
+          }
+        } catch {
+          // 单个容器 inspect 失败时跳过，不影响整体
+        }
+      }),
+    );
+    noLimitCache = { at: Date.now(), data: out };
+    res.json(out);
+  }),
+);
+
 /**
  * 读取内核 socket 表（/proc/net/{tcp,tcp6,udp,udp6}）解析本机监听端口。
  *

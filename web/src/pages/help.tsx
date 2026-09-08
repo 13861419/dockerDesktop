@@ -18,7 +18,7 @@ interface FaqItem {
 /** 快速上手步骤 */
 const QUICK_STEPS: Array<{ title: string; desc: string }> = [
   { title: t('登录面板'), desc: t('浏览器访问 http://localhost:9528，默认账号 admin / admin888，首次登录后请立即修改密码。') },
-  { title: t('总览体检'), desc: t('「总览」查看主机 CPU / 内存 / 磁盘与容器实时曲线；「健康体检」一键扫描镜像、网络、卷与健康配置。') },
+  { title: t('总览体检'), desc: t('「总览」查看主机 CPU / 内存 / 磁盘与容器实时曲线（CPU 与内存均区分「宿主机整机」与「容器口径」双维度，还会提示未配置资源限制的容器）；「健康体检」一键扫描镜像、网络、卷与健康配置。') },
   { title: t('管理容器'), desc: t('「容器」页支持创建、启停、删除、进入终端、查看日志；可按标签、状态、镜像名过滤。') },
   { title: t('编排部署'), desc: t('「Compose」编写或由容器逆向生成 yaml；「应用商店」一键部署常用应用；「编排」管理启动依赖顺序。') },
   { title: t('告警通知'), desc: t('「告警中心」配置 CPU / 内存 / 磁盘 / GPU / 容器级阈值规则，支持「连续周期」防毛刺与「多渠道路由」（全部启用渠道或按级别分流），渠道可自定义消息模板变量，通过 Webhook / 邮件 / 钉钉 / 飞书 / Telegram / 企业微信 / Slack 等渠道推送；「送达率统计」按渠道汇总推送成功率与最近失败明细；「容器自愈」在健康检查失败或容器退出时自动重启/拉起（带冷却期防重）。') },
@@ -115,7 +115,7 @@ const FAQ_ITEMS: FaqItem[] = [
 
 /** 功能速查表：页面路径 -> 用途 */
 const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
-  { path: '/', name: t('总览'), desc: t('引擎信息、资源监控曲线、一键体检入口') },
+  { path: '/', name: t('总览'), desc: t('引擎信息、宿主机×容器双维度资源监控曲线、无限制容器风险提示、一键体检入口') },
   { path: '/health', name: t('健康体检'), desc: t('一键体检：悬空镜像、停止容器、网络、卷、安全配置') },
   { path: '/containers', name: t('容器'), desc: t('生命周期管理、终端、日志、标签过滤、批量操作') },
   { path: '/templates', name: t('容器模板'), desc: t('模板一键创建容器') },

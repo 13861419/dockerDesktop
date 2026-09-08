@@ -43,17 +43,6 @@ export interface GpuInfo {
 }
 
 /**
- * 告警条目标注
- * @type 资源类型（cpu / mem / disk）
- * @level 告警级别（warn 警告 / danger 危险），与 message 文案对应
- */
-export interface MonitorAlert {
-  type: 'cpu' | 'mem' | 'disk';
-  level: 'warn' | 'danger';
-  message: string;
-}
-
-/**
  * 计算网络带宽速率（Mbps）。
  * 基于相邻两次采样累计字节差分：速率 = (增量字节 * 8) / 时间秒 / 1e6。
  * 倒置差分（计数器重置）或零间隔时返回 0，避免误报与除零。
@@ -85,7 +74,13 @@ export interface MonitorPoint {
     /** 宿主机整机 CPU（0-100 归一化，含非 Docker 进程；首轮采样为 null） */
     hostPercent: number | null;
   };
-  mem: { percent: number; used: number; total: number };
+  mem: {
+    percent: number;
+    used: number;
+    total: number;
+    /** 所有运行容器内存使用字节总和（Docker stats 口径；聚合失败时为 0） */
+    containerUsed: number;
+  };
   disk: { percent: number; used: number; total: number };
   disks: DiskPartition[];
   gpu: GpuInfo[];
@@ -179,6 +174,8 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
   cpuPercent: number;
   netRx: number;
   netTx: number;
+  /** 所有运行容器内存使用字节总和（Docker stats 口径） */
+  memUsedSum: number;
   containerStats: MonitorContainerStat[];
 }> {
   const containers = await docker.listContainers({ all: false });
@@ -186,6 +183,7 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
   let cpuCoresAcc = 0;
   let netRx = 0;
   let netTx = 0;
+  let memUsageSum = 0;
   const containerStats: MonitorContainerStat[] = [];
 
   const statsArr = await Promise.all(
@@ -219,6 +217,7 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
     if (sysDelta > 0) cCpu = Math.min(100, Math.max(0, (cpuDelta / sysDelta) * onlineCpus * 100));
     const mLimit = s.memory_stats?.limit || 0;
     const mUsage = s.memory_stats?.usage || 0;
+    memUsageSum += mUsage;
     const cMem = mLimit > 0 ? Math.min(100, ((mUsage / mLimit) * 100)) : 0;
     containerStats.push({
       id: item.id,
@@ -232,6 +231,7 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
     cpuPercent: cpuCoresAcc > 0 ? cpuTotal / containers.length || 0 : 0,
     netRx,
     netTx,
+    memUsedSum: memUsageSum,
     containerStats,
   };
 }
@@ -348,6 +348,7 @@ async function collect() {
     let aggCpu = 0;
     let netRx = 0;
     let netTx = 0;
+    let containerMemUsed = 0;
     let containerStats: MonitorContainerStat[] = [];
 
     try {
@@ -355,6 +356,7 @@ async function collect() {
       aggCpu = agg.cpuPercent;
       netRx = agg.netRx;
       netTx = agg.netTx;
+      containerMemUsed = agg.memUsedSum;
       containerStats = agg.containerStats;
     } catch {
       // 聚合失败时静默处理
@@ -395,13 +397,16 @@ async function collect() {
     const containerCpuPercent = Number(aggCpu.toFixed(2));
 
     // 依据当前使用率生成高占用告警（磁盘用 disks 总和的使用率，均以 90 / 75 为阈值）
+    // CPU 告警按整机归一化口径（0-100）判定，容器口径在多核机器上可远超 100，不适合直接做阈值
     const alerts: MonitorAlert[] = [];
     const diskAlert = buildAlert('disk', '磁盘', diskPercent);
     if (diskAlert) alerts.push(diskAlert);
     const memAlert = buildAlert('mem', '内存', memPercent);
     if (memAlert) alerts.push(memAlert);
-    const cpuAlert = buildAlert('cpu', 'CPU', containerCpuPercent);
-    if (cpuAlert) alerts.push(cpuAlert);
+    if (hostCpuPercent != null) {
+      const cpuAlert = buildAlert('cpu', 'CPU', hostCpuPercent);
+      if (cpuAlert) alerts.push(cpuAlert);
+    }
 
     const point: MonitorPoint = {
       timestamp: Date.now(),
@@ -410,6 +415,7 @@ async function collect() {
         percent: memPercent,
         used: memUsed,
         total: memTotal,
+        containerUsed: containerMemUsed,
       },
       disk: {
         percent: diskPercent,
@@ -489,6 +495,7 @@ interface HostMetricRow {
   mem_percent: number;
   mem_used: number;
   mem_total: number;
+  container_mem_used: number | null;
   disk_percent: number;
   disk_used: number;
   disk_total: number;
@@ -506,8 +513,8 @@ export interface MetricPoint {
   timestamp: number;
   /** CPU 使用率与核数（percent 为 Docker 容器口径；hostPercent 为整机归一化 0-100） */
   cpu: { percent: number; cores: number; hostPercent?: number | null };
-  /** 内存使用率与绝对值 */
-  mem: { percent: number; used: number; total: number };
+  /** 内存使用率与绝对值（containerUsed 为运行容器内存使用字节总和，旧数据为 null） */
+  mem: { percent: number; used: number; total: number; containerUsed?: number | null };
   /** 磁盘使用率与绝对值 */
   disk: { percent: number; used: number; total: number };
   /** GPU 最大利用率（%，取所有显卡最大值；无 NVIDIA 卡时为 null） */
@@ -559,8 +566,8 @@ function persistPoint(point: MonitorPoint): void {
       `INSERT INTO host_metrics
         (ts, cpu_percent, cpu_host, cpu_cores, mem_percent, mem_used, mem_total,
          disk_percent, disk_used, disk_total, gpu_percent, net_rx, net_tx,
-         containers_running, containers_total, images)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         containers_running, containers_total, images, container_mem_used)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       point.timestamp,
       point.cpu.percent,
@@ -578,6 +585,7 @@ function persistPoint(point: MonitorPoint): void {
       point.containers.running,
       point.containers.total,
       point.images,
+      point.mem.containerUsed,
     );
     persistCount += 1;
     // 每 20 次落库（约 10 分钟）清理一次 7 天前的旧数据
@@ -658,7 +666,7 @@ function mapHostMetricRow(r: HostMetricRow): MetricPoint {
   return {
     timestamp: r.ts,
     cpu: { percent: r.cpu_percent, cores: r.cpu_cores, hostPercent: r.cpu_host },
-    mem: { percent: r.mem_percent, used: r.mem_used, total: r.mem_total },
+    mem: { percent: r.mem_percent, used: r.mem_used, total: r.mem_total, containerUsed: r.container_mem_used ?? null },
     disk: { percent: r.disk_percent, used: r.disk_used, total: r.disk_total },
     gpu: { percent: r.gpu_percent },
     net: { rx: r.net_rx, tx: r.net_tx },
@@ -676,7 +684,7 @@ function mapHourlyRow(r: HourlyRow): MetricPoint {
   return {
     timestamp: r.ts_hour,
     cpu: { percent: r.cpu_avg, cores: r.cpu_cores, hostPercent: r.cpu_host_avg ?? null },
-    mem: { percent: r.memp_avg, used: r.mem_avg, total: r.mem_total },
+    mem: { percent: r.memp_avg, used: r.mem_avg, total: r.mem_total, containerUsed: r.container_mem_avg ?? null },
     disk: { percent: r.disk_avg, used: 0, total: 0 },
     gpu: { percent: r.gpu_avg ?? null },
     net: { rx: r.rx_sum, tx: r.tx_sum },

@@ -402,6 +402,7 @@ function createTables(): void {
       mem_percent        REAL NOT NULL,
       mem_used           INTEGER NOT NULL,
       mem_total          INTEGER NOT NULL,
+      container_mem_used INTEGER,                      -- 运行容器内存使用字节总和（聚合失败/旧数据为 NULL）
       disk_percent       REAL NOT NULL,
       disk_used          INTEGER NOT NULL,
       disk_total         INTEGER NOT NULL,
@@ -904,6 +905,17 @@ function createTables(): void {
   // 迁移：补充宿主机整机 CPU 列（1.28.10 双口径显示，首轮采样为 NULL）
   try {
     d.exec('ALTER TABLE host_metrics ADD COLUMN cpu_host REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：补充容器内存合计列（1.28.10 双维度监控，旧数据为 NULL）
+  try {
+    d.exec('ALTER TABLE host_metrics ADD COLUMN container_mem_used INTEGER');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE metrics_hourly ADD COLUMN container_mem_avg REAL');
   } catch {
     // 列已存在则忽略
   }
