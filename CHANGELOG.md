@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.28.7] - 2026-09-08
+
+### Fixed（修复）
+
+- 修复 Windows 系统缩放设置为 125% / 100% 等低缩放比例时，页面内容不满宽、左右出现大片空白：移除内容区 1600px 最大宽度限制（`Layout.less` 的 `.main__content`），所有缩放比例下内容均填满可视区域
+
 ## [1.28.6] - 2026-09-07
 
 ### Added（新增）
