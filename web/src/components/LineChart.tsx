@@ -3,8 +3,10 @@
  *
  * 用于首页监控曲线展示，支持平滑曲线、渐变面积、两种可选数据序列。
  * 风格：indigo 灵动渐变 + 清爽网格，贴合整体设计基调。
+ *
+ * 交互：鼠标悬停显示十字线与该时间点各序列数值提示。
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import './LineChart.less';
 
 interface Series {
@@ -49,6 +51,8 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
   const W = 600;
   const H = height;
   const PAD = { top: 12, right: 12, bottom: 30, left: 34 };
+  /** 鼠标悬停命中的数据下标（null = 未悬停） */
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const { paths, dataMax, chartW, chartH } = useMemo(() => {
     // 合并所有序列点数，取最大
@@ -107,9 +111,37 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [labels, series]);
 
+  /** 数据点总数（悬停索引换算用，与序列数据保持一致） */
+  const pointCount = Math.max(...series.map((s) => s.data.length), 1);
+  const toX = (i: number) => PAD.left + (pointCount === 1 ? chartW / 2 : (i / (pointCount - 1)) * chartW);
+
+  /**
+   * 鼠标移动：把像素坐标换算为最近的数据点下标
+   * SVG 按 viewBox 等比缩放，需先换算回 viewBox 坐标系
+   */
+  function handleMove(e: React.MouseEvent<SVGSVGElement>) {
+    if (!labels || labels.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const vx = ((e.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((vx - PAD.left) / chartW) * (pointCount - 1));
+    if (idx >= 0 && idx <= pointCount - 1) setHoverIdx(idx);
+    else setHoverIdx(null);
+  }
+
+  /** 十字线 X 坐标（viewBox 坐标系） */
+  const hoverX = hoverIdx != null ? toX(hoverIdx) : 0;
+
   return (
     <div className="linechart">
-      <svg viewBox={`0 0 ${W} ${H}`} className="linechart__svg" role="img" aria-label="监控曲线">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="linechart__svg"
+        role="img"
+        aria-label="监控曲线"
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
         <defs>
           {series.map((s, idx) => (
             <linearGradient key={s.name} id={`grad-${idx}`} x1="0" y1="0" x2="0" y2="1">
@@ -145,7 +177,39 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
               </g>
             ))
           : null}
+
+        {/* 十字线 + 各序列命中点（悬停时） */}
+        {hoverIdx != null && labels && labels.length > 0 && (
+          <g className="linechart__hover">
+            <line x1={hoverX} y1={PAD.top} x2={hoverX} y2={H - PAD.bottom} className="linechart__crosshair" />
+            {series.map((s) => {
+              const v = s.data[hoverIdx] ?? 0;
+              const cy = PAD.top + chartH - (Math.max(0, v) / dataMax) * chartH;
+              return <circle key={s.name} cx={hoverX} cy={cy} r="3.5" fill={s.color} className="linechart__hover-dot" />;
+            })}
+          </g>
+        )}
       </svg>
+
+      {/* 数值提示框（HTML 层，跟随十字线） */}
+      {hoverIdx != null && labels && labels[hoverIdx] != null && (
+        <div
+          className={`linechart__tooltip${hoverIdx > pointCount * 0.6 ? ' linechart__tooltip--left' : ''}`}
+          style={{ left: `${(hoverX / W) * 100}%` }}
+        >
+          <div className="linechart__tooltip-time">{labels[hoverIdx]}</div>
+          {series.map((s) => (
+            <div key={s.name} className="linechart__tooltip-row">
+              <span className="linechart__legend-dot" style={{ background: s.color }} />
+              <span className="linechart__tooltip-name">{s.name}</span>
+              <span className="linechart__tooltip-val">
+                {(s.data[hoverIdx] ?? 0).toFixed(1)}
+                {unit}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 图例 */}
       <div className="linechart__legend">

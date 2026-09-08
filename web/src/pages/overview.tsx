@@ -16,6 +16,7 @@ import { Overview } from '../types';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 import LineChart from '../components/LineChart';
+import Modal from '../components/Modal';
 import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { useLang } from '../i18n';
@@ -198,6 +199,9 @@ export default function OverviewPage() {
   const [noLimit, setNoLimit] = useState<NoLimitContainer[]>([]);
   /** 用户点击"知道了"后的会话内关闭（刷新页面后若仍有风险容器会重新提示） */
   const [noLimitDismissed, setNoLimitDismissed] = useState(false);
+
+  // ---- 监控曲线放大弹窗（双击图表打开） ----
+  const [zoomChart, setZoomChart] = useState<'cpu' | 'mem' | 'disk' | 'gpu' | null>(null);
 
   /**
    * 拉取总览数据
@@ -668,7 +672,7 @@ export default function OverviewPage() {
             })}
           </div>
           <div className="monitor__charts">
-            <div className="monitor__chart">
+            <div className="monitor__chart" onDoubleClick={() => setZoomChart('cpu')} title={t('双击放大')}>
               <LineChart
                 series={hasHostCpu ? [cpuSeries, hostCpuSeries] : [cpuSeries]}
                 labels={timeLabels}
@@ -677,7 +681,7 @@ export default function OverviewPage() {
                 max={100}
               />
             </div>
-            <div className="monitor__chart">
+            <div className="monitor__chart" onDoubleClick={() => setZoomChart('mem')} title={t('双击放大')}>
               <LineChart
                 series={hasContainerMem ? [memSeries, containerMemSeries] : [memSeries]}
                 labels={timeLabels}
@@ -686,15 +690,39 @@ export default function OverviewPage() {
                 max={100}
               />
             </div>
-            <div className="monitor__chart">
+            <div className="monitor__chart" onDoubleClick={() => setZoomChart('disk')} title={t('双击放大')}>
               <LineChart series={[diskSeries]} labels={timeLabels} height={180} unit="%" max={100} />
             </div>
             {hasGpuTrend && (
-              <div className="monitor__chart">
+              <div className="monitor__chart" onDoubleClick={() => setZoomChart('gpu')} title={t('双击放大')}>
                 <LineChart series={[gpuSeries]} labels={timeLabels} height={180} unit="%" max={100} />
               </div>
             )}
           </div>
+
+          {/* 曲线放大弹窗（双击任一图表打开，悬停可十字查看时间点数值） */}
+          <Modal open={zoomChart != null} title={t('资源监控曲线')} onClose={() => setZoomChart(null)} width={880}>
+            {zoomChart === 'cpu' && (
+              <LineChart
+                series={hasHostCpu ? [cpuSeries, hostCpuSeries] : [cpuSeries]}
+                labels={timeLabels}
+                height={380}
+                unit="%"
+                max={100}
+              />
+            )}
+            {zoomChart === 'mem' && (
+              <LineChart
+                series={hasContainerMem ? [memSeries, containerMemSeries] : [memSeries]}
+                labels={timeLabels}
+                height={380}
+                unit="%"
+                max={100}
+              />
+            )}
+            {zoomChart === 'disk' && <LineChart series={[diskSeries]} labels={timeLabels} height={380} unit="%" max={100} />}
+            {zoomChart === 'gpu' && <LineChart series={[gpuSeries]} labels={timeLabels} height={380} unit="%" max={100} />}
+          </Modal>
 
           {/* 各磁盘分区使用情况 */}
           {diskPartitions.length > 0 && (

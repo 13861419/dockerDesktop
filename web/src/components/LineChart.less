@@ -44,3 +44,66 @@
   height: 8px;
   border-radius: 50%;
 }
+
+/* ===================== 悬停十字线与数值提示 ===================== */
+
+.linechart {
+  position: relative;
+}
+
+.linechart__svg {
+  cursor: crosshair;
+}
+
+.linechart__crosshair {
+  stroke: var(--text-secondary, #6b7280);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.linechart__hover-dot {
+  stroke: var(--bg-color, #fff);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.linechart__tooltip {
+  position: absolute;
+  top: 6px;
+  transform: translateX(10px);
+  min-width: 140px;
+  padding: 6px 10px;
+  background: var(--bg-color, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* 靠近右缘时向左展开，避免溢出容器 */
+.linechart__tooltip--left {
+  transform: translateX(calc(-100% - 10px));
+}
+
+.linechart__tooltip-time {
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 3px;
+}
+
+.linechart__tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.8;
+  color: var(--text-primary, #1f2937);
+}
+
+.linechart__tooltip-val {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
