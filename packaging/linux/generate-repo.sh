@@ -13,6 +13,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 info() { echo -e "${GREEN}[REPO]${NC} $*"; }
+fatal() { echo -e "${RED}[REPO][ERROR]${NC} $*" >&2; exit 1; }
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -26,26 +27,30 @@ mkdir -p "$APT_DIR/dists/stable/main/binary-amd64"
 mkdir -p "$APT_DIR/dists/stable/main/binary-arm64"
 
 # 复制 .deb 文件到 pool
+# pool 命名必须为 包名_版本_架构.deb（下划线），否则 apt 索引工具无法解析
 for deb in "$DEB_DIR"/*.deb; do
   [ -f "$deb" ] || continue
-  cp "$deb" "$APT_DIR/pool/main/"
-  info "  已添加: $(basename "$deb")"
+  base=$(basename "$deb")            # docker-manager-1.28.6-amd64.deb
+  stem=${base%.deb}                  # docker-manager-1.28.6-amd64
+  pkgarch=${stem##*-}                # amd64 | arm64
+  noarch=${stem%-*}                  # docker-manager-1.28.6
+  ver=${noarch#docker-manager-}      # 1.28.6
+  [ "$pkgarch" = "$ver" ] && fatal "无法从文件名解析架构: $base（期望 docker-manager-<版本>-<架构>.deb）"
+  cp "$deb" "$APT_DIR/pool/main/docker-manager_${ver}_${pkgarch}.deb"
+  info "  已添加 docker-manager_${ver}_${pkgarch}.deb"
 done
 
-# 生成 Packages 文件（amd64 + arm64）
+# 生成 Packages 索引（apt-ftparchive 不挑文件名，runner 自带）
 for arch in amd64 arm64; do
   BinDir="$APT_DIR/dists/stable/main/binary-$arch"
-  if ls "$APT_DIR/pool/main/"*"$arch"* &>/dev/null 2>&1; then
-    cd "$APT_DIR"
-    dpkg-scanpackages --arch "$arch" pool/main/ > "dists/stable/main/binary-$arch/Packages" 2>/dev/null || \
-      echo "# 无 $arch 包" > "dists/stable/main/binary-$arch/Packages"
-    gzip -9c "dists/stable/main/binary-$arch/Packages" > "dists/stable/main/binary-$arch/Packages.gz"
-    info "  Packages ($arch) 已生成"
-    cd - >/dev/null
-  else
-    echo "# 无 $arch 包" > "$BinDir/Packages"
-    gzip -9c "$BinDir/Packages" > "$BinDir/Packages.gz"
-  fi
+  mkdir -p "$BinDir"
+  cd "$APT_DIR"
+  apt-ftparchive packages pool/main/ > "dists/stable/main/binary-$arch/Packages" \
+    || fatal "apt-ftparchive ($arch) 执行失败"
+  [ -s "dists/stable/main/binary-$arch/Packages" ] || fatal "Packages ($arch) 为空——pool 中无 deb"
+  gzip -9c "dists/stable/main/binary-$arch/Packages" > "dists/stable/main/binary-$arch/Packages.gz"
+  info "  Packages ($arch) 已生成（$(grep -c '^Package:' "dists/stable/main/binary-$arch/Packages") 个包）"
+  cd - >/dev/null
 done
 
 # 生成 Release 文件
@@ -77,11 +82,8 @@ cat > "$APT_DIR/README.md" <<'README'
 ## 使用方法
 
 ```bash
-# 导入 GPG 公钥（如已签名）
-# curl -fsSL https://13861419.github.io/dockerDesktop/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/docker-manager.gpg
-
-# 添加仓库源
-echo "deb [signed-by=/usr/share/keyrings/docker-manager.gpg] https://13861419.github.io/dockerDesktop/apt stable main" \
+# 添加仓库源（Pages 托管为未签名源，使用 trusted=yes）
+echo "deb [trusted=yes] https://13861419.github.io/dockerDesktop/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/docker-manager.list
 
 # 安装
@@ -109,29 +111,15 @@ if [ "$rpm_count" -gt 0 ]; then
     info "  已添加: $(basename "$rpm")"
   done
 
-  # 生成 repodata（如果 createrepo 可用）
-  if command -v createrepo &>/dev/null; then
+  # 生成 repodata（createrepo_c 为必需工具，workflow 中已安装）
+  if command -v createrepo_c &>/dev/null; then
+    createrepo_c "$YUM_DIR"
+    info "  repodata 已生成（createrepo_c）"
+  elif command -v createrepo &>/dev/null; then
     createrepo "$YUM_DIR"
-    info "  repodata 已生成"
+    info "  repodata 已生成（createrepo）"
   else
-    # 手动创建 minimal repomd.xml
-    RPM_FILE=$(ls "$YUM_DIR"/*.rpm 2>/dev/null | head -1)
-    if [ -n "$RPM_FILE" ]; then
-      cat > "$YUM_DIR/repodata/repomd.xml" <<XML
-<?xml version="1.0" encoding="UTF-8"?>
-<repomd xmlns="http://linux.duke.edu/metadata/repo">
-  <revision>$(date +%s)</revision>
-  <data>
-    <location href="repodata/primary.xml"/>
-    <checksum type="sha256">placeholder</checksum>
-    <timestamp>$(date +%s)</timestamp>
-    <size>0</size>
-    <open-checksum type="sha256">placeholder</open-checksum>
-  </data>
-</repomd>
-XML
-      info "  minimal repomd.xml 已生成（安装 createrepo 可生成完整元数据）"
-    fi
+    fatal "未找到 createrepo_c / createrepo，无法生成 YUM 元数据（publish-repo 需安装 createrepo_c）"
   fi
 else
   info "  无 RPM 文件，跳过 YUM 仓库生成"

@@ -88,11 +88,8 @@
 ### 0.2 Option 1: APT Repository (Ubuntu / Debian)
 
 ```bash
-# Add GPG key
-curl -fsSL https://13861419.github.io/dockerDesktop/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/docker-manager.gpg
-
-# Add APT source
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-manager.gpg] https://13861419.github.io/dockerDesktop/apt stable main" \
+# Add APT source (Pages-hosted, unsigned)
+echo "deb [trusted=yes] https://13861419.github.io/dockerDesktop/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/docker-manager.list
 
 # Install

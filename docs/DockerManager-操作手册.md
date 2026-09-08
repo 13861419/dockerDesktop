@@ -93,11 +93,8 @@
 ### 0.2 方式一：APT 源安装（Ubuntu / Debian，推荐）
 
 ```bash
-# 添加 GPG 密钥
-curl -fsSL https://13861419.github.io/dockerDesktop/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/docker-manager.gpg
-
-# 添加 APT 源
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-manager.gpg] https://13861419.github.io/dockerDesktop/apt stable main" \
+# 添加仓库源（Pages 托管为未签名源）
+echo "deb [trusted=yes] https://13861419.github.io/dockerDesktop/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/docker-manager.list
 
 # 安装

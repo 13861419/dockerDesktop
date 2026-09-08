@@ -257,8 +257,8 @@ jobs:
           tag: ${{ github.ref_name }}
           fileName: "docker-manager-*.rpm"
           out-file-path: dist/rpm
-      - name: Install dpkg-scanpackages
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y createrepo-c
       - name: Generate APT/YUM repo metadata
         run: |
           mkdir -p dist/rpm
