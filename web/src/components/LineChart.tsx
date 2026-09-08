@@ -58,12 +58,15 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
 
     // Y 轴范围
     let dataMax = max ?? 0;
+    for (const s of series) {
+      for (const v of s.data) if (v > dataMax) dataMax = v;
+    }
     if (max == null) {
-      for (const s of series) {
-        for (const v of s.data) if (v > dataMax) dataMax = v;
-      }
-      // 给顶部留 10% 余量
+      // 自适应：给顶部留 10% 余量
       dataMax = dataMax * 1.1 || 1;
+    } else if (dataMax > max) {
+      // 数据超出固定上限（如多核机器 CPU >100%）：自动扩展 Y 轴，避免曲线越界
+      dataMax = dataMax * 1.05;
     }
 
     const toX = (i: number) => PAD.left + (maxLen === 1 ? chartW / 2 : (i / (maxLen - 1)) * chartW);
@@ -83,7 +86,8 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [series, max, height]);
 
-  const maxVal = paths ? (max ?? 100) : 100;
+  // 网格线（横向 4 条）：使用实际 Y 轴上限（数据超出固定 max 时会自动扩展）
+  const maxVal = paths ? paths.dataMax : 100;
   // 网格线（横向 4 条）
   const gridLines = [0, 1, 2, 3, 4].map((i) => {
     const y = PAD.top + chartH - (i / 4) * chartH;
