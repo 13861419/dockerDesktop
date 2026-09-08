@@ -22,14 +22,14 @@ test('extractEntries：仅提取有宿主端口映射的条目', () => {
     engine,
   );
 
-  // IPv4 与 IPv6 各计一条（Docker 实际绑定两条）
-  assert.strictEqual(entries.length, 3);
+  // 同一映射的 IPv4/IPv6 双栈条目去重为一条（避免误判端口冲突）
+  assert.strictEqual(entries.length, 2);
   assert.strictEqual(entries[0].hostPort, 8080);
   assert.strictEqual(entries[0].containerPort, 80);
   assert.strictEqual(entries[0].containerName, 'web');
   assert.strictEqual(entries[0].containerId, 'abcdef123456');
   assert.strictEqual(entries[0].protocol, 'tcp');
-  assert.strictEqual(entries[2].hostPort, 8443);
+  assert.strictEqual(entries[1].hostPort, 8443);
 });
 
 test('extractEntries：容器无名时回退到短 ID，udp 协议保留', () => {

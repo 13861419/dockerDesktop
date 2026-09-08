@@ -78,9 +78,15 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
 export function extractEntries(c: any, engine: EngineEndpointRow): PortEntry[] {
   const name = (c?.Names?.[0] || '').replace(/^\//, '') || c?.Id?.slice(0, 12) || '';
   const out: PortEntry[] = [];
+  // 同一条 -p 映射会以 IPv4（0.0.0.0）与 IPv6（::）两个条目重复出现，
+  // 按 宿主端口/协议/容器端口 去重，避免把单一映射误判为多容器争抢
+  const seen = new Set<string>();
   for (const p of c?.Ports || []) {
     // PublicPort 为宿主端口；仅记录宿主侧有映射的端口
     if (typeof p?.PublicPort !== 'number') continue;
+    const key = `${p.PublicPort}/${p.Type || 'tcp'}/${p.PrivatePort}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push({
       hostPort: p.PublicPort,
       protocol: p.Type || 'tcp',
