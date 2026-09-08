@@ -824,6 +824,18 @@ function createTables(): void {
     // 列已存在则忽略
   }
 
+  // 迁移：为 alert_rules 补充内存绝对阈值列（容器资源异常规则 ctnRes 专用，单位 MB；NULL=默认值）
+  try {
+    d.exec('ALTER TABLE alert_rules ADD COLUMN mem_warn REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE alert_rules ADD COLUMN mem_danger REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+
   // 迁移：为 cron_tasks 补充 Webhook 触发 token 列（NULL/空=未开启 Webhook）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN webhook_token TEXT');

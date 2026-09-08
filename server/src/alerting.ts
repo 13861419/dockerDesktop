@@ -20,7 +20,7 @@ import { listChannels, sendAlert, type ChannelInfo } from './notify';
 import { createPushAggregator } from './pushAggregator';
 
 /** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
-export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net' | 'k8s';
+export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net' | 'k8s' | 'ctnRes';
 /** 告警级别 */
 export type AlertLevel = 'warn' | 'danger' | 'recovery';
 
@@ -37,6 +37,9 @@ interface AlertRuleRow {
   work_start: string | null;
   work_end: string | null;
   consecutive?: number;
+  /** 容器资源异常规则专用：内存绝对阈值（MB），NULL=默认值 */
+  mem_warn?: number | null;
+  mem_danger?: number | null;
 }
 
 /** 归一化后的告警规则（含静默/工作时段与持续时间窗口配置） */
@@ -73,6 +76,8 @@ const DEFAULT_RULES: Array<{ type: AlertType; name: string; warn: number; danger
   { type: 'disk', name: '磁盘', warn: 75, danger: 90 },
   { type: 'gpu', name: 'GPU', warn: 75, danger: 90 },
   { type: 'net', name: '网络带宽', warn: 100, danger: 200 },
+  // 容器资源异常：作用于全部运行容器（CPU 容器口径 %，warn/danger 列存 CPU 阈值；内存绝对阈值存 mem_warn/mem_danger 列）
+  { type: 'ctnRes', name: '容器资源', warn: 100, danger: 200 },
 ];
 
 /** 检测 tick 间隔（毫秒）：沿用监控采集节奏，但检测不必过频，10s 足够 */
@@ -524,6 +529,8 @@ async function check(): Promise<void> {
   }
   // 容器级告警检测（退出/健康检查/端口探测），与宿主级规则并行
   await checkContainerRules();
+  // 容器资源异常检测（ctnRes 规则，覆盖全部运行容器）
+  await checkContainerAnomaly();
 }
 
 /**
@@ -537,6 +544,9 @@ export function resetAlertingState(): void {
   containerLastAlert.clear();
   containerActive.clear();
   containerStreak.clear();
+  anomalyLastAlert.clear();
+  anomalyActive.clear();
+  anomalyStreak.clear();
 }
 
 /**
@@ -588,8 +598,17 @@ export function getAlertRules(): Array<{
   workStart: string | null;
   workEnd: string | null;
   consecutive: number;
+  /** 容器资源异常规则专用：内存绝对阈值（MB）；其余类型为 null */
+  memWarnThreshold: number | null;
+  memDangerThreshold: number | null;
 }> {
   const rules = loadRules();
+  // 内存绝对阈值从 mem_warn / mem_danger 列读取（仅 ctnRes 规则使用）
+  const memRows = getDb()
+    .prepare('SELECT type, mem_warn, mem_danger FROM alert_rules WHERE type = ?')
+    .get('ctnRes') as { mem_warn?: number | null; mem_danger?: number | null } | undefined;
+  const memWarn = memRows?.mem_warn != null ? Number(memRows.mem_warn) : 2048;
+  const memDanger = memRows?.mem_danger != null ? Number(memRows.mem_danger) : 4096;
   return DEFAULT_RULES.map((def) => ({
     type: def.type,
     name: def.name,
@@ -602,6 +621,8 @@ export function getAlertRules(): Array<{
     workStart: rules[def.type].workStart,
     workEnd: rules[def.type].workEnd,
     consecutive: rules[def.type].consecutive,
+    memWarnThreshold: def.type === 'ctnRes' ? memWarn : null,
+    memDangerThreshold: def.type === 'ctnRes' ? memDanger : null,
   }));
 }
 
@@ -658,14 +679,17 @@ export function updateAlertRule(
     workStart?: string | null;
     workEnd?: string | null;
     consecutive?: number;
+    /** 容器资源异常规则专用：内存绝对阈值（MB） */
+    memWarnThreshold?: number;
+    memDangerThreshold?: number;
   },
 ): void {
-  if (!['cpu', 'mem', 'disk', 'gpu', 'net'].includes(type)) {
+  if (!['cpu', 'mem', 'disk', 'gpu', 'net', 'ctnRes'].includes(type)) {
     throw Object.assign(new Error('不支持的告警类型'), { statusCode: 400 });
   }
   const d = getDb();
   loadRules(); // 确保默认行存在
-  const row = d.prepare('SELECT warn_threshold, danger_threshold, enabled, silent_start, silent_end, workdays_only, work_start, work_end, consecutive FROM alert_rules WHERE type = ?').get(type) as
+  const row = d.prepare('SELECT warn_threshold, danger_threshold, enabled, silent_start, silent_end, workdays_only, work_start, work_end, consecutive, mem_warn, mem_danger FROM alert_rules WHERE type = ?').get(type) as
     | {
         warn_threshold: number;
         danger_threshold: number;
@@ -676,16 +700,21 @@ export function updateAlertRule(
         work_start: string | null;
         work_end: string | null;
         consecutive: number | null;
+        mem_warn: number | null;
+        mem_danger: number | null;
       }
     | undefined;
   if (!row) throw Object.assign(new Error('告警规则不存在'), { statusCode: 404 });
 
   let warn = patch.warnThreshold !== undefined ? Number(patch.warnThreshold) : row.warn_threshold;
   let danger = patch.dangerThreshold !== undefined ? Number(patch.dangerThreshold) : row.danger_threshold;
-  // net 类型阈值为 Mbps 带宽（合法值可远超 100），其余类型为 0-100 的百分比
-  const maxAllowed = type === 'net' ? 1e6 : 100;
+  // net 类型阈值为 Mbps 带宽、ctnRes 的 CPU 阈值为容器口径（100% = 单核，多核可超 100），其余类型为 0-100 的百分比
+  const maxAllowed = type === 'net' || type === 'ctnRes' ? 1e6 : 100;
   if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || danger < 0 || warn > maxAllowed || danger > maxAllowed) {
-    throw Object.assign(new Error(type === 'net' ? '阈值需为非负数（Mbps）' : '阈值需为 0-100 的数字'), { statusCode: 400 });
+    throw Object.assign(
+      new Error(maxAllowed === 100 ? '阈值需为 0-100 的数字' : '阈值需为非负数'),
+      { statusCode: 400 },
+    );
   }
   if (warn > danger) {
     throw Object.assign(new Error('警告阈值不能高于危险阈值'), { statusCode: 400 });
@@ -711,8 +740,22 @@ export function updateAlertRule(
   validateRange(workStart, workEnd, '工作时段');
   const workdaysOnly = patch.workdaysOnly !== undefined ? (patch.workdaysOnly ? 1 : 0) : row.workdays_only;
 
+  // 容器资源异常规则：内存绝对阈值（MB，0-1e6），未传时保留原值
+  let memWarn = row.mem_warn != null ? Number(row.mem_warn) : 2048;
+  let memDanger = row.mem_danger != null ? Number(row.mem_danger) : 4096;
+  if (type === 'ctnRes') {
+    if (patch.memWarnThreshold !== undefined) memWarn = Number(patch.memWarnThreshold);
+    if (patch.memDangerThreshold !== undefined) memDanger = Number(patch.memDangerThreshold);
+    if (Number.isNaN(memWarn) || Number.isNaN(memDanger) || memWarn < 0 || memDanger < 0 || memWarn > 1e6 || memDanger > 1e6) {
+      throw Object.assign(new Error('内存阈值需为非负数（MB）'), { statusCode: 400 });
+    }
+    if (memWarn > memDanger) {
+      throw Object.assign(new Error('内存警告阈值不能高于危险阈值'), { statusCode: 400 });
+    }
+  }
+
   d.prepare(
-    'UPDATE alert_rules SET enabled = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, consecutive = ?, updated_at = ? WHERE type = ?',
+    'UPDATE alert_rules SET enabled = ?, warn_threshold = ?, danger_threshold = ?, silent_start = ?, silent_end = ?, workdays_only = ?, work_start = ?, work_end = ?, consecutive = ?, mem_warn = ?, mem_danger = ?, updated_at = ? WHERE type = ?',
   ).run(
     enabled,
     warn,
@@ -723,6 +766,8 @@ export function updateAlertRule(
     workStart,
     workEnd,
     consecutive,
+    memWarn,
+    memDanger,
     Date.now(),
     type,
   );
@@ -973,6 +1018,11 @@ const containerLastAlert = new Map<number, number>();
 const containerActive = new Map<number, 'warn' | 'danger' | null>();
 /** 容器级连续命中计数：规则 id -> 连续超阈值的采样周期数（仅 cpu/mem） */
 const containerStreak = new Map<number, number>();
+
+/** 容器资源异常检测（ctnRes 规则）状态机：以容器 id 为键 */
+const anomalyLastAlert = new Map<string, number>();
+const anomalyActive = new Map<string, 'warn' | 'danger' | null>();
+const anomalyStreak = new Map<string, number>();
 
 /**
  * 将归一化容器规则转为可复用现有静默判定的 AlertRule 形状
@@ -1259,6 +1309,104 @@ async function checkContainerRules(): Promise<void> {
       }
     }
     await checkOneContainerRule(rule, displayName, info);
+  }
+}
+
+/**
+ * 容器资源异常检测（ctnRes 宿主级规则）：无需逐容器配置，遍历全部运行中容器，
+ * 任一容器 CPU（容器口径，100% = 单核满载）或内存绝对占用（MB）超过阈值即告警并记录。
+ * 复用告警记录 / 推送聚合 / 静默时段链路；每容器独立去重（REPEAT_INTERVAL 内不重复推送）与恢复通知。
+ */
+async function checkContainerAnomaly(): Promise<void> {
+  loadRules(); // 确保 ctnRes 默认行存在
+  const row = getDb()
+    .prepare('SELECT enabled, warn_threshold, danger_threshold, consecutive, silent_start, silent_end, workdays_only, work_start, work_end, mem_warn, mem_danger FROM alert_rules WHERE type = ?')
+    .get('ctnRes') as
+    | {
+        enabled: number;
+        warn_threshold: number;
+        danger_threshold: number;
+        consecutive: number | null;
+        silent_start: string | null;
+        silent_end: string | null;
+        workdays_only: number;
+        work_start: string | null;
+        work_end: string | null;
+        mem_warn: number | null;
+        mem_danger: number | null;
+      }
+    | undefined;
+  const rule: AlertRule | undefined = row
+    ? {
+        enabled: row.enabled === 1,
+        warn: Number(row.warn_threshold),
+        danger: Number(row.danger_threshold),
+        silentStart: row.silent_start || null,
+        silentEnd: row.silent_end || null,
+        workdaysOnly: row.workdays_only === 1,
+        workStart: row.work_start || null,
+        workEnd: row.work_end || null,
+        consecutive: Math.max(1, Math.floor(Number(row.consecutive) || 1)),
+      }
+    : undefined;
+  if (!rule || !rule.enabled) {
+    // 规则停用：清空全部活跃态（不发恢复，视为静默解除）
+    anomalyActive.clear();
+    anomalyStreak.clear();
+    return;
+  }
+  if (isInSilentWindow(rule, new Date())) return;
+
+  const memWarnMB = row?.mem_warn != null ? Number(row.mem_warn) : 2048;
+  const memDangerMB = row?.mem_danger != null ? Number(row.mem_danger) : 4096;
+  const fmtMem = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`);
+  const point = getCurrentMonitor();
+  if (!point || !point.containerStats) return;
+  const now = Date.now();
+  const seen = new Set<string>();
+
+  for (const cs of point.containerStats) {
+    const key = cs.id;
+    seen.add(key);
+    const cpu = cs.cpuPercentRaw;
+    const memMB = cs.memUsage / 1048576;
+    const cpuLevel: 'warn' | 'danger' | null = cpu >= rule.danger ? 'danger' : cpu >= rule.warn ? 'warn' : null;
+    const memLevel: 'warn' | 'danger' | null =
+      memMB >= memDangerMB ? 'danger' : memMB >= memWarnMB ? 'warn' : null;
+    const level: 'warn' | 'danger' | null =
+      cpuLevel === 'danger' || memLevel === 'danger' ? 'danger' : cpuLevel || memLevel;
+
+    const prev = anomalyActive.get(key) ?? null;
+    const decision = evaluateStreak(prev, level, anomalyStreak.get(key) ?? 0, rule.consecutive);
+    if (decision.streak > 0) anomalyStreak.set(key, decision.streak);
+    else anomalyStreak.delete(key);
+
+    if (level && decision.fire) {
+      if (decision.active) anomalyActive.set(key, decision.active as 'warn' | 'danger');
+      // 静默期内不重复推送（级别升级时强制）
+      const last = anomalyLastAlert.get(`${key}:${level}`) || 0;
+      if (!decision.escalated && now - last < REPEAT_INTERVAL) continue;
+      anomalyLastAlert.set(`${key}:${level}`, now);
+      const dims: string[] = [];
+      if (cpuLevel) dims.push(`CPU ${cpu.toFixed(1)}%`);
+      if (memLevel) dims.push(`内存 ${fmtMem(memMB)}`);
+      const thresholds =
+        level === 'danger'
+          ? `CPU>${rule.danger}% / 内存>${fmtMem(memDangerMB)}`
+          : `CPU>${rule.warn}% / 内存>${fmtMem(memWarnMB)}`;
+      const message = `Docker 面板【容器资源】「${cs.name}」${dims.join(' / ')} 超过${level === 'danger' ? '危险' : '警告'}阈值（${thresholds}）`;
+      await emitAlert('ctnRes', level, message, Number(cpu.toFixed(1)));
+    } else if (!level && decision.recovery) {
+      anomalyActive.delete(key);
+      await emitAlert('ctnRes', 'recovery', `Docker 面板【容器资源】「${cs.name}」已恢复正常`, null);
+    }
+  }
+  // 容器已消失的残留活跃态清理（不发恢复）
+  for (const key of anomalyActive.keys()) {
+    if (!seen.has(key)) anomalyActive.delete(key);
+  }
+  for (const key of anomalyStreak.keys()) {
+    if (!seen.has(key)) anomalyStreak.delete(key);
   }
 }
 

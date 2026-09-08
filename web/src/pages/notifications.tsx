@@ -36,6 +36,9 @@ interface AlertRule {
   workStart: string | null;
   workEnd: string | null;
   consecutive: number;
+  /** 容器资源异常规则（ctnRes）专用：内存绝对阈值（MB） */
+  memWarnThreshold?: number | null;
+  memDangerThreshold?: number | null;
   currentPercent: number | null;
 }
 
@@ -106,6 +109,7 @@ const TYPE_LABELS: Record<string, string> = {
   health: '健康检查',
   port: '端口',
   selfheal: '自愈',
+  ctnRes: '容器资源',
 };
 
 /** 容器级告警监控类型中文名 */
@@ -180,7 +184,7 @@ const EMPTY_FORM: ChannelForm = {
 };
 
 /** 规则名称映射（含新增 gpu/net） */
-const RULE_NAMES: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络' };
+const RULE_NAMES: Record<string, string> = { cpu: 'CPU', mem: '内存', disk: '磁盘', gpu: 'GPU', net: '网络', ctnRes: '容器资源' };
 
 /** 自愈规则（后端 /api/selfheal/rules 行） */
 interface SelfHealRule {
@@ -280,6 +284,8 @@ export default function NotificationsPage() {
     enabled: boolean;
     warnThreshold: string;
     dangerThreshold: string;
+    memWarnThreshold: string;
+    memDangerThreshold: string;
     silentStart: string;
     silentEnd: string;
     workdaysOnly: boolean;
@@ -290,6 +296,8 @@ export default function NotificationsPage() {
     enabled: true,
     warnThreshold: '75',
     dangerThreshold: '90',
+    memWarnThreshold: '2048',
+    memDangerThreshold: '4096',
     silentStart: '',
     silentEnd: '',
     workdaysOnly: false,
@@ -768,6 +776,8 @@ export default function NotificationsPage() {
       enabled: rule.enabled,
       warnThreshold: String(rule.warnThreshold),
       dangerThreshold: String(rule.dangerThreshold),
+      memWarnThreshold: String(rule.memWarnThreshold ?? 2048),
+      memDangerThreshold: String(rule.memDangerThreshold ?? 4096),
       silentStart: rule.silentStart || '',
       silentEnd: rule.silentEnd || '',
       workdaysOnly: rule.workdaysOnly,
@@ -782,10 +792,13 @@ export default function NotificationsPage() {
    */
   const handleSaveRule = useCallback(async () => {
     if (!ruleModal) return;
+    const isCtnRes = ruleModal.type === 'ctnRes';
     const warn = Number(ruleForm.warnThreshold);
     const danger = Number(ruleForm.dangerThreshold);
-    if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || warn > 100 || danger < 0 || danger > 100) {
-      showToast(t('阈值需为 0-100 的数字'), 'error');
+    // ctnRes 的 CPU 阈值为容器口径（100% = 单核满载，多核可超 100），放宽上限
+    const maxAllowed = isCtnRes ? 1e6 : 100;
+    if (Number.isNaN(warn) || Number.isNaN(danger) || warn < 0 || warn > maxAllowed || danger < 0 || danger > maxAllowed) {
+      showToast(isCtnRes ? t('CPU 阈值需为非负数（%），100% = 单核满载') : t('阈值需为 0-100 的数字'), 'error');
       return;
     }
     if (warn > danger) {
@@ -797,12 +810,29 @@ export default function NotificationsPage() {
       showToast(t('连续周期需为 1-120 的整数'), 'error');
       return;
     }
+    // ctnRes 额外的内存绝对阈值（MB）
+    let memWarn: number | undefined;
+    let memDanger: number | undefined;
+    if (isCtnRes) {
+      memWarn = Number(ruleForm.memWarnThreshold);
+      memDanger = Number(ruleForm.memDangerThreshold);
+      if (Number.isNaN(memWarn) || Number.isNaN(memDanger) || memWarn < 0 || memDanger < 0 || memWarn > 1e6 || memDanger > 1e6) {
+        showToast(t('内存阈值需为非负数（MB）'), 'error');
+        return;
+      }
+      if (memWarn > memDanger) {
+        showToast(t('内存警告阈值不能高于危险阈值'), 'error');
+        return;
+      }
+    }
     setSavingRule(true);
     try {
       await put(`/api/notifications/rules/${ruleModal.type}`, {
         enabled: ruleForm.enabled,
         warnThreshold: warn,
         dangerThreshold: danger,
+        memWarnThreshold: memWarn,
+        memDangerThreshold: memDanger,
         silentStart: ruleForm.silentStart || null,
         silentEnd: ruleForm.silentEnd || null,
         workdaysOnly: ruleForm.workdaysOnly,
@@ -1090,8 +1120,26 @@ export default function NotificationsPage() {
                       </div>
                     )}
                   </td>
-                  <td>≥ {r.warnThreshold}{unitOf(r.type)}</td>
-                  <td>≥ {r.dangerThreshold}{unitOf(r.type)}</td>
+                  <td>
+                    {r.type === 'ctnRes' ? (
+                      <>
+                        <div>≥ {r.warnThreshold}%（CPU）</div>
+                        <div>≥ {r.memWarnThreshold ?? 2048} MB（内存）</div>
+                      </>
+                    ) : (
+                      <span>≥ {r.warnThreshold}{unitOf(r.type)}</span>
+                    )}
+                  </td>
+                  <td>
+                    {r.type === 'ctnRes' ? (
+                      <>
+                        <div>≥ {r.dangerThreshold}%（CPU）</div>
+                        <div>≥ {r.memDangerThreshold ?? 4096} MB（内存）</div>
+                      </>
+                    ) : (
+                      <span>≥ {r.dangerThreshold}{unitOf(r.type)}</span>
+                    )}
+                  </td>
                   <td>
                     {r.type === 'gpu' && r.currentPercent == null ? (
                       <span className="notify-dim">{t('未检测到 GPU')}</span>
@@ -1767,7 +1815,7 @@ export default function NotificationsPage() {
             {t('启用该项资源告警')}
           </label>
         </Field>
-        <Field label={t('警告阈值（{{v1}}）', { v1: ruleModal ? unitOf(ruleModal.type) : '%' })} required>
+        <Field label={t('警告阈值（{{v1}}）', { v1: ruleModal ? unitOf(ruleModal.type) : '%' })} required hint={ruleModal?.type === 'ctnRes' ? t('容器口径 CPU：100% = 单核满载，多核机器可超过 100%') : undefined}>
           <Input
             value={ruleForm.warnThreshold}
             onChange={(e) => setRuleForm((f) => ({ ...f, warnThreshold: e.target.value }))}
@@ -1779,6 +1827,23 @@ export default function NotificationsPage() {
             onChange={(e) => setRuleForm((f) => ({ ...f, dangerThreshold: e.target.value }))}
           />
         </Field>
+
+        {ruleModal?.type === 'ctnRes' && (
+          <>
+            <Field label={t('内存警告阈值（MB）')} required hint={t('绝对占用量，适用于未设置内存限制的容器')}>
+              <Input
+                value={ruleForm.memWarnThreshold}
+                onChange={(e) => setRuleForm((f) => ({ ...f, memWarnThreshold: e.target.value }))}
+              />
+            </Field>
+            <Field label={t('内存危险阈值（MB）')} required>
+              <Input
+                value={ruleForm.memDangerThreshold}
+                onChange={(e) => setRuleForm((f) => ({ ...f, memDangerThreshold: e.target.value }))}
+              />
+            </Field>
+          </>
+        )}
 
         <Field label={t('连续周期')} hint={t('连续 N 个采样周期（每周期约 10 秒）超过阈值才触发；1 = 立即告警')}>
           <Input

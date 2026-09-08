@@ -104,6 +104,10 @@ export interface MonitorContainerStat {
   cpuPercent: number;
   /** 内存使用率（0-100） */
   memPercent: number;
+  /** CPU 使用率（未按 100 封顶的容器口径，100% = 单核满载，多核机器可超 100） */
+  cpuPercentRaw: number;
+  /** 内存实际占用（字节，无 limit 容器的绝对量告警依据） */
+  memUsage: number;
 }
 
 /** 资源使用率高占用告警阈值（>= 该值触发对应级别，danger 优先于 warn） */
@@ -214,7 +218,9 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
     }
     // 逐容器 CPU / 内存使用率
     let cCpu = 0;
-    if (sysDelta > 0) cCpu = Math.min(100, Math.max(0, (cpuDelta / sysDelta) * onlineCpus * 100));
+    let cCpuRaw = 0;
+    if (sysDelta > 0) cCpuRaw = Math.max(0, (cpuDelta / sysDelta) * onlineCpus * 100);
+    cCpu = Math.min(100, cCpuRaw);
     const mLimit = s.memory_stats?.limit || 0;
     const mUsage = s.memory_stats?.usage || 0;
     memUsageSum += mUsage;
@@ -224,6 +230,8 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
       name: item.name,
       cpuPercent: Number(cCpu.toFixed(2)),
       memPercent: Number(cMem.toFixed(2)),
+      cpuPercentRaw: Number(Math.max(0, cCpuRaw).toFixed(2)),
+      memUsage: mUsage,
     });
   }
 
