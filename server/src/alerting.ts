@@ -1395,7 +1395,8 @@ async function checkContainerAnomaly(): Promise<void> {
           ? `CPU>${rule.danger}% / 内存>${fmtMem(memDangerMB)}`
           : `CPU>${rule.warn}% / 内存>${fmtMem(memWarnMB)}`;
       const message = `Docker 面板【容器资源】「${cs.name}」${dims.join(' / ')} 超过${level === 'danger' ? '危险' : '警告'}阈值（${thresholds}）`;
-      await emitAlert('ctnRes', level, message, Number(cpu.toFixed(1)));
+      // 使用率列：CPU 命中记录 CPU%（容器口径）；仅内存命中时不填（消息已含实际占用量）
+      await emitAlert('ctnRes', level, message, cpuLevel ? Number(cpu.toFixed(1)) : null);
     } else if (!level && decision.recovery) {
       anomalyActive.delete(key);
       await emitAlert('ctnRes', 'recovery', `Docker 面板【容器资源】「${cs.name}」已恢复正常`, null);

@@ -289,6 +289,26 @@ textarea:focus-visible {
   box-shadow: 0 0 0 2px var(--primary-border);
 }
 
+/* 通用简单表格（.table）：浏览器默认 th 居中、td 左对齐，导致表头与列内容错位；
+ * 统一为左对齐 + 基础内边距，backups / engines / firewall / notifications / sites 等页面共用。
+ */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    text-align: left;
+    vertical-align: top;
+    padding: 8px 10px;
+  }
+
+  thead th {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+}
+
 /* 通用：数据表格(.data-table)操作列 sticky 固定，横向滚动时不随左右滑动
  * 覆盖 volumes / images / networks / compose 等统一使用 .data-table 的列表页。
  */
