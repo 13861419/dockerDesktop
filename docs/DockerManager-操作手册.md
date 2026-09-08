@@ -107,6 +107,19 @@ sudo systemctl status docker-manager
 
 安装完成后访问 `http://<服务器IP>:9528`。
 
+#### 升级
+
+已通过 APT 源安装的，升级与首次安装是同一条命令（`apt` 自动识别旧版本并升级）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker-manager
+```
+
+> - 升级过程自动重启服务，无需手动 `systemctl restart`
+> - 数据库（SQLite，位于 `/var/lib/docker-manager`）不受升级影响
+> - `.env` 配置文件会被新包覆盖，若修改过端口等自定义配置，请先备份：`sudo cp /opt/docker-manager/server/.env /root/dm.env.bak`
+
 ### 0.3 方式二：YUM 源安装（RHEL 9 系 / AlmaLinux / Rocky）
 
 ```bash
@@ -129,6 +142,16 @@ sudo systemctl status docker-manager
 ```
 
 安装完成后访问 `http://<服务器IP>:9528`。
+
+#### 升级
+
+```bash
+sudo dnf update -y docker-manager
+# 或
+sudo yum update -y docker-manager
+```
+
+注意事项与 APT 相同：升级自动重启服务，数据库不受影响；`.env` 会被覆盖，修改过自定义配置请先备份。
 
 ### 0.4 方式三：Deb / RPM 手动安装
 
@@ -1475,7 +1498,18 @@ scrape_configs:
 | 镜像加速 | 系统参数 `update.githubMirror` 可配置 GitHub 镜像前缀，检查与下载均走镜像（国内网络可用） |
 | 缓存 | 检查结果缓存 10 分钟，避免频繁外呼 |
 
-> 更新方式：下载对应平台的更新包后按安装方式替换即可（zip 解压替换 / deb rpm 包管理器升级 / npm 全局更新 / Docker 换镜像）。更新前建议先做一次「备份恢复」中的配置导出。
+> 更新方式（按安装方式选择，数据库均不受影响）：
+>
+> | 安装方式 | 更新命令 |
+> | --- | --- |
+> | APT 源（Ubuntu/Debian） | `sudo apt-get update && sudo apt-get install -y docker-manager` |
+> | YUM 源（RHEL 9 系） | `sudo dnf update -y docker-manager` |
+> | deb / rpm 手动安装 | 从 Releases 下载新版包，`dpkg -i` / `dnf install` 覆盖 |
+> | Docker | `docker pull ghcr.io/13861419/docker-desktop:latest` 后按 0.6 节重建容器 |
+> | npm 全局 | `npm update -g @13861419/docker-manager` |
+> | Windows | 下载新版 zip 解压替换或 setup exe 覆盖安装 |
+>
+> deb/rpm 升级会覆盖 `/opt/docker-manager/server/.env`（端口等自定义配置请先备份）。更新前建议先做一次「备份恢复」中的配置导出。
 ## 附：模块与访问路径速查
 
 | 菜单 | 路径 | 权限 |

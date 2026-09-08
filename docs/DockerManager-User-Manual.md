@@ -102,6 +102,19 @@ sudo systemctl status docker-manager
 
 Then visit `http://<server-ip>:9528`.
 
+#### Upgrade
+
+For APT-repo installs, upgrading uses the same command as the first install (`apt` detects the old version and upgrades automatically):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker-manager
+```
+
+> - The service restarts automatically during upgrade; no manual `systemctl restart` needed
+> - The database (SQLite under `/var/lib/docker-manager`) is not affected by upgrades
+> - The `.env` file gets overwritten by the new package; back it up first if you changed the port or other settings: `sudo cp /opt/docker-manager/server/.env /root/dm.env.bak`
+
 ### 0.3 Option 2: YUM Repository (CentOS / RHEL)
 
 ```bash
@@ -124,6 +137,16 @@ sudo systemctl status docker-manager
 ```
 
 Then visit `http://<server-ip>:9528`.
+
+#### Upgrade
+
+```bash
+sudo dnf update -y docker-manager
+# or
+sudo yum update -y docker-manager
+```
+
+Same notes as APT: the service restarts automatically, the database is not affected, and `.env` gets overwritten (back up custom settings first).
 
 ### 0.4 Option 3: Manual Deb / RPM Install
 
@@ -1431,7 +1454,18 @@ Entry: **Settings → About → Check for updates** (admin)
 | Mirror | The `update.githubMirror` system parameter sets a GitHub mirror prefix for both check and download (useful behind restricted networks) |
 | Cache | Check results are cached for 10 minutes |
 
-> How to update: download the package for your platform and replace the deployment (unzip the zip / deb rpm package manager upgrade / npm global update / Docker image swap). A config export from the Backup section is recommended first.
+> How to update (pick by install method; the database is never touched):
+>
+> | Install method | Update command |
+> | --- | --- |
+> | APT repo (Ubuntu/Debian) | `sudo apt-get update && sudo apt-get install -y docker-manager` |
+> | YUM repo (RHEL 9 family) | `sudo dnf update -y docker-manager` |
+> | Manual deb / rpm | Download the new package from Releases, then `dpkg -i` / `dnf install` over it |
+> | Docker | `docker pull ghcr.io/13861419/docker-desktop:latest`, then recreate the container per section 0.6 |
+> | npm global | `npm update -g @13861419/docker-manager` |
+> | Windows | Download the new zip / setup exe and reinstall over it |
+>
+> deb/rpm upgrades overwrite `/opt/docker-manager/server/.env` (back up custom settings such as the port first). A config export from the Backup section is recommended first.
 ## Appendix: Modules & Routes
 
 | Menu | Route | Access |
