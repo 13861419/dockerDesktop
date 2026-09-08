@@ -130,19 +130,75 @@ router.delete(
 );
 
 /**
+ * 执行数据卷清理（路由与审批执行器共用）
+ *
+ * Docker 默认的 volume prune 仅清理匿名卷（名称为 64 位哈希的未命名卷），
+ * 命名卷（如 compose 创建的 deploy_pgdata）即使未被引用也不会被删——
+ * 这是 Docker 的防误删设计，命名卷通常保存数据库等重要数据。
+ * all=true 时通过 filters={"all":["1"]} 同时清理未被引用的命名卷
+ * （需 Docker API ≥ 1.42；旧引擎不支持该过滤器时回退为默认口径）。
+ *
+ * @param all 是否同时清理未使用的命名卷
+ * @returns result: Docker prune 原始返回；unusedNamed: 清理前未被引用的命名卷名列表
+ */
+export async function pruneVolumesInternal(
+  all: boolean,
+): Promise<{ result: any; unusedNamed: string[] }> {
+  const docker = await getDockerClient();
+  const [volumesRes, containers] = await Promise.all([
+    docker.listVolumes(),
+    docker.listContainers({ all: true }),
+  ]);
+  const used = new Set<string>();
+  for (const c of containers || []) {
+    for (const m of c.Mounts || []) {
+      if (m.Type === 'volume' && m.Name) used.add(m.Name);
+    }
+  }
+  const isAnonymous = (name: string) => /^[0-9a-f]{64}$/.test(name);
+  const unusedNamed = (volumesRes?.Volumes || [])
+    .map((v: any) => v.Name as string)
+    .filter((n: string) => !isAnonymous(n) && !used.has(n));
+
+  let result: any;
+  if (all && unusedNamed.length > 0) {
+    try {
+      result = await new Promise((resolve, reject) => {
+        (docker as any).modem.dial(
+          {
+            path: '/volumes/prune?',
+            method: 'POST',
+            options: { filters: JSON.stringify({ all: ['1'] }) },
+            statusCodes: { 200: true, 500: 'server error' },
+          },
+          (err: any, data: any) => (err ? reject(err) : resolve(data)),
+        );
+      });
+    } catch {
+      // 旧版引擎不认识 all 过滤器时回退默认口径（仅匿名卷）
+      result = await docker.pruneVolumes();
+    }
+  } else {
+    result = await docker.pruneVolumes();
+  }
+  return { result, unusedNamed };
+}
+
+/**
  * POST /api/volumes/prune
  * 清理未被使用的数据卷
+ * body: { all?: boolean } —— all=true 时同时清理未使用的命名卷（默认仅匿名卷）
  */
 router.post(
   '/prune',
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    if (maybeGateOrForbidden(req, res, 'volume.prune', 'all', {})) return;
-    const docker = await getDockerClient();
-    const result = await docker.pruneVolumes();
+    const all = req.body?.all === true;
+    if (maybeGateOrForbidden(req, res, 'volume.prune', all ? '全部未使用（含命名卷）' : '匿名卷', { all })) return;
+    const { result, unusedNamed } = await pruneVolumesInternal(all);
     const deleted = (result?.VolumesDeleted || []).join(', ');
     logOperation(res.locals.username, '清理未使用卷', 'volume', null, deleted || undefined);
-    res.json(result);
+    res.json({ ...result, namedKept: all ? 0 : unusedNamed.length, namedTotal: unusedNamed.length });
   }),
 );
 

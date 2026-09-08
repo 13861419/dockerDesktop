@@ -495,7 +495,8 @@ Menu: **Image Build** (`/build`, admin only)
 - **New volume** — set a name and driver.
 - **Delete** — only for unused volumes.
 - **Detail** — view mount points and using containers.
-- **Prune** — reclaim volumes not referenced by any container.
+- **Prune** — reclaims unused **anonymous** volumes only; unused named volumes (e.g. database volumes like `deploy_pgdata`) are kept by default for data safety, with a count shown in the result.
+- **Prune All (incl. Named)** — ⚠️ also deletes unused named volumes (may contain database data); use with caution.
 
 ### 8.2 Storage (`/storage`)
 

@@ -99,6 +99,8 @@ const canPrune = hasPerm('volumes.prune');
   const [deleteTarget, setDeleteTarget] = useState<VolumeItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [pruneOpen, setPruneOpen] = useState(false);
+  // "清理全部未使用卷（含命名卷）"确认框
+  const [pruneAllOpen, setPruneAllOpen] = useState(false);
   const [pruning, setPruning] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   // 搜索关键字（按名称/挂载点本地过滤）
@@ -224,17 +226,29 @@ const canPrune = hasPerm('volumes.prune');
     }
   }, [checking, deleteTarget, showToast]);
 
-  const handlePrune = useCallback(async () => {
+  const handlePrune = useCallback(async (all: boolean) => {
     if (checking) {
       showToast(t('正在确认权限，请稍候'), 'error');
       setPruneOpen(false);
+      setPruneAllOpen(false);
       return;
     }
     setPruning(true);
     try {
-      const resp = await post<{ approvalPending?: boolean }>('/api/volumes/prune');
-      showToast(resp?.approvalPending ? t('该操作已提交审批，等待管理员批准后执行') : t('清理完成'), resp?.approvalPending ? 'info' : 'success');
+      const resp = await post<{ approvalPending?: boolean; namedKept?: number }>('/api/volumes/prune', { all });
+      if (resp?.approvalPending) {
+        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
+      } else {
+        const namedKept = all ? 0 : resp?.namedKept || 0;
+        showToast(
+          namedKept > 0
+            ? t('清理完成；另有 {{v1}} 个未使用的命名卷未动（数据保护，可单独删除）', { v1: namedKept })
+            : t('清理完成'),
+          'success',
+        );
+      }
       setPruneOpen(false);
+      setPruneAllOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
       showToast(e?.message || t('清理失败'), 'error');
@@ -489,6 +503,9 @@ const canPrune = hasPerm('volumes.prune');
             </Button>
             <Button variant="secondary" onClick={() => setPruneOpen(true)} disabled={!canPrune}>
               {t('清理未使用卷')}
+            </Button>
+            <Button variant="secondary" onClick={() => setPruneAllOpen(true)} disabled={!canPrune}>
+              {t('清理全部未使用卷（含命名卷）')}
             </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)} disabled={!canWrite}>
               {t('新建卷')}
@@ -890,16 +907,28 @@ const canPrune = hasPerm('volumes.prune');
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* 清理未使用数据卷确认框 */}
+      {/* 清理未使用数据卷确认框（仅匿名卷） */}
       <ConfirmDialog
         open={pruneOpen}
         title={t('清理未使用数据卷')}
-        message={t('确定要清理所有未被容器引用的数据卷吗？此操作不可恢复。')}
+        message={t('确定要清理所有未被容器引用的匿名数据卷吗？未使用的命名卷（如 deploy_pgdata 等数据库卷）会被保留以防误删，此操作不可恢复。')}
         confirmText={t('清理')}
         danger
         loading={pruning}
-        onConfirm={handlePrune}
+        onConfirm={() => handlePrune(false)}
         onCancel={() => setPruneOpen(false)}
+      />
+
+      {/* 清理全部未使用数据卷确认框（含命名卷，高危） */}
+      <ConfirmDialog
+        open={pruneAllOpen}
+        title={t('清理全部未使用卷（含命名卷）')}
+        message={t('将删除所有未被容器引用的数据卷（含命名卷）。命名卷可能包含数据库等重要数据，此操作不可恢复，确定继续吗？')}
+        confirmText={t('确认清理')}
+        danger
+        loading={pruning}
+        onConfirm={() => handlePrune(true)}
+        onCancel={() => setPruneAllOpen(false)}
       />
     </div>
   );

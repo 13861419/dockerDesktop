@@ -124,7 +124,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/images', name: t('镜像'), desc: t('列表、搜索、拉取（多源容灾）、导出、层分析、漏洞扫描') },
   { path: '/build', name: t('构建镜像'), desc: t('在线构建（SSE 实时日志）、层热力图、时长对比') },
   { path: '/hub', name: t('镜像中心'), desc: t('镜像源管理与加速配置') },
-  { path: '/volumes', name: t('数据卷'), desc: t('列表、克隆、导出 tar、标签过滤') },
+    { path: '/volumes', name: t('数据卷'), desc: t('列表、克隆、导出 tar、标签过滤；清理未使用卷默认仅删匿名卷，命名卷需用「清理全部」或单独删除') },
   { path: '/storage', name: t('存储'), desc: t('Docker 磁盘占用与宿主机分区使用率') },
   { path: '/networks', name: t('网络'), desc: t('网络管理与清理') },
   { path: '/topology', name: t('网络拓扑'), desc: t('容器-网络-端口关系可视化') },

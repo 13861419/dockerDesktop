@@ -732,11 +732,12 @@ const executors: Record<string, Executor> = {
     await docker.getVolume(target).remove();
     return `卷 ${target} 已删除`;
   },
-  'volume.prune': async () => {
-    const docker = await getDockerClient();
-    const r = await docker.pruneVolumes();
-    const n = Array.isArray(r?.VolumesDeleted) ? r.VolumesDeleted.length : 0;
-    return `已清理 ${n} 个未使用卷`;
+  'volume.prune': async (_target, payload) => {
+    // 动态导入避免模块加载环（volumes 路由静态依赖 approvals 门禁）
+    const { pruneVolumesInternal } = await import('./routes/volumes');
+    const { result } = await pruneVolumesInternal(payload.all === true);
+    const n = Array.isArray(result?.VolumesDeleted) ? result.VolumesDeleted.length : 0;
+    return payload.all === true ? `已清理 ${n} 个未使用卷（含命名卷）` : `已清理 ${n} 个未使用卷`;
   },
   'network.prune': async () => {
     const docker = await getDockerClient();

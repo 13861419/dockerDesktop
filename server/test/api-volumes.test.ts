@@ -66,6 +66,12 @@ test('POST /api/volumes/prune: 清理未使用卷', async () => {
   assert.ok(res.status === 200);
 });
 
+test('POST /api/volumes/prune: 清理全部未使用卷（含命名卷）', async () => {
+  const res = await req('POST', '/api/volumes/prune', { all: true }, { Authorization: `Bearer ${adminToken}` });
+  assert.ok(res.status === 200);
+  assert.ok(typeof res.data?.namedKept === 'number', '应返回 namedKept 统计');
+});
+
 test('GET /api/volumes: 未登录返回 401', async () => {
   const res = await req('GET', '/api/volumes');
   assert.strictEqual(res.status, 401);
