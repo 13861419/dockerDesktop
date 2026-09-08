@@ -50,7 +50,7 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
   const H = height;
   const PAD = { top: 12, right: 12, bottom: 30, left: 34 };
 
-  const { paths, chartW, chartH } = useMemo(() => {
+  const { paths, dataMax, chartW, chartH } = useMemo(() => {
     // 合并所有序列点数，取最大
     const maxLen = Math.max(...series.map((s) => s.data.length), 1);
     const chartW = W - PAD.left - PAD.right;
@@ -87,7 +87,7 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
   }, [series, max, height]);
 
   // 网格线（横向 4 条）：使用实际 Y 轴上限（数据超出固定 max 时会自动扩展）
-  const maxVal = paths ? paths.dataMax : 100;
+  const maxVal = paths ? dataMax : 100;
   // 网格线（横向 4 条）
   const gridLines = [0, 1, 2, 3, 4].map((i) => {
     const y = PAD.top + chartH - (i / 4) * chartH;
