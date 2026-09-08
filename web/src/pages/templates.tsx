@@ -51,11 +51,11 @@ function initials(name: string): string {
 
 /**
  * 格式化时间（秒级时间戳 → 本地时间字符串）
- * @param sec 秒级时间戳
+ * @param ms 毫秒时间戳
  */
-function formatTime(sec: number): string {
-  if (!sec) return '—';
-  const d = new Date(sec * 1000);
+function formatTime(ms: number): string {
+  if (!ms) return '—';
+  const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -73,7 +73,7 @@ export default function TemplatesPage() {
   // 搜索关键字（匹配名称 / 描述 / 镜像）
   const [keyword, setKeyword] = useState('');
   // 展开查看 config 的模板 id
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // 新建/编辑弹窗
   const [editorOpen, setEditorOpen] = useState(false);
@@ -264,7 +264,7 @@ export default function TemplatesPage() {
       ) : (
         <div className="templates-grid">
           {filtered.map((tp) => {
-            const expanded = expandedId === tp.id;
+            const expanded = expandedIds.has(tp.id);
             return (
               <div className="templates-card" key={tp.id}>
                 <div className="templates-card__head">
@@ -293,7 +293,13 @@ export default function TemplatesPage() {
                   <button
                     type="button"
                     className="templates-card__config-toggle"
-                    onClick={() => setExpandedId(expanded ? null : tp.id)}
+                    onClick={() => {
+                      // 每张卡独立开合，互不影响
+                      const next = new Set(expandedIds);
+                      if (expanded) next.delete(tp.id);
+                      else next.add(tp.id);
+                      setExpandedIds(next);
+                    }}
                   >
                     <span>config</span>
                     <span className="templates-card__config-arrow">{expanded ? '▾' : '▸'}</span>

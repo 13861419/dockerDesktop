@@ -41,11 +41,13 @@
   flex: 1;
 }
 
-/* 模板卡片网格 */
+/* 模板卡片网格：align-items: start 让卡片按内容自适应高度，
+ * 展开某张卡的 config 预览时不会把同行其它卡拉出大片空白 */
 .templates-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 /* 模板卡片 */
