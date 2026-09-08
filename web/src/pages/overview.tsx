@@ -562,53 +562,6 @@ export default function OverviewPage() {
         )}
       </div>
 
-      {/* 无限制容器风险提示：存在未配置 CPU/内存限制的运行容器时展示 */}
-      {!noLimitDismissed && noLimit.length > 0 && (
-        <div className="overview__monitor">
-          <Card
-            title={t('无资源限制的容器')}
-            extra={
-              <button
-                type="button"
-                onClick={() => setNoLimitDismissed(true)}
-                style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
-              >
-                {t('知道了')}
-              </button>
-            }
-          >
-            <div style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 10 }}>
-              {t('以下容器未配置 CPU / 内存限制，可能占满宿主机资源，建议在创建容器时配置限制。')}
-            </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t('容器')}</th>
-                  <th style={{ width: 140 }}>CPU</th>
-                  <th style={{ width: 140 }}>{t('内存')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {noLimit.map((c) => (
-                  <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/containerDetail/${c.id}`)}>
-                    <td>
-                      <div className="ov-top__name" title={c.name}>
-                        {c.name}
-                      </div>
-                      <div className="ov-top__image" title={c.image}>
-                        {c.image}
-                      </div>
-                    </td>
-                    <td>{c.cpuPercent.toFixed(1)}%</td>
-                    <td>{formatGB(c.memUsed)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        </div>
-      )}
-
       {/* 资源监控区 */}
       <div className="overview__monitor">
         <Card
@@ -894,6 +847,53 @@ export default function OverviewPage() {
           <StatusBadge status={data.swarm} />
         </div>
       </Card>
+
+      {/* 无限制容器风险提示（页面底部）：存在未配置 CPU/内存限制的运行容器时展示 */}
+      {!noLimitDismissed && noLimit.length > 0 && (
+        <div className="overview__monitor">
+          <Card
+            title={t('无资源限制的容器')}
+            extra={
+              <button
+                type="button"
+                onClick={() => setNoLimitDismissed(true)}
+                style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
+              >
+                {t('知道了')}
+              </button>
+            }
+          >
+            <div style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 10 }}>
+              {t('以下容器未配置 CPU / 内存限制，可能占满宿主机资源，建议在创建容器时配置限制。')}
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t('容器')}</th>
+                  <th style={{ width: 140 }}>CPU</th>
+                  <th style={{ width: 140 }}>{t('内存')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {noLimit.map((c) => (
+                  <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/containerDetail/${c.id}`)}>
+                    <td>
+                      <div className="ov-top__name" title={c.name}>
+                        {c.name}
+                      </div>
+                      <div className="ov-top__image" title={c.image}>
+                        {c.image}
+                      </div>
+                    </td>
+                    <td>{c.cpuPercent.toFixed(1)}%</td>
+                    <td>{formatGB(c.memUsed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
