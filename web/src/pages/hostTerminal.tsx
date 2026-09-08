@@ -14,6 +14,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { getToken } from '../api/auth';
+import { get } from '../api/client';
 import { useCanManage } from '../hooks/useCanManage';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -23,6 +24,15 @@ import './hostTerminal.less';
 
 /** 连接状态 */
 type ConnState = 'connecting' | 'connected' | 'closed' | 'error';
+
+/** shell 标识 → 显示名 */
+const SHELL_LABELS: Record<string, string> = {
+  powershell: 'PowerShell',
+  cmd: 'CMD',
+  bash: 'Bash',
+  sh: 'sh',
+  zsh: 'Zsh',
+};
 
 /**
  * 计算宿主终端 WebSocket URL（附带鉴权 token）
@@ -47,8 +57,9 @@ export default function HostTerminalPage() {
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // 当前与目标 shell
-  const [shell, setShell] = useState('powershell');
+  // 当前与目标 shell（初始为空，待 /info 返回平台可用 shell 后再定默认值）
+  const [shell, setShell] = useState('');
+  const [shells, setShells] = useState<Array<{ value: string; label: string }>>([]);
   const [connState, setConnState] = useState<ConnState>('connecting');
 
   /**
@@ -72,6 +83,7 @@ export default function HostTerminalPage() {
    */
   const connect = useCallback(
     (targetShell: string) => {
+      if (!targetShell) return; // shell 未就绪（等待 /info）时不建连
       teardown();
       setConnState('connecting');
       const term = termRef.current;
@@ -168,6 +180,20 @@ export default function HostTerminalPage() {
   const shellRef = useRef(shell);
   shellRef.current = shell;
 
+  // 拉取平台可用 shell 列表并设定默认 shell（后端按操作系统返回）
+  useEffect(() => {
+    if (!canManage || checking) return;
+    get<{ shell: string; shells: string[] }>('/api/hostterminal/info')
+      .then((info) => {
+        const list = (info.shells || []).map((s) => ({ value: s, label: SHELL_LABELS[s] || s }));
+        setShells(list);
+        setShell((prev) => (prev && list.some((o) => o.value === prev) ? prev : info.shell || ''));
+      })
+      .catch(() => {
+        // 接口失败时保持空列表（下拉显示占位，连接由用户手动触发）
+      });
+  }, [canManage, checking]);
+
   // 权限就绪后自动建连（初次加载时 useCanManage 正在校验）
   useEffect(() => {
     if (canManage && !checking && termRef.current && wsRef.current === null) {
@@ -194,7 +220,7 @@ export default function HostTerminalPage() {
     <div className="page">
       <div className="page__header">
         <h1 className="page__title">{t('宿主机终端')}</h1>
-        <p className="page__desc">{t('在宿主机执行 PowerShell / cmd 命令（会话式交互终端）')}</p>
+        <p className="page__desc">{t('在宿主机执行 shell 命令（会话式交互终端，shell 按操作系统自动提供）')}</p>
       </div>
 
       <Card>
@@ -209,12 +235,13 @@ export default function HostTerminalPage() {
             className="ht-shell"
             value={shell}
             onChange={(e) => setShell(e.target.value)}
-            disabled={!canManage || connState === 'connecting'}
+            disabled={!canManage || connState === 'connecting' || shells.length === 0}
           >
-            <option value="powershell">PowerShell</option>
-            <option value="cmd">CMD</option>
-            <option value="bash">Bash</option>
-            <option value="sh">sh</option>
+            {shells.length === 0 ? (
+              <option value="">{t('加载中...')}</option>
+            ) : (
+              shells.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
+            )}
           </Select>
           {connState === 'connected' ? (
             <Button variant="ghost" size="sm" onClick={disconnect}>{t('断开')}</Button>

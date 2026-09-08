@@ -134,7 +134,8 @@ function handleSession(ws: WebSocket): void {
             { cwd: DEFAULT_CWD, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
           );
         } else {
-          const bin = shell === 'sh' ? '/bin/sh' : '/bin/bash';
+          // Linux：bash / sh；macOS：zsh（依赖 PATH）…其余回退 bash
+          const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
           child = spawn(bin, [], {
             cwd: DEFAULT_CWD,
             stdio: ['pipe', 'pipe', 'pipe'],

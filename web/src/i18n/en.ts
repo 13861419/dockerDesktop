@@ -2313,7 +2313,7 @@ export const en: Record<string, string> = {
   '项目': 'Project',
   '所属网络': 'Networks',
   '无': 'None',
-  '在宿主机执行 PowerShell / cmd 命令（会话式交互终端）': 'Run PowerShell / cmd commands on the host (session-based interactive terminal)',
+  '在宿主机执行 shell 命令（会话式交互终端，shell 按操作系统自动提供）': 'Run shell commands on the host (session-based interactive terminal; shells provided per OS)',
   '状态：': 'Status: ',
   '连接中...': 'Connecting…',
   '已断开': 'Disconnected',

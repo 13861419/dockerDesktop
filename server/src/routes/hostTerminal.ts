@@ -122,8 +122,8 @@ function getSpawnConfig(shell: Shell, command: string): { bin: string; args: str
     }
     return { bin: 'cmd.exe', args: ['/d', '/c', withUtf8(shell, command)] };
   }
-  // Linux
-  const bin = shell === 'sh' ? '/bin/sh' : '/bin/bash';
+  // Linux：bash / sh；macOS：zsh（依赖 PATH）…其余回退 bash
+  const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
   return { bin, args: ['-c', command] };
 }
 
@@ -232,7 +232,7 @@ router.get(
  * POST /api/hostterminal/exec
  * 执行单条命令
  * @body command 命令文本
- * @body shell   powershell | cmd（默认 powershell）
+ * @body shell   按平台可选（Windows: powershell/cmd，Linux: bash/sh，macOS: zsh/sh），缺省用平台默认
  * @body cwd     可选，执行目录（默认会话工作目录）
  * @body timeout 可选，超时毫秒
  */

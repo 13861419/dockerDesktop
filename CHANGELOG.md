@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.28.19] - 2026-09-08
+
+### Fixed（修复）
+
+- 宿主机终端 shell 选项按操作系统自动提供：前端不再硬编码 PowerShell/CMD/Bash/sh 全量选项，改为从 `/api/hostterminal/info` 拉取当前平台可用列表（Windows: PowerShell/CMD，Linux: Bash/sh，macOS: Zsh/sh）并使用平台默认 shell
+- 修复 macOS 上选择 zsh 时后端误以 bash 启动的问题（会话式终端与单命令执行器同步修正）
+
 ## [1.28.18] - 2026-09-08
 
 ### Fixed（修复）

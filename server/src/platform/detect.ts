@@ -70,9 +70,9 @@ export function getDistro(): DistroInfo | null {
 
 export type ShellName = 'powershell' | 'cmd' | 'bash' | 'sh' | 'zsh';
 
-/** 当前平台可用的宿主 shell 列表（优先级在前） */
+/** 当前平台可用的宿主 shell 列表（优先级在前，默认值取首项） */
 export function getDefaultShells(): ShellName[] {
-  if (isWindows()) return ['cmd', 'powershell'];
+  if (isWindows()) return ['powershell', 'cmd'];
   if (isLinux()) return ['bash', 'sh'];
   // macOS（darwin）：默认 zsh
   return ['zsh', 'sh'];
