@@ -1,6 +1,6 @@
 {
   "name": "server",
-  "version": "1.28.10",
+  "version": "1.28.11",
   "private": true,
   "description": "Docker 管理面板后端服务",
   "main": "dist/index.js",

@@ -182,7 +182,7 @@ export interface HourlyRow {
   gpu_avg: number | null;
   /** GPU 最大利用率峰值 */
   gpu_max: number | null;
-  /** 运行容器内存使用字节总和均值（host；1.28.10 起记录，旧数据为 NULL） */
+  /** 运行容器内存使用字节总和均值（host；1.28.11 起记录，旧数据为 NULL） */
   container_mem_avg: number | null;
 }
 

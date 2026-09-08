@@ -908,7 +908,7 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
-  // 迁移：补充容器内存合计列（1.28.10 双维度监控，旧数据为 NULL）
+  // 迁移：补充容器内存合计列（1.28.11 双维度监控，旧数据为 NULL）
   try {
     d.exec('ALTER TABLE host_metrics ADD COLUMN container_mem_used INTEGER');
   } catch {
