@@ -119,6 +119,7 @@ sudo apt-get install -y docker-manager
 > - 升级过程自动重启服务，无需手动 `systemctl restart`
 > - 数据库（SQLite，位于 `/var/lib/docker-manager`）不受升级影响
 > - `.env` 配置文件会被新包覆盖，若修改过端口等自定义配置，请先备份：`sudo cp /opt/docker-manager/server/.env /root/dm.env.bak`
+> - 服务器无法访问 GitHub 时，见 0.4 节「无法访问 GitHub 时」（离线安装 / 镜像加速）
 
 ### 0.3 方式二：YUM 源安装（RHEL 9 系 / AlmaLinux / Rocky）
 
@@ -169,6 +170,37 @@ sudo yum install -y docker-manager-*.rpm
 ```
 
 安装脚本会自动完成：创建用户、配置 systemd 服务、放行防火墙端口。脚本安装时支持自定义 Web 端口：`bash install.sh --port 8080` 或交互输入（回车默认 `9528`）。
+
+#### 无法访问 GitHub 时（离线安装 / 镜像加速）
+
+APT / YUM 源与 GitHub Releases 均托管在 GitHub 上，服务器无法直连 GitHub 时按以下方式安装或升级：
+
+**方式一：离线安装（最可靠）**
+
+在能联网的电脑从 [GitHub Releases](https://github.com/13861419/dockerDesktop/releases/latest) 下载安装包，拷贝到服务器安装（已装旧版时自动升级，数据库不受影响）：
+
+```bash
+# 本地电脑：上传到服务器（scp / U 盘均可）
+scp docker-manager-1.28.6-amd64.deb user@server:/tmp/
+
+# 服务器上安装/升级
+sudo dpkg -i /tmp/docker-manager-1.28.6-amd64.deb
+```
+
+rpm 同理：`sudo dnf install /tmp/docker-manager-*.rpm`（升级自动覆盖旧版）。
+
+**方式二：镜像加速下载**
+
+在 Releases 下载链接前加加速前缀（国内常用 ghfast.top、gh-proxy.com 等，按可用性选择）：
+
+```bash
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.28.6/docker-manager-1.28.6-amd64.deb
+sudo dpkg -i docker-manager-1.28.6-amd64.deb
+```
+
+**方式三：面板内更新走镜像**
+
+「设置 → 关于 → 检查更新」配合系统参数 `update.githubMirror`（见第 45 章），检查与下载均走镜像，不直连 GitHub。
 
 ### 0.5 方式四：Windows 安装
 
@@ -1510,6 +1542,8 @@ scrape_configs:
 > | Windows | 下载新版 zip 解压替换或 setup exe 覆盖安装 |
 >
 > deb/rpm 升级会覆盖 `/opt/docker-manager/server/.env`（端口等自定义配置请先备份）。更新前建议先做一次「备份恢复」中的配置导出。
+>
+> 无法访问 GitHub 时：在能联网的电脑下载更新包拷贝到服务器（`dpkg -i` / `dnf install` 覆盖），或给下载链接加镜像前缀，详见 0.4 节「无法访问 GitHub 时」。
 ## 附：模块与访问路径速查
 
 | 菜单 | 路径 | 权限 |

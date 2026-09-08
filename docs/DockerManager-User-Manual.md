@@ -114,6 +114,7 @@ sudo apt-get install -y docker-manager
 > - The service restarts automatically during upgrade; no manual `systemctl restart` needed
 > - The database (SQLite under `/var/lib/docker-manager`) is not affected by upgrades
 > - The `.env` file gets overwritten by the new package; back it up first if you changed the port or other settings: `sudo cp /opt/docker-manager/server/.env /root/dm.env.bak`
+> - If the server cannot reach GitHub, see "When GitHub Is Unreachable" in section 0.4 (offline install / mirror acceleration)
 
 ### 0.3 Option 2: YUM Repository (CentOS / RHEL)
 
@@ -164,6 +165,37 @@ sudo yum install -y docker-manager-*.rpm
 ```
 
 The install script automatically creates the service user, configures systemd, and opens the firewall port. It supports a custom web port: `bash install.sh --port 8080` or interactive input (Enter = default `9528`).
+
+#### When GitHub Is Unreachable (offline install / mirror acceleration)
+
+Both the APT/YUM repos and GitHub Releases are hosted on GitHub. When the server cannot reach GitHub directly, install or upgrade as follows:
+
+**Option 1: Offline install (most reliable)**
+
+On an internet-connected computer, download the package from [GitHub Releases](https://github.com/13861419/dockerDesktop/releases/latest), copy it to the server, and install (upgrades automatically if an old version exists; the database is not affected):
+
+```bash
+# Local computer: upload to the server (scp / USB drive)
+scp docker-manager-1.28.6-amd64.deb user@server:/tmp/
+
+# Install / upgrade on the server
+sudo dpkg -i /tmp/docker-manager-1.28.6-amd64.deb
+```
+
+Same for rpm: `sudo dnf install /tmp/docker-manager-*.rpm` (upgrades overwrite the old version automatically).
+
+**Option 2: Mirror-accelerated download**
+
+Prefix the Releases download URL with an acceleration mirror (e.g. ghfast.top, gh-proxy.com — pick whichever is available):
+
+```bash
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.28.6/docker-manager-1.28.6-amd64.deb
+sudo dpkg -i docker-manager-1.28.6-amd64.deb
+```
+
+**Option 3: In-app update via mirror**
+
+Use "Settings → About → Check for updates" together with the `update.githubMirror` system parameter (see section 45) so both check and download go through the mirror instead of GitHub directly.
 
 ### 0.5 Option 4: Windows Install
 
@@ -1466,6 +1498,8 @@ Entry: **Settings → About → Check for updates** (admin)
 > | Windows | Download the new zip / setup exe and reinstall over it |
 >
 > deb/rpm upgrades overwrite `/opt/docker-manager/server/.env` (back up custom settings such as the port first). A config export from the Backup section is recommended first.
+>
+> When GitHub is unreachable: download the update package on an internet-connected computer and copy it to the server (`dpkg -i` / `dnf install` over it), or prefix the download URL with a mirror. See "When GitHub Is Unreachable" in section 0.4.
 ## Appendix: Modules & Routes
 
 | Menu | Route | Access |

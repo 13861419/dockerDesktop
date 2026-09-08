@@ -14,7 +14,7 @@
 
 - Release CI 修复 Docker 多架构镜像发布：build-push-action 的 `platform` 输入更正为 `platforms`（此前 arm64 镜像被忽略参数后误以 amd64 构建），docker 系 Actions 升级至 node24 大版本（login v4 / metadata v6 / build-push v7 / setup-buildx v4 / setup-qemu v4），消除 Node 20 弃用告警
 - 修复 APT / YUM 软件源不可用：deb 文件名为连字符分隔导致 dpkg-scanpackages 产出空 Packages 索引，现重命名为 `包名_版本_架构.deb` 标准格式入 pool 并改用 apt-ftparchive 生成索引（空索引直接终止发布）；YUM repodata 从占位假文件改为 createrepo_c 真实生成；软件源文档移除不存在的 GPG key 步骤（未签名源使用 `[trusted=yes]`）
-- 操作手册（中英文）补充 APT / YUM 源升级命令（与安装同命令），并在「系统更新」章节列出各安装方式的具体更新命令与 `.env` 备份提醒
+- 操作手册（中英文）补充 APT / YUM 源升级命令（与安装同命令），并在「系统更新」章节列出各安装方式的具体更新命令与 `.env` 备份提醒；新增「无法访问 GitHub 时」小节（离线安装 / 镜像加速下载 / 面板内 update.githubMirror 更新）
 
 ### Fixed（修复）
 
