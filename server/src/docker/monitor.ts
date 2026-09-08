@@ -79,7 +79,12 @@ export function computeNetRate(
 /** 单个监控数据点 */
 export interface MonitorPoint {
   timestamp: number;
-  cpu: { percent: number; cores: number };
+  cpu: {
+    percent: number;
+    cores: number;
+    /** 宿主机整机 CPU（0-100 归一化，含非 Docker 进程；首轮采样为 null） */
+    hostPercent: number | null;
+  };
   mem: { percent: number; used: number; total: number };
   disk: { percent: number; used: number; total: number };
   disks: DiskPartition[];
@@ -381,9 +386,13 @@ async function collect() {
       // ignore
     }
 
+    // 宿主机整机 CPU（0-100 归一化，含非 Docker 进程）：与上次采样差分
+    const curCpu = sampleCpu();
+    const hostCpuPercent = lastCpu ? cpuPercent(curCpu, lastCpu) : null;
+    lastCpu = curCpu;
     const diskPercent = diskTotal > 0 ? Number(((diskUsed / diskTotal) * 100).toFixed(2)) : 0;
     const memPercent = memTotal > 0 ? Number(((memUsed / memTotal) * 100).toFixed(2)) : 0;
-    const cpuPercent = Number(aggCpu.toFixed(2));
+    const containerCpuPercent = Number(aggCpu.toFixed(2));
 
     // 依据当前使用率生成高占用告警（磁盘用 disks 总和的使用率，均以 90 / 75 为阈值）
     const alerts: MonitorAlert[] = [];
@@ -391,12 +400,12 @@ async function collect() {
     if (diskAlert) alerts.push(diskAlert);
     const memAlert = buildAlert('mem', '内存', memPercent);
     if (memAlert) alerts.push(memAlert);
-    const cpuAlert = buildAlert('cpu', 'CPU', cpuPercent);
+    const cpuAlert = buildAlert('cpu', 'CPU', containerCpuPercent);
     if (cpuAlert) alerts.push(cpuAlert);
 
     const point: MonitorPoint = {
       timestamp: Date.now(),
-      cpu: { percent: cpuPercent, cores: info.NCPU || 0 },
+      cpu: { percent: containerCpuPercent, cores: info.NCPU || 0, hostPercent: hostCpuPercent },
       mem: {
         percent: memPercent,
         used: memUsed,
@@ -475,6 +484,7 @@ export function getMonitorHistory(minutes = 10): MonitorPoint[] {
 interface HostMetricRow {
   ts: number;
   cpu_percent: number;
+  cpu_host: number | null;
   cpu_cores: number;
   mem_percent: number;
   mem_used: number;
@@ -494,8 +504,8 @@ interface HostMetricRow {
 export interface MetricPoint {
   /** 采样时间戳（毫秒） */
   timestamp: number;
-  /** CPU 使用率与核数 */
-  cpu: { percent: number; cores: number };
+  /** CPU 使用率与核数（percent 为 Docker 容器口径；hostPercent 为整机归一化 0-100） */
+  cpu: { percent: number; cores: number; hostPercent?: number | null };
   /** 内存使用率与绝对值 */
   mem: { percent: number; used: number; total: number };
   /** 磁盘使用率与绝对值 */
@@ -547,13 +557,14 @@ function persistPoint(point: MonitorPoint): void {
     const db = getDb();
     db.prepare(
       `INSERT INTO host_metrics
-        (ts, cpu_percent, cpu_cores, mem_percent, mem_used, mem_total,
+        (ts, cpu_percent, cpu_host, cpu_cores, mem_percent, mem_used, mem_total,
          disk_percent, disk_used, disk_total, gpu_percent, net_rx, net_tx,
          containers_running, containers_total, images)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       point.timestamp,
       point.cpu.percent,
+      point.cpu.hostPercent,
       point.cpu.cores,
       point.mem.percent,
       point.mem.used,
@@ -646,7 +657,7 @@ function mapMonitorPoint(p: MonitorPoint): MetricPoint {
 function mapHostMetricRow(r: HostMetricRow): MetricPoint {
   return {
     timestamp: r.ts,
-    cpu: { percent: r.cpu_percent, cores: r.cpu_cores },
+    cpu: { percent: r.cpu_percent, cores: r.cpu_cores, hostPercent: r.cpu_host },
     mem: { percent: r.mem_percent, used: r.mem_used, total: r.mem_total },
     disk: { percent: r.disk_percent, used: r.disk_used, total: r.disk_total },
     gpu: { percent: r.gpu_percent },
@@ -664,7 +675,7 @@ function mapHostMetricRow(r: HostMetricRow): MetricPoint {
 function mapHourlyRow(r: HourlyRow): MetricPoint {
   return {
     timestamp: r.ts_hour,
-    cpu: { percent: r.cpu_avg, cores: r.cpu_cores },
+    cpu: { percent: r.cpu_avg, cores: r.cpu_cores, hostPercent: r.cpu_host_avg ?? null },
     mem: { percent: r.memp_avg, used: r.mem_avg, total: r.mem_total },
     disk: { percent: r.disk_avg, used: 0, total: 0 },
     gpu: { percent: r.gpu_avg ?? null },

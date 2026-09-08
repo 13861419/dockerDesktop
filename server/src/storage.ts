@@ -397,6 +397,7 @@ function createTables(): void {
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       ts                 INTEGER NOT NULL,             -- 采样时间（毫秒）
       cpu_percent        REAL NOT NULL,
+      cpu_host           REAL,                         -- 宿主机整机 CPU（0-100 归一化，首轮采样为 NULL）
       cpu_cores          INTEGER NOT NULL,
       mem_percent        REAL NOT NULL,
       mem_used           INTEGER NOT NULL,
@@ -897,6 +898,17 @@ function createTables(): void {
   // 迁移：为 host_metrics / metrics_hourly 补充 GPU 利用率列（1.28.6 GPU 历史趋势，无 N 卡时为 NULL）
   try {
     d.exec('ALTER TABLE host_metrics ADD COLUMN gpu_percent REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：补充宿主机整机 CPU 列（1.28.10 双口径显示，首轮采样为 NULL）
+  try {
+    d.exec('ALTER TABLE host_metrics ADD COLUMN cpu_host REAL');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE metrics_hourly ADD COLUMN cpu_host_avg REAL');
   } catch {
     // 列已存在则忽略
   }

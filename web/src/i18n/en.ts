@@ -471,6 +471,7 @@ export const en: Record<string, string> = {
   '清理': 'Prune',
   '清理失败': 'Prune failed',
   '清理失败：{{v1}}': 'Prune failed: {{v1}}',
+  '整机': 'Host-wide',
   '清理完成': 'Prune completed',
   '清理完成；另有 {{v1}} 个未使用的命名卷未动（数据保护，可单独删除）': 'Prune completed; {{v1}} unused named volume(s) kept for data safety (delete them individually if not needed)',
   '清理完成，释放 {{freed}}': 'Prune completed, freed {{freed}}',

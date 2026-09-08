@@ -32,7 +32,7 @@ interface DiskPartition {
 
 interface MonitorPoint {
   timestamp: number;
-  cpu: { percent: number; cores: number };
+  cpu: { percent: number; cores: number; hostPercent?: number | null };
   mem: { percent: number; used: number; total: number };
   disk: { percent: number; used: number; total: number };
   disks: DiskPartition[];
@@ -390,7 +390,11 @@ export default function OverviewPage() {
     {
       label: 'CPU',
       value: now ? formatPercent(now.cpu.percent) : '--',
-      extra: now ? t('{{n}} 核', { n: now.cpu.cores }) : '',
+      extra: now
+        ? now.cpu.hostPercent != null
+          ? `${t('整机')} ${formatPercent(now.cpu.hostPercent)} · ${t('{{n}} 核', { n: now.cpu.cores })}`
+          : t('{{n}} 核', { n: now.cpu.cores })
+        : '',
       percent: now ? now.cpu.percent : undefined,
     },
     {

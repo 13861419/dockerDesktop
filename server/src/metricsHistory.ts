@@ -35,6 +35,7 @@ export function rollupHour(scope: 'host' | 'container', tsHour: number): number 
       .prepare(
         `SELECT count(*) AS samples,
                 avg(cpu_percent) AS cpu_avg, max(cpu_percent) AS cpu_max,
+                avg(cpu_host) AS cpu_host_avg,
                 avg(mem_percent) AS memp_avg, avg(mem_used) AS mem_avg, max(mem_used) AS mem_max,
                 avg(mem_total) AS mem_total, avg(cpu_cores) AS cores, avg(disk_percent) AS disk_avg,
                 avg(gpu_percent) AS gpu_avg, max(gpu_percent) AS gpu_max,
@@ -44,19 +45,20 @@ export function rollupHour(scope: 'host' | 'container', tsHour: number): number 
          FROM host_metrics WHERE ts >= ? AND ts < ?`,
       )
       .get(start, end) as
-      | { samples: number; cpu_avg: number; cpu_max: number; memp_avg: number; mem_avg: number; mem_max: number; mem_total: number; cores: number; disk_avg: number; gpu_avg: number | null; gpu_max: number | null; rx_min: number; rx_max: number; tx_min: number; tx_max: number; ctn_avg: number; img_avg: number }
+      | { samples: number; cpu_avg: number; cpu_max: number; cpu_host_avg: number | null; memp_avg: number; mem_avg: number; mem_max: number; mem_total: number; cores: number; disk_avg: number; gpu_avg: number | null; gpu_max: number | null; rx_min: number; rx_max: number; tx_min: number; tx_max: number; ctn_avg: number; img_avg: number }
       | undefined;
     if (!row || !row.samples) return 0;
     db.prepare(
       `INSERT OR REPLACE INTO metrics_hourly
-        (scope, key, ts_hour, samples, cpu_avg, cpu_max, mem_avg, mem_max, memp_avg, disk_avg, rx_sum, tx_sum,
+        (scope, key, ts_hour, samples, cpu_avg, cpu_max, cpu_host_avg, mem_avg, mem_max, memp_avg, disk_avg, rx_sum, tx_sum,
          cpu_cores, mem_total, ctn_avg, img_avg, gpu_avg, gpu_max)
-       VALUES ('host', 'host', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ('host', 'host', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       start,
       row.samples,
       row.cpu_avg,
       row.cpu_max,
+      row.cpu_host_avg,
       row.mem_avg,
       row.mem_max,
       row.memp_avg,
@@ -162,6 +164,8 @@ export interface HourlyRow {
   samples: number;
   cpu_avg: number;
   cpu_max: number;
+  /** 宿主机整机 CPU 均值（0-100 归一化，1.28.10 起记录，旧数据为 NULL） */
+  cpu_host_avg: number | null;
   mem_avg: number;
   mem_max: number;
   memp_avg: number;
@@ -188,7 +192,7 @@ export function queryHourly(scope: 'host' | 'container', key: string, since: num
   try {
     return getDb()
       .prepare(
-        `SELECT ts_hour, samples, cpu_avg, cpu_max, mem_avg, mem_max, memp_avg, disk_avg, rx_sum, tx_sum,
+        `SELECT ts_hour, samples, cpu_avg, cpu_max, cpu_host_avg, mem_avg, mem_max, memp_avg, disk_avg, rx_sum, tx_sum,
                 cpu_cores, mem_total, ctn_avg, img_avg, gpu_avg, gpu_max
          FROM metrics_hourly WHERE scope = ? AND key = ? AND ts_hour >= ?
          ORDER BY ts_hour ASC`,
