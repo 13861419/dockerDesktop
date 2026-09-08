@@ -54,7 +54,7 @@ type MetricsRange = '10m' | '1h' | '24h' | '7d' | '30d' | '90d';
 /** /api/monitor/history/range 返回的精简监控点（剔除 disks/alerts 等嵌套结构） */
 interface MetricPoint {
   timestamp: number;
-  cpu: { percent: number; cores: number };
+  cpu: { percent: number; cores: number; hostPercent?: number | null };
   mem: { percent: number; used: number; total: number };
   disk: { percent: number; used: number; total: number };
   gpu: { percent: number | null };
@@ -92,7 +92,7 @@ interface TopStatsResponse {
 /** 曲线渲染所需的最小数据结构（实时点与历史点经归一化后生成） */
 interface ChartPoint {
   timestamp: number;
-  cpu: { percent: number };
+  cpu: { percent: number; hostPercent: number | null };
   mem: { percent: number };
   disk: { percent: number };
   gpu: { percent: number | null };
@@ -352,9 +352,12 @@ export default function OverviewPage() {
   // GPU 归一化：实时点取所有显卡最大利用率，历史点取落库的 gpu_percent（无 N 卡为 null）
   const chartData: ChartPoint[] = (range === '10m' ? hist : rangeHist).map((p) => {
     const gpuArr = (p as MonitorPoint).gpu;
+    // 宿主机整机 CPU：实时点与历史点均可能缺失（旧数据/首轮采样为 null）
+    const hostPercent =
+      (p as MonitorPoint).cpu?.hostPercent ?? (p as MetricPoint).cpu?.hostPercent ?? null;
     return {
       timestamp: p.timestamp,
-      cpu: { percent: p.cpu.percent },
+      cpu: { percent: p.cpu.percent, hostPercent },
       mem: { percent: p.mem.percent },
       disk: { percent: p.disk.percent },
       gpu: {
@@ -366,7 +369,14 @@ export default function OverviewPage() {
       },
     };
   });
-  const cpuSeries: SeriesData = { name: 'CPU', color: 'var(--primary, #6366f1)', data: chartData.map((p) => p.cpu.percent) };
+  const cpuSeries: SeriesData = { name: t('CPU（容器）'), color: 'var(--primary, #6366f1)', data: chartData.map((p) => p.cpu.percent) };
+  // 宿主机整机 CPU 曲线：仅当窗口内存在整机采样时展示（旧数据无该指标）
+  const hasHostCpu = chartData.some((p) => p.cpu.hostPercent != null);
+  const hostCpuSeries: SeriesData = {
+    name: t('CPU（整机）'),
+    color: '#0ea5e9',
+    data: chartData.map((p) => p.cpu.hostPercent ?? 0),
+  };
   const memSeries: SeriesData = { name: t('内存'), color: '#22c55e', data: chartData.map((p) => p.mem.percent) };
   const diskSeries: SeriesData = { name: t('磁盘'), color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
   const gpuSeries: SeriesData = { name: 'GPU', color: '#ec4899', data: chartData.map((p) => p.gpu.percent ?? 0) };
@@ -566,7 +576,7 @@ export default function OverviewPage() {
           </div>
           <div className="monitor__charts">
             <div className="monitor__chart">
-              <LineChart series={[cpuSeries, memSeries]} labels={timeLabels} height={180} unit="%" max={100} />
+              <LineChart series={hasHostCpu ? [cpuSeries, hostCpuSeries, memSeries] : [cpuSeries, memSeries]} labels={timeLabels} height={180} unit="%" max={100} />
             </div>
             <div className="monitor__chart">
               <LineChart series={[diskSeries]} labels={timeLabels} height={180} unit="%" max={100} />
