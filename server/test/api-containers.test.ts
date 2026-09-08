@@ -131,6 +131,20 @@ test('POST /api/containers/port-check: 端口占用检测', async () => {
   assert.ok(Array.isArray(res.data?.results), '应返回 results 数组');
 });
 
+test('POST /api/containers/port-check: 支持端口/协议对象格式', async () => {
+  const res = await req(
+    'POST',
+    '/api/containers/port-check',
+    { ports: [{ port: 80, protocol: 'tcp' }, { port: 53, protocol: 'udp' }] },
+    { Authorization: `Bearer ${adminToken}` },
+  );
+  assert.ok(res.status === 200, `应返回 200，实际 ${res.status}`);
+  assert.ok(Array.isArray(res.data?.results), '应返回 results 数组');
+  assert.ok(res.data.results.length === 2, '应返回 2 项');
+  assert.ok(res.data.results[0].protocol === 'tcp', '第一项协议应为 tcp');
+  assert.ok(res.data.results[1].protocol === 'udp', '第二项协议应为 udp');
+});
+
 test('POST /api/containers/port-check: 缺少 ports 返回 400', async () => {
   const res = await req('POST', '/api/containers/port-check', {}, { Authorization: `Bearer ${adminToken}` });
   assert.ok(res.status === 400);

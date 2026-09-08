@@ -66,6 +66,7 @@ interface CreatePort {
 /** 单端口占用检测结果（POST /api/containers/port-check 返回的单项） */
 interface PortCheckResult {
   port: number;
+  protocol?: string;
   containerOccupied: boolean;
   containerNames: string[];
   hostListening: boolean;
@@ -1370,7 +1371,7 @@ export default function ContainersPage() {
     setPortCheckLoading((prev) => ({ ...prev, [index]: true }));
     try {
       const res = await post<{ results: PortCheckResult[] }>('/api/containers/port-check', {
-        ports: [port],
+        ports: [{ port, protocol: createPorts[index]?.protocol || 'tcp' }],
       });
       const result = res?.results?.[0];
       if (result) {

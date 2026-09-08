@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.28.8] - 2026-09-08
+
+### Fixed（修复）
+
+- 修复创建容器时大量 TCP 端口误报「端口被占用」：原实现用 TCP connect 探测（connect 成功即判定占用），服务器运行代理 / TUN 类软件（clash、sing-box 等）或配置 iptables REDIRECT/DNAT 规则时，任意端口的 connect 都会被代理程序接受，导致全部端口误报；现改为直接读取内核 socket 表（/proc/net/{tcp,tcp6,udp,udp6}）判定真实监听 / 绑定状态，不受用户态代理与转发规则干扰
+- 端口占用检测区分 TCP / UDP 协议：此前 UDP 映射也用 TCP connect 探测，误报同号 TCP 服务、漏报真实 UDP 占用；前端检测请求现携带协议参数
+
 ## [1.28.7] - 2026-09-08
 
 ### Fixed（修复）

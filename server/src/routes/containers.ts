@@ -4,7 +4,7 @@
  * 提供容器的列表、启停、删除、日志、详情、创建等接口。
  */
 import { Router, Request, Response } from 'express';
-import net from 'net';
+import fs from 'fs';
 import { getDockerClient } from '../docker/client';
 import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
@@ -285,33 +285,56 @@ router.get(
 );
 
 /**
- * 探测宿主机某端口是否被本机进程或已发布容器监听（TCP connect 探测）
- * connect 成功即认为端口已被占用。@param port 端口号 1-65535
- * @returns 是否被监听
+ * 读取内核 socket 表（/proc/net/{tcp,tcp6,udp,udp6}）解析本机监听端口。
+ *
+ * 不使用 TCP connect 探测：服务器若运行代理/TUN 类软件（clash、sing-box 等）
+ * 或配置了 iptables REDIRECT/DNAT 规则，任意端口的 connect 都会被代理程序接受，
+ * 导致所有端口被误判为"已被占用"。直接读内核监听表只认真正 LISTEN / 绑定的
+ * socket，不受用户态代理与转发规则干扰（仅 Linux；其他平台返回空集，静默降级）。
  */
-function probeHostListening(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    const done = (ok: boolean) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(ok);
-    };
-    socket.setTimeout(3000);
-    socket.once('connect', () => done(true));
-    socket.once('timeout', () => done(false));
-    socket.once('error', () => done(false));
-    socket.connect(port, '127.0.0.1');
-  });
+function loadLocalListeners(): { tcp: Set<number>; udp: Set<number> } {
+  const tcp = new Set<number>();
+  const udp = new Set<number>();
+  const tables: Array<{ file: string; proto: 'tcp' | 'udp' }> = [
+    { file: '/proc/net/tcp', proto: 'tcp' },
+    { file: '/proc/net/tcp6', proto: 'tcp' },
+    { file: '/proc/net/udp', proto: 'udp' },
+    { file: '/proc/net/udp6', proto: 'udp' },
+  ];
+  for (const { file, proto } of tables) {
+    let content: string;
+    try {
+      content = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue; // 非 Linux 平台（macOS/Windows 开发环境）无此文件，静默跳过
+    }
+    for (const line of content.split('\n').slice(1)) {
+      // 列结构：sl local_address rem_address st tx:rx tr:tm retrnsmt uid timeout inode ...
+      const cols = line.trim().split(/\s+/);
+      if (cols.length < 10) continue;
+      const portHex = cols[1]?.split(':')[1];
+      if (!portHex) continue;
+      const port = parseInt(portHex, 16);
+      if (!Number.isFinite(port)) continue;
+      if (proto === 'tcp') {
+        // st=0A 即 TCP_LISTEN
+        if (cols[3].toUpperCase() === '0A') tcp.add(port);
+      } else {
+        // UDP 无监听态：inode 非零即有实际绑定的 socket（inode=0 为内核空槽位）
+        if (cols[9] !== '0') udp.add(port);
+      }
+    }
+  }
+  return { tcp, udp };
 }
 
 /**
  * POST /api/containers/port-check
  * 前置端口占用检测：对用户输入的宿主机端口做冲突检查（创建/编辑容器前提示）。
- * body: { ports: (number|string)[] } —— 待检测的宿主机端口列表
+ * body: { ports: (number | { port: number; protocol?: 'tcp' | 'udp' })[] } —— 待检测的宿主机端口列表
  * 逐个判定：
  *  - containerOccupied/containerNames：是否已被其它容器映射（含单容器占用，放宽于 /ports 的 ≥2 冲突口径）
- *  - hostListening：本机 127.0.0.1 是否有进程监听该端口
+ *  - hostListening：本机（服务器）是否有进程监听/绑定该端口（TCP 取监听态，UDP 取绑定态）
  *  - busy = 二者任一为 true
  * 注意：该静态路由必须放在 /:id 之前，否则会被 /:id 遮蔽。
  */
@@ -322,14 +345,19 @@ router.post(
     if (!rawPorts.length) {
       return res.status(400).json({ error: '缺少待检测的端口列表' });
     }
-    // 归一化为去重的数字端口
-    const ports: number[] = Array.from(
-      new Set(
-        rawPorts
-          .map((p) => Number(p))
-          .filter((n) => Number.isFinite(n) && n >= 1 && n <= 65535),
-      ),
-    );
+    // 归一化：兼容数字或 {port, protocol} 对象，按 端口/协议 去重
+    const items = new Map<string, { port: number; protocol: 'tcp' | 'udp' }>();
+    for (const raw of rawPorts) {
+      const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : { port: raw, protocol: 'tcp' };
+      const port = Number(obj.port);
+      const protocol = obj.protocol === 'udp' ? 'udp' : 'tcp';
+      if (Number.isFinite(port) && port >= 1 && port <= 65535) {
+        items.set(`${port}/${protocol}`, { port, protocol });
+      }
+    }
+    if (!items.size) {
+      return res.status(400).json({ error: '缺少待检测的端口列表' });
+    }
 
     // 收集所有容器已发布的 HostPort 至占用列表（单个容器占用也视为冲突）
     const docker = await getDockerClient();
@@ -339,24 +367,21 @@ router.post(
       const name = (c.Names && c.Names[0] ? c.Names[0] : '').replace(/^\//, '');
       for (const p of c.Ports || []) {
         if (p.PublicPort !== undefined && p.PublicPort !== null) {
-          const key = String(p.PublicPort);
+          const key = `${p.PublicPort}/${p.Type || 'tcp'}`;
           if (!portOwners[key]) portOwners[key] = [];
           if (!portOwners[key].includes(name)) portOwners[key].push(name);
         }
       }
     }
 
-    // 对每个端口做本机监听探测（并发）
-    const listening = await Promise.all(
-      ports.map((port) => probeHostListening(port)),
-    );
-
-    const results = ports.map((port, idx) => {
-      const key = String(port);
-      const containerNames = portOwners[key] || [];
-      const hostListening = listening[idx];
+    // 一次性读取本机监听表，逐端口查表判定（无超时、无网络探测副作用）
+    const listeners = loadLocalListeners();
+    const results = Array.from(items.values()).map(({ port, protocol }) => {
+      const containerNames = portOwners[`${port}/${protocol}`] || [];
+      const hostListening = protocol === 'udp' ? listeners.udp.has(port) : listeners.tcp.has(port);
       return {
         port,
+        protocol,
         containerOccupied: containerNames.length > 0,
         containerNames,
         hostListening,
