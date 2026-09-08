@@ -167,7 +167,7 @@ export default function TopologyPage() {
             </div>
             <svg
               viewBox={`0 0 ${W} ${H}`}
-              style={{ width: `${W * 0.8}px`, maxWidth: '100%' }}
+              style={{ width: '100%', height: 'auto', display: 'block' }}
               className="topo-page__svg"
               onWheel={wheel}
             >
