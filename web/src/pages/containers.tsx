@@ -19,6 +19,7 @@ import {
 import Button from '../components/Button';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
+import StateActions, { type ContainerAction } from '../components/StateActions';
 import Empty from '../components/Empty';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
@@ -640,6 +641,17 @@ export default function ContainersPage() {
       load();
     } catch (e: any) {
       showToast(t('重启失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
+    }
+  }
+
+  /** 强制停止容器（SIGKILL，跳过优雅退出流程） */
+  async function handleKill(id: string, name: string) {
+    try {
+      await post(`/api/containers/${id}/kill`);
+      showToast(t('已强制停止 {{name}}', { name }));
+      load();
+    } catch (e: any) {
+      showToast(t('强制停止失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
     }
   }
 
@@ -1707,33 +1719,22 @@ export default function ContainersPage() {
         <td className="cell-created">{formatCreated(c.Created)}</td>
         <td className="col-actions">
           <div className="containers__actions">
-            {c.State === 'paused' ? (
-              <Button variant="secondary" size="sm" onClick={() => handleUnpause(c.Id, name)}>
-                {t('恢复')}
-              </Button>
-            ) : !running ? (
-              <Button variant="secondary" size="sm" onClick={() => handleStart(c.Id, name)}>
-                {t('启动')}
-              </Button>
-            ) : (
-              <Button variant="secondary" size="sm" onClick={() => handleStop(c.Id, name)}>
-                {t('停止')}
-              </Button>
-            )}
-            {running && (
-              <Button variant="secondary" size="sm" onClick={() => handlePause(c.Id, name)}>
-                {t('暂停')}
-              </Button>
-            )}
-            <Button variant="secondary" size="sm" onClick={() => handleRestart(c.Id, name)}>
-              {t('重启')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => openRename(c.Id, name)}
-              disabled={!canDelete}
-            >
+            {/* 生命周期操作：1Panel 风格状态下拉（启动/停止/重启/强制停止/暂停/恢复，按状态置灰） */}
+            <StateActions
+              state={c.State}
+              onAction={(action: ContainerAction) => {
+                const handlers: Record<ContainerAction, (id: string, name: string) => void> = {
+                  start: handleStart,
+                  stop: handleStop,
+                  restart: handleRestart,
+                  kill: handleKill,
+                  pause: handlePause,
+                  unpause: handleUnpause,
+                };
+                handlers[action](c.Id, name);
+              }}
+            />
+            <Button variant="secondary" size="sm" onClick={() => openRename(c.Id, name)} disabled={!canDelete}>
               {t('重命名')}
             </Button>
             <Button

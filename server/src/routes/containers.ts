@@ -819,6 +819,24 @@ router.post(
 );
 
 /**
+ * POST /api/containers/:id/kill
+ * 强制停止容器（发送 SIGKILL，绕过优雅退出流程；对 paused 容器同样有效）
+ */
+router.post(
+  '/:id/kill',
+  asyncHandler(
+    async (req: Request, res: Response) => {
+      const docker = await getDockerClient();
+      const id = req.params.id;
+      await docker.getContainer(id).kill();
+      logOperation(res.locals.username, '强制停止容器', 'container', id);
+      res.json({ ok: true });
+    },
+    (req: Request) => ({ action: '强制停止容器', targetType: 'container', targetName: req.params.id }),
+  ),
+);
+
+/**
  * DELETE /api/containers/:id?force=true&v=true
  * 删除容器，force 强制删除，v 同时删除匿名卷
  */
