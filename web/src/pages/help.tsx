@@ -121,7 +121,7 @@ const FAQ_ITEMS: FaqItem[] = [
 const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/', name: t('总览'), desc: t('引擎信息、宿主机×容器双维度资源监控曲线、无限制容器风险提示、一键体检入口') },
   { path: '/health', name: t('健康体检'), desc: t('一键体检：悬空镜像、停止容器、网络、卷、安全配置') },
-  { path: '/containers', name: t('容器'), desc: t('生命周期管理、终端、日志、标签过滤、批量操作') },
+  { path: '/containers', name: t('容器'), desc: t('生命周期管理、终端、日志、标签过滤、批量操作、镜像自动更新与回滚') },
   { path: '/templates', name: t('容器模板'), desc: t('模板一键创建容器') },
   { path: '/orchestrate', name: t('编排'), desc: t('多容器启动依赖顺序编排与执行') },
   { path: '/assistant', name: t('AI 助手'), desc: t('对话、知识库、巡检、告警诊断、周报、用量治理') },

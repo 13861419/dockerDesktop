@@ -195,6 +195,20 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_cron_task_logs_task ON cron_task_logs(task_id, id DESC);
 
+    -- 容器镜像自动更新：容器级开关与最近扫描结果（imageUpdate 计划任务扫描该表）
+    CREATE TABLE IF NOT EXISTS container_auto_updates (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      container_id   TEXT NOT NULL UNIQUE,      -- Docker 容器完整 id
+      container_name TEXT NOT NULL DEFAULT '',
+      image_ref      TEXT NOT NULL DEFAULT '',  -- 加入时记录的镜像引用（tag）
+      enabled        INTEGER NOT NULL DEFAULT 1,
+      last_check_at  INTEGER,
+      last_status    TEXT,                      -- ok | updated | rolledback | fail
+      last_result    TEXT,
+      created_at     INTEGER NOT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+
     -- 应用商店安装记录表：记录 Compose 套件安装实例的参数快照（用于升级/重装比对）
     CREATE TABLE IF NOT EXISTS appstore_instances (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,

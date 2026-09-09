@@ -366,7 +366,8 @@ export type TaskType =
   | 'imageGc'
   | 'baselineScan'
   | 'sqliteBackup'
-  | 'vulnScan';
+  | 'vulnScan'
+  | 'imageUpdate';
 
 /** 计划任务（/api/tasks 返回） */
 export interface CronTask {

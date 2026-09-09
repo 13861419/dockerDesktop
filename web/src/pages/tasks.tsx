@@ -46,6 +46,7 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'imageGc', label: '镜像清理', badge: 'orange' },
   { value: 'sqliteBackup', label: '数据库备份', badge: 'blue' },
   { value: 'vulnScan', label: '漏洞定时扫描', badge: 'violet' },
+  { value: 'imageUpdate', label: '镜像自动更新', badge: 'green' },
 ];
 
 /** cron 表达式快捷预设：说明 + 表达式 */

@@ -65,6 +65,7 @@ import { requireAuth } from './auth';
 import { getSetting } from './settings';
 import { buildPrometheusText } from './prometheus';
 import mcpRouter from './mcp/server';
+import imageUpdatesRouter from './routes/imageUpdates';
 
 const app = express();
 
@@ -95,6 +96,9 @@ app.use('/api/webhook', webhookRouter);
 
 // MCP 协议端点（自带 Bearer Token 鉴权，不套 requireAuth）
 app.use('/api/mcp', mcpRouter);
+
+// 容器镜像自动更新
+app.use('/api/image-updates', requireAuth, imageUpdatesRouter);
 
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);

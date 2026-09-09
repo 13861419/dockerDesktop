@@ -394,6 +394,7 @@ Click a container to open its detail page (`containerDetail`), which provides:
 4. **Export config**: export the container configuration as JSON (can be saved as a template).
 5. **File browser**: see the Files section.
 6. **Resource limit adjustment**: online editing of CPU / memory limits, see 3.4.
+7. **Image auto-update (v1.29.2)**: the "Image auto-update" card on the detail page lets you join/leave with one click. Combined with a "Image auto-update" scheduled task, each scan pulls the image by tag → compares old/new image IDs → rebuilds the container from a full config snapshot on update (ports / volumes / env / networks / capabilities / resource limits / healthcheck preserved) → health check after 15 s → automatic rollback to the old image (with alert push) if the check fails. Digest-pinned (@sha256) images are skipped; entries for deleted containers are disabled automatically.
 
 ![Container list](../images/containers.png)
 

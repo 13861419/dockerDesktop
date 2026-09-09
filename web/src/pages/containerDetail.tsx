@@ -40,6 +40,18 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'files', label: '文件' },
 ];
 
+/** 镜像自动更新条目 */
+interface AutoUpdItem {
+  id: number;
+  container_id: string;
+  container_name: string;
+  image_ref: string;
+  last_check_at: number | null;
+  last_status: string | null;
+  last_result: string | null;
+  enabled: number;
+}
+
 /**
  * 将字节数格式化为人类可读大小
  * @param bytes 字节数
@@ -134,6 +146,9 @@ export default function ContainerDetailPage() {
   const [detail, setDetail] = useState<ContainerDetailInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>('detail');
+  // 镜像自动更新：条目（null = 未加入）
+  const [autoUpd, setAutoUpd] = useState<AutoUpdItem | null>(null);
+  const [autoUpdBusy, setAutoUpdBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteVolumes, setDeleteVolumes] = useState(false);
@@ -368,6 +383,57 @@ export default function ContainerDetailPage() {
       // 忽略统计拉取失败
     }
   }, [id]);
+
+  // ===== 镜像自动更新 =====
+  const loadAutoUpd = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await get<{ items: AutoUpdItem[] }>('/api/image-updates');
+      setAutoUpd(res.items?.find((i) => i.container_id === id) || null);
+    } catch {
+      // 静默：不影响详情展示
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadAutoUpd();
+  }, [loadAutoUpd]);
+
+  /** 加入 / 退出自动更新 */
+  const handleAutoUpdToggle = useCallback(async () => {
+    if (!id) return;
+    setAutoUpdBusy(true);
+    try {
+      if (autoUpd) {
+        await del(`/api/image-updates/${encodeURIComponent(id)}`);
+        showToast(t('已退出镜像自动更新'));
+      } else {
+        await post('/api/image-updates', { containerId: id, enabled: true });
+        showToast(t('已加入镜像自动更新'));
+      }
+      await loadAutoUpd();
+    } catch (e: any) {
+      showToast(e?.message || t('操作失败'), 'error');
+    } finally {
+      setAutoUpdBusy(false);
+    }
+  }, [id, autoUpd, loadAutoUpd, showToast]);
+
+  /** 立即检查并按需更新 */
+  const handleAutoUpdCheck = useCallback(async () => {
+    if (!id) return;
+    setAutoUpdBusy(true);
+    try {
+      const res = await post<{ status: string; detail: string }>('/api/image-updates/check', { containerId: id });
+      showToast(res.detail || t('检查完成'), res.status === 'fail' ? 'error' : undefined);
+      await loadAutoUpd();
+    } catch (e: any) {
+      showToast(e?.message || t('检查失败'), 'error');
+    } finally {
+      setAutoUpdBusy(false);
+    }
+  }, [id, loadAutoUpd, showToast]);
+
 
   /**
    * 实时模式：进入资源监控 Tab 时拉取初始统计，并每 2 秒轮询 + 积累实时曲线
@@ -1550,6 +1616,62 @@ export default function ContainerDetailPage() {
                   </div>
                 ) : (
                   <Empty title={t('无环境变量')} description={t('该容器未配置环境变量')} />
+                )}
+              </Card>
+
+              {/* 镜像自动更新 */}
+              <Card
+                title={t('镜像自动更新')}
+                extra={
+                  <Button
+                    variant={autoUpd?.enabled ? 'secondary' : 'primary'}
+                    size="sm"
+                    loading={autoUpdBusy}
+                    onClick={handleAutoUpdToggle}
+                  >
+                    {autoUpd?.enabled ? t('退出自动更新') : t('开启自动更新')}
+                  </Button>
+                }
+              >
+                {autoUpd?.enabled ? (
+                  <div className="kv-scroll">
+                    <table className="kv-table">
+                      <tbody>
+                        <tr>
+                          <td className="kv-key">{t('状态')}</td>
+                          <td className="kv-val">
+                            {autoUpd.last_status === 'updated'
+                              ? t('已更新')
+                              : autoUpd.last_status === 'rolledback'
+                                ? t('已回滚')
+                                : autoUpd.last_status === 'fail'
+                                  ? t('失败')
+                                  : t('正常')}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="kv-key">{t('最近检查')}</td>
+                          <td className="kv-val">
+                            {autoUpd.last_check_at ? new Date(autoUpd.last_check_at).toLocaleString() : t('尚未检查')}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="kv-key">{t('结果')}</td>
+                          <td className="kv-val">{autoUpd.last_result || '-'}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div style={{ marginTop: 8 }}>
+                      <Button variant="ghost" size="sm" loading={autoUpdBusy} onClick={handleAutoUpdCheck}>
+                        {t('立即检查更新')}
+                      </Button>
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+                      {t('加入后可通过「计划任务 → 镜像自动更新」配置扫描周期；有更新时按原配置重建容器，健康检查未通过自动回滚。')}
+                    </div>
+                  </div>
+                ) : (
+                  <Empty title={t('未加入自动更新')} description={t('开启后按计划任务周期拉取镜像，有更新时自动重建容器（失败自动回滚）')} />
                 )}
               </Card>
 
