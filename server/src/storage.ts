@@ -620,6 +620,7 @@ function createTables(): void {
       system_prompt TEXT NOT NULL DEFAULT '',
       timeout_ms    INTEGER NOT NULL DEFAULT 60000,
       is_default    INTEGER NOT NULL DEFAULT 0,
+      enabled       INTEGER NOT NULL DEFAULT 1,
       created_at    INTEGER NOT NULL,
       updated_at    INTEGER NOT NULL
     );
@@ -778,6 +779,13 @@ function createTables(): void {
   // 迁移：为 ai_chat_sessions 表补充 pinned 列（会话收藏/置顶）
   try {
     d.exec('ALTER TABLE ai_chat_sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+
+  // 迁移：为 ai_profiles 表补充 enabled 列（启用/停用单个模型配置，停用后不进入当前模型下拉）
+  try {
+    d.exec('ALTER TABLE ai_profiles ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1');
   } catch {
     // 列已存在则忽略
   }

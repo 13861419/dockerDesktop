@@ -18,6 +18,7 @@ export interface AiProfileRow {
   system_prompt: string;
   timeout_ms: number;
   is_default: number;
+  enabled: number;
   budget_monthly_tokens: number;
   budget_monthly_cost: number;
   created_at: number;
@@ -33,6 +34,7 @@ export interface AiProfilePublic {
   model: string;
   hasKey: boolean;
   isDefault: boolean;
+  enabled: boolean;
   timeoutMs: number;
   systemPrompt: string;
   budgetMonthlyTokens: number;
@@ -48,6 +50,7 @@ export interface AiProfileInput {
   apiKey?: string;
   systemPrompt?: string;
   timeoutMs?: number;
+  enabled?: boolean;
   budgetMonthlyTokens?: number;
   budgetMonthlyCost?: number;
 }
@@ -62,6 +65,7 @@ function mapRow(r: AiProfileRow): AiProfilePublic {
     model: r.model,
     hasKey: !!r.api_key_enc,
     isDefault: !!r.is_default,
+    enabled: r.enabled !== 0,
     timeoutMs: r.timeout_ms,
     systemPrompt: r.system_prompt,
     budgetMonthlyTokens: r.budget_monthly_tokens || 0,
@@ -112,7 +116,12 @@ export function listProfiles(): AiProfilePublic[] {
 }
 
 export function getDefaultProfile(): AiProfilePublic | null {
-  const row = getDb().prepare('SELECT * FROM ai_profiles WHERE is_default = 1 LIMIT 1').get() as unknown as AiProfileRow | undefined;
+  const d = getDb();
+  // 优先默认且启用；默认被停用时回退到最早启用的配置
+  let row = d.prepare('SELECT * FROM ai_profiles WHERE is_default = 1 AND enabled = 1 LIMIT 1').get() as unknown as AiProfileRow | undefined;
+  if (!row) {
+    row = d.prepare('SELECT * FROM ai_profiles WHERE enabled = 1 ORDER BY is_default DESC, id ASC LIMIT 1').get() as unknown as AiProfileRow | undefined;
+  }
   return row ? mapRow(row) : null;
 }
 
@@ -188,9 +197,33 @@ export function updateProfile(id: number, patch: AiProfileInput = {}): AiProfile
     budget_monthly_cost: patch.budgetMonthlyCost !== undefined ? Math.max(0, Number(patch.budgetMonthlyCost) || 0) : row.budget_monthly_cost,
     updated_at: Date.now(),
   };
+  // 启用/停用：停用默认配置时自动把默认切到最早的一条启用配置；禁止停用最后一个启用配置
+  if (patch.enabled !== undefined) {
+    const nextEnabled = patch.enabled ? 1 : 0;
+    if (nextEnabled === 0) {
+      const enabledCount = (
+        d.prepare('SELECT COUNT(*) AS c FROM ai_profiles WHERE enabled = 1 AND id != ?').get(id) as { c: number }
+      ).c;
+      if (enabledCount === 0) {
+        const e: any = new Error('至少保留一个启用的配置');
+        e.statusCode = 400;
+        throw e;
+      }
+    }
+    next.enabled = nextEnabled;
+    if (nextEnabled === 0 && row.is_default) {
+      const fallback = d
+        .prepare('SELECT * FROM ai_profiles WHERE enabled = 1 AND id != ? ORDER BY id ASC LIMIT 1')
+        .get(id) as AiProfileRow | undefined;
+      if (fallback) {
+        next.is_default = 0;
+        soleDefault(d, fallback.id);
+      }
+    }
+  }
   d.prepare(
-    `UPDATE ai_profiles SET name=?, kind=?, provider=?, base_url=?, model=?, api_key_enc=?, system_prompt=?, timeout_ms=?, budget_monthly_tokens=?, budget_monthly_cost=?, updated_at=? WHERE id=?`,
-  ).run(next.name, next.kind, next.provider, next.base_url, next.model, next.api_key_enc, next.system_prompt, next.timeout_ms, next.budget_monthly_tokens, next.budget_monthly_cost, next.updated_at, id);
+    `UPDATE ai_profiles SET name=?, kind=?, provider=?, base_url=?, model=?, api_key_enc=?, system_prompt=?, timeout_ms=?, enabled=?, budget_monthly_tokens=?, budget_monthly_cost=?, updated_at=? WHERE id=?`,
+  ).run(next.name, next.kind, next.provider, next.base_url, next.model, next.api_key_enc, next.system_prompt, next.timeout_ms, next.enabled, next.budget_monthly_tokens, next.budget_monthly_cost, next.updated_at, id);
   return mapRow(next);
 }
 
@@ -210,8 +243,10 @@ export function deleteProfile(id: number): void {
   }
   d.prepare('DELETE FROM ai_profiles WHERE id = ?').run(id);
   if (row.is_default) {
-    // 删除的是默认：改选最早的一条为默认
-    const first = d.prepare('SELECT * FROM ai_profiles ORDER BY id ASC LIMIT 1').get() as unknown as AiProfileRow | undefined;
+    // 删除的是默认：改选最早的一条启用配置为默认
+    const first = d
+      .prepare('SELECT * FROM ai_profiles WHERE enabled = 1 ORDER BY id ASC LIMIT 1')
+      .get() as unknown as AiProfileRow | undefined;
     if (first) soleDefault(d, first.id);
   }
 }

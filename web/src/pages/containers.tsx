@@ -31,7 +31,7 @@ import { useLang } from '../i18n';
 import './containers.less';
 
 /** 状态筛选选项 */
-type Filter = 'all' | 'running';
+type Filter = 'all' | 'running' | 'stopped';
 
 /** 批量操作类型 */
 type BatchAction = 'start' | 'stop' | 'restart' | 'delete' | 'update';
@@ -237,6 +237,12 @@ export default function ContainersPage() {
   const [logLoading, setLogLoading] = useState(false);
   // 日志行数上限（tail 参数）
   const [logTail, setLogTail] = useState(300);
+  // 日志弹窗增强：全屏 / 跟随刷新 / 自动换行 / 内联搜索
+  const [logFull, setLogFull] = useState(false);
+  const [logFollow, setLogFollow] = useState(false);
+  const [logWrap, setLogWrap] = useState(true);
+  const [logSearch, setLogSearch] = useState('');
+  const logScrollRef = useRef<HTMLDivElement>(null);
 
   // 创建表单端口占用检测结果（key 为端口行 index）
   const [portChecks, setPortChecks] = useState<Record<number, PortCheckResult>>({});
@@ -287,6 +293,8 @@ export default function ContainersPage() {
   async function openLogs(id: string, name: string) {
     setLogTarget({ id, name });
     setLogLines([]);
+    setLogSearch('');
+    setLogFollow(false);
     await loadLogs(id, 300);
   }
 
@@ -294,6 +302,37 @@ export default function ContainersPage() {
   function closeLogs() {
     setLogTarget(null);
     setLogLines([]);
+    setLogFollow(false);
+    setLogFull(false);
+  }
+
+  /** 跟随模式：每 3 秒重新拉取并滚动到底部 */
+  useEffect(() => {
+    if (!logFollow || !logTarget) return;
+    const timer = setInterval(async () => {
+      if (!logLoading) await loadLogs(logTarget.id, logTail);
+      const el = logScrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 3000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logFollow, logTarget, logTail]);
+
+  /** 新日志到达且跟随模式开启时滚动到底部 */
+  useEffect(() => {
+    if (!logFollow) return;
+    const el = logScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logLines, logFollow]);
+
+  /** 复制全部日志到剪贴板 */
+  async function copyLogs() {
+    try {
+      await navigator.clipboard.writeText(logLines.map((l) => l.text).join('\n'));
+      showToast(t('已复制到剪贴板'));
+    } catch {
+      showToast(t('复制失败'), 'error');
+    }
   }
 
   /**
@@ -415,7 +454,12 @@ export default function ContainersPage() {
   }, [loadStats]);
 
   /** 状态筛选后的列表 */
-  const stateFiltered = filter === 'running' ? list.filter((c) => c.State === 'running') : list;
+  const stateFiltered =
+    filter === 'running'
+      ? list.filter((c) => c.State === 'running')
+      : filter === 'stopped'
+        ? list.filter((c) => c.State !== 'running')
+        : list;
 
   /**
    * 搜索过滤：按 容器名 / 镜像名 / ID 模糊匹配（不区分大小写）
@@ -1807,6 +1851,15 @@ export default function ContainersPage() {
             >
               {t('运行中')} <span className="seg__count">{list.filter((c) => c.State === 'running').length}</span>
             </button>
+            <button
+              className={`seg ${filter === 'stopped' ? 'seg--active' : ''}`}
+              onClick={() => {
+                setFilter('stopped');
+                setPage(1);
+              }}
+            >
+              {t('已停止')} <span className="seg__count">{list.filter((c) => c.State !== 'running').length}</span>
+            </button>
           </div>
           <Select
             className="containers__img-filter"
@@ -1931,7 +1984,7 @@ export default function ContainersPage() {
         ) : filteredList.length === 0 ? (
           <Empty
             kind={search ? 'search' : 'empty'}
-            title={search ? t('未找到匹配的容器') : filter === 'running' ? t('暂无运行中的容器') : t('暂无容器')}
+            title={search ? t('未找到匹配的容器') : filter === 'running' ? t('暂无运行中的容器') : filter === 'stopped' ? t('暂无已停止的容器') : t('暂无容器')}
             description={search ? t('请尝试更换搜索关键字') : t('容器未创建或已被删除')}
           />
         ) : (
@@ -2519,7 +2572,7 @@ export default function ContainersPage() {
       <Modal
         open={!!logTarget}
         title={t('容器日志 - {{v1}}', { v1: logTarget?.name || '' })}
-        width={860}
+        width={logFull ? 4000 : 860}
         onClose={closeLogs}
         footer={
           <>
@@ -2534,11 +2587,20 @@ export default function ContainersPage() {
               <option value="1000">{t('最近 1000 行')}</option>
               <option value="0">{t('全部')}</option>
             </Select>
+            <Button variant={logFollow ? 'primary' : 'secondary'} onClick={() => setLogFollow((v) => !v)}>
+              {logFollow ? t('跟随中') : t('跟随刷新')}
+            </Button>
             <Button variant="secondary" onClick={reloadLogs} loading={logLoading}>
               {t('刷新')}
             </Button>
+            <Button variant="secondary" onClick={copyLogs}>
+              {t('复制')}
+            </Button>
             <Button variant="secondary" onClick={downloadLogs}>
               {t('下载')}
+            </Button>
+            <Button variant="secondary" onClick={() => setLogFull((v) => !v)}>
+              {logFull ? t('退出全屏') : t('全屏')}
             </Button>
             <Button variant="secondary" onClick={closeLogs}>
               {t('关闭')}
@@ -2546,19 +2608,45 @@ export default function ContainersPage() {
           </>
         }
       >
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Input
+            placeholder={t('在日志中搜索…')}
+            value={logSearch}
+            onChange={(e) => setLogSearch(e.target.value)}
+            style={{ flex: 1, minWidth: 180 }}
+          />
+          <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap' }}>
+            {logSearch ? `${logLines.filter((l) => l.text.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}` : `${logLines.length} ${t('行')}`}
+          </span>
+          <Button variant={logWrap ? 'primary' : 'secondary'} size="sm" onClick={() => setLogWrap((v) => !v)}>
+            {t('自动换行')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              const el = logScrollRef.current;
+              if (el) el.scrollTop = el.scrollHeight;
+            }}
+          >
+            {t('到底部')}
+          </Button>
+        </div>
         <div
+          ref={logScrollRef}
+          onWheel={() => setLogFollow(false)}
           style={{
             background: 'var(--bg-code, #1e1e1e)',
             color: 'var(--text-code, #d4d4d4)',
             borderRadius: 8,
             padding: 12,
-            maxHeight: 480,
+            maxHeight: logFull ? 'calc(94vh - 260px)' : 480,
             overflow: 'auto',
             fontFamily: 'var(--font-mono, monospace)',
             fontSize: 12,
             lineHeight: 1.6,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
+            whiteSpace: logWrap ? 'pre-wrap' : 'pre',
+            wordBreak: logWrap ? 'break-all' : 'normal',
           }}
         >
           {logLoading && logLines.length === 0 ? (
@@ -2566,18 +2654,38 @@ export default function ContainersPage() {
           ) : logLines.length === 0 ? (
             <span style={{ color: 'var(--text-muted)' }}>{t('暂无日志输出')}</span>
           ) : (
-            logLines.map((l, i) => (
-              <div
-                key={i}
-                style={{
-                  color: l.isErr ? 'var(--danger, #ff6b6b)' : undefined,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}
-              >
-                {l.text}
-              </div>
-            ))
+            logLines.map((l, i) => {
+              const hit = logSearch && l.text.toLowerCase().includes(logSearch.toLowerCase());
+              let rendered: React.ReactNode = l.text;
+              if (logSearch) {
+                const idx = l.text.toLowerCase().indexOf(logSearch.toLowerCase());
+                if (idx >= 0) {
+                  rendered = (
+                    <>
+                      {l.text.slice(0, idx)}
+                      <mark style={{ background: '#ffd54f', color: '#000' }}>{l.text.slice(idx, idx + logSearch.length)}</mark>
+                      {l.text.slice(idx + logSearch.length)}
+                    </>
+                  );
+                }
+              }
+              return (
+                <div
+                  key={i}
+                  style={{
+                    color: l.isErr ? 'var(--danger, #ff6b6b)' : undefined,
+                    whiteSpace: logWrap ? 'pre-wrap' : 'pre',
+                    wordBreak: logWrap ? 'break-all' : 'normal',
+                    background: hit && logSearch ? 'rgba(255, 213, 79, 0.12)' : undefined,
+                  }}
+                >
+                  <span style={{ opacity: 0.45, userSelect: 'none', marginRight: 8, display: 'inline-block', minWidth: 38, textAlign: 'right' }}>
+                    {i + 1}
+                  </span>
+                  {rendered}
+                </div>
+              );
+            })
           )}
         </div>
       </Modal>

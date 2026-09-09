@@ -3,8 +3,8 @@
  *
  * 浅色侧边栏 + 顶栏 + 内容区，使用 React Router 的 NavLink 实现导航。
  */
-import React, { useState, useCallback, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import React, { Fragment, useState, useCallback, useEffect } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
 import { post, get } from '../api/client';
 import { clearToken, isAdmin } from '../api/auth';
@@ -500,6 +500,30 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 /**
+ * 侧栏分组布局：无 label 的条目为顶层单页；有 label 的为可折叠分组（1Panel 风格）。
+ * 分组默认折叠，点击展开/收起；路由激活的分组自动展开。
+ */
+const NAV_LAYOUT: Array<{ label?: string; paths: string[] }> = [
+  { paths: ['/'] },
+  { paths: ['/health'] },
+  { label: '容器管理', paths: ['/containers', '/templates', '/orchestrate', '/compose', '/deploys', '/appstore', '/tasks'] },
+  { label: '镜像构建', paths: ['/images', '/build', '/gc', '/hub'] },
+  { label: '存储网络', paths: ['/volumes', '/storage', '/networks', '/topology', '/ports'] },
+  { label: '可观测', paths: ['/logs', '/events', '/operation-logs', '/notifications'] },
+  { label: '系统工具', paths: ['/files', '/hostfiles', '/hostterminal', '/tools', '/engines', '/swarm', '/backups', '/cloudbackup', '/databases', '/sites', '/firewall', '/api-docs'] },
+  { label: 'K8s 集群', paths: ['/k8s', '/k8s/workloads', '/k8s/events'] },
+  { label: '安全治理', paths: ['/policy', '/approvals'] },
+  { paths: ['/assistant'] },
+  { paths: ['/settings'] },
+  { paths: ['/help'] },
+];
+
+/** 判断路径是否命中（含子路径，如 /k8s/workloads 命中 /k8s） */
+function pathMatch(entryPath: string, pathname: string): boolean {
+  return pathname === entryPath || pathname.startsWith(entryPath + '/');
+}
+
+/**
  * 主布局
  */
 export default function Layout() {
@@ -528,6 +552,37 @@ export default function Layout() {
   // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
   const admin = isAdmin();
   const visibleNav = NAV_ITEMS.filter((item) => !item.adminOnly || admin);
+
+  // 侧栏分组折叠状态：默认全部折叠，路由激活的分组自动展开
+  const location = useLocation();
+  const activeGroupLabel = NAV_LAYOUT.find((g) => g.label && g.paths.some((p) => pathMatch(p, location.pathname)))?.label;
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(activeGroupLabel ? [activeGroupLabel] : []));
+  useEffect(() => {
+    if (activeGroupLabel) {
+      setOpenGroups((prev) => (prev.has(activeGroupLabel) ? prev : new Set(prev).add(activeGroupLabel)));
+    }
+  }, [activeGroupLabel]);
+
+  /** 渲染单个导航项（顶层或分组子项共用） */
+  function renderNavItem(item: (typeof NAV_ITEMS)[number]) {
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        end={item.end}
+        className={({ isActive }) => `nav-item ${isActive ? 'nav-item--active' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      >
+        <span className="nav-item__icon">{item.icon}</span>
+        <span className="nav-item__label">{t(item.label)}</span>
+        {item.to === '/approvals' && approvalPending > 0 && (
+          <span className="nav-item__badge" title={t('{{n}} 条待审批', { n: approvalPending })}>
+            {approvalPending > 99 ? '99+' : approvalPending}
+          </span>
+        )}
+      </NavLink>
+    );
+  }
 
   /**
    * 退出登录：通知后端登出、清除本地 token 并跳转登录页
@@ -577,23 +632,41 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar__nav">
-          {visibleNav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => `nav-item ${isActive ? 'nav-item--active' : ''}`}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <span className="nav-item__icon">{item.icon}</span>
-              <span className="nav-item__label">{t(item.label)}</span>
-              {item.to === '/approvals' && approvalPending > 0 && (
-                <span className="nav-item__badge" title={t('{{n}} 条待审批', { n: approvalPending })}>
-                  {approvalPending > 99 ? '99+' : approvalPending}
-                </span>
-              )}
-            </NavLink>
-          ))}
+          {NAV_LAYOUT.map((entry, gi) => {
+            if (!entry.label) {
+              const item = visibleNav.find((i) => i.to === entry.paths[0]);
+              return item ? <Fragment key={item.to}>{renderNavItem(item)}</Fragment> : null;
+            }
+            const items = visibleNav.filter((i) => entry.paths.includes(i.to));
+            if (items.length === 0) return null;
+            const open = openGroups.has(entry.label);
+            const active = entry.paths.some((p) => pathMatch(p, location.pathname));
+            return (
+              <div className={`sidebar__group ${open ? 'sidebar__group--open' : ''}`} key={entry.label + gi}>
+                <button
+                  className={`sidebar__group-head ${active ? 'sidebar__group-head--active' : ''}`}
+                  onClick={() =>
+                    setOpenGroups((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(entry.label!)) next.delete(entry.label!);
+                      else next.add(entry.label!);
+                      return next;
+                    })
+                  }
+                >
+                  <span className="sidebar__group-label">{t(entry.label)}</span>
+                  <span className="sidebar__group-arrow">▾</span>
+                </button>
+                {open && (
+                  <div className="sidebar__group-items">
+                    {items.map((item) => (
+                      <Fragment key={item.to}>{renderNavItem(item)}</Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar__footer">

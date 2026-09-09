@@ -1012,6 +1012,7 @@ export interface AiProfile {
   model: string;
   hasKey: boolean;
   isDefault: boolean;
+  enabled: boolean;
   timeoutMs: number;
   systemPrompt: string;
   budgetMonthlyTokens: number;

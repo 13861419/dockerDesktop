@@ -372,7 +372,7 @@ The **Actions** column of each row offers:
 - **Delete** (optionally remove associated volumes).
 - **Clone** — create a new container from the current configuration.
 - **Rename**.
-- **Logs / Details** — open the detail page.
+- **Logs / Details** — open the detail page; the log dialog supports **fullscreen**, **follow refresh** (3s polling auto-scroll, wheel exits follow), **inline search** (keyword highlight + hit count), **copy all**, **wrap toggle**, line numbers and "jump to bottom", with tail options (100/300/1000/all) and download.
 - **Restart policy** — `no` / `always` / `on-failure` / `unless-stopped`.
 
 ### 3.4 Resource Limit Adjustment (CPU / Memory)
@@ -1353,7 +1353,7 @@ When enabled:
 | Permission | All users (model config admin only 🔒) |
 | Prerequisite | Add any OpenAI-compatible endpoint in Settings → AI Config Center |
 
-- **Multi-model config center**: one-click presets for local (Ollama / LM Studio / Docker Model Runner) and cloud (OpenAI / DeepSeek / Kimi, etc.) endpoints; multiple profiles with encrypted keys.
+- **Multi-model config center**: one-click presets for local (Ollama / LM Studio / Docker Model Runner) and cloud (OpenAI / DeepSeek / Kimi, etc.) endpoints; multiple profiles with encrypted keys; each profile can be individually **enabled/disabled** (disabled profiles leave the "current model" dropdown; disabling the default auto-switches default to the earliest enabled profile; the last enabled profile cannot be disabled); preset cards pre-fill the form, and "Create Manually (Custom Model)" supports any OpenAI-compatible endpoint.
 - **AI capabilities**: chat Q&A, file analysis (Dockerfile / Compose / logs), smart inspection, alert diagnosis, weekly reports, knowledge base, token usage governance.
 - **Automatic alert AI diagnosis**: after a danger-level alert is pushed successfully, AI analyzes the root cause and pushes the diagnosis to the same channel; controlled by the `alerts.aiDiagnosis` parameter (on by default). Alerts that were aggregated by the push window do not trigger AI diagnosis.
 - **Safety boundary**: AI only suggests; it never executes directly. Without an AI configuration all AI entries hide automatically.

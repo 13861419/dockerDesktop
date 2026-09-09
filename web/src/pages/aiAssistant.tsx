@@ -105,6 +105,8 @@ export default function AiAssistantPage() {
   const [fsKey, setFsKey] = useState('');
   const [activeTab, setActiveTab] = useState<'preset' | 'mine'>('preset');
   const [editing, setEditing] = useState<AiProfile | null>(null);
+  // 新建/预设落地的表单可见态：editing=null 时也能展示空白表单（修复预设点击无响应与无法手动新建的问题）
+  const [showForm, setShowForm] = useState(false);
   const [configForm, setConfigForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -828,6 +830,7 @@ export default function AiAssistantPage() {
 
   const onPresetClick = useCallback((preset: AiPreset) => {
     setEditing(null);
+    setShowForm(true);
     setConfigForm({
       name: preset.name,
       kind: preset.kind,
@@ -871,6 +874,7 @@ export default function AiAssistantPage() {
       }
       setConfigForm(EMPTY_FORM);
       setEditing(null);
+      setShowForm(false);
       await loadAll();
     } catch (e: any) {
       showToast(e?.message || t('保存失败'), 'error');
@@ -881,6 +885,7 @@ export default function AiAssistantPage() {
 
   const handleEdit = useCallback((p: AiProfile) => {
     setEditing(p);
+    setShowForm(true);
     setConfigForm({
       name: p.name,
       kind: p.kind,
@@ -893,6 +898,20 @@ export default function AiAssistantPage() {
     });
     setActiveTab('mine');
   }, []);
+
+  /** 启用/停用某个模型配置（停用后不进入「当前模型」下拉） */
+  const handleToggleEnabled = useCallback(
+    async (p: AiProfile) => {
+      try {
+        await put(`/api/ai/profiles/${p.id}`, { enabled: !p.enabled });
+        showToast(p.enabled ? t('已停用该配置') : t('已启用该配置'));
+        await loadAll();
+      } catch (e: any) {
+        showToast(e?.message || t('操作失败'), 'error');
+      }
+    },
+    [showToast, loadAll],
+  );
 
   const handleDelete = useCallback(
     async (p: AiProfile) => {
@@ -962,6 +981,7 @@ export default function AiAssistantPage() {
   const openConfigNew = useCallback(() => {
     setEditing(null);
     setConfigForm(EMPTY_FORM);
+    setShowForm(false);
     setActiveTab('preset');
     setShowConfig(true);
   }, []);
@@ -1024,13 +1044,15 @@ export default function AiAssistantPage() {
               }}
             >
               <option value="" disabled>
-                {profiles.length === 0 ? t('无可用配置') : t('请选择')}
+                {profiles.filter((p) => p.enabled).length === 0 ? t('无可用配置') : t('请选择')}
               </option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.provider} / {p.model})
-                </option>
-              ))}
+              {profiles
+                .filter((p) => p.enabled)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.provider} / {p.model})
+                  </option>
+                ))}
             </Select>
           </Field>
           {profiles.length === 0 && admin && (
@@ -1286,6 +1308,20 @@ export default function AiAssistantPage() {
 
             {activeTab === 'preset' && (
               <div className="ai-assistant__preset-panel">
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditing(null);
+                      setConfigForm(EMPTY_FORM);
+                      setShowForm(true);
+                      setActiveTab('mine');
+                    }}
+                  >
+                    {t('手动新建（自定义模型）')}
+                  </Button>
+                </div>
                 {localPresets.length > 0 && (
                   <div className="ai-assistant__preset-group">
                     <div className="ai-assistant__preset-group-title">{t('本地')}</div>
@@ -1328,11 +1364,11 @@ export default function AiAssistantPage() {
 
             {activeTab === 'mine' && (
               <div className="ai-assistant__mine-panel">
-                {editing ? (
+                {(editing || showForm) ? (
                   <div className="ai-assistant__edit-form">
                     <div className="ai-assistant__edit-head">
                       <span className="ai-assistant__edit-title">{editing ? t('编辑配置') : t('新建配置')}</span>
-                      <Button size="sm" variant="ghost" onClick={() => { setEditing(null); setConfigForm(EMPTY_FORM); }}>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditing(null); setShowForm(false); setConfigForm(EMPTY_FORM); }}>
                         {t('返回列表')}
                       </Button>
                     </div>
@@ -1447,6 +1483,19 @@ export default function AiAssistantPage() {
                   />
                 ) : (
                   <div className="ai-assistant__profiles-table-wrap">
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setEditing(null);
+                          setConfigForm(EMPTY_FORM);
+                          setShowForm(true);
+                        }}
+                      >
+                        {t('新建配置')}
+                      </Button>
+                    </div>
                     <table className="ai-assistant__profiles-table">
                       <thead>
                         <tr>
@@ -1454,8 +1503,9 @@ export default function AiAssistantPage() {
                           <th>{t('类型')}</th>
                           <th>Provider</th>
                           <th>{t('模型')}</th>
-                          <th>{t('默认')}</th>
-                          <th>Key</th>
+                            <th>{t('默认')}</th>
+                            <th>{t('状态')}</th>
+                            <th>Key</th>
                           <th>{t('操作')}</th>
                         </tr>
                       </thead>
@@ -1471,6 +1521,11 @@ export default function AiAssistantPage() {
                             <td>{p.provider}</td>
                             <td>{p.model}</td>
                             <td>{p.isDefault ? t('是') : t('否')}</td>
+                            <td>
+                              <span className={`ai-assistant__key-badge ${p.enabled ? 'is-on' : 'is-off'}`}>
+                                {p.enabled ? t('已启用') : t('已停用')}
+                              </span>
+                            </td>
                             <td>
                               <span className={`ai-assistant__key-badge ${p.hasKey ? 'is-on' : 'is-off'}`}>
                                 {p.hasKey ? t('已配置') : t('无')}
@@ -1509,6 +1564,9 @@ export default function AiAssistantPage() {
                                     {t('设默认')}
                                   </Button>
                                 )}
+                                <Button size="sm" variant="ghost" onClick={() => handleToggleEnabled(p)}>
+                                  {p.enabled ? t('停用') : t('启用')}
+                                </Button>
                                 <Button
                                   size="sm"
                                   variant="ghost"

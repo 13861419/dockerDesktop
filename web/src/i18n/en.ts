@@ -2985,4 +2985,29 @@ export const en: Record<string, string> = {
 '手动清理过期行': 'Prune expired rows',
 '已清理过期 {{n}} 行': 'Pruned {{n}} expired rows',
 '结果超出单页上限，已展示最早的 {{n}} 行': 'Results exceed page limit; showing earliest {{n}} rows',
+
+// ---- 容器日志弹窗增强 + 侧栏分组 ----
+'容器管理': 'Containers',
+'镜像构建': 'Images & Build',
+'存储网络': 'Storage & Network',
+'可观测': 'Observability',
+'系统工具': 'System Tools',
+'安全治理': 'Security & Governance',
+'暂无已停止的容器': 'No stopped containers',
+'全屏': 'Fullscreen',
+'退出全屏': 'Exit Fullscreen',
+'跟随中': 'Following',
+'自动换行': 'Wrap Lines',
+'到底部': 'Jump to Bottom',
+'在日志中搜索…': 'Search in logs…',
+'条命中': 'hits',
+'行': 'rows',
+'已复制到剪贴板': 'Copied to clipboard',
+'复制失败': 'Copy failed',
+
+// ---- AI 模型配置增强 ----
+'手动新建（自定义模型）': 'Create Manually (Custom Model)',
+'已停用': 'Disabled',
+'已停用该配置': 'Profile disabled',
+'已启用该配置': 'Profile enabled',
 };
