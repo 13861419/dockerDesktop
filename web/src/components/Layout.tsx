@@ -553,13 +553,13 @@ export default function Layout() {
   const admin = isAdmin();
   const visibleNav = NAV_ITEMS.filter((item) => !item.adminOnly || admin);
 
-  // 侧栏分组折叠状态：默认全部折叠，路由激活的分组自动展开
+  // 侧栏分组折叠状态：手风琴模式——同一时间只展开一个分组，展开新组时自动收起上一组
   const location = useLocation();
   const activeGroupLabel = NAV_LAYOUT.find((g) => g.label && g.paths.some((p) => pathMatch(p, location.pathname)))?.label;
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(activeGroupLabel ? [activeGroupLabel] : []));
   useEffect(() => {
     if (activeGroupLabel) {
-      setOpenGroups((prev) => (prev.has(activeGroupLabel) ? prev : new Set(prev).add(activeGroupLabel)));
+      setOpenGroups((prev) => (prev.has(activeGroupLabel) && prev.size === 1 ? prev : new Set([activeGroupLabel])));
     }
   }, [activeGroupLabel]);
 
@@ -646,12 +646,7 @@ export default function Layout() {
                 <button
                   className={`sidebar__group-head ${active ? 'sidebar__group-head--active' : ''}`}
                   onClick={() =>
-                    setOpenGroups((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(entry.label!)) next.delete(entry.label!);
-                      else next.add(entry.label!);
-                      return next;
-                    })
+                    setOpenGroups(() => (open ? new Set() : new Set([entry.label!])))
                   }
                 >
                   <span className="sidebar__group-label">{t(entry.label)}</span>
