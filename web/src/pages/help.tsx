@@ -111,6 +111,10 @@ const FAQ_ITEMS: FaqItem[] = [
     q: t('如何接入 Kubernetes 集群？'),
     a: t('将 kubeconfig 放置在面板运行用户的 ~/.kube/config，或设置环境变量 KUBECONFIG 后重启面板；面板以 Pod 部署时自动使用 InCluster 配置。kubeconfig 内多个 context（多集群）可在「K8s 集群」页顶部下拉随时切换。支持只读巡检（集群概览、工作负载、Pod 日志与实时曲线、集群事件、CRD 与自定义资源）与有限写操作（扩缩容 / 滚动重启 / 回滚 / 删除 Pod / PVC 扩容 / ConfigMap 与 Secret 在线编辑 / 删除 Ingress / Service / PVC / ConfigMap / Helm Chart 部署，管理员直接执行，非管理员可按系统参数「高危操作审批流」转入审批）。'),
   },
+  {
+    q: t('如何把面板接入 Claude / Cursor 等 MCP 客户端？'),
+    a: t('在「设置 → MCP 接入」卡片开启 MCP 并生成 Token，然后在 MCP 客户端配置中添加地址 <面板地址>/api/mcp 与请求头 Authorization: Bearer <Token>。接入后可用自然语言查询容器/镜像/告警/计划任务并执行启停、拉取等操作；所有调用均写入操作日志（操作人 = mcp）。重置 Token 会使旧 Token 立即失效。'),
+  },
 ];
 
 /** 功能速查表：页面路径 -> 用途 */
@@ -140,7 +144,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份') },
   { path: '/databases', name: t('数据库'), desc: t('MySQL / PostgreSQL / Redis 可视化') },
-  { path: '/settings', name: t('设置'), desc: t('账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、界面语言切换、备份、AI 配置、系统参数、用户管理') },
+  { path: '/settings', name: t('设置'), desc: t('账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、MCP 接入、界面语言切换、备份、AI 配置、系统参数、用户管理') },
   { path: '/logs', name: t('日志聚合'), desc: t('跨容器日志检索与导出') },
   { path: '/operation-logs', name: t('操作日志'), desc: t('全量操作审计') },
   { path: '/notifications', name: t('告警中心'), desc: t('告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、记录与 AI 诊断') },

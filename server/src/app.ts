@@ -64,6 +64,7 @@ import sqliteBackupRouter from './routes/sqliteBackup';
 import { requireAuth } from './auth';
 import { getSetting } from './settings';
 import { buildPrometheusText } from './prometheus';
+import mcpRouter from './mcp/server';
 
 const app = express();
 
@@ -91,6 +92,9 @@ app.use('/api/auth', authRouter);
 
 // Webhook 触发（匿名入口，靠 token 鉴权，不套 requireAuth）
 app.use('/api/webhook', webhookRouter);
+
+// MCP 协议端点（自带 Bearer Token 鉴权，不套 requireAuth）
+app.use('/api/mcp', mcpRouter);
 
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);

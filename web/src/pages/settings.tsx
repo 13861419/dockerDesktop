@@ -322,6 +322,54 @@ export default function SettingsPage() {
     loadSecurity();
   }, [loadSecurity]);
 
+  // ===== MCP 接入 =====
+  const [mcpStatus, setMcpStatus] = useState<{ enabled: boolean; tokenSet: boolean; endpoint: string } | null>(null);
+  const [mcpToken, setMcpToken] = useState('');
+  const [mcpBusy, setMcpBusy] = useState(false);
+
+  const loadMcp = useCallback(async () => {
+    try {
+      setMcpStatus(await get<{ enabled: boolean; tokenSet: boolean; endpoint: string }>('/api/mcp/status'));
+    } catch {
+      // 静默：会话失效等场景不影响其余区块
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMcp();
+  }, [loadMcp]);
+
+  /** 开/关 MCP 端点 */
+  async function handleMcpToggle() {
+    if (!mcpStatus) return;
+    setMcpBusy(true);
+    try {
+      await put('/api/settings', { 'mcp.enabled': !mcpStatus.enabled });
+      showToast(mcpStatus.enabled ? t('MCP 已关闭') : t('MCP 已开启'), 'success');
+      await loadMcp();
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    } finally {
+      setMcpBusy(false);
+    }
+  }
+
+  /** 生成（或重置）MCP Token，明文仅本次展示 */
+  async function handleMcpToken() {
+    setMcpBusy(true);
+    try {
+      const res = await post<{ token: string }>('/api/mcp/token', {});
+      setMcpToken(res.token);
+      await loadMcp();
+      showToast(t('Token 已生成，请立即保存'), 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    } finally {
+      setMcpBusy(false);
+    }
+  }
+
+
   /** 生成 2FA 密钥（待确认） */
   async function handleTotpSetup() {
     try {
@@ -1319,6 +1367,59 @@ export default function SettingsPage() {
       </Card>
 
       {/* 系统参数（配置中心） */}
+      {/* MCP 接入 */}
+      {currentRole === 'admin' && (
+        <Card title={t('MCP 接入')}>
+          <div className="settings-kv">
+            <div className="settings-kv__info">
+              <div className="settings-kv__label">{t('状态')}</div>
+              <div className="settings-kv__hint">
+                {t('开启后可在 Claude / Cursor 等 MCP 客户端中以自然语言管理面板（容器、镜像、告警、计划任务等）。')}
+              </div>
+            </div>
+            <div className="settings-kv__control">
+              <Button size="sm" loading={mcpBusy} onClick={handleMcpToggle}>
+                {mcpStatus?.enabled ? t('关闭 MCP') : t('开启 MCP')}
+              </Button>
+              <span className="settings-kv__value">
+                {mcpStatus?.enabled ? t('已开启') : t('未开启')}
+                {mcpStatus?.tokenSet ? '' : ` · ${t('未配置 Token')}`}
+              </span>
+            </div>
+          </div>
+          <div className="settings-kv">
+            <div className="settings-kv__info">
+              <div className="settings-kv__label">Token</div>
+              <div className="settings-kv__hint">{t('重新生成会使旧 Token 立即失效；明文仅在生成时展示一次。')}</div>
+            </div>
+            <div className="settings-kv__control">
+              <Button variant="ghost" size="sm" loading={mcpBusy} onClick={handleMcpToken}>
+                {mcpStatus?.tokenSet ? t('重置 Token') : t('生成 Token')}
+              </Button>
+            </div>
+          </div>
+          {mcpToken && (
+            <div className="settings-kv">
+              <div className="settings-kv__info">
+                <div className="settings-kv__label">{t('请复制保存（仅显示一次）')}</div>
+                <Input readOnly value={mcpToken} onFocus={(e) => e.target.select()} />
+              </div>
+            </div>
+          )}
+          {mcpStatus?.enabled && (
+            <div className="settings-kv">
+              <div className="settings-kv__info">
+                <div className="settings-kv__label">{t('客户端接入地址')}</div>
+                <Input readOnly value={`${window.location.origin}${mcpStatus.endpoint}`} onFocus={(e) => e.target.select()} />
+                <div className="settings-kv__hint">
+                  {t('MCP 客户端配置示例：{ "mcpServers": { "docker-manager": { "url": "<接入地址>", "headers": { "Authorization": "Bearer <Token>" } } } }')}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
       {kvItems.length > 0 && (
         <Card title={t('系统参数')}>
           {(['runtime', 'security', 'retention', 'notification', 'general'] as SettingItem['group'][])

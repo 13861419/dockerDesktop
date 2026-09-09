@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.29.0] - 2026-09-09
+
+### Added（新增）
+
+- 内置 MCP（Model Context Protocol）服务端：新增 `POST /api/mcp` 端点（JSON-RPC 2.0，Streamable HTTP 传输，零第三方依赖），支持 `initialize / ping / tools/list / tools/call` 与通知消息
+- 18 个 MCP 工具覆盖面板核心能力：系统快照、容器（列表 / 详情 / 日志 / 启停 / 重启 / 强杀 / 删除）、镜像（列表 / 拉取 / 删除）、数据卷、网络、告警规则与记录、计划任务（列表 / 立即执行）；容器支持 id 前缀与名称双寻址
+- 鉴权与安全：设置页新增「MCP 接入」卡片（管理员），一键开关 + 生成 / 重置 64 位 hex Token（常量时间比较防时序攻击，明文仅生成时展示一次）；未启用或未配置 Token 时端点整体 404 不暴露能力；所有工具调用写入操作日志（操作人 = mcp）
+- 设置键注册中心新增 `mcp.enabled` / `mcp.token`（隐藏键，由专属卡片管理）
+
 ## [1.28.19] - 2026-09-08
 
 ### Fixed（修复）

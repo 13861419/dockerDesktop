@@ -397,4 +397,21 @@ registerSettings([
     group: 'notification',
     hidden: true,
   },
+  {
+    key: 'mcp.enabled',
+    label: 'MCP 接入',
+    hint: '开启后 MCP 客户端可通过 /api/mcp 端点管理面板（在设置页「MCP 接入」卡片配置）',
+    type: 'bool',
+    def: false,
+    group: 'security',
+    hidden: true,
+  },
+  {
+    key: 'mcp.token',
+    label: 'MCP Token',
+    hint: 'MCP 客户端鉴权令牌（在设置页「MCP 接入」卡片生成）',
+    type: 'secret',
+    group: 'security',
+    hidden: true,
+  },
 ]);
