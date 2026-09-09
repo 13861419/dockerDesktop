@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.29.1] - 2026-09-09
+
+### Added（新增）
+
+- Compose 新建项目弹窗新增「从 docker run 导入」：粘贴完整 `docker run` 命令一键转换为 compose service YAML 并填入编辑器（`POST /api/compose/run2compose`，纯解析不落盘）
+- 解析器支持常用选项映射：`--name` / `-p` 端口 / `-v` 与 `--mount` 卷（bind、命名卷自动归集顶层声明、匿名卷）/ `-e` 环境变量 / `--restart` / `--network` / `--label` / `--user` / `--workdir` / `--privileged` / `--cap-add` / `--cap-drop` / `--device` / `--cpus` / `-m --memory` / `--entrypoint` / `--health-*`，镜像后的命令映射为 `command`
+- 不支持的选项（如 `--gpus` / `--env-file` / host 网络与未知选项）不静默丢弃，逐条以警告提示手动补充；支持单双引号与反斜杠转义的 shell 词法解析
+- 容器逆向推导（composeInfer）同步增强：inspect 结果中的 `CapAdd` / `CapDrop` / `Devices` 现在也会渲染为 `cap_add` / `cap_drop` / `devices`
+
 ## [1.29.0] - 2026-09-09
 
 ### Added（新增）
@@ -11,6 +20,10 @@
 - 18 个 MCP 工具覆盖面板核心能力：系统快照、容器（列表 / 详情 / 日志 / 启停 / 重启 / 强杀 / 删除）、镜像（列表 / 拉取 / 删除）、数据卷、网络、告警规则与记录、计划任务（列表 / 立即执行）；容器支持 id 前缀与名称双寻址
 - 鉴权与安全：设置页新增「MCP 接入」卡片（管理员），一键开关 + 生成 / 重置 64 位 hex Token（常量时间比较防时序攻击，明文仅生成时展示一次）；未启用或未配置 Token 时端点整体 404 不暴露能力；所有工具调用写入操作日志（操作人 = mcp）
 - 设置键注册中心新增 `mcp.enabled` / `mcp.token`（隐藏键，由专属卡片管理）
+
+### Test（测试）
+
+- 新增 run2compose 解析器单元测试（14 项）：词法（引号 / 转义）、端口 / 卷 / 环境变量映射、命名卷归集、网络与 host 告警、资源限制、健康检查、cap / device、`--rm` 与未知选项告警、非 run 命令报错
 
 ## [1.28.19] - 2026-09-08
 

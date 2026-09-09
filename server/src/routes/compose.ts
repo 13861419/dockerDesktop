@@ -16,6 +16,7 @@ import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient } from '../docker/client';
 import { inferCompose, type InferInput } from '../composeInfer';
+import { parseRunCommand } from '../run2compose';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -185,6 +186,27 @@ router.get(
     res.json(projects);
   }),
 );
+
+// ============ docker run → Compose 转换 ============
+
+/**
+ * POST /api/compose/run2compose
+ * body: { command: string }
+ * 解析 docker run 命令并转换为 compose service YAML（纯解析，不落盘）
+ */
+router.post('/run2compose', requireAuth, (req: Request, res: Response) => {
+  const command = String(req.body?.command || '').trim();
+  if (!command) {
+    return res.status(400).json({ error: '缺少 docker run 命令' });
+  }
+  try {
+    const result = parseRunCommand(command);
+    logOperation(res.locals.username, 'docker run 转 Compose', 'compose', result.service.name, command.slice(0, 200), true);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || '解析失败' });
+  }
+});
 
 // ============ 项目详情 ============
 

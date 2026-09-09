@@ -133,7 +133,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/networks', name: t('网络'), desc: t('网络管理与清理') },
   { path: '/topology', name: t('网络拓扑'), desc: t('容器-网络-端口关系可视化') },
   { path: '/ports', name: t('端口地图'), desc: t('跨引擎端口占用与冲突检测') },
-  { path: '/compose', name: t('Compose'), desc: t('工程管理、yaml 编辑、容器逆向推导') },
+  { path: '/compose', name: t('Compose'), desc: t('工程管理、yaml 编辑、docker run 命令导入、容器逆向推导') },
   { path: '/appstore', name: t('应用商店'), desc: t('一键部署常用应用') },
   { path: '/tasks', name: t('计划任务'), desc: t('定时备份/清理/构建/Webhook 触发') },
   { path: '/files', name: t('文件管理'), desc: t('容器文件浏览与传输') },

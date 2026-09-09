@@ -209,6 +209,14 @@ export default function ComposePage() {
   const [stopVolumes, setStopVolumes] = useState(false);
   const [stopping, setStopping] = useState(false);
 
+  // docker run 导入弹窗状态
+  const [runImportOpen, setRunImportOpen] = useState(false);
+  const [runImportCmd, setRunImportCmd] = useState('');
+  const [runImportYaml, setRunImportYaml] = useState('');
+  const [runImportWarnings, setRunImportWarnings] = useState<string[]>([]);
+  const [runImportErr, setRunImportErr] = useState('');
+  const [runImportLoading, setRunImportLoading] = useState(false);
+
   // 查看配置弹窗状态
   const [configOpen, setConfigOpen] = useState(false);
   const [configTitle, setConfigTitle] = useState('');
@@ -443,6 +451,34 @@ export default function ComposePage() {
       setCreating(false);
     }
   }, [canManage, createName, createContent, showToast]);
+
+  /** docker run 命令转换为 Compose（调后端解析，不落盘） */
+  const handleRunConvert = useCallback(async () => {
+    setRunImportLoading(true);
+    setRunImportErr('');
+    setRunImportYaml('');
+    setRunImportWarnings([]);
+    try {
+      const res = await post<{ yaml: string; warnings: string[] }>('/api/compose/run2compose', { command: runImportCmd });
+      setRunImportYaml(res.yaml);
+      setRunImportWarnings(res.warnings || []);
+    } catch (e: any) {
+      setRunImportErr(e?.message || t('转换失败'));
+    } finally {
+      setRunImportLoading(false);
+    }
+  }, [runImportCmd, showToast]);
+
+  /** 将转换结果填入新建弹窗的编辑器 */
+  const handleRunInsert = useCallback(() => {
+    setCreateContent(runImportYaml);
+    setRunImportOpen(false);
+    setRunImportCmd('');
+    setRunImportYaml('');
+    setRunImportWarnings([]);
+    setRunImportErr('');
+  }, [runImportYaml]);
+
 
   /** 查看项目配置文件 */
   const handleViewConfig = useCallback(
@@ -943,6 +979,11 @@ export default function ComposePage() {
             onChange={(e) => handleUploadFile(e.target.files?.[0])}
             className="compose-upload"
           />
+          <div style={{ marginTop: 8 }}>
+            <Button variant="ghost" size="sm" onClick={() => setRunImportOpen(true)}>
+              {t('从 docker run 导入')}
+            </Button>
+          </div>
           {createFileName && (
             <div className="compose-upload__name" title={createFileName}>
               {t('已选择文件：')}{createFileName}
@@ -962,7 +1003,54 @@ export default function ComposePage() {
         </Field>
       </Modal>
 
-      {/* 编辑项目弹窗 */}
+      {/* docker run → Compose 导入弹窗 */}
+      <Modal
+        open={runImportOpen}
+        title={t('从 docker run 导入')}
+        onClose={() => setRunImportOpen(false)}
+        width={640}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRunImportOpen(false)}>
+              {t('取消')}
+            </Button>
+            <Button onClick={handleRunConvert} loading={runImportLoading} disabled={!runImportCmd.trim()}>
+              {t('转换为 Compose')}
+            </Button>
+            {runImportYaml && (
+              <Button variant="primary" onClick={handleRunInsert}>
+                {t('填入编辑器')}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <Field label="docker run 命令" required hint={t('粘贴完整的 docker run 命令，自动映射端口 / 卷 / 环境变量 / 重启策略等常用选项')}>
+          <textarea
+            className="input"
+            style={{ minHeight: 88, fontFamily: 'monospace' }}
+            value={runImportCmd}
+            onChange={(e) => setRunImportCmd(e.target.value)}
+            placeholder={'docker run -d --name web -p 8080:80 -v /data:/data -e FOO=bar --restart always nginx:latest'}
+          />
+        </Field>
+        {runImportErr && <div style={{ color: 'var(--danger, #e5484d)', marginTop: 8 }}>{runImportErr}</div>}
+        {runImportWarnings.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            {runImportWarnings.map((w, i) => (
+              <div key={i} style={{ color: 'var(--warning, #f5a623)', fontSize: 12 }}>
+                {t('提示：')}{w}
+              </div>
+            ))}
+          </div>
+        )}
+        {runImportYaml && (
+          <Field label="Compose 预览">
+            <YamlEditor value={runImportYaml} onChange={() => {}} readOnly rows={10} />
+          </Field>
+        )}
+      </Modal>
+
       <Modal
         open={editOpen}
         title={t('编辑 {{editName}} - docker-compose.yml', { editName })}

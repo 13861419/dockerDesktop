@@ -43,6 +43,9 @@ export interface InferInput {
     Memory?: number;
     CpusetCpus?: string;
     CpuShares?: number;
+    CapAdd?: string[];
+    CapDrop?: string[];
+    Devices?: Array<{ PathOnHost?: string; PathInContainer?: string }>;
   };
   Mounts?: Array<{ Type?: string; Source?: string; Target?: string; RW?: boolean }>;
   NetworkSettings?: {
@@ -65,6 +68,9 @@ export interface InferService {
   working_dir?: string;
   restart?: string;
   privileged?: boolean;
+  cap_add?: string[];
+  cap_drop?: string[];
+  devices?: string[];         // 形如 "/dev/dri:/dev/dri"
   deployResources?: { cpus?: string; memory?: string };
   healthcheck?: {
     test: string[];
@@ -262,6 +268,17 @@ export function inferService(input: InferInput): { service: InferService; warnin
     labels,
     restart,
     privileged: hc.Privileged || undefined,
+    cap_add: Array.isArray(hc.CapAdd) && hc.CapAdd.length ? hc.CapAdd.filter(Boolean) : undefined,
+    cap_drop: Array.isArray(hc.CapDrop) && hc.CapDrop.length ? hc.CapDrop.filter(Boolean) : undefined,
+    devices: Array.isArray(hc.Devices) && hc.Devices.length
+      ? hc.Devices
+          .map((d) => {
+            const host = d?.PathOnHost || '';
+            const cont = d.PathInContainer || d.PathOnHost || '';
+            return cont && cont !== host ? `${host}:${cont}` : host;
+          })
+          .filter(Boolean)
+      : undefined,
     deployResources,
     healthcheck,
   };
@@ -393,6 +410,18 @@ export function renderComposeYaml(services: InferService[], volumes: string[] = 
     if (s.working_dir) lines.push(`    working_dir: ${s.working_dir}`);
     if (s.restart) lines.push(`    restart: ${s.restart}`);
     if (s.privileged) lines.push('    privileged: true');
+    if (s.cap_add && s.cap_add.length) {
+      lines.push('    cap_add:');
+      for (const c of s.cap_add) lines.push(`      - ${c}`);
+    }
+    if (s.cap_drop && s.cap_drop.length) {
+      lines.push('    cap_drop:');
+      for (const c of s.cap_drop) lines.push(`      - ${c}`);
+    }
+    if (s.devices && s.devices.length) {
+      lines.push('    devices:');
+      for (const d of s.devices) lines.push(`      - ${d}`);
+    }
     if (s.healthcheck && s.healthcheck.test) {
       lines.push('    healthcheck:');
       lines.push(`      test: ${JSON.stringify(s.healthcheck.test)}`);

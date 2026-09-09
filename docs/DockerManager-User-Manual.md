@@ -522,6 +522,7 @@ Menu: **Compose** (`/compose`)
 
 - Lists Compose projects with name, status, file, and path.
 - **New / edit**: enter or paste `docker-compose.yml` content.
+- **Import from docker run (v1.29.1)**: in the New Project dialog, click "Import from docker run" and paste a full `docker run` command to auto-convert it into a compose service YAML and fill the editor. Supported mappings: `--name` / `-p` ports / `-v` and `--mount` volumes (binds; named volumes are hoisted to top-level declarations; anonymous volumes) / `-e` env / `--restart` / custom networks / `--label` / `--user` / `--workdir` / `--privileged` / `--cap-add` / `--cap-drop` / `--device` / `--cpus` / `-m --memory` / `--entrypoint` / `--health-*`; tokens after the image map to `command`. Unsupported options (`--gpus`, `--env-file`, host network, unknown flags) are never silently dropped — each produces a warning for manual follow-up.
 - Actions: **Up**, **Down**, **Pull**, **Build**.
 - Expand to inspect the Compose file content and structure (port mapping, etc.).
 

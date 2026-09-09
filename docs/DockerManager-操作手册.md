@@ -535,6 +535,7 @@ journalctl -u docker-manager -f
 
 - 列表展示 Compose 项目名称、状态、Compose 文件与路径。
 - **新建 / 编辑**：填写或多行粘贴 `docker-compose.yml` 内容。
+- **从 docker run 导入（1.29.1）**：新建项目弹窗内点击「从 docker run 导入」，粘贴完整 `docker run` 命令即可自动转换为 compose service YAML 并填入编辑器。支持映射：`--name` / `-p` 端口 / `-v` 与 `--mount` 卷（bind、命名卷自动归集顶层声明、匿名卷）/ `-e` 环境变量 / `--restart` / 自定义网络 / `--label` / `--user` / `--workdir` / `--privileged` / `--cap-add` / `--cap-drop` / `--device` / `--cpus` / `-m --memory` / `--entrypoint` / `--health-*`，镜像后的命令参数映射为 `command`；`--gpus`、`--env-file`、host 网络与未知选项不会静默丢弃，而是逐条告警提示手动补充。
 - 提供编排操作：**Up**（部署启动）、**Down**（停止移除）、**Pull**（拉取镜像）、**Build**（构建镜像）。
 - 点击展开可查看 Compose 文件内容与结构（端口映射等）。
 
