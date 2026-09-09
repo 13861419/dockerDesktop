@@ -60,6 +60,7 @@
 - **Prometheus 指标暴露**：`GET /metrics` 输出主机与 K8s 节点指标（Prometheus 文本格式），`prometheus.enabled` 设置开关控制，支持 Token 鉴权，可直接接入 Prometheus / Grafana 监控体系
 - **系统参数中心化**：面板级参数（安全开关、抓取 Token、压缩配置等）统一在「设置 → 系统参数」管理，带类型与分组描述
 - **MCP 接入**：内置 MCP（Model Context Protocol）服务端（`/api/mcp`，Streamable HTTP），18 个工具覆盖容器/镜像/卷/网络查询与操作、告警规则与记录、计划任务触发；设置页一键开启并生成 Bearer Token，Claude / Cursor 等 MCP 客户端可用自然语言管理面板，全部调用写入操作日志
+- **Git 部署工作台**：Git 仓库绑定为部署应用，一键 clone/pull 并执行 `docker compose up -d --build`；每应用独立 Webhook token（可接 GitHub / Gitea push 事件自动部署）、加密凭据支持私有仓库、部署历史完整记录 git 与 compose 输出，失败自动推送告警
 - **系统更新检查**：设置 → 关于页一键检查 GitHub Releases 最新版本，展示更新说明与按平台标注的更新包下载链接，支持配置镜像前缀加速（国内网络）
 
 ## 🧰 技术栈

@@ -1,0 +1,74 @@
+/**
+ * Git 部署工作台页面样式
+ */
+
+.deploy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.deploy-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  background: var(--card-bg, #fff);
+  min-width: 0;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__name {
+    font-size: 15px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__row {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--muted {
+      opacity: 0.65;
+      font-size: 12px;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  &__webhook {
+    margin-top: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 11px;
+    padding: 5px 8px;
+    border: 1px dashed var(--border-color, #d0d7de);
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.75;
+    cursor: copy;
+
+    &:focus {
+      outline: none;
+      border-color: var(--primary-color, #4f6ef7);
+      opacity: 1;
+    }
+  }
+}

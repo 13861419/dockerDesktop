@@ -1241,6 +1241,26 @@ Automated Git repository pull and deployment:
 | Webhook Trigger | Trigger deployment after code push via webhook |
 | Manual | Click "Run Now" in the task list |
 
+![Git Deploy workbench](../images/git-deploy-workbench.png)
+
+### 35.4 Git Deploy Workbench (new in 1.30.0)
+
+The "Git Deploys" page in the sidebar offers a visual, per-app deployment flow that binds a Git repository as a deploy app:
+
+| Field | Description |
+| --- | --- |
+| App Name | Also used as the compose project name; letters, digits and `. _ -` only |
+| Repository URL | Supports https / ssh; per-app credentials (AES encrypted) for private repos |
+| Branch | Optional, defaults to the repository default branch |
+| Compose File Path | Optional relative path; leave empty to auto-detect compose.yaml / docker-compose.yml |
+| Build Switch | When checked, runs `docker compose up -d --build` |
+
+A deployment = clone / pull the repository into the compose project directory → `docker compose up -d [--build]`. Each card shows live status (deploying / ok / failed) and the last deploy time; full git and compose output of every deployment is kept in the "History" dialog (up to 50 records).
+
+Auto-deploy: each app has its own webhook token; the full URL is shown under the card (click to select all) and can be pointed to by Git push events. `X-Docker-Panel-Token` header verification is supported, and a leaked token can be rotated with "Reset Token". Deploy failures push alert notifications automatically.
+
+> Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
+
 ---
 
 ## 36. Ops Toolbox

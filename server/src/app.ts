@@ -66,6 +66,7 @@ import { getSetting } from './settings';
 import { buildPrometheusText } from './prometheus';
 import mcpRouter from './mcp/server';
 import imageUpdatesRouter from './routes/imageUpdates';
+import deploysRouter from './routes/deploys';
 
 const app = express();
 
@@ -99,6 +100,9 @@ app.use('/api/mcp', mcpRouter);
 
 // 容器镜像自动更新
 app.use('/api/image-updates', requireAuth, imageUpdatesRouter);
+
+// Git 部署工作台
+app.use('/api/deploys', requireAuth, deploysRouter);
 
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);

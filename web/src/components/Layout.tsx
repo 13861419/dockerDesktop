@@ -207,6 +207,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/deploys',
+    label: 'Git 部署',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 2v14" />
+        <path d="M6 10l6 6 6-6" />
+        <path d="M4 20h16" />
+      </svg>
+    ),
+  },
+  {
     to: '/appstore',
     label: '应用商店',
     icon: (

@@ -1257,6 +1257,26 @@ journalctl -u docker-manager -f
 | Webhook 触发 | 推送代码后通过 Webhook 触发部署 |
 | 手动执行 | 在任务列表点击「立即执行」 |
 
+![Git 部署工作台截图](../images/git-deploy-workbench.png)
+
+### 35.4 Git 部署工作台（1.30.0 新增）
+
+侧栏「Git 部署」页提供面向单应用的可视化部署流，把 Git 仓库绑定为「部署应用」：
+
+| 字段 | 说明 |
+| --- | --- |
+| 应用名 | 同时作为 compose 项目名，仅允许字母数字与 `. _ -` |
+| Git 仓库地址 | 支持 https / ssh；私有仓库可按应用保存凭据（AES 加密存储） |
+| 分支 | 可选，留空使用默认分支 |
+| compose 文件相对路径 | 可选，留空自动探测 compose.yaml / docker-compose.yml 等 |
+| 构建开关 | 勾选后执行 `docker compose up -d --build` |
+
+部署动作 = clone / pull 仓库到 Compose 项目目录 → `docker compose up -d [--build]`。卡片实时展示部署状态（部署中 / 成功 / 失败）与最近部署时间；每次部署的完整 git 与 compose 输出记录在「历史」弹窗中（最多 50 条）。
+
+自动部署：每应用独立 Webhook token，卡片下方输入框展示完整地址（点击全选复制），Git 仓库 push 事件指向该地址即可触发；支持 `X-Docker-Panel-Token` Header 二次校验，Token 泄露可在「重置 Token」一键更换。部署失败自动推送告警通知。
+
+> 与 35.2 的区别：35.2 是「计划任务」里的通用 Git 部署任务（可配 Cron 与目标路径）；35.4 是面向单应用的工作台（状态面板 + 历史回看 + 独立 Webhook），二者共用同一套 clone/pull 与 compose 执行逻辑。
+
 ---
 
 ## 36. 运维工具箱

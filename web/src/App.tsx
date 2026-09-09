@@ -28,6 +28,7 @@ const VolumesPage = lazy(() => import('./pages/volumes'));
 const StoragePage = lazy(() => import('./pages/storage'));
 const NetworksPage = lazy(() => import('./pages/networks'));
 const ComposePage = lazy(() => import('./pages/compose'));
+const DeploysPage = lazy(() => import('./pages/deploys'));
 const AppStorePage = lazy(() => import('./pages/appstore'));
 const SettingsPage = lazy(() => import('./pages/settings'));
 const HubPage = lazy(() => import('./pages/hub'));
@@ -180,6 +181,14 @@ export default function App() {
                 element={
                   <PageSuspense>
                     <ComposePage />
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/deploys"
+                element={
+                  <PageSuspense>
+                    <DeploysPage />
                   </PageSuspense>
                 }
               />

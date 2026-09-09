@@ -209,6 +209,35 @@ function createTables(): void {
       updated_at     INTEGER NOT NULL
     );
 
+    -- Git 部署应用：仓库绑定 compose 项目 + webhook token + 最近部署状态
+    CREATE TABLE IF NOT EXISTS deploy_apps (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      name           TEXT NOT NULL UNIQUE,      -- 应用名（同时作为 compose 项目名）
+      repo_url       TEXT NOT NULL,
+      branch         TEXT NOT NULL DEFAULT '',
+      compose_path   TEXT NOT NULL DEFAULT '',  -- 仓库内 compose 文件相对路径（空=自动探测）
+      also_build     INTEGER NOT NULL DEFAULT 1,
+      cred_encrypted TEXT,                      -- Git 凭据（加密）
+      webhook_token  TEXT NOT NULL UNIQUE,
+      last_deploy_at INTEGER,
+      last_status    TEXT,                      -- deploying | ok | fail
+      last_detail    TEXT,
+      created_at     INTEGER NOT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+
+    -- Git 部署历史
+    CREATE TABLE IF NOT EXISTS deploy_logs (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      app_id     INTEGER NOT NULL,
+      app_name   TEXT NOT NULL DEFAULT '',
+      run_at     INTEGER NOT NULL,
+      status     INTEGER NOT NULL,              -- 0 成功 1 失败
+      source     TEXT NOT NULL DEFAULT 'manual',-- manual | webhook
+      detail     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_deploy_logs_app ON deploy_logs(app_id, id DESC);
+
     -- 应用商店安装记录表：记录 Compose 套件安装实例的参数快照（用于升级/重装比对）
     CREATE TABLE IF NOT EXISTS appstore_instances (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -3,6 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.30.0] - 2026-09-09
+
+### Added（新增）
+
+- 全新「Git 部署」工作台：把 Git 仓库绑定为部署应用（仓库名即 compose 项目名），一键 clone/pull 并执行 `docker compose up -d --build`，替代手工 SSH 拉代码重启的流程
+- 部署应用卡片：实时展示仓库地址 / 分支 / 构建开关 / 最近部署时间与状态（部署中 / 成功 / 失败），Webhook 地址点击即全选复制
+- 部署历史：每次部署记录时间、来源（手动 / Webhook）、完整 git 与 compose 输出，弹窗内直接回看排障
+- Webhook 自动部署：每个应用独立 32 位 hex token，`POST /api/webhook/<token>` 触发部署，可接 GitHub / Gitea / Gitee push 事件；支持 `X-Docker-Panel-Token` Header 二次校验与一键重置
+- 私有仓库支持：按应用保存加密凭据（复用 AES 加密存储，明文不落库）
+- 新增 `deploy_apps` / `deploy_logs` 表与 `/api/deploys` API（列表 / 新建 / 更新 / 删除 / 立即部署 / 历史 / 重置 token）；部署失败自动推送告警通知
+
 ## [1.29.2] - 2026-09-09
 
 ### Added（新增）

@@ -17,8 +17,6 @@ import { gitCloneOrPull, gitAvailable, randomHex, GitCred } from '../gitCli';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { requireAdmin } from '../auth';
 import {
   getDb,
@@ -38,17 +36,9 @@ import { collectGcImages, planGc, summarizePlan, bytesText, type GcPolicy } from
 import { getDockerClient } from '../docker/client';
 import { pullWithFailover } from '../docker/pull';
 import { reportTaskFailure } from '../alerting';
+import { COMPOSE_ROOT, COMPOSE_FILES, runCmd, findComposeFile } from './composePaths';
 
-const execAsync = promisify(exec);
 const router = Router();
-
-/** Compose 项目根目录（与 compose.ts 保持一致，支持环境变量覆盖） */
-const COMPOSE_ROOT = process.env.COMPOSE_ROOT
-  ? process.env.COMPOSE_ROOT
-  : path.join(os.tmpdir(), 'docker-compose-projects');
-
-/** 允许的 compose 文件名（与 compose.ts 保持一致） */
-const COMPOSE_FILES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
 
 /** 备份容器使用的轻量镜像（压缩命名卷用） */
 const BACKUP_IMAGE = 'alpine:latest';
@@ -69,36 +59,6 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
       res.status(status).json({ error: message });
     });
   };
-}
-
-/**
- * 安全地执行 shell 命令，捕获 stdout / stderr（与 compose.ts 同风格）
- * @param cmd 要执行的命令
- * @param cwd 工作目录
- * @returns 命令输出
- */
-async function runCmd(cmd: string, cwd: string): Promise<string> {
-  try {
-    const { stdout } = await execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
-    return stdout;
-  } catch (err: any) {
-    const detail = err?.stderr || err?.message || '命令执行失败';
-    const apiErr: any = new Error(detail);
-    apiErr.statusCode = 400;
-    throw apiErr;
-  }
-}
-
-/**
- * 获取指定项目目录下实际存在的 compose 文件名（与 compose.ts 同风格）
- * @param dir 项目目录
- * @returns 找到的 compose 文件名，未找到返回 null
- */
-function findComposeFile(dir: string): string | null {
-  for (const name of COMPOSE_FILES) {
-    if (fs.existsSync(path.join(dir, name))) return name;
-  }
-  return null;
 }
 
 /**

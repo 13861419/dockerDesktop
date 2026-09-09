@@ -115,6 +115,10 @@ const FAQ_ITEMS: FaqItem[] = [
     q: t('如何把面板接入 Claude / Cursor 等 MCP 客户端？'),
     a: t('在「设置 → MCP 接入」卡片开启 MCP 并生成 Token，然后在 MCP 客户端配置中添加地址 <面板地址>/api/mcp 与请求头 Authorization: Bearer <Token>。接入后可用自然语言查询容器/镜像/告警/计划任务并执行启停、拉取等操作；所有调用均写入操作日志（操作人 = mcp）。重置 Token 会使旧 Token 立即失效。'),
   },
+  {
+    q: t('如何用 Git 仓库自动部署 compose 应用？'),
+    a: t('在侧栏「Git 部署」页新建部署应用：填入仓库地址与分支（私有仓库可按应用保存加密凭据），保存后点「立即部署」即自动 clone/pull 并执行 docker compose up -d --build。把仓库 push 事件指向卡片上的 Webhook 地址即可实现推送后自动部署；Token 泄露可一键重置，部署历史保留完整 git 与 compose 输出便于排障。'),
+  },
 ];
 
 /** 功能速查表：页面路径 -> 用途 */
@@ -134,6 +138,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/topology', name: t('网络拓扑'), desc: t('容器-网络-端口关系可视化') },
   { path: '/ports', name: t('端口地图'), desc: t('跨引擎端口占用与冲突检测') },
   { path: '/compose', name: t('Compose'), desc: t('工程管理、yaml 编辑、docker run 命令导入、容器逆向推导') },
+  { path: '/deploys', name: t('Git 部署'), desc: t('Git 仓库绑定为部署应用，一键 compose up --build；Webhook 自动部署、加密凭据、部署历史与失败告警') },
   { path: '/appstore', name: t('应用商店'), desc: t('一键部署常用应用') },
   { path: '/tasks', name: t('计划任务'), desc: t('定时备份/清理/构建/Webhook 触发') },
   { path: '/files', name: t('文件管理'), desc: t('容器文件浏览与传输') },
