@@ -2974,4 +2974,15 @@ export const en: Record<string, string> = {
 '部署历史': 'Deploy History',
 '暂无部署记录': 'No deploy records',
 '手动': 'Manual',
+
+// ---- 日志历史检索（logs.tsx）----
+'实时聚合': 'Live Aggregate',
+'历史检索': 'History Search',
+'返回行数上限': 'Result Limit',
+'索引中：{{rows}} 行 / {{containers}} 个容器': 'Indexing: {{rows}} rows / {{containers}} containers',
+'最早': 'Oldest',
+'日志索引未开启：到「设置 → 系统参数」开启「容器日志持久化索引」后，可跨容器检索历史日志': 'Log index is off: enable "Container log index" under Settings → System Parameters to search history across containers',
+'手动清理过期行': 'Prune expired rows',
+'已清理过期 {{n}} 行': 'Pruned {{n}} expired rows',
+'结果超出单页上限，已展示最早的 {{n}} 行': 'Results exceed page limit; showing earliest {{n}} rows',
 };

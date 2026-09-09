@@ -238,6 +238,24 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_deploy_logs_app ON deploy_logs(app_id, id DESC);
 
+    -- 容器日志持久化索引（logs.indexEnabled 开启后由后台采集循环写入）
+    CREATE TABLE IF NOT EXISTS container_log_index (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      container_id   TEXT NOT NULL,
+      container_name TEXT NOT NULL,
+      ts             INTEGER NOT NULL,
+      stream         TEXT NOT NULL,
+      text           TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_cli_ts ON container_log_index(ts);
+    CREATE INDEX IF NOT EXISTS idx_cli_cid ON container_log_index(container_id, ts);
+
+    -- 采集游标：每容器已索引的最大时间戳（秒）
+    CREATE TABLE IF NOT EXISTS container_log_cursor (
+      container_id TEXT PRIMARY KEY,
+      last_ts      INTEGER NOT NULL
+    );
+
     -- 应用商店安装记录表：记录 Compose 套件安装实例的参数快照（用于升级/重装比对）
     CREATE TABLE IF NOT EXISTS appstore_instances (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,

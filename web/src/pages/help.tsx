@@ -150,7 +150,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份') },
   { path: '/databases', name: t('数据库'), desc: t('MySQL / PostgreSQL / Redis 可视化') },
   { path: '/settings', name: t('设置'), desc: t('账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、MCP 接入、界面语言切换、备份、AI 配置、系统参数、用户管理') },
-  { path: '/logs', name: t('日志聚合'), desc: t('跨容器日志检索与导出') },
+  { path: '/logs', name: t('日志聚合'), desc: t('跨容器实时聚合与历史检索（持久化索引可配置保留天数）、导出') },
   { path: '/operation-logs', name: t('操作日志'), desc: t('全量操作审计') },
   { path: '/notifications', name: t('告警中心'), desc: t('告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、记录与 AI 诊断') },
   { path: '/events', name: t('事件流'), desc: t('Docker 事件实时流与持久化历史') },

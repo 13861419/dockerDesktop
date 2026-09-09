@@ -172,7 +172,30 @@
 
 /* 日志页面移动端适配 */
 @media (max-width: 768px) {
-  .logs-page__filters {
+.logs-page__index-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  border: 1px dashed var(--border-color, #d0d7de);
+  border-radius: 8px;
+  opacity: 0.85;
+
+  .logs-page__index-prune {
+    cursor: pointer;
+    white-space: nowrap;
+    color: var(--primary-color, #4f6ef7);
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.logs-page__filters {
     grid-template-columns: 1fr;
     gap: 10px;
   }

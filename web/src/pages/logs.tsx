@@ -5,7 +5,7 @@ import { Field, Input, Select } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
-import { get, download } from '../api/client';
+import { get, post, download } from '../api/client';
 import type { LogSourceContainer, LogLine, LogsQueryResponse } from '../types';
 import { translateNow as t } from '../i18n';
 import './logs.less';
@@ -18,8 +18,21 @@ const RANGES = [
   { label: '最近 7 天', minutes: 10080 },
 ];
 
+/** 日志索引状态 */
+interface LogIndexStatus {
+  enabled: boolean;
+  rows: number;
+  containers: number;
+  oldestTs: number | null;
+  newestTs: number | null;
+}
+
 export default function LogsPage() {
   const { showToast } = useToast();
+
+  const [mode, setMode] = useState<'live' | 'history'>('live');
+  const [indexStatus, setIndexStatus] = useState<LogIndexStatus | null>(null);
+  const [limit, setLimit] = useState(500);
 
   const [containers, setContainers] = useState<LogSourceContainer[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -44,9 +57,18 @@ export default function LogsPage() {
     }
   }, [showToast]);
 
+  const loadStatus = useCallback(async () => {
+    try {
+      setIndexStatus(await get<LogIndexStatus>('/api/logs/history/status'));
+    } catch {
+      setIndexStatus(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadContainers();
-  }, [loadContainers]);
+    loadStatus();
+  }, [loadContainers, loadStatus]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -96,6 +118,40 @@ export default function LogsPage() {
     }
   }, [selected, rangeMinutes, streams, tailPer, keyword, showToast]);
 
+  const queryHistory = useCallback(async () => {
+    setLoading(true);
+    try {
+      const since = rangeMinutes ? Math.floor(Date.now() / 1000) - rangeMinutes * 60 : 0;
+      const data = await get<{ lines: Array<{ ts: number; container: string; stream: string; text: string }>; total: number; truncated: boolean }>(
+        '/api/logs/history',
+        {
+          containerIds: selected.join(','),
+          keyword: keyword || undefined,
+          since: since || undefined,
+          limit,
+        },
+      );
+      setLines((data.lines || []) as LogLine[]);
+      setTotal(data.total || 0);
+      setLoaded(true);
+      if (data.truncated) showToast(t('结果超出单页上限，已展示最早的 {{n}} 行', { n: limit }), undefined);
+    } catch (e: any) {
+      showToast(e?.message || t('查询日志失败'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [selected, rangeMinutes, keyword, limit, showToast, loadStatus]);
+
+  const pruneIndex = useCallback(async () => {
+    try {
+      const r = await post('/api/logs/history/prune', {});
+      showToast(t('已清理过期 {{n}} 行', { n: (r as any).expired || 0 }));
+      loadStatus();
+    } catch (e: any) {
+      showToast(e?.message || t('操作失败'), 'error');
+    }
+  }, [showToast, loadStatus]);
+
   const exportLogs = useCallback(async () => {
     if (selected.length === 0) return;
     const since = rangeMinutes ? Math.floor(Date.now() / 1000) - rangeMinutes * 60 : 0;
@@ -135,7 +191,35 @@ export default function LogsPage() {
 
   return (
     <div className="logs-page">
-      <Card title={t('日志聚合中心')} extra={<Button size="sm" onClick={loadContainers}>{t('刷新容器')}</Button>}>
+      <Card
+        title={t('日志聚合中心')}
+        extra={
+          <div className="toolbar">
+            <Button size="sm" variant={mode === 'live' ? 'primary' : 'secondary'} onClick={() => setMode('live')}>
+              {t('实时聚合')}
+            </Button>
+            <Button size="sm" variant={mode === 'history' ? 'primary' : 'secondary'} onClick={() => setMode('history')}>
+              {t('历史检索')}
+            </Button>
+            <Button size="sm" onClick={loadContainers}>
+              {t('刷新容器')}
+            </Button>
+          </div>
+        }
+      >
+        {mode === 'history' && (
+          <div className="logs-page__index-status">
+            {indexStatus?.enabled ? (
+              <span>
+                {t('索引中：{{rows}} 行 / {{containers}} 个容器', { rows: indexStatus.rows, containers: indexStatus.containers })}
+                {indexStatus.oldestTs ? ` · ${t('最早')}: ${new Date(indexStatus.oldestTs).toLocaleString()}` : ''}
+              </span>
+            ) : (
+              <span>{t('日志索引未开启：到「设置 → 系统参数」开启「容器日志持久化索引」后，可跨容器检索历史日志')}</span>
+            )}
+            <span className="logs-page__index-prune" onClick={pruneIndex}>{t('手动清理过期行')}</span>
+          </div>
+        )}
         <div className="logs-page__filters">
           <Field label={t('容器')}>
             <div className="logs-page__selects" ref={dropdownRef}>
@@ -184,27 +268,41 @@ export default function LogsPage() {
               <option value="stderr">stderr</option>
             </Select>
           </Field>
-          <Field label={t('每容器行数')}>
-            <Select value={String(tailPer)} onChange={(e: any) => setTailPer(Number(e.target.value))}>
-              <option value="100">100</option>
-              <option value="500">500</option>
-              <option value="1000">1000</option>
-              <option value="2000">2000</option>
-            </Select>
+          <Field label={mode === 'live' ? t('每容器行数') : t('返回行数上限')}>
+            {mode === 'live' ? (
+              <Select value={String(tailPer)} onChange={(e: any) => setTailPer(Number(e.target.value))}>
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+                <option value="2000">2000</option>
+              </Select>
+            ) : (
+              <Select value={String(limit)} onChange={(e: any) => setLimit(Number(e.target.value))}>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+                <option value="2000">2000</option>
+                <option value="5000">5000</option>
+              </Select>
+            )}
           </Field>
           <Field label={t('关键字')}>
             <Input
               placeholder={t('过滤关键字')}
               value={keyword}
               onChange={(e: any) => setKeyword(e.target.value)}
-              onKeyDown={(e: any) => e.key === 'Enter' && query()}
+              onKeyDown={(e: any) => e.key === 'Enter' && (mode === 'live' ? query() : queryHistory())}
             />
           </Field>
           <div className="logs-page__actions">
-            <Button variant="primary" loading={loading} disabled={selected.length === 0} onClick={query}>
+            <Button
+              variant="primary"
+              loading={loading}
+              disabled={mode === 'live' && selected.length === 0}
+              onClick={() => (mode === 'live' ? query() : queryHistory())}
+            >
               {t('查询')}
             </Button>
-            <Button variant="secondary" disabled={!loaded} onClick={exportLogs}>
+            <Button variant="secondary" disabled={mode !== 'live' || !loaded} onClick={exportLogs}>
               {t('导出')}
             </Button>
           </div>

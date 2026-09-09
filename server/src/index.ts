@@ -6,6 +6,7 @@
 import app from './app';
 import { startMonitor } from './docker/monitor';
 import { startContainerMetrics } from './docker/containerMetrics';
+import { startLogIndexer } from './docker/logIndexer';
 import { setupTerminalServer } from './docker/terminal';
 import { setupK8sTerminalServer } from './k8s/terminal';
 import { setupK8sEventWatcher } from './k8s/eventWatcher';
@@ -70,6 +71,13 @@ const server = app.listen(PORT, HOST, () => {
       console.error('指标聚合器启动失败:', err);
     }
   }, 750);
+
+  // 启动日志持久化索引采集循环（每轮实时判断 logs.indexEnabled 开关）
+  try {
+    startLogIndexer();
+  } catch (err) {
+    console.error('日志索引采集器启动失败:', err);
+  }
 
   // 启动审批超时提醒（1.3.0：过期清理 + 超时前催办）
   setTimeout(() => {

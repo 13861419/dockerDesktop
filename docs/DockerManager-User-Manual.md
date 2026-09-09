@@ -1498,6 +1498,8 @@ scrape_configs:
 
 - **Cross-container log search**: search output logs across containers at once, with keyword filtering and highlighting;
 - **Export**: search results can be exported for archiving and issue reporting.
+- **History Search (new in 1.31.0)**: after enabling "Container log index" (`logs.indexEnabled`) under Settings → System Parameters, a background loop incrementally collects new log lines from all running containers every minute, so history remains searchable after container restart or removal; the "History Search" mode on the page queries the persisted index by time range / containers / keyword (result limit 500-5000);
+- **Retention policy**: `logs.retentionDays` (default 7, adjustable 1-90) plus a 1,000,000-row cap; expired and oldest overflow rows are pruned automatically. Index status (rows / containers / oldest timestamp) is shown at the top of History Search mode, with a manual prune action.
 
 ## 45. System Update
 

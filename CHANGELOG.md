@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.31.0] - 2026-09-09
+
+### Added（新增）
+
+- 日志聚合新增「历史检索」模式：开启「容器日志持久化索引」（`logs.indexEnabled`，默认关闭）后，后台每分钟对各运行中容器增量采集新日志行写入 SQLite 索引（`container_log_index`），容器重启或删除后历史日志仍可检索
+- 历史检索支持按时间范围 / 容器多选（留空=全部）/ 关键字（LIKE）查询，返回行数上限 500-5000 可调；页面顶部实时展示索引状态（行数 / 容器数 / 最早时间）并支持手动清理过期行
+- 保留策略：`logs.retentionDays`（默认 7 天，1-90 可调）+ 总行数上限 100 万，超期与超限最旧行每小时自动清理；设置项归入「留存」分组
+- 新增 `/api/logs/history` / `/api/logs/history/status` / `/api/logs/history/prune` API；采集循环随面板启动，开关改动即时生效无需重启
+
 ## [1.30.0] - 2026-09-09
 
 ### Added（新增）

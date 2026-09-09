@@ -235,6 +235,22 @@ registerSettings([
     group: 'runtime',
   },
   {
+    key: 'logs.indexEnabled',
+    label: '容器日志持久化索引',
+    hint: '开启后后台每分钟增量采集各运行中容器的新日志行入库，容器重启或删除后仍可检索历史；默认关闭',
+    type: 'bool',
+    def: false,
+    group: 'retention',
+  },
+  {
+    key: 'logs.retentionDays',
+    label: '日志索引保留天数',
+    hint: '持久化日志索引的保留天数（1-90，默认 7），超期与超出 100 万行的最旧记录自动清理',
+    type: 'number',
+    def: 7,
+    group: 'retention',
+  },
+  {
     key: 'security.ipAllowlist',
     label: '全局 IP 白名单',
     hint: '逗号分隔的 IP/CIDR 列表（如 192.168.1.0/24,10.0.0.1），留空表示不限制；用户级白名单优先于全局',

@@ -12,6 +12,8 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { fetchContainerLogLines, stripAnsi } from '../docker/logUtil';
+import { queryLogHistory, getLogIndexStatus, pruneLogIndex } from '../docker/logIndexer';
+import { logOperation } from '../operationLog';
 
 const router = Router();
 
@@ -163,6 +165,38 @@ router.get(
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="logs-aggregated.txt"');
     res.send(body);
+  }),
+);
+
+/** 历史检索：查持久化日志索引（logs.indexEnabled 开启后有数据） */
+router.get(
+  '/history',
+  asyncHandler(async (req: Request, res: Response) => {
+    const containerIds = String(req.query.containerIds || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    const keyword = String(req.query.keyword || '').trim();
+    const since = num(req.query.since, 0, 0);
+    const until = num(req.query.until, 0, 0);
+    const limit = num(req.query.limit, 500, 1, 5000);
+    res.json(queryLogHistory({ containerIds, keyword, since, until, limit }));
+  }),
+);
+
+/** 历史检索：索引状态 */
+router.get('/history/status', asyncHandler(async (_req: Request, res: Response) => {
+  res.json(getLogIndexStatus());
+}));
+
+/** 历史检索：手动清理（管理员） */
+router.post(
+  '/history/prune',
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = pruneLogIndex();
+    logOperation(res.locals.username, '手动清理日志索引', 'logs', '', `expired=${result.expired} overflow=${result.overflow}`, true);
+    res.json({ ok: true, ...result });
   }),
 );
 
