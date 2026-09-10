@@ -3,7 +3,7 @@
  *
  * 浅色侧边栏 + 顶栏 + 内容区，使用 React Router 的 NavLink 实现导航。
  */
-import React, { Fragment, useState, useCallback, useEffect } from 'react';
+import React, { Fragment, useState, useCallback, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
 import { post, get } from '../api/client';
@@ -541,6 +541,8 @@ export default function Layout() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // 移动端滑动起始点（右滑开抽屉 / 左滑关闭，1.34.0）
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   // 待审批数量角标（审批中心菜单项；接口按角色过滤：管理员见全部，其他用户见自己）
   const [approvalPending, setApprovalPending] = useState(0);
 
@@ -610,7 +612,26 @@ export default function Layout() {
   }
 
   return (
-    <div className="layout">
+    <div
+      className="layout"
+      onTouchStart={(e) => {
+        const t0 = e.touches[0];
+        touchStartRef.current = { x: t0.clientX, y: t0.clientY };
+      }}
+      onTouchEnd={(e) => {
+        const s = touchStartRef.current;
+        if (!s) return;
+        const t0 = e.changedTouches[0];
+        const dx = t0.clientX - s.x;
+        const dy = t0.clientY - s.y;
+        // 右滑打开抽屉 / 左滑关闭（水平位移明显大于垂直时判定）
+        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) {
+          if (dx > 0) setSidebarOpen(true);
+          else setSidebarOpen(false);
+        }
+        touchStartRef.current = null;
+      }}
+    >
       {/* 移动端汉堡菜单按钮 */}
       <button
         className="sidebar-toggle"
@@ -709,6 +730,23 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* 移动端底部导航（≤768px 显示，1.34.0） */}
+      <nav className="bottom-nav">
+        {[
+          { to: '/', label: t('总览') },
+          { to: '/containers', label: t('容器') },
+          { to: '/images', label: t('镜像') },
+          { to: '/logs', label: t('日志') },
+        ].map((it) => (
+          <NavLink key={it.to} to={it.to} className={({ isActive }) => `bottom-nav__item ${isActive ? 'bottom-nav__item--active' : ''}`}>
+            <span>{it.label}</span>
+          </NavLink>
+        ))}
+        <button type="button" className="bottom-nav__item" onClick={() => setSidebarOpen(true)}>
+          <span>{t('更多')}</span>
+        </button>
+      </nav>
     </div>
   );
 }

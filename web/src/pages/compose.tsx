@@ -152,6 +152,19 @@ function findTemplateByValue(value: string, userTemplates: ComposeTemplate[]) {
   return COMPOSE_TEMPLATES.find((t) => t.id === value);
 }
 
+/** 字节快捷格式化（资源看板用） */
+function formatBytesShort(n: number): string {
+  if (!n || n <= 0) return '0';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < 4) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)}${i > 0 ? ' ' : ''}${['B', 'KB', 'MB', 'GB', 'TB'][i]}`;
+}
+
 /**
  * Compose 项目管理页组件
  */
@@ -200,6 +213,28 @@ export default function ComposePage() {
   const [userTemplates, setUserTemplates] = useState<ComposeTemplate[]>([]);
   // 保存为模板弹窗状态
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+// 项目资源看板（1.34.0）
+interface ProjectStatService {
+  name: string;
+  containers: number;
+  cpuPercent: number;
+  memUsage: number;
+  memLimit: number;
+  netRx: number;
+  netTx: number;
+  ioR: number;
+  ioW: number;
+}
+const [statsOpen, setStatsOpen] = useState(false);
+const [statsName, setStatsName] = useState('');
+const [statsData, setStatsData] = useState<ProjectStatService[] | null>(null);
+const [statsLoading, setStatsLoading] = useState(false);
+const [rollingSvc, setRollingSvc] = useState('');
+const [distEngines, setDistEngines] = useState('');
+const [distOpen, setDistOpen] = useState(false);
+const [distRunning, setDistRunning] = useState(false);
+const [engineHints, setEngineHints] = useState<string[]>([]);
   const [saveModalName, setSaveModalName] = useState('');
   const [saveModalDesc, setSaveModalDesc] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -265,6 +300,79 @@ export default function ComposePage() {
 
   /** 解析并设置项目操作中的名称（项目名可能含特殊字符，需编码） */
   const projectUrl = (name: string): string => '/api/compose/' + encodeURIComponent(name);
+
+  /** 打开项目资源看板（1.34.0） */
+  const openStats = useCallback(async (name: string) => {
+    setStatsName(name);
+    setStatsOpen(true);
+    setStatsLoading(true);
+    setStatsData(null);
+    try {
+      const data = await get<{ services: ProjectStatService[] }>(projectUrl(name) + '/stats');
+      setStatsData(data.services || []);
+    } catch {
+      setStatsData([]);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  /** 服务级滚动更新：pull 最新镜像 + 仅重建该服务（1.34.0） */
+  const rollingUpdate = useCallback(
+    async (name: string, service: string) => {
+      setRollingSvc(service);
+      try {
+        await post(projectUrl(name) + '/rolling-update', { service });
+        showToast(t('服务 {{s}} 已更新并重建', { s: service }), 'success');
+        const data = await get<{ services: ProjectStatService[] }>(projectUrl(name) + '/stats');
+        setStatsData(data.services || []);
+      } catch (e: any) {
+        showToast(e?.message || t('滚动更新失败'), 'error');
+      } finally {
+        setRollingSvc('');
+      }
+    },
+    [],
+  );
+
+  /** 跨引擎镜像分发：把项目镜像预拉取到远端引擎（1.34.0） */
+  const distribute = useCallback(async () => {
+    const engines = distEngines
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (engines.length === 0) {
+      showToast(t('请至少填写一个远端引擎地址'), 'error');
+      return;
+    }
+    setDistRunning(true);
+    try {
+      const r = await post<{ ok: boolean; results: Array<{ engine: string; image: string; ok: boolean; detail: string }> }>(
+        projectUrl(statsName) + '/distribute',
+        { engines },
+      );
+      const fail = r.results.filter((x) => !x.ok).length;
+      showToast(fail === 0 ? t('全部镜像分发成功') : t('{{n}} 项分发失败，详见操作日志', { n: fail }), fail === 0 ? 'success' : 'error');
+      setDistOpen(false);
+    } catch (e: any) {
+      showToast(e?.message || t('分发失败'), 'error');
+    } finally {
+      setDistRunning(false);
+    }
+  }, [distEngines, statsName]);
+
+  /** 打开分发弹窗时尝试预填远端引擎列表（多引擎场景） */
+  const openDistribute = useCallback(async () => {
+    setDistOpen(true);
+    try {
+      const data = await get<{ engines?: Array<{ endpoint: string }> }>('/api/engines');
+      const list = (data.engines || []).map((e) => e.endpoint).filter((e) => e && (e.startsWith('tcp://') || e.startsWith('http')));
+      setEngineHints(list);
+    } catch {
+      setEngineHints([]);
+    }
+  }, []);
+
 
   /**
    * 拉取单个项目的服务运行状态（compose ps）
@@ -888,6 +996,9 @@ export default function ComposePage() {
                       >
                         {t('结构')}
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={() => void openStats(proj.name)}>
+                        {t('看板')}
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1367,6 +1478,84 @@ export default function ComposePage() {
             />
             <span>{t('同时删除该项目的数据卷（volumes）')}</span>
           </label>
+        </div>
+      </Modal>
+
+      {/* 项目资源看板（1.34.0）：按服务聚合 CPU / 内存 / 网络 / IO + 服务级滚动更新 */}
+      <Modal open={statsOpen} title={t('项目资源看板 · {{name}}', { name: statsName })} onClose={() => setStatsOpen(false)} width={860}>
+        {statsLoading ? (
+          <SkeletonRows rows={4} />
+        ) : !statsData || statsData.length === 0 ? (
+          <Empty title={t('该项目暂无运行中的容器')} />
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{t('服务')}</th>
+                <th>{t('容器数')}</th>
+                <th>CPU</th>
+                <th>{t('内存')}</th>
+                <th>{t('网络 RX/TX')}</th>
+                <th>{t('磁盘读/写')}</th>
+                <th className="col-actions">{t('操作')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statsData.map((s) => (
+                <tr key={s.name}>
+                  <td className="col-name">{s.name}</td>
+                  <td>{s.containers}</td>
+                  <td>{s.cpuPercent.toFixed(2)}%</td>
+                  <td>{formatBytesShort(s.memUsage)}{s.memLimit > 0 ? ` / ${formatBytesShort(s.memLimit)}` : ''}</td>
+                  <td>{formatBytesShort(s.netRx)} / {formatBytesShort(s.netTx)}</td>
+                  <td>{formatBytesShort(s.ioR)} / {formatBytesShort(s.ioW)}</td>
+                  <td className="col-actions">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={rollingSvc === s.name}
+                      disabled={!canManage}
+                      onClick={() => void rollingUpdate(statsName, s.name)}
+                    >
+                      {t('滚动更新')}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => setDistOpen(true)}>
+            {t('分发镜像到其他引擎')}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => void openStats(statsName)}>
+            {t('刷新')}
+          </Button>
+        </div>
+      </Modal>
+
+      {/* 跨引擎镜像分发（1.34.0） */}
+      <Modal open={distOpen} title={t('分发镜像 · {{name}}', { name: statsName })} onClose={() => setDistOpen(false)} width={520}>
+        <Field label={t('远端引擎地址（每行一个，如 tcp://192.168.1.10:2375）')}>
+          <textarea
+            className="input compose-distribute__engines"
+            rows={4}
+            value={distEngines}
+            onChange={(e) => setDistEngines(e.target.value)}
+            placeholder={engineHints.length > 0 ? engineHints.join('\n') : 'tcp://192.168.1.10:2375'}
+          />
+        </Field>
+        <p style={{ fontSize: 12, opacity: 0.65 }}>
+          {t('将把该项目的全部服务镜像预拉取到所选引擎（作为远端代理部署的前置步骤），完成后远端启动即刻可用。')}
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+          <Button variant="secondary" onClick={() => setDistOpen(false)}>
+            {t('取消')}
+          </Button>
+          <Button variant="primary" loading={distRunning} onClick={() => void distribute()}>
+            {t('开始分发')}
+          </Button>
         </div>
       </Modal>
     </div>

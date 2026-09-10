@@ -37,12 +37,21 @@ export interface BenchCheck {
   targets?: string[];
 }
 
+/** 逃逸风险单项明细 */
+export interface EscapeRiskItem {
+  name: string;
+  score: number;
+  reasons: string[];
+}
+
 /** 完整扫描报告 */
 export interface BenchReport {
   startedAt: number;
   durationMs: number;
   summary: Record<Exclude<BenchLevel, 'skip'>, number> & { skip: number };
   checks: BenchCheck[];
+  /** 容器逃逸风险评分 Top（1.34.0）：score 0-100，越高越危险 */
+  escapeRisk?: { maxScore: number; items: EscapeRiskItem[] };
 }
 
 /** 单个检查项定义（生产检查函数） */
@@ -318,5 +327,45 @@ export async function runSecurityBench(): Promise<BenchReport> {
 
   const summary = { pass: 0, warn: 0, fail: 0, info: 0, skip: 0 };
   for (const c of checks) summary[c.level] += 1;
-  return { startedAt, durationMs: Date.now() - startedAt, summary, checks };
+
+  // 逃逸风险评分（1.34.0）：按高危特征加权求和（0-100 封顶）
+  const riskItems: EscapeRiskItem[] = [];
+  for (const c of inspects) {
+    const reasons: string[] = [];
+    let score = 0;
+    const hc = c.HostConfig || {};
+    if (hc.Privileged) {
+      score += 40;
+      reasons.push('特权模式');
+    }
+    const mounts: string[] = hc.Binds || [];
+    if (mounts.some((m) => m.includes('docker.sock'))) {
+      score += 30;
+      reasons.push('挂载 docker.sock');
+    }
+    if (hc.PidMode === 'host') {
+      score += 10;
+      reasons.push('host PID');
+    }
+    if (hc.NetworkMode === 'host') {
+      score += 10;
+      reasons.push('host 网络');
+    }
+    if (!c.Config?.User || c.Config.User === '0' || c.Config.User === 'root') {
+      score += 5;
+      reasons.push('root 运行');
+    }
+    const img = c.Config?.Image || '';
+    if (!img || img.endsWith(':latest')) {
+      score += 5;
+      reasons.push('latest 镜像');
+    }
+    if (reasons.length > 0) {
+      riskItems.push({ name: c.name, score: Math.min(100, score), reasons });
+    }
+  }
+  riskItems.sort((a, b) => b.score - a.score);
+  const escapeRisk = { maxScore: riskItems[0]?.score ?? 0, items: riskItems.slice(0, 10) };
+
+  return { startedAt, durationMs: Date.now() - startedAt, summary, checks, escapeRisk };
 }

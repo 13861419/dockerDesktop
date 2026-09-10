@@ -405,6 +405,22 @@ registerSettings([
     hidden: true,
   },
   {
+    key: 'alerts.diskForecastDays',
+    label: '磁盘写满预测阈值（天）',
+    hint: '基于最近 24 小时磁盘增长趋势做线性回归，预计写满天数小于该值时推送告警；0 = 关闭趋势预测',
+    type: 'number',
+    def: 7,
+    group: 'notification',
+  },
+  {
+    key: 'alerts.silentChannelId',
+    label: '静默期值班渠道',
+    hint: '告警命中静默/非工作时段时，摘要转发到该渠道（值班巡检用），每类型 30 分钟最多一条；留空 = 静默期直接丢弃（原行为）',
+    type: 'string',
+    def: '',
+    group: 'notification',
+  },
+  {
     key: 'alerts.route.recovery',
     label: 'recovery 级别路由渠道',
     hint: 'byLevel 模式下恢复通知推送的渠道 ID 列表（逗号分隔）',

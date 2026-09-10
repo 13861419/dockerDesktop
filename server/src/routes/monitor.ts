@@ -53,6 +53,55 @@ router.get(
   }),
 );
 
+/**
+ * GET /api/monitor/export.csv?range=7d
+ * 导出指定时间窗的历史监控指标为 CSV（UTF-8 BOM，Excel 直接打开）。
+ * 数据口径与 /history/range 一致（含降采样），1.34.0 新增。
+ */
+router.get(
+  '/export.csv',
+  asyncHandler(async (req: Request, res: Response) => {
+    const raw = String(req.query.range || '7d');
+    const range: MetricsRange = (VALID_RANGES as string[]).includes(raw) ? (raw as MetricsRange) : '7d';
+    const points = getMetricsRange(range);
+    const header = 'timestamp,cpu_percent,cpu_host_percent,mem_percent,mem_used,mem_total,container_mem_used,disk_percent,disk_used,disk_total,gpu_percent,net_rx_bytes,net_tx_bytes,net_rx_mbps,net_tx_mbps,io_read_bytes,io_write_bytes,io_read_mbps,io_write_mbps,containers_running,containers_total,images';
+    const lines = points.map((p) => {
+      const q = (v: unknown) => String(v ?? '');
+      return [
+        new Date(p.timestamp).toISOString(),
+        q(p.cpu.percent),
+        q(p.cpu.hostPercent ?? ''),
+        q(p.mem.percent),
+        q(p.mem.used),
+        q(p.mem.total),
+        q(p.mem.containerUsed ?? ''),
+        q(p.disk.percent),
+        q(p.disk.used),
+        q(p.disk.total),
+        q(p.gpu.percent ?? ''),
+        q(p.net.rx),
+        q(p.net.tx),
+        q(p.netRate?.rxMbps ?? ''),
+        q(p.netRate?.txMbps ?? ''),
+        q(p.diskIO?.rBytes ?? ''),
+        q(p.diskIO?.wBytes ?? ''),
+        q(p.ioRate?.rMbps ?? ''),
+        q(p.ioRate?.wMbps ?? ''),
+        q(p.containers.running),
+        q(p.containers.total),
+        q(p.images),
+      ].join(',');
+    });
+    const csv = '\ufeff' + header + '\n' + lines.join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="metrics-${range}-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    res.send(csv);
+  }),
+);
+
 /** 合法的时间范围取值，用于校验 query 参数 */
 const VALID_RANGES: MetricsRange[] = ['10m', '1h', '24h', '7d', '30d', '90d'];
 

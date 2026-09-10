@@ -168,3 +168,50 @@
 .bench-check--fail .bench-check__remediation {
   color: #ef4444;
 }
+
+/* 逃逸风险 Top（1.34.0） */
+.bench-risk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bench-risk__row {
+  display: grid;
+  grid-template-columns: 180px minmax(120px, 1fr) 48px auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.bench-risk__name {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bench-risk__bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.15);
+  overflow: hidden;
+}
+
+.bench-risk__fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.bench-risk__score {
+  font-weight: 700;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  text-align: right;
+}
+
+.bench-risk__reasons {
+  font-size: 12px;
+  opacity: 0.65;
+}

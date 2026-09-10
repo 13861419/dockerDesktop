@@ -270,6 +270,14 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_bench_runs_ts ON bench_runs(started_at DESC);
 
+    -- 镜像信任锁定（1.34.0）：锁定 RepoDigest，运行镜像摘要漂移时告警
+    CREATE TABLE IF NOT EXISTS image_trust (
+      repo            TEXT PRIMARY KEY,
+      expected_digest TEXT NOT NULL,
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    );
+
     -- 应用商店安装记录表：记录 Compose 套件安装实例的参数快照（用于升级/重装比对）
     CREATE TABLE IF NOT EXISTS appstore_instances (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -18,6 +18,7 @@ import { getToken, canOperate } from '../api/auth';
 import { useCanManage } from '../hooks/useCanManage';
 import { ImageItem } from '../types';
 import { useLang, translateNow } from '../i18n';
+import ImageTrustModal from '../components/ImageTrustModal';
 import './images.less';
 
 /** 将字节数格式化为人类可读大小 */
@@ -198,6 +199,7 @@ export default function ImagesPage() {
   const [tagging, setTagging] = useState(false);
   // 导入弹窗是否打开
   const [importOpen, setImportOpen] = useState(false);
+const [trustOpen, setTrustOpen] = useState(false);
   // 导入选中的 tar 文件
   const [importFile, setImportFile] = useState<File | null>(null);
   // 导入是否进行中
@@ -948,6 +950,9 @@ export default function ImagesPage() {
             <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={!canManage}>
               {t('导入镜像')}
             </Button>
+            <Button variant="secondary" onClick={() => setTrustOpen(true)}>
+              {t('信任锁定')}
+            </Button>
             <Button variant="secondary" onClick={openSearch}>
               {t('搜索镜像')}
             </Button>
@@ -1626,6 +1631,7 @@ export default function ImagesPage() {
         onConfirm={handleBatchDelete}
         onCancel={() => setBatchConfirmOpen(false)}
       />
+      <ImageTrustModal open={trustOpen} onClose={() => setTrustOpen(false)} />
     </div>
   );
 }

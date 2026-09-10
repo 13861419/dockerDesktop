@@ -511,8 +511,11 @@ async function check(): Promise<void> {
       hostStreak.delete(s.type);
       continue;
     }
-    // 处于静默/非工作时段：整体跳过该资源检测（不告警也不做恢复判定）
-    if (isInSilentWindow(rule, new Date())) continue;
+    // 处于静默/非工作时段：整体跳过该资源检测；摘要转发值班渠道（1.34.0）
+    if (isInSilentWindow(rule, new Date())) {
+      void forwardSilentAlert(s.type, 'warn', `${s.type} 资源告警被静默（当前值 ${s.percent.toFixed(1)}）`);
+      continue;
+    }
     const level = evaluateLevel(s.percent, rule);
     const decision = evaluateStreak(prev, level, hostStreak.get(s.type) ?? 0, rule.consecutive);
     if (decision.streak > 0) hostStreak.set(s.type, decision.streak);
@@ -531,6 +534,83 @@ async function check(): Promise<void> {
   await checkContainerRules();
   // 容器资源异常检测（ctnRes 规则，覆盖全部运行容器）
   await checkContainerAnomaly();
+  // 磁盘写满趋势预测（1.34.0：基于 24h 历史采样线性回归，内部限频）
+  await checkDiskForecast();
+}
+
+// ==================== 磁盘写满趋势预测（1.34.0） ====================
+
+/** 上次预测告警时间（24 小时内不重复推送同一预测） */
+let lastForecastAt = 0;
+/** 静默期摘要转发去重（每类型 30 分钟最多一条） */
+const silentForwardAt = new Map<string, number>();
+
+/**
+ * 静默期摘要转发（1.34.0）：告警命中静默/非工作时段时，不再直接丢弃，
+ * 而是摘要转发到「值班渠道」（alerts.silentChannelId 指定的通知渠道），每类型 30 分钟最多一条。
+ * @param type 告警类型
+ * @param level 告警级别
+ * @param text 告警摘要文本
+ */
+export async function forwardSilentAlert(type: string, level: string, text: string): Promise<void> {
+  try {
+    const channelId = String(getSetting<string>('alerts.silentChannelId') || '');
+    if (!channelId) return; // 未配置值班渠道：保持原行为（静默丢弃）
+    const now = Date.now();
+    const last = silentForwardAt.get(type) || 0;
+    if (now - last < 30 * 60 * 1000) return;
+    silentForwardAt.set(type, now);
+    await sendAlert(channelId, `【静默期摘要·${level}】${text}`, { level: level === 'danger' ? 'danger' : 'warn' });
+  } catch {
+    // 转发失败不影响主流程
+  }
+}
+
+/**
+ * 磁盘写满趋势预测：取最近 24 小时 host_metrics 的磁盘已用字节做线性回归，
+ * 斜率 > 0 且 剩余可用天数 <= 阈值（alerts.diskForecastDays，默认 7，0=关闭）时推送告警。
+ * 同一预测 24 小时内不重复推送。
+ */
+export async function checkDiskForecast(): Promise<void> {
+  try {
+    const days = Number(getSetting<number>('alerts.diskForecastDays') ?? 7);
+    if (!days || days <= 0) return;
+    const now = Date.now();
+    if (now - lastForecastAt < 24 * 60 * 60 * 1000) return;
+    const since = now - 24 * 60 * 60 * 1000;
+    const rows = getDb()
+      .prepare('SELECT ts, disk_used, disk_total FROM host_metrics WHERE ts >= ? ORDER BY ts ASC')
+      .all(since) as unknown as Array<{ ts: number; disk_used: number; disk_total: number }>;
+    if (rows.length < 20) return; // 样本不足
+    // 线性回归：x = 小时，y = 已用字节
+    const n = rows.length;
+    const xs = rows.map((r) => (r.ts - rows[0].ts) / 3600_000);
+    const ys = rows.map((r) => r.disk_used);
+    const xAvg = xs.reduce((a, b) => a + b, 0) / n;
+    const yAvg = ys.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0;
+    let sxx = 0;
+    for (let i = 0; i < n; i++) {
+      sxy += (xs[i] - xAvg) * (ys[i] - yAvg);
+      sxx += (xs[i] - xAvg) * (xs[i] - xAvg);
+    }
+    if (sxx <= 0) return;
+    const slopePerHour = sxy / sxx; // 字节/小时
+    if (slopePerHour <= 0) return; // 未增长（或正在释放）不预测
+    const lastRow = rows[rows.length - 1];
+    const remainBytes = lastRow.disk_total - lastRow.disk_used;
+    if (remainBytes <= 0) return;
+    const daysToFull = remainBytes / slopePerHour / 24;
+    if (daysToFull > days) return;
+    lastForecastAt = now;
+    const msg = `Docker 面板【趋势预测】磁盘按当前增长速率预计 **${daysToFull.toFixed(1)} 天后写满**（当前已用 ${(
+      (lastRow.disk_used / lastRow.disk_total) *
+      100
+    ).toFixed(1)}%，24h 增速 ${(slopePerHour * 24 / 1024 / 1024 / 1024).toFixed(2)} GB/天），请及时扩容或清理。`;
+    await pushToTargets('warn', msg);
+  } catch {
+    // 预测失败不影响告警主流程
+  }
 }
 
 /**

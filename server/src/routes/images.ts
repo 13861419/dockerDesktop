@@ -15,6 +15,7 @@ import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { scanImage } from '../trivyCli';
 import { listVulnHistory } from '../vulnScan';
+import { getDb } from '../storage';
 
 const router = Router();
 
@@ -563,6 +564,94 @@ router.get(
   }),
 );
 
+// ==================== 镜像信任锁定（1.34.0） ====================
+
+/** 归一化仓库名（去掉 tag 与 digest） */
+function trustRepoKey(image: string): string {
+  let repo = image.split('@')[0];
+  const idx = repo.lastIndexOf(':');
+  // 避免把 registry 端口误当 tag（如 localhost:5000/nginx）
+  if (idx > repo.lastIndexOf('/')) repo = repo.slice(0, idx);
+  return repo;
+}
+
+/**
+ * GET /api/images/trust
+ * 信任锁定清单与全部运行镜像的校验状态
+ */
+router.get(
+  '/trust',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const db = getDb();
+    const pins = db.prepare('SELECT repo, expected_digest, created_at, updated_at FROM image_trust').all() as unknown as
+      Array<{ repo: string; expected_digest: string; created_at: number; updated_at: number }>;
+    const docker = await getDockerClient();
+    const containers = await docker.listContainers({ all: false });
+    const items: Array<{ container: string; image: string; repo: string; pinned: boolean; ok: boolean | null; digest: string; expected: string }> = [];
+    for (const c of containers) {
+      const image = c.Image || '';
+      const repo = trustRepoKey(image);
+      const pin = pins.find((p) => p.repo === repo);
+      let digest = '';
+      try {
+        const inspect = await docker.getImage(image).inspect();
+        const rd = inspect.RepoDigests || [];
+        digest = rd.find((d) => d.startsWith(repo + '@')) || rd[0] || '';
+      } catch {
+        // inspect 失败视为无摘要
+      }
+      items.push({
+        container: c.Names?.[0]?.replace(/^\//, '') || c.Id.slice(0, 12),
+        image,
+        repo,
+        pinned: Boolean(pin),
+        ok: pin ? (digest.includes(pin.expected_digest) ? true : false) : null,
+        digest: digest.split('@')[1] || '',
+        expected: pin?.expected_digest || '',
+      });
+    }
+    res.json({ pins, items });
+  }),
+);
+
+/**
+ * POST /api/images/trust
+ * 锁定/更新一个仓库的期望摘要。body: { repo, digest }
+ */
+router.post(
+  '/trust',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const repo = String(req.body?.repo || '').trim();
+    const digest = String(req.body?.digest || '').trim();
+    if (!repo || !digest) return res.status(400).json({ error: '需要 repo 和 digest 参数' });
+    const db = getDb();
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO image_trust (repo, expected_digest, created_at, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(repo) DO UPDATE SET expected_digest = excluded.expected_digest, updated_at = excluded.updated_at`,
+    ).run(repo, digest, now, now);
+    logOperation(res.locals.username, '镜像信任锁定', 'image', repo, digest);
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * DELETE /api/images/trust/:repo
+ * 解除锁定
+ */
+router.delete(
+  '/trust/:repo',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const db = getDb();
+    db.prepare('DELETE FROM image_trust WHERE repo = ?').run(req.params.repo);
+    logOperation(res.locals.username, '解除镜像信任锁定', 'image', req.params.repo, '');
+    res.json({ ok: true });
+  }),
+);
+
 /**
  * GET /api/images/:name
  * 获取单个镜像的详细信息
@@ -889,5 +978,6 @@ router.post(
     () => ({ action: '清理镜像', targetType: 'image', detail: 'docker image prune' }),
   ),
 );
+
 
 export default router;

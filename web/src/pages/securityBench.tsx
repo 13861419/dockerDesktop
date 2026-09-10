@@ -10,6 +10,7 @@ import { get, post } from '../api/client';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import Empty from '../components/Empty';
+import LineChart from '../components/LineChart';
 import { useToast } from '../components/Toast';
 import { translateNow as t } from '../i18n';
 import './securityBench.less';
@@ -36,6 +37,8 @@ interface BenchReport {
   durationMs: number;
   summary: Record<Level, number>;
   checks: BenchCheck[];
+  /** 容器逃逸风险评分（1.34.0） */
+  escapeRisk?: { maxScore: number; items: Array<{ name: string; score: number; reasons: string[] }> };
 }
 
 /** 历史记录摘要 */
@@ -48,6 +51,16 @@ interface BenchHistoryItem {
   fail: number;
   info: number;
   skip: number;
+}
+
+/** 趋势点（最近 30 次扫描） */
+interface BenchTrendItem {
+  id: number;
+  startedAt: number;
+  pass: number;
+  warn: number;
+  fail: number;
+  maxRisk: number;
 }
 
 /** 分类显示名与顺序 */
@@ -80,18 +93,21 @@ export default function SecurityBenchPage() {
   const [history, setHistory] = useState<BenchHistoryItem[]>([]);
   const [running, setRunning] = useState(false);
   const [admin, setAdmin] = useState(false);
+  const [trend, setTrend] = useState<BenchTrendItem[]>([]);
 
   /** 拉取最近一次报告与历史摘要（附当前用户角色判断运行权限） */
   const load = useCallback(async () => {
     try {
-      const [latest, hist, me] = await Promise.all([
+      const [latest, hist, me, tr] = await Promise.all([
         get<BenchReport>('/api/bench/latest'),
         get<{ items: BenchHistoryItem[] }>('/api/bench/history'),
         get<{ username: string; role: string }>('/api/auth/me').catch(() => null),
+        get<{ items: BenchTrendItem[] }>('/api/bench/trend').catch(() => ({ items: [] })),
       ]);
       setReport(latest.empty ? null : latest);
       setHistory(hist.items || []);
       setAdmin(me?.role === 'admin');
+      setTrend(tr.items || []);
     } catch {
       // 首次加载失败静默（后端未就绪等）
     }
@@ -193,6 +209,40 @@ export default function SecurityBenchPage() {
               {t('扫描于 {{time}}，耗时 {{ms}} ms', { time: fmtTime(report.startedAt), ms: report.durationMs })}
             </div>
           </div>
+
+          {/* 容器逃逸风险 Top（1.34.0） */}
+          {report.escapeRisk && report.escapeRisk.items.length > 0 && (
+            <Card title={t('容器逃逸风险 Top（评分越高越危险）')} className="bench-group">
+              <div className="bench-risk">
+                {report.escapeRisk.items.map((r) => (
+                  <div key={r.name} className="bench-risk__row">
+                    <span className="bench-risk__name">{r.name}</span>
+                    <span className="bench-risk__bar">
+                      <span className="bench-risk__fill" style={{ width: `${Math.min(100, r.score)}%` }} />
+                    </span>
+                    <span className="bench-risk__score">{r.score}</span>
+                    <span className="bench-risk__reasons">{r.reasons.join(' · ')}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* 检查结果 / 逃逸风险趋势（1.34.0） */}
+          {trend.length > 1 && (
+            <Card title={t('扫描趋势（最近 {{n}} 次）', { n: trend.length })} className="bench-group">
+              <LineChart
+                series={[
+                  { name: t('高危'), color: '#ef4444', data: trend.map((x) => x.fail) },
+                  { name: t('建议加固'), color: '#f59e0b', data: trend.map((x) => x.warn) },
+                  { name: t('逃逸风险峰值'), color: '#6366f1', data: trend.map((x) => x.maxRisk) },
+                ]}
+                labels={trend.map((x) => fmtTime(x.startedAt).slice(0, 5))}
+                height={160}
+                unit=""
+              />
+            </Card>
+          )}
 
           {grouped.map((g) => (
             <Card key={g.category} title={t(CATEGORY_LABEL[g.category])} className="bench-group">

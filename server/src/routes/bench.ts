@@ -39,7 +39,7 @@ function saveReport(report: BenchReport): number {
       report.summary.fail,
       report.summary.info,
       report.summary.skip,
-      JSON.stringify(report.checks),
+      JSON.stringify({ checks: report.checks, escapeRisk: report.escapeRisk || null }),
     );
   return Number(r.lastInsertRowid);
 }
@@ -56,12 +56,21 @@ function rowToReport(row: {
   skip: number;
   results_json: string;
 }): BenchReport & { id: number } {
+  let parsed: { checks?: BenchReport['checks']; escapeRisk?: BenchReport['escapeRisk'] } = {};
+  try {
+    parsed = JSON.parse(row.results_json || '[]');
+  } catch {
+    parsed = {};
+  }
+  // 兼容 1.33.0：results_json 直接存 checks 数组
+  const checks = Array.isArray(parsed) ? (parsed as unknown as BenchReport['checks']) : parsed.checks || [];
   return {
     id: row.id,
     startedAt: row.started_at,
     durationMs: row.duration_ms,
     summary: { pass: row.pass, warn: row.warn, fail: row.fail, info: row.info, skip: row.skip },
-    checks: JSON.parse(row.results_json || '[]'),
+    checks: checks || [],
+    escapeRisk: parsed.escapeRisk || undefined,
   };
 }
 
@@ -118,6 +127,31 @@ router.get(
       )
       .all(limit) as unknown as Array<Record<string, number>>;
     res.json({ items: rows });
+  }),
+);
+
+/**
+ * GET /api/bench/trend
+ * 逃逸风险与检查结果趋势（最近 30 次，供基线扫描页趋势图）
+ */
+router.get(
+  '/trend',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const rows = getDb()
+      .prepare('SELECT id, started_at, pass, warn, fail, results_json FROM bench_runs ORDER BY id DESC LIMIT 30')
+      .all() as unknown as Array<{ id: number; started_at: number; pass: number; warn: number; fail: number; results_json: string }>;
+    const items = rows.reverse().map((r) => {
+      let maxRisk = 0;
+      try {
+        const parsed = JSON.parse(r.results_json || '{}');
+        const er = Array.isArray(parsed) ? null : parsed?.escapeRisk;
+        maxRisk = er?.maxScore || 0;
+      } catch {
+        // 旧格式无风险分
+      }
+      return { id: r.id, startedAt: r.started_at, pass: r.pass, warn: r.warn, fail: r.fail, maxRisk };
+    });
+    res.json({ items });
   }),
 );
 

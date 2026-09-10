@@ -14,7 +14,7 @@ import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
-import { getDockerClient } from '../docker/client';
+import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
 import { inferCompose, type InferInput } from '../composeInfer';
 import { parseRunCommand } from '../run2compose';
 
@@ -247,6 +247,159 @@ router.get(
     }
     const output = await runCmd(`docker compose -f "${composeFile}" config`, dir);
     res.json({ config: output });
+  }),
+);
+
+/**
+ * GET /api/compose/:name/stats
+ * 项目级资源看板（1.34.0）：按 com.docker.compose.project 标签找项目容器，
+ * 逐容器取 stats 后按 service 标签聚合成每服务 CPU / 内存 / 网络 / IO 汇总。
+ */
+router.get(
+  '/:name/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const all = await docker.listContainers({ all: false });
+    const members = all.filter(
+      (c) => c.Labels?.['com.docker.compose.project'] === req.params.name,
+    );
+    const byService = new Map<
+      string,
+      { name: string; containers: number; cpuPercent: number; memUsage: number; memLimit: number; netRx: number; netTx: number; ioR: number; ioW: number }
+    >();
+    await Promise.all(
+      members.map(async (c) => {
+        const svc = c.Labels?.['com.docker.compose.service'] || c.Names?.[0]?.replace(/^\//, '') || c.Id.slice(0, 12);
+        try {
+          const s = (await docker.getContainer(c.Id).stats({ stream: false })) as any;
+          const cpuDelta =
+            (s.cpu_stats?.cpu_usage?.total_usage || 0) - (s.precpu_stats?.cpu_usage?.total_usage || 0);
+          const sysDelta = (s.cpu_stats?.system_cpu_usage || 0) - (s.precpu_stats?.system_cpu_usage || 0);
+          const online = s.cpu_stats?.online_cpus || 1;
+          const cpu = sysDelta > 0 ? (cpuDelta / sysDelta) * online * 100 : 0;
+          let netRx = 0;
+          let netTx = 0;
+          for (const k of Object.keys(s.networks || {})) {
+            netRx += s.networks[k].rx_bytes || 0;
+            netTx += s.networks[k].tx_bytes || 0;
+          }
+          let ioR = 0;
+          let ioW = 0;
+          for (const io of s.blkio_stats?.io_service_bytes_recursive || []) {
+            if (io.op === 'Read' || io.op === 'read') ioR += io.value || 0;
+            else if (io.op === 'Write' || io.op === 'write') ioW += io.value || 0;
+          }
+          const cur =
+            byService.get(svc) ||
+            { name: svc, containers: 0, cpuPercent: 0, memUsage: 0, memLimit: 0, netRx: 0, netTx: 0, ioR: 0, ioW: 0 };
+          cur.containers += 1;
+          cur.cpuPercent += cpu;
+          cur.memUsage += s.memory_stats?.usage || 0;
+          cur.memLimit += s.memory_stats?.limit || 0;
+          cur.netRx += netRx;
+          cur.netTx += netTx;
+          cur.ioR += ioR;
+          cur.ioW += ioW;
+          byService.set(svc, cur);
+        } catch {
+          // 单容器 stats 失败不影响整体
+        }
+      }),
+    );
+    const services = [...byService.values()].map((s) => ({
+      ...s,
+      cpuPercent: Number(s.cpuPercent.toFixed(2)),
+    }));
+    res.json({ name: req.params.name, services });
+  }),
+);
+
+/**
+ * POST /api/compose/:name/rolling-update
+ * 服务级滚动更新（1.34.0）：pull 最新镜像后仅重建该服务（--no-deps 不影响其他服务）。
+ * body: { service }
+ */
+router.post(
+  '/:name/rolling-update',
+  requirePermission('compose.write'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const dir = path.join(COMPOSE_ROOT, req.params.name);
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const service = String(req.body?.service || '').trim();
+    if (!service || /[^\w-.]/.test(service)) {
+      return res.status(400).json({ error: '缺少或非法的 service 参数' });
+    }
+    const pullOut = await runCmd(`docker compose -f "${composeFile}" pull ${service}`, dir);
+    const upOut = await runCmd(
+      `docker compose -f "${composeFile}" up -d --no-deps ${service}`,
+      dir,
+    );
+    logOperation(
+      res.locals.username,
+      '服务滚动更新',
+      'compose',
+      req.params.name,
+      `service: ${service}`,
+      true,
+    );
+    res.json({ ok: true, output: `${pullOut}\n${upOut}`.trim() });
+  }),
+);
+
+/**
+ * POST /api/compose/:name/distribute
+ * 跨引擎镜像分发（1.34.0）：把项目全部服务镜像预拉取到指定远端引擎，
+ * 作为远端代理部署的前置步骤（镜像就位后远端启动即刻可用）。
+ * body: { engines: ["tcp://host:2375", ...] }
+ */
+router.post(
+  '/:name/distribute',
+  requirePermission('compose.write'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const dir = path.join(COMPOSE_ROOT, req.params.name);
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const engines: string[] = Array.isArray(req.body?.engines) ? req.body.engines.filter(Boolean) : [];
+    if (engines.length === 0) return res.status(400).json({ error: '需要 engines 参数（远端引擎地址列表）' });
+    const imagesOut = await runCmd(`docker compose -f "${composeFile}" config --images`, dir);
+    const images = imagesOut.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    const results: Array<{ engine: string; image: string; ok: boolean; detail: string }> = [];
+    for (const engine of engines) {
+      let client;
+      try {
+        client = getDockerClientForEndpoint(engine);
+      } catch (err: any) {
+        for (const img of images) results.push({ engine, image: img, ok: false, detail: err?.message || '引擎不可达' });
+        continue;
+      }
+      for (const img of images) {
+        try {
+          const stream = await client.pull(img);
+          await new Promise<void>((resolve, reject) => {
+            stream.on('end', resolve);
+            stream.on('error', reject);
+            stream.resume();
+          });
+          results.push({ engine, image: img, ok: true, detail: '拉取成功' });
+        } catch (err: any) {
+          results.push({ engine, image: img, ok: false, detail: err?.message || '拉取失败' });
+        }
+      }
+    }
+    logOperation(
+      res.locals.username,
+      '跨引擎镜像分发',
+      'compose',
+      req.params.name,
+      `engines: ${engines.join(', ')}; images: ${images.length}`,
+      results.every((r) => r.ok),
+    );
+    res.json({ ok: results.every((r) => r.ok), images, results });
   }),
 );
 

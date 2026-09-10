@@ -3,6 +3,21 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.34.0] - 2026-09-10
+
+### Added（新增）
+
+- **Compose 项目看板与滚动更新**：每项目「看板」按服务聚合 CPU / 内存 / 网络收发 / 磁盘读写，支持服务级滚动更新（pull 最新镜像后仅重建该服务，`--no-deps` 不影响其他服务）；接口 `GET /api/compose/:name/stats`、`POST /api/compose/:name/rolling-update`
+- **跨引擎镜像分发**：Compose 看板内将项目全部服务镜像预拉取到指定远端引擎（每行一个 `tcp://host:port`），作为远端代理部署的前置步骤；接口 `POST /api/compose/:name/distribute`
+- **磁盘写满趋势预测**：基于近 24 小时磁盘历史线性回归外推，预测 N 天内写满即告警（系统参数「磁盘写满预测阈值（天）」默认 7，0 关闭；同告警 24 小时去重）
+- **静默期值班渠道**：规则静默窗口内摘要转发到指定值班渠道（系统参数「静默期值班渠道」），同规则 30 分钟去重，静默不等于失联
+- **镜像信任锁定**：镜像列表「信任锁定」为仓库锁定期望 sha256 摘要（`image_trust` 表），运行中容器镜像摘要与锁定值不一致标红提示（供应链漂移检测）；接口 `GET/POST/DELETE /api/images/trust`
+- **容器逃逸风险与扫描趋势**：基线扫描对运行容器按 privileged / docker.sock / hostPID / hostNet / root / latest 打分并展示 Top 10 横条图与逃逸风险峰值；扫描趋势折线图展示最近 30 次通过 / 警告 / 高危走势；接口 `GET /api/bench/trend`
+- **镜像拉取缓存（pull-through cache）**：内置 `registry:2` 代理缓存（端口 5060），引擎管理页一键部署 / 移除，多引擎共享本地缓存减少重复外网拉取；接口 `/api/registry-cache/*`
+- **监控指标 CSV 导出**：总览「导出 CSV」按时间窗导出 22 列历史指标（UTF-8 BOM，Excel 直接打开）；接口 `GET /api/monitor/export.csv`
+- **运维周报 PDF**：总览「运维周报」生成近 7 天资源汇总（均值 / 峰值 / 规模 / 采样数），浏览器打印窗口可另存 PDF
+- **移动端底部导航**：≤768px 新增底部导航栏（总览 / 容器 / 镜像 / 日志 / 更多）与左右滑动手势开关侧栏抽屉
+
 ## [1.33.0] - 2026-09-10
 
 ### Added（新增）

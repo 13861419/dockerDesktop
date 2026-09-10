@@ -328,6 +328,8 @@ The default landing page shows:
 - **Containers without resource limits**: when running containers have neither CPU nor memory limits, the overview shows a risk card (name, image, current CPU / memory usage) with click-through to container details. Dismissible per session; results are cached server-side for 5 minutes.
 - **GPU monitoring (optional)**: on NVIDIA hosts, GPU utilization / VRAM / temperature via `nvidia-smi`, plus a utilization trend chart sharing the same time windows (10m / 1h / 24h / 7d / 30d / 90d).
 - **Network / disk IO history charts (new in 1.33.0)**: a "Network I/O" rate chart (downlink RX / uplink TX, Mbps) after the disk chart, plus a "Disk I/O" rate chart (read / write, Mbps, aggregated from blkio stats of all running containers) when disk traffic is detected. Rates are computed from cumulative byte deltas between adjacent samples: the 10-minute window comes from live collection (2s), 1h / 24h / 7d windows from 30s persisted samples, and 30 / 90 day windows from hourly aggregation. Hover crosshair and double-click zoom are supported.
+- **Metrics CSV export (new in 1.34.0)**: the "Export CSV" button in the monitoring card toolbar exports the history for the selected window (timestamp, CPU, memory, disk, GPU, network totals and rates, disk IO totals and rates, container / image counts) as UTF-8 BOM CSV that opens directly in Excel.
+- **Weekly ops report PDF (new in 1.34.0)**: the "Weekly Report" button generates a 7-day summary (CPU / memory / disk averages and peaks, network and disk IO peaks, container and image counts, sample count) in a print window that can be saved as PDF.
 
 All data refreshes in real time — no manual action needed.
 
@@ -473,6 +475,7 @@ Menu: **Images** (`/images`)
 - **Tag** — add a new tag.
 - **Prune** — clean up dangling images.
 - **View detail / build history** — open the `imageDetail` page.
+- **Trust pinning (v1.34.0)**: the "Trust Pinning" toolbar button opens a manager to pin the expected `sha256` digest per repo (e.g. `nginx`). Running containers are verified against pins — matching digests show "match", unpinned repos show "unpinned", and mismatches are flagged red as "digest drift" to catch supply-chain tampering. Pins can be added, updated, or removed.
 
 ![Image list](../images/images.png)
 
@@ -527,6 +530,8 @@ Menu: **Compose** (`/compose`)
 - **New / edit**: enter or paste `docker-compose.yml` content.
 - **Import from docker run (v1.29.1)**: in the New Project dialog, click "Import from docker run" and paste a full `docker run` command to auto-convert it into a compose service YAML and fill the editor. Supported mappings: `--name` / `-p` ports / `-v` and `--mount` volumes (binds; named volumes are hoisted to top-level declarations; anonymous volumes) / `-e` env / `--restart` / custom networks / `--label` / `--user` / `--workdir` / `--privileged` / `--cap-add` / `--cap-drop` / `--device` / `--cpus` / `-m --memory` / `--entrypoint` / `--health-*`; tokens after the image map to `command`. Unsupported options (`--gpus`, `--env-file`, host network, unknown flags) are never silently dropped — each produces a warning for manual follow-up.
 - Actions: **Up**, **Down**, **Pull**, **Build**.
+- **Project dashboard (v1.34.0)**: the "Dashboard" button per project aggregates CPU / memory / network RX-TX / disk read-write by service, and offers per-service **rolling update** (pull the latest image, then recreate only that service with `--no-deps`).
+- **Cross-engine image distribution (v1.34.0)**: inside the dashboard, "Distribute images to engines" pre-pulls all service images to the given remote engines (one `tcp://host:port` per line) — a prerequisite for remote proxy deployment so remote startup is instant.
 - Expand to inspect the Compose file content and structure (port mapping, etc.).
 
 ![Compose](../images/compose.png)
@@ -590,6 +595,7 @@ Menu: **Docker Engines** (`/engines`, admin only)
 - **Edit / Delete** existing endpoints.
 - **Set current** — switch the active engine.
 - Endpoints are auto-detected and validated.
+- **Pull-through image cache (v1.34.0)**: a built-in `registry:2` proxy cache on port 5060 can be deployed with one click. Point other engines' registry-mirror at `dm-registry-cache:5060` to share a local cache — repeated pulls of the same image no longer traverse the internet. Status view and one-click removal included; combine with the Compose dashboard's image distribution to pre-warm remote engines.
 
 ![Docker engines](../images/engines.png)
 
@@ -726,6 +732,8 @@ Menu: **Notifications** (`/notifications`, admin only)
 - **Multi-channel routing**: the "Push routing" card offers three policies — first enabled channel only (legacy default) / all enabled channels / per-level routing (warn / danger / recovery each with its own target channels; a level with no selected channels falls back to the first enabled channel).
 - **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count), and different levels are never mixed into one digest; **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
 - **Channel delivery stats**: the "Delivery stats" card aggregates the last 7 days of pushes per channel — success / failure counts, delivery rate, last success / failure times — plus a recent-failure list with causes, making it easy to spot misconfigured channels. It covers every push path: alerts / recovery / self-heal / approvals / AI diagnosis / weekly reports / test pushes.
+- **Disk-full forecast (v1.34.0)**: a linear regression over the last 24 hours of disk history predicts when the disk fills; an alert fires when the horizon is within N days (system parameter "Disk-full forecast threshold (days)", default 7, 0 = off). The same alert re-pushes at most once per 24 hours to avoid storms.
+- **On-call channel for silent windows (v1.34.0)**: while an alert rule is inside its silent window, its digest can be forwarded to a designated on-call channel (system parameter "Silent-window on-call channel"). Silence no longer means blind — the on-call gets a fallback notice at most once per rule per 30 minutes.
 
 ![Notifications](../images/notifications.png)
 
@@ -775,7 +783,7 @@ Menu: **Firewall** (`/firewall`, admin only)
 - **Approval expiry reminder (v1.3.0)**: when a pending ticket reaches 3/4 of its TTL (`approvals.ttlHours`), a one-time reminder is pushed; tickets still expire automatically past the TTL. Expiry cleanup now runs on a timer instead of lazily on query.
 - **OpenAPI docs (v1.4.0)**: `GET /api/openapi.json` (login required) returns an OpenAPI 3.0 skeleton of the backend covering 34 paths across auth / monitoring / containers / images / volumes / networks / compose / scheduled tasks / approvals / system, with methods, summaries, query parameters and Bearer auth. The "API Docs" page in the sidebar groups and searches them for integration and automation (fields follow the route implementations).
 - **MCP integration (v1.29.0)**: the "MCP Integration" card on the Settings page (admin) enables the built-in MCP server and generates a Bearer Token. MCP clients (Claude Desktop / Cursor, etc.) use `<panel-address>/api/mcp` as the endpoint with the header `Authorization: Bearer <Token>`, and can then manage the panel in natural language. 18 tools cover: system snapshot, containers (list / inspect / logs / start / stop / restart / kill / remove, addressable by id prefix or name), images (list / pull / remove), volumes, networks, alert rules and records, and scheduled tasks (list / run now). The protocol is JSON-RPC 2.0 over Streamable HTTP with zero extra dependencies; every call is written to the operation log (operator = mcp). Resetting the Token invalidates the old one immediately, and the endpoint returns 404 as a whole when disabled or unconfigured.
-- **PWA & mobile**: the panel can be installed to a home screen (manifest + Service Worker app-shell cache, never intercepting /api and /ws); below 768px a mobile layout kicks in (collapsible sidebar, horizontally scrollable tables, touch-friendly controls).
+- **PWA & mobile**: the panel can be installed to a home screen (manifest + Service Worker app-shell cache, never intercepting /api and /ws); below 768px a mobile layout kicks in (collapsible sidebar, horizontally scrollable tables, touch-friendly controls). Since 1.34.0 the mobile layout adds a **bottom navigation bar** (Overview / Containers / Images / Logs / More) plus swipe gestures to open or close the sidebar drawer.
 
 ![Settings](../images/settings.png)
 
@@ -1328,8 +1336,10 @@ Six built-in baseline rules, checked read-only against all running containers:
 - Each check is graded: **Pass / Info / Hardening advised / High risk / N/A** (items not applicable to the platform are skipped automatically, e.g. docker.sock on Windows)
 - Hit objects are listed as container / image name tags; failing checks include hardening advice
 - Scan results are persisted (last 100 runs); the "History" dropdown replays any previous report; runs are written to the operation log
+- **Container escape risk Top (v1.34.0)**: each run scores running containers — privileged (40), docker.sock mount (30), host PID / host network (10 each), running as root (5), latest image (5) — and shows the top 10 as bars, higher being riskier; the run's "escape risk peak" is recorded
+- **Scan trend (v1.34.0)**: a line chart tracks pass / warn / high-risk counts and the escape risk peak over the last 30 scans to visualize hardening progress
 - Running a scan is admin-only; regular users can view the latest report
-- APIs: `POST /api/bench/run` (admin), `GET /api/bench/latest`, `GET /api/bench/history`, `GET /api/bench/:id`
+- APIs: `POST /api/bench/run` (admin), `GET /api/bench/latest`, `GET /api/bench/history`, `GET /api/bench/trend` (v1.34.0), `GET /api/bench/:id`
 
 ![Baseline scan](../images/security-bench.png)
 

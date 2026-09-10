@@ -449,6 +449,51 @@ export default function OverviewPage() {
   // X 轴时间标签：10m 用 HH:MM:SS，长跨度用 MM-DD HH:mm
   const timeLabels = chartData.map((p) => formatTimeLabel(p.timestamp, range));
 
+  /** 导出当前时间窗历史指标 CSV（1.34.0） */
+  const exportCsv = async () => {
+    try {
+      await download(`/api/monitor/export.csv?range=${range}`, `metrics-${range}.csv`);
+    } catch (e) {
+      // 静默（下载失败多为权限/网络）
+      void e;
+    }
+  };
+
+  /** 生成近 7 天运维周报（可打印 HTML，浏览器另存为 PDF）（1.34.0） */
+  const openWeeklyReport = async () => {
+    try {
+      const r = await get<{ points: MetricPoint[] }>('/api/monitor/history/range?range=7d');
+      const pts = r.points || [];
+      const avg = (f: (p: MetricPoint) => number) => {
+        const arr = pts.map(f).filter((v) => Number.isFinite(v));
+        return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      };
+      const maxDisk = Math.max(0, ...pts.map((p) => p.disk.percent || 0));
+      const win = window.open('', '_blank');
+      if (!win) return;
+      const rows = [
+        { k: t('CPU 均值（容器口径）'), v: `${avg((p) => p.cpu.percent).toFixed(1)}%` },
+        { k: t('内存均值'), v: `${avg((p) => p.mem.percent).toFixed(1)}%` },
+        { k: t('磁盘均值 / 峰值'), v: `${avg((p) => p.disk.percent).toFixed(1)}% / ${maxDisk.toFixed(1)}%` },
+        { k: t('网络速率峰值（RX/TX）'), v: `${Math.max(0, ...pts.map((p) => p.netRate?.rxMbps || 0)).toFixed(2)} / ${Math.max(0, ...pts.map((p) => p.netRate?.txMbps || 0)).toFixed(2)} Mbps` },
+        { k: t('磁盘 IO 峰值（读/写）'), v: `${Math.max(0, ...pts.map((p) => p.ioRate?.rMbps || 0)).toFixed(2)} / ${Math.max(0, ...pts.map((p) => p.ioRate?.wMbps || 0)).toFixed(2)} Mbps` },
+        { k: t('当前容器'), v: `${now?.containers.running ?? '-'} / ${now?.containers.total ?? '-'}（${t('镜像')} ${now?.images ?? '-'}）` },
+        { k: t('采样点数'), v: String(pts.length) },
+      ];
+      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Docker Manager ${t('运维周报')}</title>
+        <style>body{font-family:system-ui,'Segoe UI',sans-serif;margin:40px;color:#111}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:16px}td,th{border:1px solid #ddd;padding:8px 12px;text-align:left;font-size:14px}th{background:#f5f5f5}.muted{color:#888;font-size:12px}</style>
+        </head><body><h1>Docker Manager ${t('运维周报')}</h1>
+        <p class="muted">${t('统计窗口')}：${new Date(Date.now() - 7 * 86400000).toLocaleString()} — ${new Date().toLocaleString()}</p>
+        <table><thead><tr><th>${t('指标')}</th><th>${t('数值')}</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><th>${r.k}</th><td>${r.v}</td></tr>`).join('')}
+        </tbody></table><p class="muted">Docker Manager · ${new Date().toLocaleString()}</p>
+        <script>window.onload=()=>window.print()<\/script></body></html>`);
+      win.document.close();
+    } catch {
+      // 打开失败静默
+    }
+  };
+
   // 各磁盘分区明细（来自实时监控点）
   const diskPartitions = now?.disks || [];
 
@@ -585,14 +630,32 @@ export default function OverviewPage() {
         <Card
           title={t('资源监控')}
           extra={
-            <button
-              type="button"
-              onClick={() => download('/api/system/grafana-dashboard', 'dockermanager-grafana-dashboard.json')}
-              style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
-              title={t('导出可导入 Grafana 的 Dashboard JSON（引用 /metrics 暴露的 dm_* 指标）')}
-            >
-              {t('导出 Grafana')}
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => void exportCsv()}
+                style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
+                title={t('导出当前时间窗的历史监控指标（CSV，含 CPU/内存/磁盘/网络/IO）')}
+              >
+                {t('导出 CSV')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void openWeeklyReport()}
+                style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
+                title={t('生成近 7 天运维周报（浏览器打印为 PDF）')}
+              >
+                {t('运维周报')}
+              </button>
+              <button
+                type="button"
+                onClick={() => download('/api/system/grafana-dashboard', 'dockermanager-grafana-dashboard.json')}
+                style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #e5e7eb)', background: 'transparent', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer' }}
+                title={t('导出可导入 Grafana 的 Dashboard JSON（引用 /metrics 暴露的 dm_* 指标）')}
+              >
+                {t('导出 Grafana')}
+              </button>
+            </div>
           }
         >
           {/* 时间范围切换：10 分钟实时轮询 / 1h·24h·7d 历史趋势 */}
