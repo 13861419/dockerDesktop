@@ -373,6 +373,7 @@ The **Actions** column of each row offers:
 - **Clone** — create a new container from the current configuration.
 - **Rename**.
 - **Logs / Details** — open the detail page; the log dialog supports **fullscreen**, **follow refresh** (3s polling auto-scroll, wheel exits follow), **inline search** (keyword highlight + hit count), **copy all**, **wrap toggle**, line numbers and "jump to bottom", with tail options (100/300/1000/all) and download.
+- **Container terminal (optimized in 1.32.2)**: automatically prefers bash inside the container (Tab completion works), falls back to sh when bash is unavailable; fixes garbled multibyte characters caused by chunk-boundary splits.
 - **Restart policy** — `no` / `always` / `on-failure` / `unless-stopped`.
 
 ### 3.4 Resource Limit Adjustment (CPU / Memory)

@@ -134,12 +134,15 @@ function handleSession(ws: WebSocket): void {
             { cwd: DEFAULT_CWD, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
           );
         } else {
-          // Linux：bash / sh；macOS：zsh（依赖 PATH）…其余回退 bash
+          // Linux/macOS：用 script 分配真实 PTY（提示符 / 回显 / Tab 补全 / 颜色可用）。
+          // 直接以管道 spawn bash 会进入非交互模式（无提示符、无回显、无法补全）。
           const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
-          child = spawn(bin, [], {
-            cwd: DEFAULT_CWD,
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
+          const env = { ...process.env, TERM: 'xterm-256color' };
+          if (process.platform === 'darwin') {
+            child = spawn('script', ['-q', '/dev/null', bin], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+          } else {
+            child = spawn('script', ['-qfc', bin, '/dev/null'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+          }
         }
       } catch (err: any) {
         send('\r\n[错误] 无法启动宿主终端进程: ' + String(err?.message || err) + '\r\n');
@@ -149,7 +152,22 @@ function handleSession(ws: WebSocket): void {
 
       child.stdout.on('data', (d: Buffer) => send(d));
       child.stderr.on('data', (d: Buffer) => send(d));
-      child.on('error', (err) => {
+      child.on('error', (err: any) => {
+        // script 命令缺失（极简镜像等）时回退到 bash -i（非 PTY，交互体验降级但可用）
+        if (err?.code === 'ENOENT' && !isWindows() && String(child?.spawnfile) === 'script') {
+          const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
+          const env = { ...process.env, TERM: 'xterm' };
+          const fallback = spawn(bin, ['-i'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+          child = fallback as ChildProcessWithoutNullStreams;
+          fallback.stdout.on('data', (d: Buffer) => send(d));
+          fallback.stderr.on('data', (d: Buffer) => send(d));
+          fallback.on('close', () => {
+            send('\r\n[DockerManager] 宿主终端会话已结束。\r\n');
+            try { ws.close(); } catch { /* ignore */ }
+          });
+          send('\r\n[提示] 系统缺少 script 命令，已降级为基础模式（无 Tab 补全）。\r\n');
+          return;
+        }
         send('\r\n[错误] 宿主终端进程错误: ' + String(err?.message || err) + '\r\n');
         close();
       });

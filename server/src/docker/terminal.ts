@@ -9,6 +9,7 @@
  * 使用 ws 库挂载到现有 HTTP Server 上（noServer 模式，按路径路由）。
  */
 import type { Server as HttpServer } from 'http';
+import { StringDecoder } from 'string_decoder';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDockerClient } from './client';
 import { registerWsHandler, authenticateWs, rejectWsUpgrade } from './wsRouter';
@@ -56,6 +57,8 @@ export function setupTerminalServer(httpServer: HttpServer): void {
 async function handleTerminal(ws: WebSocket, containerId: string): Promise<void> {
   let stream: NodeJS.ReadWriteStream | null = null;
   let exec: Dockerode.Exec | null = null;
+  // UTF-8 流式解码：多字节字符跨 chunk 分裂时避免产生乱码（如 ls 输出文件名出现 �）
+  const decoder = new StringDecoder('utf8');
 
   const send = (data: string | Buffer) => {
     if (ws.readyState === ws.OPEN) {
@@ -86,27 +89,32 @@ async function handleTerminal(ws: WebSocket, containerId: string): Promise<void>
       return;
     }
 
-    // 创建交互式 exec（TTY 模式）
+    // 创建交互式 exec（TTY 模式）；优先 bash（支持 Tab 补全 / 高亮），无 bash 时回退 sh
     exec = await container.exec({
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
       Tty: true,
-      Cmd: ['/bin/sh'],
+      Cmd: ['/bin/sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'],
       Env: ['TERM=xterm-256color', 'COLORTERM=truecolor'],
     });
 
     // 启动 exec 并获取双向流
     stream = await exec.start({ hijack: true, stdin: true }) as unknown as NodeJS.ReadWriteStream;
 
-    // exec 输出 → WebSocket
+    // exec 输出 → WebSocket（经 StringDecoder 重组跨 chunk 的多字节字符）
     stream.on('data', (chunk: Buffer | string) => {
-      send(chunk);
+      if (Buffer.isBuffer(chunk)) {
+        send(decoder.write(chunk));
+      } else {
+        send(chunk);
+      }
     });
     stream.on('error', (err) => {
       try { ws.close(); } catch { /* ignore */ }
     });
     stream.on('end', () => {
+      try { send(decoder.end()); } catch { /* ignore */ }
       try { ws.close(); } catch { /* ignore */ }
     });
 

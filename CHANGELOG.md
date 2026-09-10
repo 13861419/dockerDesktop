@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.32.2] - 2026-09-10
+
+### Fixed（修复）
+
+- 宿主机终端在 Linux / Ubuntu 上无法连接：原实现以管道方式 spawn bash 会进入非交互模式（无提示符、无回显、看似无响应），现改用 `script` 命令分配真实 PTY（提示符 / 回显 / Tab 补全 / 颜色完整可用），`script` 缺失时自动降级为 `bash -i` 基础模式并给出提示
+- 容器终端乱码：`ls` 等输出的多字节字符跨网络包分裂时出现 `�`，改用 StringDecoder 流式重组 UTF-8，中文文件名与彩色输出恢复完整
+- 容器终端 Tab 补全：exec 启动命令从固定 `/bin/sh` 升级为自动探测并优先使用容器内 bash（`command -v bash` 检测），无 bash 的镜像自动回退 sh
+
 ## [1.32.1] - 2026-09-10
 
 ### Fixed（修复）
