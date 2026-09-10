@@ -581,6 +581,7 @@ Menu: **Scheduled Tasks** (`/tasks`)
 
 - Open a host remote terminal (xterm) to run host commands.
 - **Administrators only** — proceed with caution.
+- **Root escalation (v1.34.1)**: on Linux, when the panel service runs as a low-privileged user (default systemd `User=dockerman`), the terminal detects this and automatically enters a true host root shell through a **Docker helper container** (`--privileged --pid=host` + `nsenter` into the PID 1 namespaces; the connect banner names the helper image). When the docker CLI is missing or no suitable local image exists, it falls back to the service user with an explanatory banner. `sudo` cannot work under the service account (system account without a password, and systemd `NoNewPrivileges` blocks setuid); to get a native root shell instead, run the service as `User=root`.
 
 ![Files & terminal](../images/files-terminal.png)
 

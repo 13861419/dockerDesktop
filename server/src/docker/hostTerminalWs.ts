@@ -25,6 +25,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { registerWsHandler, authenticateWs, rejectWsUpgrade } from './wsRouter';
 import { logOperation } from '../operationLog';
 import { isWindows, getDefaultShells, getDefaultShell, type ShellName } from '../platform/detect';
+import { resolveHostRootChannel, dockerHelperArgs, serviceUserName } from '../platform/hostRoot';
 
 /** 支持的 shell（按平台） */
 type Shell = ShellName;
@@ -136,12 +137,27 @@ function handleSession(ws: WebSocket): void {
         } else {
           // Linux/macOS：用 script 分配真实 PTY（提示符 / 回显 / Tab 补全 / 颜色可用）。
           // 直接以管道 spawn bash 会进入非交互模式（无提示符、无回显、无法补全）。
+          // 若服务以低权限运行（如 systemd User=dockerman），优先经 Docker 助手容器
+          // 提权到宿主机 root（--privileged --pid=host + nsenter），见 platform/hostRoot.ts。
           const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
           const env = { ...process.env, TERM: 'xterm-256color' };
-          if (process.platform === 'darwin') {
-            child = spawn('script', ['-q', '/dev/null', bin], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+          const channel = resolveHostRootChannel();
+          if (channel.mode === 'docker') {
+            const inner = 'command -v bash >/dev/null 2>&1 && exec bash || exec sh';
+            child = spawn(channel.dockerBin, dockerHelperArgs(channel, inner, true), { cwd: '/', env, stdio: ['pipe', 'pipe', 'pipe'] });
+            send('\r\n[DockerManager] 已通过 Docker 助手容器进入宿主机 root shell（助手镜像 ' + channel.image + '）。\r\n');
           } else {
-            child = spawn('script', ['-qfc', bin, '/dev/null'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+            if (process.platform === 'darwin') {
+              child = spawn('script', ['-q', '/dev/null', bin], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+            } else {
+              child = spawn('script', ['-qfc', bin, '/dev/null'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+            }
+            if (channel.mode === 'unavailable') {
+              send(
+                '\r\n[提示] 当前面板服务以 ' + serviceUserName() + ' 用户运行，且没有可用的 Docker 提权通道（未安装 docker CLI 或本地无助手镜像），' +
+                '本终端为普通用户权限。如需 root：在本机 docker pull alpine 后重连，或将服务改为 root 运行。\r\n',
+              );
+            }
           }
         }
       } catch (err: any) {

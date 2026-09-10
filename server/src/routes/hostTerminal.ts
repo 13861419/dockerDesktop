@@ -19,6 +19,7 @@ import { spawn } from 'child_process';
 import { requireAdmin } from '../auth';
 import { logOperation } from '../operationLog';
 import { isWindows, getDefaultShells, getDefaultShell, type ShellName } from '../platform/detect';
+import { resolveHostRootChannelCached, dockerHelperArgs } from '../platform/hostRoot';
 
 const router = Router();
 
@@ -141,11 +142,21 @@ async function runShell(
   cwd: string,
   timeoutMs: number,
 ): Promise<{ output: string; exitCode: number | null }> {
-  const { bin, args } = getSpawnConfig(shell, command);
+  let { bin, args } = getSpawnConfig(shell, command);
+  let spawnCwd: string | undefined = cwd;
+
+  // 低权限服务下经 Docker 助手容器提权到宿主机 root（详见 platform/hostRoot.ts）
+  const channel = resolveHostRootChannelCached();
+  if (channel.mode === 'docker') {
+    const cdPrefix = `cd '${cwd.replace(/'/g, "'\\''")}' 2>/dev/null; `;
+    bin = channel.dockerBin;
+    args = dockerHelperArgs(channel, cdPrefix + command, false);
+    spawnCwd = undefined;
+  }
 
   return await new Promise((resolve) => {
     const child = spawn(bin, args, {
-      cwd,
+      ...(spawnCwd ? { cwd: spawnCwd } : {}),
       ...(isWindows() ? { windowsHide: true } : {}),
     });
     const chunks: Buffer[] = [];

@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.34.1] - 2026-09-10
+
+### Fixed（修复）
+
+- **宿主机终端在 Linux 上不是 root**：服务默认以 `dockerman` 低权限用户运行，终端 shell 继承该用户；而 `sudo -i` 因服务账号无密码、不在 sudoers 且 systemd `NoNewPrivileges` 禁止 setuid 而必然失败。现自动经 **Docker 助手容器提权**——以 `--privileged --pid=host` 启动一次性助手容器并通过 `nsenter` 进入宿主机 PID 1 命名空间，获得真正的宿主机 root shell（交互终端与单命令执行器均生效）；离线且本地无可用镜像时回退为当前用户并在终端内给出原因与解决提示。容器内部署（`/.dockerenv`）同样走助手通道以确保拿到的是宿主机而非容器 shell
+
 ## [1.34.0] - 2026-09-10
 
 ### Added（新增）
