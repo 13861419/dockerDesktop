@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.33.0] - 2026-09-10
+
+### Added（新增）
+
+- **基线扫描页（Docker Bench，`/bench`）**：CIS 风格一键安全体检，覆盖 Docker 守护进程（live-restore / 日志轮转 / Swarm 状态 / TLS）、宿主机（docker.sock 与 daemon.json 权限、未加密 2375 端口）、镜像（latest / root 用户）与容器运行时（seccomp / pids-limit）共 11 项检查；按 通过 / 提示 / 建议加固 / 高危 / 不适用 分级展示，命中对象标签化列出并附加加固建议；结果持久化保留最近 100 次并支持历史报告回看（与既有 `/policy` 容器维度基线互补）；接口 `POST /api/bench/run`（管理员）/ `GET /api/bench/latest|history|:id`
+- **网络 I/O 历史曲线**：总览资源监控新增网络速率曲线（下行 RX / 上行 TX，Mbps），速率由相邻采样累计字节差分计算：10 分钟窗走实时采集（2 秒粒度），1h/24h/7d 走 30 秒持久化采样，30/90 天由小时级网络增量折算
+- **磁盘 I/O 历史曲线**：聚合全部运行容器 blkio 统计的读 / 写速率曲线（Mbps），host_metrics 新增 io_read / io_write 累计字节列（自动迁移），检测到读写流量时自动展示
+
 ## [1.32.2] - 2026-09-10
 
 ### Fixed（修复）

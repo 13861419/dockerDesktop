@@ -56,6 +56,7 @@ const TopologyPage = lazy(() => import('./pages/topology'));
 const ToolsPage = lazy(() => import('./pages/tools'));
 const PortsPage = lazy(() => import('./pages/ports'));
 const PolicyPage = lazy(() => import('./pages/policy'));
+const SecurityBenchPage = lazy(() => import('./pages/securityBench'));
 const ApprovalsPage = lazy(() => import('./pages/approvals'));
 const HelpPage = lazy(() => import('./pages/help'));
 const K8sOverviewPage = lazy(() => import('./pages/k8sOverview'));
@@ -417,6 +418,14 @@ export default function App() {
                     <RequireAdmin>
                       <PolicyPage />
                     </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/bench"
+                element={
+                  <PageSuspense>
+                    <SecurityBenchPage />
                   </PageSuspense>
                 }
               />

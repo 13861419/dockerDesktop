@@ -327,6 +327,7 @@ The default landing page shows:
 - **Live resource graphs**: CPU, memory, and disk usage (ECharts). Since 1.28.11 the panel shows "host × container" dual dimensions: the CPU card leads with host-normalized usage (the Docker container figure remains as secondary and can exceed 100% on multi-core hosts); the CPU chart draws both "containers" and "host-wide" series, and the memory chart separates "host used" from "container total" (sum of all running containers' `mem_usage`, as a share of host memory). Host-level CPU alerts use the normalized host-wide figure. Since 1.28.12 the curves support hover crosshair with per-series values at a time point, and double-click opens an enlarged view.
 - **Containers without resource limits**: when running containers have neither CPU nor memory limits, the overview shows a risk card (name, image, current CPU / memory usage) with click-through to container details. Dismissible per session; results are cached server-side for 5 minutes.
 - **GPU monitoring (optional)**: on NVIDIA hosts, GPU utilization / VRAM / temperature via `nvidia-smi`, plus a utilization trend chart sharing the same time windows (10m / 1h / 24h / 7d / 30d / 90d).
+- **Network / disk IO history charts (new in 1.33.0)**: a "Network I/O" rate chart (downlink RX / uplink TX, Mbps) after the disk chart, plus a "Disk I/O" rate chart (read / write, Mbps, aggregated from blkio stats of all running containers) when disk traffic is detected. Rates are computed from cumulative byte deltas between adjacent samples: the 10-minute window comes from live collection (2s), 1h / 24h / 7d windows from 30s persisted samples, and 30 / 90 day windows from hourly aggregation. Hover crosshair and double-click zoom are supported.
 
 All data refreshes in real time — no manual action needed.
 
@@ -1312,6 +1313,25 @@ Six built-in baseline rules, checked read-only against all running containers:
 **One-click fix**: memory / CPU / restart-policy violations support online fixes via the Docker Container Update API, with automatic re-scan afterwards. Privileged mode, sensitive mounts and owner labels require container recreation — the page shows hardening advice instead. Fixes go through the approval gate (`container.fix`): when the approval flow is enabled, fixes submitted by non-admins become approval requests.
 
 ![Security baseline scanning](../images/policy.png)
+
+### 39.1 Baseline Scan page (`/bench`, new in 1.33.0)
+
+**Security governance → Baseline Scan** offers a one-click, CIS-style security audit covering daemon and host-side checks (complementary to `/policy`, which focuses on container-level violations and online fixes):
+
+| Category | Checks |
+| --- | --- |
+| Docker Daemon | live-restore enabled, container log rotation (log-opts max-size), Swarm mode status, remote access TLS |
+| Host | docker.sock file permission (Linux), daemon.json file permission (Linux), unencrypted port 2375 listening |
+| Images | Avoid latest / untagged images, avoid running containers as root |
+| Container Runtime | Seccomp configuration (unconfined?), PIDs limit |
+
+- Each check is graded: **Pass / Info / Hardening advised / High risk / N/A** (items not applicable to the platform are skipped automatically, e.g. docker.sock on Windows)
+- Hit objects are listed as container / image name tags; failing checks include hardening advice
+- Scan results are persisted (last 100 runs); the "History" dropdown replays any previous report; runs are written to the operation log
+- Running a scan is admin-only; regular users can view the latest report
+- APIs: `POST /api/bench/run` (admin), `GET /api/bench/latest`, `GET /api/bench/history`, `GET /api/bench/:id`
+
+![Baseline scan](../images/security-bench.png)
 
 ---
 

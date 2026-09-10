@@ -60,6 +60,12 @@ interface MetricPoint {
   disk: { percent: number; used: number; total: number };
   gpu: { percent: number | null };
   net: { rx: number; tx: number };
+  /** 网络速率（Mbps，1.33.0 起后端下发；旧数据缺失） */
+  netRate?: { rxMbps: number; txMbps: number };
+  /** 容器磁盘 IO 累计字节（1.33.0 起记录） */
+  diskIO?: { rBytes: number; wBytes: number };
+  /** 磁盘 IO 速率（Mbps，同 netRate 口径） */
+  ioRate?: { rMbps: number; wMbps: number };
   containers: { running: number; total: number };
   images: number;
 }
@@ -107,6 +113,9 @@ interface ChartPoint {
   mem: { percent: number; containerUsed: number | null; total: number };
   disk: { percent: number };
   gpu: { percent: number | null };
+  /** 网络/磁盘 IO 速率（Mbps） */
+  netRate: { rxMbps: number; txMbps: number };
+  ioRate: { rMbps: number; wMbps: number };
 }
 
 /** 曲线所需的序列数据 */
@@ -201,7 +210,7 @@ export default function OverviewPage() {
   const [noLimitDismissed, setNoLimitDismissed] = useState(false);
 
   // ---- 监控曲线放大弹窗（双击图表打开） ----
-  const [zoomChart, setZoomChart] = useState<'cpu' | 'mem' | 'disk' | 'gpu' | null>(null);
+  const [zoomChart, setZoomChart] = useState<'cpu' | 'mem' | 'disk' | 'gpu' | 'net' | 'io' | null>(null);
 
   /**
    * 拉取总览数据
@@ -405,6 +414,8 @@ export default function OverviewPage() {
             : null
           : (p as MetricPoint).gpu?.percent ?? null,
       },
+      netRate: (p as MetricPoint).netRate ?? { rxMbps: 0, txMbps: 0 },
+      ioRate: (p as MetricPoint).ioRate ?? { rMbps: 0, wMbps: 0 },
     };
   });
   const cpuSeries: SeriesData = { name: t('CPU（容器）'), color: 'var(--primary, #6366f1)', data: chartData.map((p) => p.cpu.percent) };
@@ -427,6 +438,13 @@ export default function OverviewPage() {
   };
   const diskSeries: SeriesData = { name: t('磁盘'), color: '#f59e0b', data: chartData.map((p) => p.disk.percent) };
   const gpuSeries: SeriesData = { name: 'GPU', color: '#ec4899', data: chartData.map((p) => p.gpu.percent ?? 0) };
+  // 网络 IO 速率曲线（Mbps，收/发双线）
+  const netRxSeries: SeriesData = { name: t('下行 RX'), color: '#0ea5e9', data: chartData.map((p) => p.netRate.rxMbps) };
+  const netTxSeries: SeriesData = { name: t('上行 TX'), color: '#f97316', data: chartData.map((p) => p.netRate.txMbps) };
+  // 磁盘 IO 速率曲线（Mbps，读/写双线；窗口内全为 0 时不展示）
+  const ioRSeries: SeriesData = { name: t('读 I/O'), color: '#8b5cf6', data: chartData.map((p) => p.ioRate.rMbps) };
+  const ioWSeries: SeriesData = { name: t('写 I/O'), color: '#14b8a6', data: chartData.map((p) => p.ioRate.wMbps) };
+  const hasIoTrend = chartData.some((p) => p.ioRate.rMbps > 0 || p.ioRate.wMbps > 0);
 
   // X 轴时间标签：10m 用 HH:MM:SS，长跨度用 MM-DD HH:mm
   const timeLabels = chartData.map((p) => formatTimeLabel(p.timestamp, range));
@@ -646,6 +664,14 @@ export default function OverviewPage() {
             <div className="monitor__chart" onDoubleClick={() => setZoomChart('disk')} title={t('双击放大')}>
               <LineChart series={[diskSeries]} labels={timeLabels} height={180} unit="%" max={100} />
             </div>
+            <div className="monitor__chart" onDoubleClick={() => setZoomChart('net')} title={t('双击放大')}>
+              <LineChart series={[netRxSeries, netTxSeries]} labels={timeLabels} height={180} unit="Mbps" />
+            </div>
+            {hasIoTrend && (
+              <div className="monitor__chart" onDoubleClick={() => setZoomChart('io')} title={t('双击放大')}>
+                <LineChart series={[ioRSeries, ioWSeries]} labels={timeLabels} height={180} unit="Mbps" />
+              </div>
+            )}
             {hasGpuTrend && (
               <div className="monitor__chart" onDoubleClick={() => setZoomChart('gpu')} title={t('双击放大')}>
                 <LineChart series={[gpuSeries]} labels={timeLabels} height={180} unit="%" max={100} />
@@ -674,6 +700,10 @@ export default function OverviewPage() {
               />
             )}
             {zoomChart === 'disk' && <LineChart series={[diskSeries]} labels={timeLabels} height={380} unit="%" max={100} />}
+            {zoomChart === 'net' && (
+              <LineChart series={[netRxSeries, netTxSeries]} labels={timeLabels} height={380} unit="Mbps" />
+            )}
+            {zoomChart === 'io' && <LineChart series={[ioRSeries, ioWSeries]} labels={timeLabels} height={380} unit="Mbps" />}
             {zoomChart === 'gpu' && <LineChart series={[gpuSeries]} labels={timeLabels} height={380} unit="%" max={100} />}
           </Modal>
 

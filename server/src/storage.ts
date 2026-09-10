@@ -256,6 +256,20 @@ function createTables(): void {
       last_ts      INTEGER NOT NULL
     );
 
+    -- Docker Bench 安全基线扫描历史（结果明细存 results_json）
+    CREATE TABLE IF NOT EXISTS bench_runs (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at   INTEGER NOT NULL,
+      duration_ms  INTEGER NOT NULL DEFAULT 0,
+      pass         INTEGER NOT NULL DEFAULT 0,
+      warn         INTEGER NOT NULL DEFAULT 0,
+      fail         INTEGER NOT NULL DEFAULT 0,
+      info         INTEGER NOT NULL DEFAULT 0,
+      skip         INTEGER NOT NULL DEFAULT 0,
+      results_json TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_bench_runs_ts ON bench_runs(started_at DESC);
+
     -- 应用商店安装记录表：记录 Compose 套件安装实例的参数快照（用于升级/重装比对）
     CREATE TABLE IF NOT EXISTS appstore_instances (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -470,6 +484,8 @@ function createTables(): void {
       gpu_percent        REAL,                         -- GPU 最大利用率（%，无 NVIDIA 卡时为 NULL）
       net_rx             INTEGER NOT NULL,             -- 累计接收字节
       net_tx             INTEGER NOT NULL,             -- 累计发送字节
+      io_read            INTEGER,                      -- 容器磁盘 IO 累计读字节（blkio 聚合，聚合失败为 NULL）
+      io_write           INTEGER,                      -- 容器磁盘 IO 累计写字节
       containers_running INTEGER NOT NULL,
       containers_total   INTEGER NOT NULL,
       images             INTEGER NOT NULL
@@ -992,6 +1008,17 @@ function createTables(): void {
   // 迁移：补充容器内存合计列（1.28.11 双维度监控，旧数据为 NULL）
   try {
     d.exec('ALTER TABLE host_metrics ADD COLUMN container_mem_used INTEGER');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：为 host_metrics 补充磁盘 IO 累计字节列（1.33.0 磁盘 IO 历史曲线，旧数据为 NULL）
+  try {
+    d.exec('ALTER TABLE host_metrics ADD COLUMN io_read INTEGER');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE host_metrics ADD COLUMN io_write INTEGER');
   } catch {
     // 列已存在则忽略
   }

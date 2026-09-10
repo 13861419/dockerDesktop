@@ -420,6 +420,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/bench',
+    label: '基线扫描',
+    icon: (
+      <svg {...iconProps}>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m21 21-4.3-4.3M8 11h6M11 8v6" />
+      </svg>
+    ),
+  },
+  {
     to: '/approvals',
     label: '审批中心',
     icon: (
@@ -512,7 +522,7 @@ const NAV_LAYOUT: Array<{ label?: string; paths: string[] }> = [
   { label: '可观测', paths: ['/logs', '/events', '/operation-logs', '/notifications'] },
   { label: '系统工具', paths: ['/files', '/hostfiles', '/hostterminal', '/tools', '/engines', '/swarm', '/backups', '/cloudbackup', '/databases', '/sites', '/firewall', '/api-docs'] },
   { label: 'K8s 集群', paths: ['/k8s', '/k8s/workloads', '/k8s/events'] },
-  { label: '安全治理', paths: ['/policy', '/approvals'] },
+  { label: '安全治理', paths: ['/policy', '/bench', '/approvals'] },
   { paths: ['/assistant'] },
   { paths: ['/settings'] },
   { paths: ['/help'] },

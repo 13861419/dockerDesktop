@@ -157,6 +157,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/tools', name: t('工具箱'), desc: t('JSON / 正则 / Base64 / 时间戳 / 进制 / 端口网段计算') },
   { path: '/approvals', name: t('审批中心'), desc: t('高危操作审批与记录（含编排停止/批量删镜像/清理类）、近 30 天审批统计、记录导出 CSV') },
   { path: '/policy', name: t('安全基线'), desc: t('6 项只读基线检查、违规报告与在线一键修复') },
+  { path: '/bench', name: t('基线扫描'), desc: t('CIS 风格安全体检：守护进程 / 宿主机 / 镜像 / 容器运行时检查，等级化报告与历史比对') },
   { path: '/k8s', name: t('K8s 集群'), desc: t('Kubernetes 集群概览：多集群切换、节点状态与资源占用、Prometheus /metrics 指标暴露') },
   { path: '/k8s/workloads', name: t('工作负载'), desc: t('Pod / Deployment / Service / PVC / ConfigMap / Ingress / Helm / CRD 巡检；扩缩容、回滚、删除、ConfigMap 在线编辑、Helm Chart 部署（管理员）') },
   { path: '/k8s/events', name: t('K8s 事件'), desc: t('Kubernetes 集群事件过滤与检索，Warning 事件联动告警通知') },

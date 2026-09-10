@@ -87,6 +87,10 @@ export interface MonitorPoint {
   net: { rx: number; tx: number }; // 累计字节
   /** 网络 RX/TX 速率（Mbps，由累计字节差分得到，首轮为 0） */
   netRate: { rxMbps: number; txMbps: number };
+  /** 容器磁盘 IO 累计读写字节（blkio 聚合；聚合失败为 0） */
+  diskIO: { rBytes: number; wBytes: number };
+  /** 容器磁盘 IO 速率（Mbps，由累计字节差分得到，首轮为 0） */
+  ioRate: { rMbps: number; wMbps: number };
   /** 逐容器资源统计（供容器级阈值告警） */
   containerStats: MonitorContainerStat[];
   containers: { running: number; total: number };
@@ -127,6 +131,9 @@ let lastCpu: { total: number; idle: number } | null = null;
 
 /** 网络累计字节采样状态（用于差分求速率） */
 let lastNet: { rx: number; tx: number; at: number } | null = null;
+
+/** 磁盘 IO 累计字节采样状态（用于差分求速率） */
+let lastIO: { rBytes: number; wBytes: number; at: number } | null = null;
 
 /** 采集器是否已启动 */
 let started = false;
@@ -180,6 +187,10 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
   netTx: number;
   /** 所有运行容器内存使用字节总和（Docker stats 口径） */
   memUsedSum: number;
+  /** 所有运行容器磁盘 IO 累计读字节（blkio 聚合） */
+  ioRead: number;
+  /** 所有运行容器磁盘 IO 累计写字节 */
+  ioWrite: number;
   containerStats: MonitorContainerStat[];
 }> {
   const containers = await docker.listContainers({ all: false });
@@ -187,6 +198,8 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
   let cpuCoresAcc = 0;
   let netRx = 0;
   let netTx = 0;
+  let ioRead = 0;
+  let ioWrite = 0;
   let memUsageSum = 0;
   const containerStats: MonitorContainerStat[] = [];
 
@@ -216,6 +229,11 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
       netRx += s.networks[key].rx_bytes || 0;
       netTx += s.networks[key].tx_bytes || 0;
     }
+    // 磁盘 IO（blkio io_service_bytes_recursive：按 Read/Write 操作聚合累计字节）
+    for (const io of s.blkio_stats?.io_service_bytes_recursive || []) {
+      if (io.op === 'Read' || io.op === 'read') ioRead += io.value || 0;
+      else if (io.op === 'Write' || io.op === 'write') ioWrite += io.value || 0;
+    }
     // 逐容器 CPU / 内存使用率
     let cCpu = 0;
     let cCpuRaw = 0;
@@ -240,6 +258,8 @@ async function aggregateContainerStats(docker: Dockerode): Promise<{
     netRx,
     netTx,
     memUsedSum: memUsageSum,
+    ioRead,
+    ioWrite,
     containerStats,
   };
 }
@@ -357,6 +377,8 @@ async function collect() {
     let netRx = 0;
     let netTx = 0;
     let containerMemUsed = 0;
+    let ioRead = 0;
+    let ioWrite = 0;
     let containerStats: MonitorContainerStat[] = [];
 
     try {
@@ -365,6 +387,8 @@ async function collect() {
       netRx = agg.netRx;
       netTx = agg.netTx;
       containerMemUsed = agg.memUsedSum;
+      ioRead = agg.ioRead;
+      ioWrite = agg.ioWrite;
       containerStats = agg.containerStats;
     } catch {
       // 聚合失败时静默处理
@@ -376,6 +400,14 @@ async function collect() {
       netRate = computeNetRate(netRx, netTx, lastNet.rx, lastNet.tx, (nowMs - lastNet.at) / 1000);
     }
     lastNet = { rx: netRx, tx: netTx, at: nowMs };
+
+    // 磁盘 IO 速率差分：基于相邻两次采样的累计字节
+    let ioRate = { rMbps: 0, wMbps: 0 };
+    if (lastIO) {
+      const r = computeNetRate(ioRead, ioWrite, lastIO.rBytes, lastIO.wBytes, (nowMs - lastIO.at) / 1000);
+      ioRate = { rMbps: r.rxMbps, wMbps: r.txMbps };
+    }
+    lastIO = { rBytes: ioRead, wBytes: ioWrite, at: nowMs };
 
     // 宿主机真实内存（Windows 物理内存）：已用 = 总量 - 空闲
     const osm = require('os') as typeof import('os');
@@ -434,6 +466,8 @@ async function collect() {
       gpu: collectGpu(),
       net: { rx: netRx, tx: netTx },
       netRate,
+      diskIO: { rBytes: ioRead, wBytes: ioWrite },
+      ioRate,
       containerStats,
       containers: { running, total: containers.length },
       images: info.Images || 0,
@@ -461,6 +495,7 @@ export function resetMonitorState(): void {
   history.length = 0;
   lastCpu = null;
   lastNet = null;
+  lastIO = null;
   latest = null;
 }
 
@@ -510,6 +545,8 @@ interface HostMetricRow {
   gpu_percent: number | null;
   net_rx: number;
   net_tx: number;
+  io_read: number | null;
+  io_write: number | null;
   containers_running: number;
   containers_total: number;
   images: number;
@@ -529,6 +566,12 @@ export interface MetricPoint {
   gpu: { percent: number | null };
   /** 网络累计收发字节 */
   net: { rx: number; tx: number };
+  /** 网络速率（Mbps）：10m/1h/24h/7d 由累计字节差分得到；30d/90d 由小时增量折算 */
+  netRate?: { rxMbps: number; txMbps: number };
+  /** 容器磁盘 IO 累计读写字节（blkio 聚合，1.33.0 起记录；旧数据/不支持时为 0） */
+  diskIO?: { rBytes: number; wBytes: number };
+  /** 容器磁盘 IO 速率（Mbps，同 netRate 口径；长周期聚合数据无此字段） */
+  ioRate?: { rMbps: number; wMbps: number };
   /** 容器运行/总数 */
   containers: { running: number; total: number };
   /** 镜像数量 */
@@ -574,8 +617,8 @@ function persistPoint(point: MonitorPoint): void {
       `INSERT INTO host_metrics
         (ts, cpu_percent, cpu_host, cpu_cores, mem_percent, mem_used, mem_total,
          disk_percent, disk_used, disk_total, gpu_percent, net_rx, net_tx,
-         containers_running, containers_total, images, container_mem_used)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         containers_running, containers_total, images, container_mem_used, io_read, io_write)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       point.timestamp,
       point.cpu.percent,
@@ -594,6 +637,8 @@ function persistPoint(point: MonitorPoint): void {
       point.containers.total,
       point.images,
       point.mem.containerUsed,
+      point.diskIO.rBytes > 0 ? point.diskIO.rBytes : null,
+      point.diskIO.wBytes > 0 ? point.diskIO.wBytes : null,
     );
     persistCount += 1;
     // 每 20 次落库（约 10 分钟）清理一次 7 天前的旧数据
@@ -660,6 +705,9 @@ function mapMonitorPoint(p: MonitorPoint): MetricPoint {
     disk: { percent: p.disk.percent, used: p.disk.used, total: p.disk.total },
     gpu: { percent: gpuMaxUtil(p.gpu) },
     net: { rx: p.net.rx, tx: p.net.tx },
+    netRate: { rxMbps: p.netRate.rxMbps, txMbps: p.netRate.txMbps },
+    diskIO: { rBytes: p.diskIO.rBytes, wBytes: p.diskIO.wBytes },
+    ioRate: { rMbps: p.ioRate.rMbps, wMbps: p.ioRate.wMbps },
     containers: { running: p.containers.running, total: p.containers.total },
     images: p.images,
   };
@@ -678,6 +726,7 @@ function mapHostMetricRow(r: HostMetricRow): MetricPoint {
     disk: { percent: r.disk_percent, used: r.disk_used, total: r.disk_total },
     gpu: { percent: r.gpu_percent },
     net: { rx: r.net_rx, tx: r.net_tx },
+    diskIO: { rBytes: r.io_read ?? 0, wBytes: r.io_write ?? 0 },
     containers: { running: r.containers_running, total: r.containers_total },
     images: r.images,
   };
@@ -689,6 +738,8 @@ function mapHostMetricRow(r: HostMetricRow): MetricPoint {
  * @returns 精简监控点（net 为该小时的字节增量，disk used/total 以百分比近似）
  */
 function mapHourlyRow(r: HourlyRow): MetricPoint {
+  // 小时级行 rx_sum/tx_sum 为该小时字节增量 → 折算平均速率（Mbps）
+  const netRate = { rxMbps: Number(((r.rx_sum * 8) / 3600 / 1e6).toFixed(3)), txMbps: Number(((r.tx_sum * 8) / 3600 / 1e6).toFixed(3)) };
   return {
     timestamp: r.ts_hour,
     cpu: { percent: r.cpu_avg, cores: r.cpu_cores, hostPercent: r.cpu_host_avg ?? null },
@@ -696,6 +747,8 @@ function mapHourlyRow(r: HourlyRow): MetricPoint {
     disk: { percent: r.disk_avg, used: 0, total: 0 },
     gpu: { percent: r.gpu_avg ?? null },
     net: { rx: r.rx_sum, tx: r.tx_sum },
+    netRate,
+    ioRate: { rMbps: 0, wMbps: 0 },
     containers: { running: Math.round(r.ctn_avg), total: Math.round(r.ctn_avg) },
     images: Math.round(r.img_avg),
   };
@@ -738,7 +791,7 @@ export function getMetricsRange(range: MetricsRange = '1h'): MetricPoint[] {
       .prepare(
         `SELECT ts, cpu_percent, cpu_cores, mem_percent, mem_used, mem_total,
                 disk_percent, disk_used, disk_total, gpu_percent, net_rx, net_tx,
-                containers_running, containers_total, images
+                io_read, io_write, containers_running, containers_total, images
          FROM host_metrics
          WHERE ts >= ?
          ORDER BY ts ASC`,
@@ -748,7 +801,29 @@ export function getMetricsRange(range: MetricsRange = '1h'): MetricPoint[] {
     console.error('[monitor] 历史趋势查询失败:', (err as Error)?.message);
     return [];
   }
-  return downsample(rows, bucketMs).map(mapHostMetricRow);
+  const points = downsample(rows, bucketMs).map(mapHostMetricRow);
+  // 相邻点差分出网络/磁盘 IO 速率（累计字节 → Mbps）
+  for (let i = 0; i < points.length; i++) {
+    const cur = points[i];
+    const prev = points[i - 1];
+    if (!prev) {
+      cur.netRate = { rxMbps: 0, txMbps: 0 };
+      cur.ioRate = { rMbps: 0, wMbps: 0 };
+      continue;
+    }
+    const dtSec = (cur.timestamp - prev.timestamp) / 1000;
+    const netR = computeNetRate(cur.net.rx, cur.net.tx, prev.net.rx, prev.net.tx, dtSec);
+    cur.netRate = { rxMbps: netR.rxMbps, txMbps: netR.txMbps };
+    const ioR = computeNetRate(
+      cur.diskIO?.rBytes || 0,
+      cur.diskIO?.wBytes || 0,
+      prev.diskIO?.rBytes || 0,
+      prev.diskIO?.wBytes || 0,
+      dtSec,
+    );
+    cur.ioRate = { rMbps: ioR.rxMbps, wMbps: ioR.txMbps };
+  }
+  return points;
 }
 
 /**
