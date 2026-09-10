@@ -38,6 +38,7 @@ const ROUTES: Array<[string, string]> = [
   ['sites', '/sites'],
   ['firewall', '/firewall'],
   ['policy', '/policy'],
+  ['security-bench', '/bench'],
   ['approvals', '/approvals'],
   ['tools', '/tools'],
   ['ports', '/ports'],
