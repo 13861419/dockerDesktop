@@ -233,6 +233,7 @@ const [statsLoading, setStatsLoading] = useState(false);
 const [rollingSvc, setRollingSvc] = useState('');
 const [distEngines, setDistEngines] = useState('');
 const [distOpen, setDistOpen] = useState(false);
+const [distDeploy, setDistDeploy] = useState(false);
 const [distRunning, setDistRunning] = useState(false);
 const [engineHints, setEngineHints] = useState<string[]>([]);
   const [saveModalName, setSaveModalName] = useState('');
@@ -317,13 +318,18 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     }
   }, []);
 
-  /** 服务级滚动更新：pull 最新镜像 + 仅重建该服务（1.34.0） */
+  /** 服务级滚动更新：pull 最新镜像 + 仅重建该服务；失败自动回滚（1.35.0） */
   const rollingUpdate = useCallback(
     async (name: string, service: string) => {
       setRollingSvc(service);
       try {
-        await post(projectUrl(name) + '/rolling-update', { service });
-        showToast(t('服务 {{s}} 已更新并重建', { s: service }), 'success');
+        const r = await post<{ ok: boolean; rolledBack?: boolean; healthOk?: boolean }>(
+          projectUrl(name) + '/rolling-update',
+          { service },
+        );
+        if (r.rolledBack) showToast(t('更新失败，已自动回滚到旧镜像'), 'error');
+        else if (r.healthOk === false) showToast(t('更新完成，但健康检查未通过'), 'error');
+        else showToast(t('服务 {{s}} 已更新并重建', { s: service }), 'success');
         const data = await get<{ services: ProjectStatService[] }>(projectUrl(name) + '/stats');
         setStatsData(data.services || []);
       } catch (e: any) {
@@ -335,7 +341,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     [],
   );
 
-  /** 跨引擎镜像分发：把项目镜像预拉取到远端引擎（1.34.0） */
+  /** 跨引擎镜像分发：把项目镜像预拉取到远端引擎，可选继续代理部署（1.35.0） */
   const distribute = useCallback(async () => {
     const engines = distEngines
       .split(/\r?\n/)
@@ -349,7 +355,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     try {
       const r = await post<{ ok: boolean; results: Array<{ engine: string; image: string; ok: boolean; detail: string }> }>(
         projectUrl(statsName) + '/distribute',
-        { engines },
+        { engines, deploy: distDeploy },
       );
       const fail = r.results.filter((x) => !x.ok).length;
       showToast(fail === 0 ? t('全部镜像分发成功') : t('{{n}} 项分发失败，详见操作日志', { n: fail }), fail === 0 ? 'success' : 'error');
@@ -359,7 +365,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     } finally {
       setDistRunning(false);
     }
-  }, [distEngines, statsName]);
+  }, [distEngines, distDeploy, statsName]);
 
   /** 打开分发弹窗时尝试预填远端引擎列表（多引擎场景） */
   const openDistribute = useCallback(async () => {
@@ -1546,6 +1552,10 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             placeholder={engineHints.length > 0 ? engineHints.join('\n') : 'tcp://192.168.1.10:2375'}
           />
         </Field>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '4px 0 8px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={distDeploy} onChange={(e) => setDistDeploy(e.target.checked)} />
+          {t('分发后在远端启动（代理部署）')}
+        </label>
         <p style={{ fontSize: 12, opacity: 0.65 }}>
           {t('将把该项目的全部服务镜像预拉取到所选引擎（作为远端代理部署的前置步骤），完成后远端启动即刻可用。')}
         </p>

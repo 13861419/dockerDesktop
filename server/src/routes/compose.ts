@@ -315,8 +315,57 @@ router.get(
 );
 
 /**
+ * 等待 compose 服务容器进入健康状态（1.35.0）：
+ * 要求容器运行中；若配置了 healthcheck 则进一步要求 healthy。
+ * @param projectName compose 项目名
+ * @param service 服务名
+ * @param timeoutMs 最长等待毫秒
+ */
+async function waitForServiceHealthy(
+  projectName: string,
+  service: string,
+  timeoutMs: number,
+): Promise<{ ok: boolean; detail: string }> {
+  const docker = await getDockerClient();
+  const deadline = Date.now() + timeoutMs;
+  let lastDetail = '容器不存在';
+  while (Date.now() < deadline) {
+    try {
+      const all = (await docker.listContainers({ all: true })) as any[];
+      const c = all.find(
+        (x) =>
+          x.Labels?.['com.docker.compose.project'] === projectName &&
+          x.Labels?.['com.docker.compose.service'] === service,
+      );
+      if (c) {
+        const insp = await docker.getContainer(c.Id).inspect();
+        if (!insp.State?.Running && !insp.State?.Restarting) {
+          lastDetail = `容器已退出（${insp.State?.Status || 'unknown'}${
+            insp.State?.ExitCode != null ? '，exit ' + insp.State.ExitCode : ''
+          }）`;
+        } else if (insp.State?.Restarting) {
+          lastDetail = '容器正在反复重启';
+        } else if (insp.Config?.Healthcheck) {
+          const health = insp.State?.Health?.Status || 'starting';
+          lastDetail = `健康检查：${health}`;
+          if (health === 'healthy') return { ok: true, detail: '健康检查通过' };
+        } else {
+          return { ok: true, detail: '容器运行中' };
+        }
+      }
+    } catch (err: any) {
+      lastDetail = err?.message || '检查失败';
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return { ok: false, detail: lastDetail };
+}
+
+/**
  * POST /api/compose/:name/rolling-update
  * 服务级滚动更新（1.34.0）：pull 最新镜像后仅重建该服务（--no-deps 不影响其他服务）。
+ * 安全网（1.35.0）：更新后健康检查（60s 内须保持运行；配置 healthcheck 时须 healthy），
+ * 失败自动回滚——把旧镜像重新打回原 tag 后再次 up 重建。
  * body: { service }
  */
 router.post(
@@ -332,28 +381,176 @@ router.post(
     if (!service || /[^\w-.]/.test(service)) {
       return res.status(400).json({ error: '缺少或非法的 service 参数' });
     }
+    // 更新前记录当前镜像（用于失败回滚）
+    let oldImageId = '';
+    let imageTag = '';
+    try {
+      const docker = await getDockerClient();
+      const all = (await docker.listContainers({ all: true })) as any[];
+      const c = all.find(
+        (x) =>
+          x.Labels?.['com.docker.compose.project'] === req.params.name &&
+          x.Labels?.['com.docker.compose.service'] === service,
+      );
+      if (c) {
+        const insp = await docker.getContainer(c.Id).inspect();
+        oldImageId = insp.Image || '';
+        imageTag = insp.Config?.Image || '';
+      }
+    } catch {
+      // 记录失败不阻断更新
+    }
     const pullOut = await runCmd(`docker compose -f "${composeFile}" pull ${service}`, dir);
     const upOut = await runCmd(
       `docker compose -f "${composeFile}" up -d --no-deps ${service}`,
       dir,
     );
+    // 健康检查 + 失败自动回滚
+    const health = await waitForServiceHealthy(req.params.name, service, 60000);
+    let rolledBack = false;
+    let rollbackDetail = '';
+    if (!health.ok && oldImageId && imageTag && !imageTag.startsWith('sha256:')) {
+      try {
+        await execAsync(`docker tag "${oldImageId}" "${imageTag}"`);
+        await runCmd(`docker compose -f "${composeFile}" up -d --no-deps ${service}`, dir);
+        const back = await waitForServiceHealthy(req.params.name, service, 30000);
+        rolledBack = back.ok;
+        rollbackDetail = back.ok ? '已自动回滚到旧镜像' : `回滚后仍异常：${back.detail}`;
+      } catch (err: any) {
+        rolledBack = false;
+        rollbackDetail = '回滚失败：' + String(err?.message || err);
+      }
+    } else if (!health.ok) {
+      rollbackDetail = oldImageId ? '旧镜像为摘要引用，无法自动回滚' : '';
+    }
+    const finalOk = health.ok || rolledBack;
     logOperation(
       res.locals.username,
       '服务滚动更新',
       'compose',
       req.params.name,
-      `service: ${service}`,
-      true,
+      `service: ${service}${health.ok ? '；健康检查通过' : rolledBack ? '；已自动回滚' : '；健康检查失败'}`,
+      finalOk,
     );
-    res.json({ ok: true, output: `${pullOut}\n${upOut}`.trim() });
+    res.json({
+      ok: finalOk,
+      healthOk: health.ok,
+      rolledBack,
+      detail: health.ok ? health.detail : rollbackDetail || health.detail,
+      output: `${pullOut}\n${upOut}`.trim(),
+    });
   }),
 );
+
+/**
+ * 远端代理部署（1.35.0）：按 compose 配置在远端引擎上创建并启动各服务容器。
+ * 通过 dockerode 直接在远端 daemon 上还原服务（端口 / 卷 / 环境变量 / 重启策略 /
+ * 项目默认网络），并写入 compose 项目标签，使远端容器同样纳入面板统计与运维体系。
+ * @param projectName 项目名
+ * @param composeFile compose 文件名
+ * @param dir 项目目录
+ * @param client 远端引擎 dockerode 客户端
+ * @param recreate 已存在同名容器时是否强制重建
+ */
+async function remoteDeployServices(
+  projectName: string,
+  composeFile: string,
+  dir: string,
+  client: any,
+  recreate: boolean,
+): Promise<Array<{ service: string; name: string; ok: boolean; detail: string }>> {
+  const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+  // 兼容单行与多行缩进两种 JSON 输出（不同 docker CLI 版本行为不一）：取首个 { 到最后一个 } 之间解析
+  const jsonStart = output.indexOf('{');
+  const jsonEnd = output.lastIndexOf('}');
+  const parsed = jsonStart >= 0 && jsonEnd > jsonStart ? JSON.parse(output.slice(jsonStart, jsonEnd + 1)) : null;
+  const serviceConfigs = (parsed as any)?.services || {};
+  const results: Array<{ service: string; name: string; ok: boolean; detail: string }> = [];
+
+  // 远端创建项目默认网络（服务名互访）；已存在或失败时回退默认桥接
+  const netName = `${projectName}_default`;
+  let networkName = '';
+  try {
+    await client.createNetwork({
+      Name: netName,
+      Driver: 'bridge',
+      Attachable: true,
+      Labels: { 'com.docker.compose.project': projectName },
+    });
+    networkName = netName;
+  } catch (err: any) {
+    if (String(err?.message || '').includes('already exists')) networkName = netName;
+  }
+
+  const existing = (await client.listContainers({ all: true })) as any[];
+  const nameOf = (svc: string) => `${projectName}-${svc}-1`;
+
+  for (const svc of Object.keys(serviceConfigs)) {
+    const cfg = serviceConfigs[svc] || {};
+    const cname = nameOf(svc);
+    try {
+      if (!cfg.image) {
+        results.push({ service: svc, name: cname, ok: false, detail: '服务仅有 build 无 image，跳过（远端无法构建）' });
+        continue;
+      }
+      const dup = existing.find((x) => x.Names?.includes('/' + cname));
+      if (dup) {
+        if (!recreate) {
+          results.push({ service: svc, name: cname, ok: true, detail: '容器已存在，跳过' });
+          continue;
+        }
+        await client.getContainer(dup.Id).remove({ force: true }).catch(() => undefined);
+      }
+      const env = normalizeEnvironment(cfg.environment);
+      const ports = normalizePorts(cfg.ports);
+      const exposed: Record<string, any> = {};
+      const bindings: Record<string, any> = {};
+      for (const p of ports) {
+        if (!p.target) continue;
+        const key = `${p.target}/${p.protocol || 'tcp'}`;
+        exposed[key] = {};
+        if (p.published) bindings[key] = [{ HostPort: String(p.published) }];
+      }
+      const binds = normalizeVolumes(cfg.volumes)
+        .filter((v) => v.source && v.target)
+        .map((v) => `${v.source}:${v.target}${v.readOnly ? ':ro' : ''}`);
+      const restart = String(cfg.restart || 'no');
+      const createOpts: any = {
+        name: cname,
+        Image: cfg.image,
+        Env: env,
+        ExposedPorts: exposed,
+        Labels: { 'com.docker.compose.project': projectName, 'com.docker.compose.service': svc },
+        HostConfig: {
+          PortBindings: bindings,
+          Binds: binds.length ? binds : undefined,
+          ...(restart !== 'no' ? { RestartPolicy: { Name: restart } } : {}),
+          ...(cfg.network_mode ? { NetworkMode: cfg.network_mode } : {}),
+        },
+      };
+      if (Array.isArray(cfg.command) && cfg.command.length) createOpts.Cmd = cfg.command;
+      if (Array.isArray(cfg.entrypoint) && cfg.entrypoint.length) createOpts.Entrypoint = cfg.entrypoint;
+      if (cfg.user) createOpts.User = cfg.user;
+      if (cfg.working_dir) createOpts.WorkingDir = cfg.working_dir;
+      if (!cfg.network_mode && networkName) {
+        createOpts.NetworkingConfig = { EndpointsConfig: { [networkName]: {} } };
+      }
+      const container = await client.createContainer(createOpts);
+      await container.start();
+      results.push({ service: svc, name: cname, ok: true, detail: '已创建并启动' });
+    } catch (err: any) {
+      results.push({ service: svc, name: cname, ok: false, detail: err?.message || '创建失败' });
+    }
+  }
+  return results;
+}
 
 /**
  * POST /api/compose/:name/distribute
  * 跨引擎镜像分发（1.34.0）：把项目全部服务镜像预拉取到指定远端引擎，
  * 作为远端代理部署的前置步骤（镜像就位后远端启动即刻可用）。
- * body: { engines: ["tcp://host:2375", ...] }
+ * body: { engines: ["tcp://host:2375", ...], deploy?: boolean }
+ * deploy=true 时（1.35.0）镜像就位后继续在远端创建并启动各服务容器（代理部署）。
  */
 router.post(
   '/:name/distribute',
@@ -366,6 +563,7 @@ router.post(
     }
     const engines: string[] = Array.isArray(req.body?.engines) ? req.body.engines.filter(Boolean) : [];
     if (engines.length === 0) return res.status(400).json({ error: '需要 engines 参数（远端引擎地址列表）' });
+    const deploy = req.body?.deploy === true;
     const imagesOut = await runCmd(`docker compose -f "${composeFile}" config --images`, dir);
     const images = imagesOut.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     const results: Array<{ engine: string; image: string; ok: boolean; detail: string }> = [];
@@ -390,16 +588,57 @@ router.post(
           results.push({ engine, image: img, ok: false, detail: err?.message || '拉取失败' });
         }
       }
+      if (deploy) {
+        try {
+          const deployResults = await remoteDeployServices(req.params.name, composeFile, dir, client, false);
+          for (const d of deployResults) {
+            results.push({ engine, image: `[部署] ${d.service}`, ok: d.ok, detail: `${d.name}：${d.detail}` });
+          }
+        } catch (err: any) {
+          results.push({ engine, image: '[部署] 项目', ok: false, detail: err?.message || '远端部署失败' });
+        }
+      }
     }
     logOperation(
       res.locals.username,
-      '跨引擎镜像分发',
+      deploy ? '跨引擎分发并部署' : '跨引擎镜像分发',
       'compose',
       req.params.name,
-      `engines: ${engines.join(', ')}; images: ${images.length}`,
+      `engines: ${engines.join(', ')}; images: ${images.length}${deploy ? '; 远端代理部署' : ''}`,
       results.every((r) => r.ok),
     );
     res.json({ ok: results.every((r) => r.ok), images, results });
+  }),
+);
+
+/**
+ * POST /api/compose/:name/remote-deploy
+ * 远端代理部署（1.35.0）：在指定远端引擎上按 compose 配置创建并启动各服务容器。
+ * body: { endpoint, recreate?: boolean }
+ */
+router.post(
+  '/:name/remote-deploy',
+  requirePermission('compose.write'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const dir = path.join(COMPOSE_ROOT, req.params.name);
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const endpoint = String(req.body?.endpoint || '').trim();
+    if (!endpoint) return res.status(400).json({ error: '需要 endpoint 参数（远端引擎地址）' });
+    const recreate = req.body?.recreate === true;
+    const client = getDockerClientForEndpoint(endpoint);
+    const results = await remoteDeployServices(req.params.name, composeFile, dir, client, recreate);
+    logOperation(
+      res.locals.username,
+      '远端代理部署',
+      'compose',
+      req.params.name,
+      `endpoint: ${endpoint}; services: ${results.length}`,
+      results.every((r) => r.ok),
+    );
+    res.json({ ok: results.every((r) => r.ok), endpoint, results });
   }),
 );
 
@@ -728,15 +967,16 @@ router.get(
       return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
     }
     const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
-    // config 输出可能带第一行注释（如 "# resolve image digest"），trim 后直接逐段找首个合法 JSON 起始
+    // 兼容单行与多行缩进两种 JSON 输出：取首个 { 到最后一个 } 之间解析
     let parsed: any = null;
-    const text = output.trim();
-    // 跳过可能的注释行，然后 JSON.parse
-    const body = text.split('\n').find((line) => line.trim().startsWith('{')) || '';
-    try {
-      parsed = JSON.parse(body.trim());
-    } catch {
-      // 解析失败返回空结构，不抛错
+    const jsonStart = output.indexOf('{');
+    const jsonEnd = output.lastIndexOf('}');
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      try {
+        parsed = JSON.parse(output.slice(jsonStart, jsonEnd + 1));
+      } catch {
+        // 解析失败返回空结构，不抛错
+      }
     }
 
     const services: any[] = [];

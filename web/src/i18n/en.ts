@@ -3096,4 +3096,9 @@ export const en: Record<string, string> = {
   '更多': 'More',
   '高危': 'High Risk',
   '通过': 'Pass',
+  '分发后在远端启动（代理部署）': 'Start on remote after distribution (proxy deploy)',
+  '更新失败，已自动回滚到旧镜像': 'Update failed, rolled back to the previous image',
+  '更新完成，但健康检查未通过': 'Updated, but the health check did not pass',
+  '工程管理、yaml 编辑、docker run 命令导入、容器逆向推导；项目看板（服务级资源聚合）、服务滚动更新（健康检查+自动回滚）、跨引擎镜像分发与远端代理部署（1.34.0）': 'Project management, YAML editing, docker run import, container reverse-derivation; per-project dashboard, rolling updates (health check + auto rollback), cross-engine image distribution and remote proxy deploy',
+  '告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、磁盘写满与内存耗尽趋势预测、静默期值班渠道、记录与 AI 诊断': 'Alert rules (with debounce), 7 channel types, multi-channel routing, delivery stats, disk-full & memory-exhaustion forecasts, silent-window on-call channel, records and AI diagnosis',
 };

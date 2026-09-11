@@ -535,7 +535,8 @@ async function check(): Promise<void> {
   // 容器资源异常检测（ctnRes 规则，覆盖全部运行容器）
   await checkContainerAnomaly();
   // 磁盘写满趋势预测（1.34.0：基于 24h 历史采样线性回归，内部限频）
-  await checkDiskForecast();
+    await checkDiskForecast();
+    await checkMemForecast();
 }
 
 // ==================== 磁盘写满趋势预测（1.34.0） ====================
@@ -612,6 +613,54 @@ export async function checkDiskForecast(): Promise<void> {
     // 预测失败不影响告警主流程
   }
 }
+
+let lastMemForecastAt = 0;
+
+/**
+ * 内存耗尽趋势预测（1.35.0）：取最近 24 小时 host_metrics 的内存已用字节做线性回归，
+ * 斜率 > 0 且 预计耗尽天数 <= 阈值（alerts.memForecastDays，默认 7，0=关闭）时推送告警。
+ * 同一预测 24 小时内不重复推送。
+ */
+export async function checkMemForecast(): Promise<void> {
+  try {
+    const days = Number(getSetting<number>('alerts.memForecastDays') ?? 7);
+    if (!days || days <= 0) return;
+    const now = Date.now();
+    if (now - lastMemForecastAt < 24 * 60 * 60 * 1000) return;
+    const since = now - 24 * 60 * 60 * 1000;
+    const rows = getDb()
+      .prepare('SELECT ts, mem_used, mem_total FROM host_metrics WHERE ts >= ? ORDER BY ts ASC')
+      .all(since) as unknown as Array<{ ts: number; mem_used: number; mem_total: number }>;
+    if (rows.length < 20) return; // 样本不足
+    const n = rows.length;
+    const xs = rows.map((r) => (r.ts - rows[0].ts) / 3600_000);
+    const ys = rows.map((r) => r.mem_used);
+    const xAvg = xs.reduce((a, b) => a + b, 0) / n;
+    const yAvg = ys.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0;
+    let sxx = 0;
+    for (let i = 0; i < n; i++) {
+      sxy += (xs[i] - xAvg) * (ys[i] - yAvg);
+      sxx += (xs[i] - xAvg) * (xs[i] - xAvg);
+    }
+    if (sxx <= 0) return;
+    const slopePerHour = sxy / sxx; // 字节/小时
+    if (slopePerHour <= 0) return; // 未增长不预测
+    const lastRow = rows[rows.length - 1];
+    const remainBytes = lastRow.mem_total - lastRow.mem_used;
+    if (remainBytes <= 0) return;
+    const daysToFull = remainBytes / slopePerHour / 24;
+    if (daysToFull > days) return;
+    lastMemForecastAt = now;
+    const msg = `Docker 面板【趋势预测】内存按当前增长速率预计 **${daysToFull.toFixed(1)} 天后耗尽**（当前已用 ${(
+      (lastRow.mem_used / lastRow.mem_total) *
+      100
+    ).toFixed(1)}%，24h 增速 ${((slopePerHour * 24) / 1024 / 1024 / 1024).toFixed(2)} GB/天），请排查内存泄漏或扩容。`;
+    await pushToTargets('warn', msg);
+  } catch {
+    // 预测失败不影响告警主流程
+  }
+ }
 
 /**
  * 重置告警内部状态（引擎切换后调用）
