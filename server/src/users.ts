@@ -111,19 +111,19 @@ export function verifyCredentials(
 /**
  * 列出全部用户（不含敏感哈希）
  */
-export function listUsers(): Array<{ username: string; role: UserRecord['role']; createdAt: number; ipAllowlist: string }> {
+export function listUsers(): Array<{ username: string; role: UserRecord['role']; createdAt: number; ipAllowlist: string; containerAllowlist: string }> {
   const rows = getDb()
-    .prepare('SELECT username, role, created_at, ip_allowlist FROM users')
-    .all() as unknown as Array<{ username: string; role: string; created_at: number; ip_allowlist: string | null }>;
+    .prepare('SELECT username, role, created_at, ip_allowlist, container_allowlist FROM users')
+    .all() as unknown as Array<{ username: string; role: string; created_at: number; ip_allowlist: string | null; container_allowlist: string | null }>;
   if (rows.length === 0) {
     // 空表时先触发默认管理员初始化，再重新查询
     loadUsers();
     return getDb()
-      .prepare('SELECT username, role, created_at, ip_allowlist FROM users')
+      .prepare('SELECT username, role, created_at, ip_allowlist, container_allowlist FROM users')
       .all()
-      .map((r: any) => ({ username: r.username, role: r.role, createdAt: r.created_at, ipAllowlist: String(r.ip_allowlist || '') }));
+      .map((r: any) => ({ username: r.username, role: r.role, createdAt: r.created_at, ipAllowlist: String(r.ip_allowlist || ''), containerAllowlist: String(r.container_allowlist || '') }));
   }
-  return rows.map((r) => ({ username: r.username, role: (r.role as UserRecord['role']) || 'user', createdAt: r.created_at, ipAllowlist: String(r.ip_allowlist || '') }));
+  return rows.map((r) => ({ username: r.username, role: (r.role as UserRecord['role']) || 'user', createdAt: r.created_at, ipAllowlist: String(r.ip_allowlist || ''), containerAllowlist: String(r.container_allowlist || '') }));
 }
 
 /**
@@ -256,6 +256,33 @@ export function setTotpSecret(username: string, secret: string | null): void {
 export function setIpAllowlist(username: string, allowlist: string): void {
   getDb()
     .prepare('UPDATE users SET ip_allowlist = ? WHERE username = ?')
+    .run(String(allowlist || ''), username);
+}
+
+/**
+ * 读取用户的容器可见名单（资源级授权，CSV）。
+ * 返回 null 表示不限制（管理员或未配置）；否则返回条目数组（支持 `前缀*` 通配）。
+ */
+export function getContainerAllowlist(username: string): string[] | null {
+  const row = getDb()
+    .prepare('SELECT role, container_allowlist FROM users WHERE username = ?')
+    .get(username) as { role: string; container_allowlist: string } | undefined;
+  if (!row) return null;
+  if (row.role === 'admin') return null;
+  const csv = String(row.container_allowlist || '').trim();
+  if (!csv) return null;
+  return csv
+    .split(/[\n,;]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 设置用户的容器可见名单（资源级授权，CSV，空串 = 不限制）
+ */
+export function setContainerAllowlist(username: string, allowlist: string): void {
+  getDb()
+    .prepare('UPDATE users SET container_allowlist = ? WHERE username = ?')
     .run(String(allowlist || ''), username);
 }
 

@@ -28,6 +28,7 @@ interface UserItem {
   role: string;
   createdAt: number;
   ipAllowlist?: string;
+  containerAllowlist?: string;
 }
 
 /** 角色信息（/api/roles） */
@@ -257,6 +258,7 @@ export default function SettingsPage() {
       const role = me.role || 'user';
       setUsers(u || []);
       setIpEdits(Object.fromEntries((u || []).map((x) => [x.username, x.ipAllowlist || ''])));
+      setAllowEdits(Object.fromEntries((u || []).map((x) => [x.username, x.containerAllowlist || ''])));
       setSettings(s);
       setCurrentUser(me.username || '');
       setCurrentRole(role);
@@ -423,6 +425,21 @@ export default function SettingsPage() {
 
   // 按用户 IP 白名单（管理员，内联编辑）
   const [ipEdits, setIpEdits] = useState<Record<string, string>>({});
+
+  // 容器资源级授权白名单（管理员，内联编辑；CSV，空 = 不限制）
+  const [allowEdits, setAllowEdits] = useState<Record<string, string>>({});
+
+  async function handleSaveContainerAllowlist(name: string) {
+    try {
+      await put(`/api/system/users/${encodeURIComponent(name)}/container-allowlist`, {
+        allowlist: allowEdits[name] ?? '',
+      });
+      showToast(t('已保存 {{name}} 的容器白名单', { name }), 'success');
+      load();
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    }
+  }
 
   async function handleSaveIpAllowlist(name: string) {
     try {
@@ -912,6 +929,7 @@ export default function SettingsPage() {
               <th>{t('用户名')}</th>
               <th>{t('角色')}</th>
               <th>{t('IP 白名单')}</th>
+              <th>{t('容器白名单')}</th>
               <th>{t('创建时间')}</th>
               <th style={{ width: 100 }}>{t('操作')}</th>
             </tr>
@@ -940,6 +958,25 @@ export default function SettingsPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => handleSaveIpAllowlist(u.username)}
+                      disabled={u.username === currentUser}
+                    >
+                      {t('保存')}
+                    </Button>
+                  </div>
+                </td>
+                {/* 容器白名单：内联编辑（管理员），空 = 不限制；支持 `前缀*` 通配 */}
+                <td>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Input
+                      type="text"
+                      value={allowEdits[u.username] ?? ''}
+                      placeholder={t('如 web-*、nginx，留空不限制')}
+                      onChange={(e) => setAllowEdits({ ...allowEdits, [u.username]: e.target.value })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSaveContainerAllowlist(u.username)}
                       disabled={u.username === currentUser}
                     >
                       {t('保存')}

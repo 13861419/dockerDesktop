@@ -962,6 +962,12 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：为 users 补充容器资源级授权列（CSV 容器名/ID 白名单，空 = 不限制）
+  try {
+    d.exec("ALTER TABLE users ADD COLUMN container_allowlist TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 approvals 补充 1.3.0 多级审批列（编号 / 级数 / 已完成级数 / 审批轨迹 / 超时提醒标记）
   try {
     d.exec("ALTER TABLE approvals ADD COLUMN ticket_no TEXT NOT NULL DEFAULT ''");

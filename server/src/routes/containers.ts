@@ -3,7 +3,7 @@
  *
  * 提供容器的列表、启停、删除、日志、详情、创建等接口。
  */
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import { getDockerClient } from '../docker/client';
 import { parseStats, ParsedStats } from '../docker/stats';
@@ -11,6 +11,7 @@ import { getContainerMetricsHistory } from '../docker/containerMetrics';
 import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
 import { logOperation, listOperationLogs } from '../operationLog';
+import { getContainerAllowlist } from '../users';
 import { requireAdmin, requireOperator } from '../auth';
 import { requirePermission } from '../rbac';
 import { getSetting } from '../settings';
@@ -215,7 +216,16 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const all = req.query.all !== 'false';
-    const containers = await docker.listContainers({ all });
+    let containers = (await docker.listContainers({ all })) as any[];
+    // 资源级授权：配置了容器白名单的用户仅返回名单内容器
+    const allow = getContainerAllowlist(res.locals.username || '');
+    if (allow) {
+      containers = containers.filter((c) =>
+        allow.some((e) =>
+          matchAllowlistEntry(e, (c.Names?.[0] || '').replace(/^\//, ''), c.Id || ''),
+        ),
+      );
+    }
     // 并发 inspect 每个容器以提取健康检查状态（health）
     // 注意：会对每个容器发起一次 Docker Engine 请求，容器数量较多时可能略慢
     const containersWithHealth = await Promise.all(
@@ -680,6 +690,42 @@ router.post(
     res.json({ ok: r.fail === 0, ...r });
   }),
 );
+
+// ============ 资源级授权（1.38.0） ============
+
+/**
+ * 判断 allowlist 条目是否匹配容器（支持 `前缀*` 通配；匹配名称 / 完整 ID / 12 位短 ID）
+ */
+function matchAllowlistEntry(entry: string, name: string, id: string): boolean {
+  const e = entry.trim();
+  if (!e) return false;
+  if (e.endsWith('*')) {
+    const prefix = e.slice(0, -1);
+    return name.startsWith(prefix) || id.startsWith(prefix);
+  }
+  return e === name || e === id || e === id.slice(0, 12);
+}
+
+/**
+ * 容器资源级授权守卫：配置了容器白名单的非管理员用户只能访问名单内容器。
+ * 挂载在 /:id 参数段上，覆盖其后注册的全部 /:id* 路由（详情 / 启停 / 日志 / 终端参数等）。
+ */
+router.use('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  const username = res.locals.username || '';
+  const allow = getContainerAllowlist(username);
+  if (!allow) return next();
+  try {
+    const docker = await getDockerClient();
+    const insp = await docker.getContainer(req.params.id).inspect();
+    const name = (insp.Name || '').replace(/^\//, '');
+    const ok = allow.some((e) => matchAllowlistEntry(e, name, insp.Id || ''));
+    if (ok) return next();
+    logOperation(username, '访问被资源级授权拦截', 'container', name, '不在用户容器白名单', false);
+    res.status(403).json({ error: '无权访问该容器（不在资源级授权名单内）' });
+  } catch {
+    res.status(403).json({ error: '无权访问该容器' });
+  }
+});
 
 // ============ 容器详情 ============
 

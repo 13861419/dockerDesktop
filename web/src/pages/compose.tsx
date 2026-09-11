@@ -231,6 +231,11 @@ const [statsName, setStatsName] = useState('');
 const [statsData, setStatsData] = useState<ProjectStatService[] | null>(null);
 const [statsLoading, setStatsLoading] = useState(false);
 const [rollingSvc, setRollingSvc] = useState('');
+const [rollingAllRunning, setRollingAllRunning] = useState(false);
+const [driftOpen, setDriftOpen] = useState(false);
+const [driftEngine, setDriftEngine] = useState('');
+const [driftRunning, setDriftRunning] = useState(false);
+const [driftResult, setDriftResult] = useState<{ engine: string; driftCount: number; services: Array<{ service: string; status: string; diffs: string[]; local: any; remote: any; containers: number }> } | null>(null);
 const [distEngines, setDistEngines] = useState('');
 const [distOpen, setDistOpen] = useState(false);
 const [distDeploy, setDistDeploy] = useState(false);
@@ -340,6 +345,47 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     },
     [],
   );
+
+  /** 全项目滚动更新编排（1.37.0）：按服务顺序逐个滚动更新，单服务失败不中断 */
+  const rollingUpdateAll = useCallback(async () => {
+    setRollingAllRunning(true);
+    try {
+      const r = await post<{
+        ok: boolean;
+        summary: string;
+        results: Array<{ service: string; ok: boolean; healthOk: boolean; rolledBack: boolean; detail: string }>;
+      }>(projectUrl(statsName) + '/rolling-update-all', {});
+      for (const item of r.results || []) {
+        if (item.ok) showToast(t('服务 {{s}} 已更新并重建', { s: item.service }), 'success');
+        else if (item.rolledBack) showToast(t('服务 {{s}} 更新失败，已自动回滚到旧镜像', { s: item.service }), 'error');
+        else showToast(t('服务 {{s}} 更新失败', { s: item.service }), 'error');
+      }
+      showToast(r.summary || (r.ok ? t('全部服务更新完成') : t('部分服务更新失败')), r.ok ? 'success' : 'error');
+      const data = await get<{ services: ProjectStatService[] }>(projectUrl(statsName) + '/stats');
+      setStatsData(data.services || []);
+    } catch (e: any) {
+      showToast(e?.message || t('滚动更新失败'), 'error');
+    } finally {
+      setRollingAllRunning(false);
+    }
+  }, [statsName]);
+
+  /** 远端配置漂移检测（1.37.0）：本地 compose 配置与目标引擎实际容器比对 */
+  const driftCheck = useCallback(async () => {
+    setDriftRunning(true);
+    setDriftResult(null);
+    try {
+      const r = await get<{ engine: string; driftCount: number; services: Array<{ service: string; status: string; diffs: string[]; local: any; remote: any; containers: number }> }>(
+        projectUrl(statsName) + '/drift',
+        driftEngine.trim() ? { endpoint: driftEngine.trim() } : undefined,
+      );
+      setDriftResult(r);
+    } catch (e: any) {
+      showToast(e?.message || t('漂移检测失败'), 'error');
+    } finally {
+      setDriftRunning(false);
+    }
+  }, [statsName, driftEngine]);
 
   /** 跨引擎镜像分发：把项目镜像预拉取到远端引擎，可选继续代理部署（1.35.0） */
   const distribute = useCallback(async () => {
@@ -1532,6 +1578,18 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
           </table>
         )}
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={rollingAllRunning}
+            disabled={!canManage || !statsData || statsData.length === 0}
+            onClick={() => void rollingUpdateAll()}
+          >
+            {t('全部滚动更新')}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => { setDriftResult(null); setDriftOpen(true); }}>
+            {t('漂移检测')}
+          </Button>
           <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => setDistOpen(true)}>
             {t('分发镜像到其他引擎')}
           </Button>
@@ -1567,6 +1625,62 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             {t('开始分发')}
           </Button>
         </div>
+      </Modal>
+
+      {/* 远端配置漂移检测（1.37.0） */}
+      <Modal open={driftOpen} title={t('漂移检测 · {{name}}', { name: statsName })} onClose={() => setDriftOpen(false)} width={720}>
+        <Field label={t('目标引擎地址（留空 = 本地引擎，如 tcp://192.168.1.10:2375）')}>
+          <input
+            className="input"
+            value={driftEngine}
+            onChange={(e) => setDriftEngine(e.target.value)}
+            placeholder={engineHints.length > 0 ? engineHints[0] : 'tcp://192.168.1.10:2375'}
+          />
+        </Field>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+          <Button variant="primary" loading={driftRunning} onClick={() => void driftCheck()}>
+            {t('开始检测')}
+          </Button>
+        </div>
+        {driftResult && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 13, margin: '4px 0 8px' }}>
+              {driftResult.driftCount === 0
+                ? t('全部服务与本地配置一致，未检测到漂移')
+                : t('检测到 {{n}} 个服务存在差异', { n: driftResult.driftCount })}
+            </p>
+            {driftResult.services.length === 0 ? (
+              <Empty title={t('目标引擎上未发现该项目的容器')} />
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>{t('服务')}</th>
+                    <th>{t('状态')}</th>
+                    <th>{t('差异项')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {driftResult.services.map((s) => (
+                    <tr key={s.service}>
+                      <td className="col-name">{s.service}</td>
+                      <td>
+                        {s.status === 'match'
+                          ? t('一致')
+                          : s.status === 'drift'
+                            ? t('漂移')
+                            : s.status === 'localOnly'
+                              ? t('远端缺失')
+                              : t('本地缺失')}
+                      </td>
+                      <td>{s.diffs.join(', ') || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -362,6 +362,68 @@ async function waitForServiceHealthy(
 }
 
 /**
+ * 单服务滚动更新核心逻辑（pull → 重建 → 健康检查 → 失败回滚）。
+ * 供单服务与全项目滚动更新两条路由复用（1.37.0 抽取）。
+ */
+async function rollingUpdateOne(
+  projectName: string,
+  composeFile: string,
+  dir: string,
+  service: string,
+): Promise<{ ok: boolean; healthOk: boolean; rolledBack: boolean; detail: string; output: string }> {
+  const docker = await getDockerClient();
+  // 更新前记录当前镜像（用于失败回滚）
+  let oldImageId = '';
+  let imageTag = '';
+  try {
+    const all = (await docker.listContainers({ all: true })) as any[];
+    const c = all.find(
+      (x) =>
+        x.Labels?.['com.docker.compose.project'] === projectName &&
+        x.Labels?.['com.docker.compose.service'] === service,
+    );
+    if (c) {
+      const insp = await docker.getContainer(c.Id).inspect();
+      oldImageId = insp.Image || '';
+      imageTag = insp.Config?.Image || '';
+    }
+  } catch {
+    // 记录失败不阻断更新
+  }
+  const pullOut = await runCmd(`docker compose -f "${composeFile}" pull ${service}`, dir);
+  const upOut = await runCmd(
+    `docker compose -f "${composeFile}" up -d --no-deps ${service}`,
+    dir,
+  );
+  // 健康检查 + 失败自动回滚
+  const health = await waitForServiceHealthy(projectName, service, 60000);
+  let rolledBack = false;
+  let rollbackDetail = '';
+  if (!health.ok && oldImageId && imageTag && !imageTag.startsWith('sha256:')) {
+    try {
+      await execAsync(`docker tag "${oldImageId}" "${imageTag}"`);
+      await runCmd(`docker compose -f "${composeFile}" up -d --no-deps ${service}`, dir);
+      const back = await waitForServiceHealthy(projectName, service, 30000);
+      rolledBack = back.ok;
+      rollbackDetail = back.ok ? '已自动回滚到旧镜像' : `回滚后仍异常：${back.detail}`;
+    } catch (err: any) {
+      rolledBack = false;
+      rollbackDetail = '回滚失败：' + String(err?.message || err);
+    }
+  } else if (!health.ok) {
+    rollbackDetail = oldImageId ? '旧镜像为摘要引用，无法自动回滚' : '';
+  }
+  const finalOk = health.ok || rolledBack;
+  return {
+    ok: finalOk,
+    healthOk: health.ok,
+    rolledBack,
+    detail: health.ok ? health.detail : rollbackDetail || health.detail,
+    output: `${pullOut}\n${upOut}`.trim(),
+  };
+}
+
+/**
  * POST /api/compose/:name/rolling-update
  * 服务级滚动更新（1.34.0）：pull 最新镜像后仅重建该服务（--no-deps 不影响其他服务）。
  * 安全网（1.35.0）：更新后健康检查（60s 内须保持运行；配置 healthcheck 时须 healthy），
@@ -381,64 +443,228 @@ router.post(
     if (!service || /[^\w-.]/.test(service)) {
       return res.status(400).json({ error: '缺少或非法的 service 参数' });
     }
-    // 更新前记录当前镜像（用于失败回滚）
-    let oldImageId = '';
-    let imageTag = '';
-    try {
-      const docker = await getDockerClient();
-      const all = (await docker.listContainers({ all: true })) as any[];
-      const c = all.find(
-        (x) =>
-          x.Labels?.['com.docker.compose.project'] === req.params.name &&
-          x.Labels?.['com.docker.compose.service'] === service,
-      );
-      if (c) {
-        const insp = await docker.getContainer(c.Id).inspect();
-        oldImageId = insp.Image || '';
-        imageTag = insp.Config?.Image || '';
-      }
-    } catch {
-      // 记录失败不阻断更新
-    }
-    const pullOut = await runCmd(`docker compose -f "${composeFile}" pull ${service}`, dir);
-    const upOut = await runCmd(
-      `docker compose -f "${composeFile}" up -d --no-deps ${service}`,
-      dir,
-    );
-    // 健康检查 + 失败自动回滚
-    const health = await waitForServiceHealthy(req.params.name, service, 60000);
-    let rolledBack = false;
-    let rollbackDetail = '';
-    if (!health.ok && oldImageId && imageTag && !imageTag.startsWith('sha256:')) {
-      try {
-        await execAsync(`docker tag "${oldImageId}" "${imageTag}"`);
-        await runCmd(`docker compose -f "${composeFile}" up -d --no-deps ${service}`, dir);
-        const back = await waitForServiceHealthy(req.params.name, service, 30000);
-        rolledBack = back.ok;
-        rollbackDetail = back.ok ? '已自动回滚到旧镜像' : `回滚后仍异常：${back.detail}`;
-      } catch (err: any) {
-        rolledBack = false;
-        rollbackDetail = '回滚失败：' + String(err?.message || err);
-      }
-    } else if (!health.ok) {
-      rollbackDetail = oldImageId ? '旧镜像为摘要引用，无法自动回滚' : '';
-    }
-    const finalOk = health.ok || rolledBack;
+    const r = await rollingUpdateOne(req.params.name, composeFile, dir, service);
     logOperation(
       res.locals.username,
       '服务滚动更新',
       'compose',
       req.params.name,
-      `service: ${service}${health.ok ? '；健康检查通过' : rolledBack ? '；已自动回滚' : '；健康检查失败'}`,
-      finalOk,
+      `service: ${service}${r.healthOk ? '；健康检查通过' : r.rolledBack ? '；已自动回滚' : '；健康检查失败'}`,
+      r.ok,
     );
     res.json({
-      ok: finalOk,
-      healthOk: health.ok,
-      rolledBack,
-      detail: health.ok ? health.detail : rollbackDetail || health.detail,
-      output: `${pullOut}\n${upOut}`.trim(),
+      ok: r.ok,
+      healthOk: r.healthOk,
+      rolledBack: r.rolledBack,
+      detail: r.detail,
+      output: r.output,
     });
+  }),
+);
+
+/**
+ * POST /api/compose/:name/rolling-update-all
+ * 全项目滚动更新编排（1.37.0）：按 compose 定义顺序逐个服务滚动更新
+ * （pull → 重建 → 健康检查 → 失败回滚），单服务失败默认继续下一服务。
+ * body: { services?: string[], stopOnFailure?: boolean }
+ */
+router.post(
+  '/:name/rolling-update-all',
+  requirePermission('compose.write'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const dir = path.join(COMPOSE_ROOT, req.params.name);
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    // 服务列表：优先取请求指定，否则取 compose 配置中的全部服务（定义顺序）
+    let services: string[] = Array.isArray(req.body?.services)
+      ? req.body.services.map((x: unknown) => String(x).trim()).filter(Boolean)
+      : [];
+    if (services.length === 0) {
+      const out = await execAsync(`docker compose -f "${composeFile}" config --services`, {
+        cwd: dir,
+        maxBuffer: 1024 * 1024,
+      });
+      services = out.stdout.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    }
+    if (services.length === 0) {
+      return res.status(400).json({ error: '未找到任何可更新的服务' });
+    }
+    const stopOnFailure = !!req.body?.stopOnFailure;
+    const results: Array<{
+      service: string;
+      ok: boolean;
+      healthOk: boolean;
+      rolledBack: boolean;
+      detail: string;
+    }> = [];
+    for (const service of services) {
+      const r = await rollingUpdateOne(req.params.name, composeFile, dir, service);
+      results.push({
+        service,
+        ok: r.ok,
+        healthOk: r.healthOk,
+        rolledBack: r.rolledBack,
+        detail: r.detail,
+      });
+      if (!r.ok && stopOnFailure) break;
+    }
+    const failed = results.filter((r) => !r.ok);
+    const allOk = failed.length === 0;
+    logOperation(
+      res.locals.username,
+      '项目滚动更新',
+      'compose',
+      req.params.name,
+      `共 ${services.length} 个服务：成功 ${results.length - failed.length}，失败 ${failed.length}${
+        failed.length ? '（' + failed.map((f) => f.service).join(', ') + '）' : ''
+      }`,
+      allOk,
+    );
+    res.json({
+      ok: allOk,
+      results,
+      summary: `共 ${services.length} 个服务：成功 ${results.length - failed.length}，失败 ${failed.length}`,
+    });
+  }),
+);
+
+/**
+ * GET /api/compose/:name/drift?endpoint=<engine-url>
+ * 远端配置漂移检测（1.37.0）：将本地 compose 配置与目标引擎上带项目标签的
+ * 实际容器逐服务比对（镜像 / 端口 / 环境变量 / 重启策略），报告缺失、多余与漂移项。
+ * endpoint 为空时比对本地引擎。
+ */
+router.get(
+  '/:name/drift',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const dir = path.join(COMPOSE_ROOT, req.params.name);
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    // 本地期望配置（docker compose config 规范化输出）
+    const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+    const jsonStart = output.indexOf('{');
+    const jsonEnd = output.lastIndexOf('}');
+    const parsed =
+      jsonStart >= 0 && jsonEnd > jsonStart
+        ? JSON.parse(output.slice(jsonStart, jsonEnd + 1))
+        : null;
+    const serviceConfigs: Record<string, any> = parsed?.services || {};
+
+    // 目标引擎客户端（endpoint 为空 = 本地）
+    const endpoint = String(req.query.endpoint || '').trim();
+    const client = endpoint ? getDockerClientForEndpoint(endpoint) : await getDockerClient();
+    const containers = (await client.listContainers({ all: true })) as any[];
+    const projectContainers = containers.filter(
+      (c) => c.Labels?.['com.docker.compose.project'] === req.params.name,
+    );
+
+    // 按服务名聚合远端容器
+    const remoteByService = new Map<string, any[]>();
+    for (const c of projectContainers) {
+      const svc = c.Labels?.['com.docker.compose.service'] || '';
+      if (!svc) continue;
+      if (!remoteByService.has(svc)) remoteByService.set(svc, []);
+      remoteByService.get(svc)!.push(c);
+    }
+
+    const pubPortsOf = (ports: any): string[] => {
+      const out: string[] = [];
+      for (const [key, bindings] of Object.entries(ports || {})) {
+        for (const b of bindings as any[]) {
+          if (b?.HostPort) out.push(`${b.HostPort}:${key}`);
+        }
+      }
+      return out.sort();
+    };
+    const envOf = (env: string[] | undefined): Record<string, string> => {
+      const map: Record<string, string> = {};
+      for (const e of env || []) {
+        const i = e.indexOf('=');
+        if (i > 0) map[e.slice(0, i)] = e.slice(i + 1);
+      }
+      return map;
+    };
+
+    const services: Array<{
+      service: string;
+      status: 'match' | 'drift' | 'localOnly' | 'remoteOnly';
+      diffs: string[];
+      local: { image: string; ports: string[]; restart: string; env: Record<string, string> };
+      remote: { image: string; ports: string[]; restart: string; env: Record<string, string>; state: string } | null;
+      containers: number;
+    }> = [];
+
+    for (const [svc, cfg] of Object.entries(serviceConfigs)) {
+      const localEnv = envOf(normalizeEnvironment(cfg.environment));
+      const localPorts: string[] = (cfg.ports || [])
+        .map((p: any) => (p.published ? `${p.published}:${p.target}/${p.protocol || 'tcp'}` : ''))
+        .filter(Boolean)
+        .sort();
+      const localRestart = cfg.restart || '';
+      const local = {
+        image: cfg.image || '',
+        ports: localPorts,
+        restart: localRestart,
+        env: localEnv,
+      };
+
+      const rcs = remoteByService.get(svc) || [];
+      if (rcs.length === 0) {
+        services.push({ service: svc, status: 'localOnly', diffs: ['missing'], local, remote: null, containers: 0 });
+        continue;
+      }
+      // 多副本时取第一个比对（面板代理部署为单副本模型）
+      const insp = await client.getContainer(rcs[0].Id).inspect();
+      const remoteEnv = envOf(insp.Config?.Env || []);
+      const remotePorts = pubPortsOf(insp.NetworkSettings?.Ports);
+      const remoteRestart = insp.HostConfig?.RestartPolicy?.Name || '';
+      const remote = {
+        image: insp.Config?.Image || '',
+        ports: remotePorts,
+        restart: remoteRestart,
+        env: remoteEnv,
+        state: insp.State?.Status || '',
+      };
+      const diffs: string[] = [];
+      if (local.image && remote.image && local.image !== remote.image) diffs.push('image');
+      for (const [k, v] of Object.entries(localEnv)) {
+        if (!(k in remoteEnv) || remoteEnv[k] !== v) {
+          diffs.push('env');
+          break;
+        }
+      }
+      if (localPorts.join(',') !== remotePorts.join(',')) diffs.push('ports');
+      if (localRestart && remoteRestart && localRestart !== remoteRestart) diffs.push('restart');
+      services.push({
+        service: svc,
+        status: diffs.length ? 'drift' : 'match',
+        diffs,
+        local,
+        remote,
+        containers: rcs.length,
+      });
+    }
+
+    // 远端存在但本地配置没有的服务
+    for (const [svc] of remoteByService) {
+      if (serviceConfigs[svc]) continue;
+      services.push({
+        service: svc,
+        status: 'remoteOnly',
+        diffs: ['remoteOnly'],
+        local: { image: '', ports: [], restart: '', env: {} },
+        remote: null,
+        containers: remoteByService.get(svc)!.length,
+      });
+    }
+
+    const driftCount = services.filter((s) => s.status !== 'match').length;
+    res.json({ ok: true, engine: endpoint || 'local', services, driftCount, containers: projectContainers.length });
   }),
 );
 

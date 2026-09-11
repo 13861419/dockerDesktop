@@ -19,7 +19,7 @@ import { exportDatabase, importDatabaseBuffer, getDataDir } from '../storage';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth } from '../auth';
 import { listRoles } from '../rbac';
-import { getUserSecurity, setTotpSecret, setIpAllowlist } from '../users';
+import { getUserSecurity, setTotpSecret, setIpAllowlist, setContainerAllowlist } from '../users';
 import { generateSecret, otpauthUri, verifyTotp } from '../totp';
 import { checkUpdate } from '../systemUpdate';
 
@@ -76,6 +76,24 @@ router.put(
     }
     setIpAllowlist(name, String(req.body?.allowlist || ''));
     logOperation(res.locals.username, `设置用户 ${name} 的 IP 白名单`, '安全', name, '');
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * PUT /users/:name/container-allowlist
+ * 设置用户的容器可见名单（资源级授权，管理员）。body: { allowlist: string }（CSV，空串 = 不限制）
+ */
+router.put(
+  '/users/:name/container-allowlist',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = req.params.name;
+    if (!userExists(name)) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    setContainerAllowlist(name, String(req.body?.allowlist || ''));
+    logOperation(res.locals.username, `设置用户 ${name} 的容器白名单`, '安全', name, '');
     res.json({ ok: true });
   }),
 );
