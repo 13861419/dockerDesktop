@@ -568,6 +568,35 @@ export async function forwardSilentAlert(type: string, level: string, text: stri
 }
 
 /**
+ * 趋势预测告警落库（1.35.1）：磁盘写满 / 内存耗尽预测与普通告警共用
+ * 推送聚合与告警记录链路，可在通知页回看历史预测；value 恒为 null（非阈值型）。
+ * @param kind 预测类型（disk / mem）
+ * @param message 完整告警文案
+ */
+async function emitForecastAlert(kind: 'disk' | 'mem', message: string): Promise<void> {
+  const level: AlertLevel = 'warn';
+  const targets = resolveTargetChannels(level);
+  const channelId = targets.length ? targets.map((t) => t.id).join(',') : null;
+  let pushStatus = 'none';
+  let pushDetail: string | null = null;
+  if (targets.length) {
+    const res = await pushAgg.queue(level, message);
+    if (res.status === 'ok') pushStatus = 'ok';
+    else if (res.status === 'failed') {
+      pushStatus = 'failed';
+      pushDetail = res.detail ?? null;
+    } else {
+      pushStatus = 'aggregated';
+    }
+  }
+  getDb()
+    .prepare(
+      'INSERT INTO alert_records (type, level, message, value, channel_id, push_status, push_detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(kind === 'disk' ? 'diskForecast' : 'memForecast', level, message, null, channelId, pushStatus, pushDetail, Date.now());
+}
+
+/**
  * 磁盘写满趋势预测：取最近 24 小时 host_metrics 的磁盘已用字节做线性回归，
  * 斜率 > 0 且 剩余可用天数 <= 阈值（alerts.diskForecastDays，默认 7，0=关闭）时推送告警。
  * 同一预测 24 小时内不重复推送。
@@ -608,7 +637,7 @@ export async function checkDiskForecast(): Promise<void> {
       (lastRow.disk_used / lastRow.disk_total) *
       100
     ).toFixed(1)}%，24h 增速 ${(slopePerHour * 24 / 1024 / 1024 / 1024).toFixed(2)} GB/天），请及时扩容或清理。`;
-    await pushToTargets('warn', msg);
+    await emitForecastAlert('disk', msg);
   } catch {
     // 预测失败不影响告警主流程
   }
@@ -656,7 +685,7 @@ export async function checkMemForecast(): Promise<void> {
       (lastRow.mem_used / lastRow.mem_total) *
       100
     ).toFixed(1)}%，24h 增速 ${((slopePerHour * 24) / 1024 / 1024 / 1024).toFixed(2)} GB/天），请排查内存泄漏或扩容。`;
-    await pushToTargets('warn', msg);
+    await emitForecastAlert('mem', msg);
   } catch {
     // 预测失败不影响告警主流程
   }

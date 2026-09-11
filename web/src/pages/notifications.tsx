@@ -110,6 +110,8 @@ const TYPE_LABELS: Record<string, string> = {
   port: '端口',
   selfheal: '自愈',
   ctnRes: '容器资源',
+  diskForecast: '磁盘预测',
+  memForecast: '内存预测',
 };
 
 /** 容器级告警监控类型中文名 */
