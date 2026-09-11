@@ -13,6 +13,7 @@ import { getDockerClient } from './client';
 import { isWindows } from '../platform/detect';
 import { getDiskPartitions, DiskPartition } from '../platform/diskMonitor';
 import { getDb } from '../storage';
+import { getSetting } from '../settings';
 import { queryHourly, type HourlyRow } from '../metricsHistory';
 
 /**
@@ -149,8 +150,6 @@ const PERSIST_INTERVAL_MS = 30000;
 let lastPersistTs = 0;
 /** 落库次数计数器，用于触发周期性旧数据清理（每 20 次约 10 分钟清一次） */
 let persistCount = 0;
-/** host_metrics 旧数据保留时长（毫秒）：7 天 */
-const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * 计算系统 CPU 使用率（基于 os.cpus() 两次采样）
@@ -641,9 +640,10 @@ function persistPoint(point: MonitorPoint): void {
       point.diskIO.wBytes > 0 ? point.diskIO.wBytes : null,
     );
     persistCount += 1;
-    // 每 20 次落库（约 10 分钟）清理一次 7 天前的旧数据
+    // 每 20 次落库（约 10 分钟）清理一次超过保留期的旧数据（保留天数可配置，默认 7 天）
     if (persistCount % 20 === 0) {
-      const cutoff = Date.now() - RETENTION_MS;
+      const rawDays = Number(getSetting<number>('metrics.rawRetentionDays') ?? 7) || 7;
+      const cutoff = Date.now() - rawDays * 24 * 60 * 60 * 1000;
       db.prepare('DELETE FROM host_metrics WHERE ts < ?').run(cutoff);
     }
   } catch (err) {

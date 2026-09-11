@@ -11,9 +11,7 @@
  * rollupByHour(tsHour) 幂等：同 (scope, key, ts_hour) 重复执行时覆盖写入。
  */
 import { getDb } from './storage';
-
-/** 聚合表保留时长（毫秒）：90 天 */
-const ROLLUP_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+import { getSetting } from './settings';
 
 /** 小时起点（毫秒时间戳对齐 UTC 整点） */
 export function hourStart(ts: number): number {
@@ -131,7 +129,9 @@ export function runHourlyRollup(): number {
     const db = getDb();
     rollupCount += 1;
     if (rollupCount % 24 === 0) {
-      db.prepare('DELETE FROM metrics_hourly WHERE ts_hour < ?').run(Date.now() - ROLLUP_RETENTION_MS);
+      // 聚合表保留天数可配置（1.35.2），默认 90 天
+      const days = Number(getSetting<number>('metrics.hourlyRetentionDays') ?? 90) || 90;
+      db.prepare('DELETE FROM metrics_hourly WHERE ts_hour < ?').run(Date.now() - days * 24 * 60 * 60 * 1000);
     }
   } catch (err) {
     console.error('[metricsHistory] 小时级聚合失败:', (err as Error)?.message);

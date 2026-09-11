@@ -12,7 +12,10 @@ import './LineChart.less';
 interface Series {
   name: string;
   color: string;
-  data: number[];
+  /** null 表示断点（预测序列在历史段留空，仅绘制外推段） */
+  data: Array<number | null>;
+  /** 虚线样式（用于趋势外推等预测序列） */
+  dashed?: boolean;
 }
 
 interface LineChartProps {
@@ -63,7 +66,7 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
     // Y 轴范围
     let dataMax = max ?? 0;
     for (const s of series) {
-      for (const v of s.data) if (v > dataMax) dataMax = v;
+      for (const v of s.data) if (v != null && v > dataMax) dataMax = v;
     }
     if (max == null) {
       // 自适应：给顶部留 10% 余量
@@ -77,13 +80,25 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
     const toY = (v: number) => PAD.top + chartH - (v / dataMax) * chartH;
 
     const out = series.map((s) => {
-      const pts: Array<[number, number]> = s.data.map((v, i) => [toX(i), toY(Math.max(0, v))]);
-      const line = smoothPath(pts);
+      // 按 null 拆分为多段（预测序列在历史段为 null，仅绘制外推段）
+      const segs: Array<Array<[number, number]>> = [];
+      let cur: Array<[number, number]> = [];
+      s.data.forEach((v, i) => {
+        if (v == null || !Number.isFinite(v)) {
+          if (cur.length > 0) segs.push(cur);
+          cur = [];
+          return;
+        }
+        cur.push([toX(i), toY(Math.max(0, v))]);
+      });
+      if (cur.length > 0) segs.push(cur);
+      const lines = segs.map(smoothPath).filter(Boolean);
+      const hasNull = s.data.some((v) => v == null);
       const area =
-        pts.length > 1
-          ? `${line} L ${pts[pts.length - 1][0].toFixed(2)} ${H - PAD.bottom} L ${pts[0][0].toFixed(2)} ${H - PAD.bottom} Z`
+        !hasNull && lines.length > 0 && segs[0].length > 1
+          ? `${lines[0]} L ${segs[0][segs[0].length - 1][0].toFixed(2)} ${H - PAD.bottom} L ${segs[0][0][0].toFixed(2)} ${H - PAD.bottom} Z`
           : '';
-      return { color: s.color, line, area, data: s.data };
+      return { color: s.color, lines, area, data: s.data, dashed: !!s.dashed };
     });
 
     return { paths: out, dataMax, chartW, chartH };
@@ -168,12 +183,22 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
           </text>
         ))}
 
-        {/* 面积 + 折线 */}
+        {/* 面积 + 折线（预测序列以虚线渲染且无面积） */}
         {paths && paths.length > 0
           ? paths.map((p, idx) => (
               <g key={idx}>
                 {p.area && <path d={p.area} fill={`url(#grad-${idx})`} />}
-                <path d={p.line} fill="none" stroke={p.color} strokeWidth="2" strokeLinecap="round" />
+                {p.lines.map((line, li) => (
+                  <path
+                    key={li}
+                    d={line}
+                    fill="none"
+                    stroke={p.color}
+                    strokeWidth={p.dashed ? 1.6 : 2}
+                    strokeDasharray={p.dashed ? '6 4' : undefined}
+                    strokeLinecap="round"
+                  />
+                ))}
               </g>
             ))
           : null}
@@ -182,11 +207,12 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
         {hoverIdx != null && labels && labels.length > 0 && (
           <g className="linechart__hover">
             <line x1={hoverX} y1={PAD.top} x2={hoverX} y2={H - PAD.bottom} className="linechart__crosshair" />
-            {series.map((s) => {
-              const v = s.data[hoverIdx] ?? 0;
-              const cy = PAD.top + chartH - (Math.max(0, v) / dataMax) * chartH;
-              return <circle key={s.name} cx={hoverX} cy={cy} r="3.5" fill={s.color} className="linechart__hover-dot" />;
-            })}
+          {series.map((s) => {
+            const v = s.data[hoverIdx];
+            if (v == null) return null;
+            const cy = PAD.top + chartH - (Math.max(0, v) / dataMax) * chartH;
+            return <circle key={s.name} cx={hoverX} cy={cy} r="3.5" fill={s.color} className="linechart__hover-dot" />;
+          })}
           </g>
         )}
       </svg>
@@ -203,7 +229,7 @@ export default function LineChart({ series, labels, height = 180, unit = '%', ma
               <span className="linechart__legend-dot" style={{ background: s.color }} />
               <span className="linechart__tooltip-name">{s.name}</span>
               <span className="linechart__tooltip-val">
-                {(s.data[hoverIdx] ?? 0).toFixed(1)}
+                {s.data[hoverIdx] == null ? '-' : (s.data[hoverIdx] as number).toFixed(1)}
                 {unit}
               </span>
             </div>

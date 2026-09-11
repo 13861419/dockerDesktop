@@ -1656,9 +1656,11 @@ export default function ContainerDetailPage() {
                               ? t('已更新')
                               : autoUpd.last_status === 'rolledback'
                                 ? t('已回滚')
-                                : autoUpd.last_status === 'fail'
-                                  ? t('失败')
-                                  : t('正常')}
+                                : autoUpd.last_status === 'blocked'
+                                  ? t('信任锁定拦截')
+                                  : autoUpd.last_status === 'fail'
+                                    ? t('失败')
+                                    : t('正常')}
                           </td>
                         </tr>
                         <tr>

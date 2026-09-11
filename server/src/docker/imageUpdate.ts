@@ -147,6 +147,31 @@ export async function checkOne(row: AutoUpdateRow): Promise<ScanOutcome> {
     return { containerId: row.container_id, containerName: cNameStr, status: 'ok', detail };
   }
 
+  // 2.5 信任锁定校验（1.35.2）：仓库锁定期望摘要时，拉取到的镜像摘要不一致则阻止更新，
+  // 防止上游镜像被覆盖 / tag 被篡改后经自动更新直接注入运行环境（供应链漂移防线）
+  try {
+    const repo = (() => {
+      const i = ref.lastIndexOf(':');
+      const s = ref.lastIndexOf('/');
+      return i > s ? ref.slice(0, i) : ref;
+    })();
+    const pin = (getDb()
+      .prepare('SELECT expected_digest FROM image_trust WHERE repo = ? OR repo = ?')
+      .get(repo, ref) as any) as { expected_digest: string } | undefined;
+    if (pin?.expected_digest) {
+      const newInspect = await docker.getImage(ref).inspect();
+      const digests: string[] = ((newInspect as any).RepoDigests || []) as any;
+      if (!digests.some((d) => d.includes(pin.expected_digest))) {
+        const detail = `镜像仓库「${repo}」已信任锁定（期望 ${pin.expected_digest.slice(0, 26)}…），拉取到的镜像摘要与锁定值不一致，已阻止自动更新，请人工核查是否为供应链漂移`;
+        updateRow(row.id, 'blocked', detail);
+        reportTaskFailure(`容器镜像自动更新【${cNameStr}】`, detail, 'image-update');
+        return { containerId: row.container_id, containerName: cNameStr, status: 'fail', detail };
+      }
+    }
+  } catch {
+    // 信任校验失败不阻断更新主流程
+  }
+
   // 3. 按原配置重建
   const wasRunning = !!inspect.State?.Running;
   try {

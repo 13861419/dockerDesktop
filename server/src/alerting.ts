@@ -390,9 +390,20 @@ async function emitAlert(type: AlertType, level: AlertLevel, message: string, va
     'INSERT INTO alert_records (type, level, message, value, channel_id, push_status, push_detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   ).run(type, level, message, value, channelId, pushStatus, pushDetail, Date.now());
 
-  // 清理超量记录，最多保留最近 800 条
+  // 清理超量记录（保留上限可在设置中心配置，默认 800 条）
+  pruneAlertRecords();
+}
+
+/**
+ * 清理超量告警记录（1.35.2）：上限读取系统参数 alerts.recordLimit（默认 800，最小 50），
+ * 超限部分按 id 倒序保留最新
+ */
+function pruneAlertRecords(): void {
   try {
-    d.prepare('DELETE FROM alert_records WHERE id NOT IN (SELECT id FROM alert_records ORDER BY id DESC LIMIT 800)').run();
+    const limit = Math.max(50, Math.floor(Number(getSetting<number>('alerts.recordLimit') ?? 800)) || 800);
+    getDb()
+      .prepare('DELETE FROM alert_records WHERE id NOT IN (SELECT id FROM alert_records ORDER BY id DESC LIMIT ?)')
+      .run(limit);
   } catch {
     // 清理失败不影响告警
   }
@@ -594,6 +605,7 @@ async function emitForecastAlert(kind: 'disk' | 'mem', message: string): Promise
       'INSERT INTO alert_records (type, level, message, value, channel_id, push_status, push_detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(kind === 'disk' ? 'diskForecast' : 'memForecast', level, message, null, channelId, pushStatus, pushDetail, Date.now());
+  pruneAlertRecords();
 }
 
 /**

@@ -329,6 +329,7 @@ The default landing page shows:
 - **GPU monitoring (optional)**: on NVIDIA hosts, GPU utilization / VRAM / temperature via `nvidia-smi`, plus a utilization trend chart sharing the same time windows (10m / 1h / 24h / 7d / 30d / 90d).
 - **Network / disk IO history charts (new in 1.33.0)**: a "Network I/O" rate chart (downlink RX / uplink TX, Mbps) after the disk chart, plus a "Disk I/O" rate chart (read / write, Mbps, aggregated from blkio stats of all running containers) when disk traffic is detected. Rates are computed from cumulative byte deltas between adjacent samples: the 10-minute window comes from live collection (2s), 1h / 24h / 7d windows from 30s persisted samples, and 30 / 90 day windows from hourly aggregation. Hover crosshair and double-click zoom are supported.
 - **Metrics CSV export (new in 1.34.0)**: the "Export CSV" button in the monitoring card toolbar exports the history for the selected window (timestamp, CPU, memory, disk, GPU, network totals and rates, disk IO totals and rates, container / image counts) as UTF-8 BOM CSV that opens directly in Excel.
+- **Resource trend forecast (new in 1.36.0)**: when the memory or disk history shows an upward trend, the chart appends a red dashed "Trend forecast" segment — a linear-regression extrapolation covering 25% of the current window (capped at 100%). It appears in the legend, hover tooltip, and the double-click zoom view, making the time-to-full point easy to see; no forecast segment is drawn when the trend is flat or falling.
 - **Weekly ops report PDF (new in 1.34.0)**: the "Weekly Report" button generates a 7-day summary (CPU / memory / disk averages and peaks, network and disk IO peaks, container and image counts, sample count) in a print window that can be saved as PDF.
 
 All data refreshes in real time — no manual action needed.
@@ -476,6 +477,7 @@ Menu: **Images** (`/images`)
 - **Prune** — clean up dangling images.
 - **View detail / build history** — open the `imageDetail` page.
 - **Trust pinning (v1.34.0)**: the "Trust Pinning" toolbar button opens a manager to pin the expected `sha256` digest per repo (e.g. `nginx`). Running containers are verified against pins — matching digests show "match", unpinned repos show "unpinned", and mismatches are flagged red as "digest drift" to catch supply-chain tampering. Pins can be added, updated, or removed.
+- **Trust pinning linked with auto-update (new in 1.36.0)**: after pulling a new image, the auto-update flow verifies the trust pin — if the new digest does not match the pin, the update is blocked (status "Blocked by trust pin", reason logged) to prevent supply-chain drift from being amplified by auto-updates. Updates proceed normally when digests match or the repo is unpinned.
 
 ![Image list](../images/images.png)
 
@@ -1133,6 +1135,7 @@ The system automatically persists monitoring data, supporting different time ran
 
 - Monitoring data is stored in the SQLite database;
 - Default retention is 30 days; configurable in **System Settings → Monitoring**;
+- **Unified retention policy (new in 1.36.0)**: three new parameters under **System Settings → Data retention** — "Alert record limit" (`alerts.recordLimit`, default 800, minimum 50, oldest records pruned automatically), "Raw metrics retention days" (`metrics.rawRetentionDays`, default 7) and "Hourly rollup retention days" (`metrics.hourlyRetentionDays`, default 90), making monitoring and alert retention fully adjustable;
 - CSV export of historical data is supported.
 
 ---

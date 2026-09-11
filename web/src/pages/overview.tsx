@@ -122,7 +122,60 @@ interface ChartPoint {
 interface SeriesData {
   name: string;
   color: string;
-  data: number[];
+  data: Array<number | null>;
+  /** 虚线渲染（趋势外推序列用） */
+  dashed?: boolean;
+}
+
+/**
+ * 趋势外推预测（1.36.0）：对百分比序列做线性回归，向未来外推窗口长度的 25%。
+ * 斜率 <= 0 或样本不足（< 20 点）时返回 null（不绘制预测线）。
+ * @param values 百分比序列
+ * @param timestamps 对应时间戳
+ * @param range 当前时间范围（决定未来标签格式）
+ */
+function buildForecast(
+  values: number[],
+  timestamps: number[],
+  range: MetricsRange,
+): { forecast: Array<number | null>; futureLabels: string[] } | null {
+  const n = values.length;
+  if (n < 20 || timestamps.length !== n) return null;
+  const xs = timestamps.map((ts) => (ts - timestamps[0]) / 3600_000);
+  const xAvg = xs.reduce((a, b) => a + b, 0) / n;
+  const yAvg = values.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - xAvg) * (values[i] - yAvg);
+    sxx += (xs[i] - xAvg) * (xs[i] - xAvg);
+  }
+  if (sxx <= 0) return null;
+  const slope = sxy / sxx; // 百分比/小时
+  if (slope <= 0) return null;
+  const span = Math.max(4, Math.round(n * 0.25));
+  const stepMs = n > 1 ? (timestamps[n - 1] - timestamps[0]) / (n - 1) : 2000;
+  const forecast: Array<number | null> = new Array(n + span).fill(null);
+  values.forEach((v, i) => (forecast[i] = v));
+  const lastTs = timestamps[n - 1];
+  let last = values[n - 1];
+  const futureLabels: string[] = [];
+  for (let k = 1; k <= span; k++) {
+    let v = last + slope * (stepMs / 3600_000);
+    if (v > 100) v = 100;
+    forecast[n - 1 + k] = v;
+    futureLabels.push(formatTimeLabel(lastTs + k * stepMs, range));
+    last = v;
+    if (v >= 100) {
+      // 触顶后补齐剩余标签，预测线停在 100%
+      for (let j = k + 1; j <= span; j++) {
+        forecast[n - 1 + j] = 100;
+        futureLabels.push(formatTimeLabel(lastTs + j * stepMs, range));
+      }
+      break;
+    }
+  }
+  return { forecast, futureLabels };
 }
 
 /** 前端本地曲线保留的最大点数（2 秒一点，300 点约 10 分钟，与服务端 minutes=10 一致） */
@@ -449,6 +502,39 @@ export default function OverviewPage() {
   // X 轴时间标签：10m 用 HH:MM:SS，长跨度用 MM-DD HH:mm
   const timeLabels = chartData.map((p) => formatTimeLabel(p.timestamp, range));
 
+  // 趋势外推预测线（1.36.0）：内存与磁盘按线性回归向未来外推 25% 窗口（虚线，触顶 100% 封顶）
+  const memForecast = buildForecast(
+    chartData.map((p) => p.mem.percent),
+    chartData.map((p) => p.timestamp),
+    range,
+  );
+  const diskForecast = buildForecast(
+    chartData.map((p) => p.disk.percent),
+    chartData.map((p) => p.timestamp),
+    range,
+  );
+  const forecastSeriesName = t('趋势外推');
+  const padTo = (values: Array<number | null>, total: number): Array<number | null> => [
+    ...values,
+    ...new Array(Math.max(0, total - values.length)).fill(null),
+  ];
+  const memLabels = memForecast ? [...timeLabels, ...memForecast.futureLabels] : timeLabels;
+  const totalMemLen = memForecast ? timeLabels.length + memForecast.futureLabels.length : timeLabels.length;
+  const memChartSeries: SeriesData[] = memForecast
+    ? [
+        { ...memSeries, data: padTo(memSeries.data, totalMemLen) },
+        ...(hasContainerMem
+          ? [{ ...containerMemSeries, data: padTo(containerMemSeries.data, totalMemLen) } as SeriesData]
+          : []),
+        { name: forecastSeriesName, color: '#ef4444', data: memForecast.forecast, dashed: true },
+      ]
+    : hasContainerMem
+      ? [memSeries, containerMemSeries]
+      : [memSeries];
+  const diskChartSeries: SeriesData[] = diskForecast
+    ? [diskSeries, { name: forecastSeriesName, color: '#ef4444', data: diskForecast.forecast, dashed: true }]
+    : [diskSeries];
+
   /** 导出当前时间窗历史指标 CSV（1.34.0） */
   const exportCsv = async () => {
     try {
@@ -716,16 +802,16 @@ export default function OverviewPage() {
               />
             </div>
             <div className="monitor__chart" onDoubleClick={() => setZoomChart('mem')} title={t('双击放大')}>
+              <LineChart series={memChartSeries} labels={memLabels} height={180} unit="%" max={100} />
+            </div>
+            <div className="monitor__chart" onDoubleClick={() => setZoomChart('disk')} title={t('双击放大')}>
               <LineChart
-                series={hasContainerMem ? [memSeries, containerMemSeries] : [memSeries]}
-                labels={timeLabels}
+                series={diskChartSeries}
+                labels={diskForecast ? [...timeLabels, ...diskForecast.futureLabels] : timeLabels}
                 height={180}
                 unit="%"
                 max={100}
               />
-            </div>
-            <div className="monitor__chart" onDoubleClick={() => setZoomChart('disk')} title={t('双击放大')}>
-              <LineChart series={[diskSeries]} labels={timeLabels} height={180} unit="%" max={100} />
             </div>
             <div className="monitor__chart" onDoubleClick={() => setZoomChart('net')} title={t('双击放大')}>
               <LineChart series={[netRxSeries, netTxSeries]} labels={timeLabels} height={180} unit="Mbps" />
@@ -754,15 +840,17 @@ export default function OverviewPage() {
               />
             )}
             {zoomChart === 'mem' && (
+              <LineChart series={memChartSeries} labels={memLabels} height={380} unit="%" max={100} />
+            )}
+            {zoomChart === 'disk' && (
               <LineChart
-                series={hasContainerMem ? [memSeries, containerMemSeries] : [memSeries]}
-                labels={timeLabels}
+                series={diskChartSeries}
+                labels={diskForecast ? [...timeLabels, ...diskForecast.futureLabels] : timeLabels}
                 height={380}
                 unit="%"
                 max={100}
               />
             )}
-            {zoomChart === 'disk' && <LineChart series={[diskSeries]} labels={timeLabels} height={380} unit="%" max={100} />}
             {zoomChart === 'net' && (
               <LineChart series={[netRxSeries, netTxSeries]} labels={timeLabels} height={380} unit="Mbps" />
             )}
