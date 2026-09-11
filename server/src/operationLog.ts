@@ -38,6 +38,8 @@ export interface LogQuery {
   pageSize?: number;
   username?: string;
   targetType?: string;
+  /** 目标名称精确匹配（如按容器名过滤操作记录） */
+  targetName?: string;
   /** 起始时间戳（毫秒），含边界 */
   startTime?: number;
   /** 结束时间戳（毫秒），含边界 */
@@ -52,7 +54,7 @@ export interface LogQuery {
  */
 export type LogFilter = Pick<
   LogQuery,
-  'username' | 'targetType' | 'startTime' | 'endTime' | 'success'
+  'username' | 'targetType' | 'targetName' | 'startTime' | 'endTime' | 'success'
 >;
 
 /** 统计结果 */
@@ -82,6 +84,10 @@ function buildWhere(query: LogFilter = {}): { where: string; params: Array<strin
   if (query.targetType) {
     where.push('target_type = ?');
     params.push(query.targetType);
+  }
+  if (query.targetName) {
+    where.push('target_name = ?');
+    params.push(query.targetName);
   }
   if (query.startTime !== undefined) {
     where.push('created_at >= ?');

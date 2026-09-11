@@ -10,7 +10,7 @@ import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
 import Dockerode from 'dockerode';
 import { StringDecoder } from 'string_decoder';
-import { logOperation } from '../operationLog';
+import { logOperation, listOperationLogs } from '../operationLog';
 import { requireAdmin, requireOperator } from '../auth';
 import { requirePermission } from '../rbac';
 import { getSetting } from '../settings';
@@ -1210,6 +1210,13 @@ router.get(
 
     const health = inspect.State?.Health || null;
 
+    // 健康检查最近探测输出（Health.Log，最近 5 次：时间 / 退出码 / 输出）
+    const healthLog = (health?.Log || []).slice(-5).map((l: any) => ({
+      start: l?.Start || '',
+      exitCode: l?.ExitCode ?? null,
+      output: String(l?.Output || '').slice(-500),
+    }));
+
     res.json({
       id: inspect.Id,
       idShort: inspect.Id.slice(0, 12),
@@ -1371,6 +1378,64 @@ router.get(
     const range = ['24h', '7d', '30d', '90d'].includes(rawRange) ? (rawRange as '24h' | '7d' | '30d' | '90d') : '1h';
     const points = getContainerMetricsHistory(req.params.id, range);
     res.json({ points });
+  }),
+);
+
+/**
+ * GET /api/containers/:id/inspect
+ * 获取容器完整 Inspect 原始 JSON（供详情页「检查」查看/复制/下载）
+ */
+router.get(
+  '/:id/inspect',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const raw = await container.inspect();
+    res.json({ inspect: raw });
+  }),
+);
+
+/**
+ * GET /api/containers/:id/top
+ * 获取容器内进程列表（docker top）
+ * query: ps_args=aux 可选，自定义 ps 参数
+ */
+router.get(
+  '/:id/top',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const psArgs = String(req.query.ps_args || 'aux');
+    const result = await container.top({ ps_args: psArgs });
+    res.json({
+      titles: (result as any).Titles || [],
+      processes: (result as any).Processes || [],
+    });
+  }),
+);
+
+/**
+ * GET /api/containers/:id/operations
+ * 查询与该容器相关的操作记录（按容器名与 12 位短 ID 匹配，最近 20 条）
+ */
+router.get(
+  '/:id/operations',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const name = (await container.inspect()).Name.replace(/^\//, '');
+    const idShort = container.id.slice(0, 12);
+    const merged = {
+      ...listOperationLogs({ targetType: 'container', targetName: name, pageSize: 20 }),
+    };
+    if (idShort !== name) {
+      const byId = listOperationLogs({ targetType: 'container', targetName: idShort, pageSize: 20 });
+      const seen = new Set(merged.items.map((i) => i.id));
+      for (const item of byId.items) if (!seen.has(item.id)) merged.items.push(item);
+      merged.total = Math.max(merged.total, byId.total);
+    }
+    merged.items.sort((a, b) => b.id - a.id);
+    res.json(merged);
   }),
 );
 

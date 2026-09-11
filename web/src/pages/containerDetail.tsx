@@ -29,7 +29,7 @@ import { useLang, translateNow } from '../i18n';
 import './containerDetail.less';
 
 /** Tab 类型 */
-type TabKey = 'detail' | 'logs' | 'terminal' | 'stats' | 'files';
+type TabKey = 'detail' | 'logs' | 'terminal' | 'stats' | 'files' | 'inspect';
 
 /** Tab 配置 */
 const TABS: Array<{ key: TabKey; label: string }> = [
@@ -38,6 +38,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'terminal', label: '终端' },
   { key: 'stats', label: '资源监控' },
   { key: 'files', label: '文件' },
+  { key: 'inspect', label: '检查' },
 ];
 
 /** 镜像自动更新条目 */
@@ -253,6 +254,17 @@ export default function ContainerDetailPage() {
   const [metricsPoints, setMetricsPoints] = useState<ContainerMetricPoint[]>([]);
   // 历史趋势加载中状态（用于首拉空数据时展示加载提示）
   const [metricsLoading, setMetricsLoading] = useState(false);
+  // 检查 (Inspect) 原始 JSON
+  const [inspectJson, setInspectJson] = useState<string>('');
+  const [inspectLoading, setInspectLoading] = useState(false);
+  // 容器内进程列表 (docker top)
+  const [topData, setTopData] = useState<{ titles: string[]; processes: string[][] } | null>(null);
+  const [topLoading, setTopLoading] = useState(false);
+  // 容器相关操作记录 (最近 20 条)
+  const [operations, setOperations] = useState<
+    Array<{ id: number; username: string; action: string; detail: string | null; success: boolean; createdAt: number }>
+  >([]);
+  const [opsLoading, setOpsLoading] = useState(false);
 
   /**
    * 拉取容器完整详情
@@ -274,6 +286,62 @@ export default function ContainerDetailPage() {
   useEffect(() => {
     fetchDetail();
   }, [fetchDetail]);
+
+  /** 拉取 Inspect 原始 JSON */
+  const fetchInspect = useCallback(async () => {
+    if (!id) return;
+    setInspectLoading(true);
+    try {
+      const data = await get<{ inspect: unknown }>(`/api/containers/${encodeURIComponent(id)}/inspect`);
+      setInspectJson(JSON.stringify(data?.inspect ?? {}, null, 2));
+    } catch (e: any) {
+      showToast(e?.message || t('拉取 Inspect 失败'), 'error');
+    } finally {
+      setInspectLoading(false);
+    }
+  }, [id, showToast]);
+
+  useEffect(() => {
+    if (tab === 'inspect' && !inspectJson) fetchInspect();
+  }, [tab, inspectJson, fetchInspect]);
+
+  /** 拉取容器内进程列表 (docker top) */
+  const fetchTop = useCallback(async () => {
+    if (!id) return;
+    setTopLoading(true);
+    try {
+      const data = await get<{ titles: string[]; processes: string[][] }>(`/api/containers/${encodeURIComponent(id)}/top`);
+      setTopData(data || { titles: [], processes: [] });
+    } catch {
+      setTopData({ titles: [], processes: [] });
+    } finally {
+      setTopLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (tab === 'detail' && detail?.state === 'running') fetchTop();
+  }, [tab, detail?.state, fetchTop]);
+
+  /** 拉取该容器的操作记录 */
+  const fetchOperations = useCallback(async () => {
+    if (!id || !detail?.name) return;
+    setOpsLoading(true);
+    try {
+      const data = await get<{ items: Array<{ id: number; username: string; action: string; detail: string | null; success: boolean; createdAt: number }> }>(
+        `/api/containers/${encodeURIComponent(id)}/operations`
+      );
+      setOperations(data?.items || []);
+    } catch {
+      setOperations([]);
+    } finally {
+      setOpsLoading(false);
+    }
+  }, [id, detail?.name]);
+
+  useEffect(() => {
+    if (detail?.name) fetchOperations();
+  }, [detail?.name, fetchOperations]);
 
   /**
    * 拉取全部容器并计算当前容器宿主端口与其他容器的占用冲突
@@ -1762,6 +1830,86 @@ export default function ContainerDetailPage() {
                   </div>
                 )}
               </Card>
+
+              <Card
+                title={t('容器内进程')}
+                extra={
+                  <Button variant="ghost" size="sm" onClick={fetchTop} disabled={topLoading}>
+                    {t('刷新')}
+                  </Button>
+                }
+              >
+                {topLoading && !topData ? (
+                  <div className="desc-value">{t('加载中...')}</div>
+                ) : topData && topData.processes.length > 0 ? (
+                  <div className="kv-scroll">
+                    <table className="detail-table">
+                      <thead>
+                        <tr>
+                          {topData.titles.map((h, i) => (
+                            <th key={i}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topData.processes.map((row, i) => (
+                          <tr key={i}>
+                            {row.map((cell, j) => (
+                              <td key={j} className="mono">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Empty title={t('无进程')} description={t('容器未运行或无法获取进程列表')} />
+                )}
+              </Card>
+
+              <Card
+                title={t('操作记录')}
+                extra={
+                  <Button variant="ghost" size="sm" onClick={fetchOperations} disabled={opsLoading}>
+                    {t('刷新')}
+                  </Button>
+                }
+              >
+                {operations.length > 0 ? (
+                  <div className="kv-scroll">
+                    <table className="detail-table">
+                      <thead>
+                        <tr>
+                          <th>{t('时间')}</th>
+                          <th>{t('操作人')}</th>
+                          <th>{t('动作')}</th>
+                          <th>{t('结果')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {operations.slice(0, 10).map((o) => (
+                          <tr key={o.id}>
+                            <td className="mono">{new Date(o.createdAt).toLocaleString()}</td>
+                            <td>{o.username || '-'}</td>
+                            <td>
+                              {o.action}
+                              {o.detail ? `（${o.detail}）` : ''}
+                            </td>
+                            <td>
+                              <StatusBadge status={o.success ? 'success' : 'danger'} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Empty title={t('暂无操作记录')} description={t('对该容器的操作（启停 / 更新 / 删除等）会记录在此')} />
+                )}
+              </Card>
+
             </div>
           )}
 
@@ -1908,6 +2056,55 @@ export default function ContainerDetailPage() {
                 )}
               </Card>
             </div>
+          )}
+
+          {/* 检查（Inspect）Tab */}
+          {tab === 'inspect' && (
+            <Card
+              title={t('Inspect 原始配置')}
+              extra={
+                <div className="detail-toolbar-actions">
+                  <Button variant="ghost" size="sm" onClick={fetchInspect} disabled={inspectLoading}>
+                    {t('刷新')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(inspectJson);
+                        showToast(t('已复制到剪贴板'));
+                      } catch {
+                        showToast(t('复制失败'), 'error');
+                      }
+                    }}
+                  >
+                    {t('复制 JSON')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const blob = new Blob([inspectJson], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${detail?.name || 'container'}-inspect.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    {t('下载 JSON')}
+                  </Button>
+                </div>
+              }
+            >
+              {inspectLoading && !inspectJson ? (
+                <div className="desc-value">{t('加载中...')}</div>
+              ) : (
+                <pre className="inspect-json mono">{inspectJson}</pre>
+              )}
+            </Card>
           )}
 
           {/* 文件管理 Tab */}

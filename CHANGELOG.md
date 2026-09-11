@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.37.0] - 2026-09-11
+
+### Added（新增）
+
+- **容器详情对齐 1Panel**：详情页补齐三项能力——「检查」标签页（Inspect 原始 JSON 页面内查看 / 一键复制 / 下载）；「容器内进程」卡片（docker top 实时进程表，手动刷新）；「操作记录」卡片（按容器名 / 短 ID 匹配 operation_logs，展示最近 10 条对该容器的操作留痕，含操作人 / 动作 / 结果）。接口 `GET /api/containers/:id/inspect`、`/:id/top`、`/:id/operations`
+
 ## [1.36.0] - 2026-09-11
 
 ### Added（新增）

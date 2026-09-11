@@ -399,7 +399,10 @@ Click a container to open its detail page (`containerDetail`), which provides:
 4. **Export config**: export the container configuration as JSON (can be saved as a template).
 5. **File browser**: see the Files section.
 6. **Resource limit adjustment**: online editing of CPU / memory limits, see 3.4.
-7. **Image auto-update (v1.29.2)**: the "Image auto-update" card on the detail page lets you join/leave with one click. Combined with a "Image auto-update" scheduled task, each scan pulls the image by tag → compares old/new image IDs → rebuilds the container from a full config snapshot on update (ports / volumes / env / networks / capabilities / resource limits / healthcheck preserved) → health check after 15 s → automatic rollback to the old image (with alert push) if the check fails. Digest-pinned (@sha256) images are skipped; entries for deleted containers are disabled automatically.
+7. **Image auto-update (v1.29.2)**: the "Image auto-update" card on the detail page lets you join/leave with one click. Combined with a "Image auto-update" scheduled task, each scan pulls the image by tag → compares old/new image IDs → rebuilds the container from a full config snapshot on update (ports / volumes / env / networks / capabilities / resource limits / healthcheck preserved) → health check after 15 s → automatic rollback to the old image (with alert push) if the check fails. Digest-pinned (@sha256) images are skipped; entries for deleted containers are disabled automatically. Since v1.36.0, auto-updates are blocked when the new digest mismatches a trust pin.
+8. **Inspect tab (new in 1.37.0)**: view the container's raw Inspect JSON in a formatted view, with one-click copy and download as `containerName-inspect.json` for troubleshooting and archiving.
+9. **Processes in container (new in 1.37.0)**: a process card on the "Detail" tab (docker top) lists all processes inside the container (user / PID / CPU / memory / command line) with manual refresh.
+10. **Operation log (new in 1.37.0)**: the "Detail" tab also matches the operation log by container name / short ID and shows the latest 10 operations on this container (time / operator / action / result), making start-stop / update / delete actions fully traceable.
 
 ![Container list](../images/containers.png)
 
