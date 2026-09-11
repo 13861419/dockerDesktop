@@ -752,14 +752,18 @@ export default function ContainerDetailPage() {
    * 打开端口映射编辑弹窗：以当前端口映射初始化草稿
    *
    * detail.ports 为 internal/published 格式（如 internal "80/tcp"），需要拆分出容器端口与协议；
-   * published 取第一个 hostPort 作为宿主机端口。
+   * published 取第一个 hostPort 作为宿主机端口，并带上 hostIp 前缀（默认 0.0.0.0），
+   * 避免编辑保存后丢失 127.0.0.1 等指定 IP 的绑定。
    */
   function openPortEdit() {
     const entries = (detail?.ports || []).map((p) => {
       const [container, proto] = (p.internal || '').split('/');
+      const first = p.published && p.published.length > 0 ? p.published[0] : null;
+      const hostPort = first ? String(first.hostPort) : '';
+      const hostIp = first?.hostIp || '0.0.0.0';
       return {
         container: container || '',
-        host: p.published && p.published.length > 0 ? String(p.published[0].hostPort) : '',
+        host: hostPort ? `${hostIp}:${hostPort}` : '',
         protocol: (proto || 'tcp') as string,
       };
     });
@@ -793,18 +797,26 @@ export default function ContainerDetailPage() {
   }
 
   /**
-   * 保存端口映射：过滤空项并组装 ports 数组（container 转数字）后重建容器
+   * 保存端口映射：过滤空项并组装 ports 数组（container 转数字）后重建容器。
+   * 宿主机栏支持「8080」或「127.0.0.1:8080」两种写法，保留指定的绑定 IP。
    */
   async function savePorts() {
     if (!id) return;
     // 过滤容器端口为空的条目，并组装 ports 数组
     const ports = portDraft
       .filter((item) => item.container.trim() !== '')
-      .map((item) => ({
-        host: item.host.trim(),
-        container: Number(item.container.trim()),
-        protocol: item.protocol,
-      }));
+      .map((item) => {
+        const raw = item.host.trim();
+        const m = raw.match(/^(?:(\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])):(\d+)$/);
+        const hostIp = m ? m[1].replace(/^\[|\]$/g, '') : '0.0.0.0';
+        const host = m ? m[2] : raw;
+        return {
+          host,
+          hostIp: host ? hostIp : '',
+          container: Number(item.container.trim()),
+          protocol: item.protocol,
+        };
+      });
     setPortSaving(true);
     try {
       await post(`/api/containers/${id}/recreate`, { ports });
@@ -2302,11 +2314,11 @@ export default function ContainerDetailPage() {
         }
       >
         <div className="env-modal__tip">
-          {t('修改端口映射需重新创建容器（保留镜像、挂载、网络、环境变量等配置）。「容器端口」为容器内端口，「宿主机端口」为外部访问端口，未填写宿主端口时将以容器端口随机映射。')}
+          {t('修改端口映射需重新创建容器（保留镜像、挂载、网络、环境变量等配置）。「容器端口」为容器内端口；「宿主机端口」支持「8080」或「127.0.0.1:8080」写法，仅写端口时默认绑定 0.0.0.0，未填写时以容器端口随机映射。')}
         </div>
         <div className="port-modal__head">
           <span className="port-modal__col-container">{t('容器端口')}</span>
-          <span className="port-modal__col-host">{t('宿主机端口')}</span>
+          <span className="port-modal__col-host">{t('宿主机映射')}</span>
           <span className="port-modal__col-protocol">{t('协议')}</span>
           <span className="port-modal__col-op" />
         </div>
@@ -2321,7 +2333,7 @@ export default function ContainerDetailPage() {
               />
               <Input
                 className="port-modal__col-host"
-                placeholder={t('8080（可选）')}
+                placeholder={t('0.0.0.0:8080（可选）')}
                 value={item.host}
                 onChange={(e) => updatePortDraft(index, 'host', e.target.value)}
               />

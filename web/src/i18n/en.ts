@@ -3101,4 +3101,6 @@ export const en: Record<string, string> = {
   '更新完成，但健康检查未通过': 'Updated, but the health check did not pass',
   '工程管理、yaml 编辑、docker run 命令导入、容器逆向推导；项目看板（服务级资源聚合）、服务滚动更新（健康检查+自动回滚）、跨引擎镜像分发与远端代理部署（1.34.0）': 'Project management, YAML editing, docker run import, container reverse-derivation; per-project dashboard, rolling updates (health check + auto rollback), cross-engine image distribution and remote proxy deploy',
   '告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、磁盘写满与内存耗尽趋势预测、静默期值班渠道、记录与 AI 诊断': 'Alert rules (with debounce), 7 channel types, multi-channel routing, delivery stats, disk-full & memory-exhaustion forecasts, silent-window on-call channel, records and AI diagnosis',
+  '0.0.0.0:8080（可选）': '0.0.0.0:8080 (optional)',
+  '修改端口映射需重新创建容器（保留镜像、挂载、网络、环境变量等配置）。「容器端口」为容器内端口；「宿主机端口」支持「8080」或「127.0.0.1:8080」写法，仅写端口时默认绑定 0.0.0.0，未填写时以容器端口随机映射。': 'Changing port mappings recreates the container (image, mounts, network, env, etc. are preserved). "Container port" is the in-container port; the "host mapping" accepts "8080" or "127.0.0.1:8080" — a bare port binds 0.0.0.0 by default, and an empty value maps to a random host port.',
 };
