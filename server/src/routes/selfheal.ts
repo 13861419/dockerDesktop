@@ -14,6 +14,7 @@ import {
   updateSelfHealRule,
   deleteSelfHealRule,
   runSelfHealCheck,
+  listSelfHealEvents,
 } from '../selfheal';
 import { requirePermission } from '../rbac';
 import { logOperation } from '../operationLog';
@@ -88,6 +89,17 @@ router.delete(
     deleteSelfHealRule(id);
     logOperation(res.locals.username, '删除自愈规则', '自愈', String(id), '');
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * GET /api/selfheal/events
+ * 查询最近的自愈执行记录（默认 50 条，最新在前）
+ */
+router.get(
+  '/events',
+  asyncHandler(async (req: Request, res: Response) => {
+    res.json({ events: listSelfHealEvents(Number(req.query.limit) || 50) });
   }),
 );
 

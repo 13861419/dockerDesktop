@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.39.0] - 2026-09-11
+
+### Added（新增）
+
+- **自愈执行留档（B5）**：每次自愈动作触发后写入 `selfheal_events` 执行记录（触发原因 / 动作 / 成败 / 详情 / 时间，保留最近 200 条）；通知告警页自愈卡片新增「最近执行记录」表格，手动巡检后自动刷新；接口 `GET /api/selfheal/events`
+- **跨引擎批量清理（C7）**：引擎管理页新增「批量清理」——勾选多台引擎批量执行 Docker prune（停止容器 / 悬空镜像 / 两者，不涉及运行中容器与在用镜像），逐引擎汇总清理数量，全程留痕操作日志；接口 `POST /api/engines/batch-prune`（仅管理员）
+
 ## [1.38.0] - 2026-09-11
 
 ### Added（新增）

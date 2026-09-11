@@ -892,6 +892,8 @@ The fields of each create / edit dialog are listed below. Items marked `*` are r
 
 The backend checks every 10 seconds; on a hit the action runs and a record is written to the alert history (type = self-heal): success pushes a recovery-level notice, failure pushes danger-level — both routed via push routing and rendered through channel templates. Use "Run check now" on the card to trigger a manual sweep.
 
+**Self-heal execution records (1.39.0)**: every triggered self-heal action is archived (trigger / action / success / detail / time, last 200 kept). The "Recent Executions" table under the self-heal card shows the latest 50 and refreshes automatically after a manual sweep; API `GET /api/selfheal/events`.
+
 **Resource alert rules (CPU / memory / disk / GPU / network / container resources)**: enable toggle, warn threshold % *, danger threshold % *, consecutive cycles (fire only after N consecutive sampling cycles over the threshold, default 1 = immediate), silence window, workdays only, work hours. The first five are host-level resources (percent, network in Mbps); "Container Resources" is an anomaly rule that covers **all running containers** without per-container setup: the CPU threshold uses the container scope (100% = one core fully loaded, may exceed 100% on multi-core hosts, default warn 100% / danger 200%), and the memory threshold is **absolute usage in MB** (default warn 2048 MB / danger 4096 MB, useful for containers without a memory limit). Any container hitting the threshold writes an alert record (type = container resources) and pushes a notice, with per-container dedup and recovery notices.
 
 **Container alert rules**: target container *, monitor type * (exit / healthcheck / port / CPU / memory), probe port (port type), warn %, danger %, consecutive cycles (CPU / memory only), enable, silence window, workdays only, work hours.
@@ -1046,6 +1048,10 @@ When multiple Docker engines are connected, the aggregated overview provides a u
 | Engine Cards | One card per engine showing name, status, container count, resource usage |
 | Summary Metrics | Total containers, aggregate CPU usage, aggregate memory usage across all engines |
 | Engine Switch | Click a card to navigate to that engine's detailed management page |
+
+### 29.3 Cross-Engine Batch Cleanup (1.39.0)
+
+The Engines page (`/engines`) toolbar gains "Batch Cleanup" (admin only): select multiple engines and a cleanup scope (stopped containers + dangling images / stopped containers only / dangling images only), then run Docker prune in batch. Running containers and in-use images are never touched; results are listed per engine (success / failure with cleaned counts), and the operation is written to the audit log; API `POST /api/engines/batch-prune`.
 
 ---
 

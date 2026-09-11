@@ -245,6 +245,76 @@ const WATCH_LABELS: Record<SelfHealWatchType, string> = {
   exited: '容器已退出',
 };
 
+/** 自愈执行记录保留条数（超出清理最旧记录） */
+const SELFHEAL_EVENT_LIMIT = 200;
+
+/**
+ * 写入一条自愈执行记录（1.39.0 留档），并裁剪到最近 200 条
+ */
+function recordSelfHealEvent(
+  ruleId: number | null,
+  containerName: string,
+  watchType: string,
+  action: string,
+  success: boolean,
+  detail: string | null,
+): void {
+  try {
+    getDb()
+      .prepare(
+        'INSERT INTO selfheal_events (rule_id, container_name, watch_type, action, success, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(ruleId, containerName, watchType, action, success ? 1 : 0, detail, Date.now());
+    getDb()
+      .prepare(
+        'DELETE FROM selfheal_events WHERE id NOT IN (SELECT id FROM selfheal_events ORDER BY id DESC LIMIT 200)',
+      )
+      .run();
+  } catch {
+    // 留档失败不影响自愈主流程
+  }
+}
+
+/**
+ * 查询最近的自愈执行记录（最新在前）
+ */
+export function listSelfHealEvents(limit = 50): Array<{
+  id: number;
+  ruleId: number | null;
+  containerName: string;
+  watchType: string;
+  action: string;
+  success: boolean;
+  detail: string | null;
+  createdAt: number;
+}> {
+  const lim = Math.min(Math.max(1, Number(limit) || 50), 200);
+  const rows = getDb()
+    .prepare(
+      'SELECT id, rule_id, container_name, watch_type, action, success, detail, created_at FROM selfheal_events ORDER BY id DESC LIMIT ?',
+    )
+    .all(lim) as unknown as Array<{
+    id: number;
+    rule_id: number | null;
+    container_name: string;
+    watch_type: string;
+    action: string;
+    success: number;
+    detail: string | null;
+    created_at: number;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    ruleId: r.rule_id,
+    containerName: r.container_name,
+    watchType: r.watch_type,
+    action: r.action,
+    success: r.success === 1,
+    detail: r.detail,
+    createdAt: r.created_at,
+  }));
+}
+
 /**
  * 巡检全部启用的自愈规则：命中即执行动作，带冷却期防重
  * @returns 本轮实际触发动作的规则数
@@ -286,8 +356,17 @@ export async function runSelfHealCheck(): Promise<{ triggered: number }> {
       const head = `Docker 面板【自愈】容器 ${rule.containerName} ${WATCH_LABELS[rule.watchType]}`;
       try {
         await applyAction(rule.action, found.Id);
+        recordSelfHealEvent(rule.id, rule.containerName, rule.watchType, rule.action, true, `已自动${ACTION_LABELS[rule.action]}`);
         await recordAndPush('recovery', `${head}，已自动${ACTION_LABELS[rule.action]}`);
       } catch (err: any) {
+        recordSelfHealEvent(
+          rule.id,
+          rule.containerName,
+          rule.watchType,
+          rule.action,
+          false,
+          `自动${ACTION_LABELS[rule.action]}失败: ${String(err?.message || err).slice(0, 200)}`,
+        );
         await recordAndPush(
           'danger',
           `${head}，自动${ACTION_LABELS[rule.action]}失败: ${String(err?.message || err).slice(0, 200)}`,

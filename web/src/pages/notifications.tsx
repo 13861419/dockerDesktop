@@ -473,6 +473,26 @@ export default function NotificationsPage() {
     }
   }, [showToast]);
 
+  /** 自愈执行记录（最近 50 条，1.39.0 留档） */
+  const [selfHealEvents, setSelfHealEvents] = useState<
+    Array<{ id: number; containerName: string; watchType: string; action: string; success: boolean; detail: string | null; createdAt: number }>
+  >([]);
+
+  const loadSelfHealEvents = useCallback(async () => {
+    try {
+      const res = await get<{ events: Array<{ id: number; containerName: string; watchType: string; action: string; success: boolean; detail: string | null; createdAt: number }> }>(
+        '/api/selfheal/events?limit=50'
+      );
+      setSelfHealEvents(res?.events || []);
+    } catch {
+      // 静默：执行记录仅作展示
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSelfHealEvents();
+  }, [loadSelfHealEvents]);
+
   /**
    * 打开新增自愈规则弹窗
    */
@@ -559,12 +579,13 @@ export default function NotificationsPage() {
       const res = await post<{ triggered: number }>('/api/selfheal/run');
       showToast(res?.triggered ? t('巡检完成，触发 {{v1}} 条自愈', { v1: res.triggered }) : t('巡检完成，本轮无触发'));
       loadSelfHealRules();
+      loadSelfHealEvents();
     } catch (e: any) {
       showToast(e?.message || t('巡检失败'), 'error');
     } finally {
       setSelfHealRunning(false);
     }
-  }, [loadSelfHealRules, showToast]);
+  }, [loadSelfHealRules, loadSelfHealEvents, showToast]);
 
   useEffect(() => {
     loadContainerRules();
@@ -1256,6 +1277,41 @@ export default function NotificationsPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* 自愈执行记录（1.39.0 留档） */}
+        {selfHealEvents.length > 0 && (
+          <>
+            <h4 style={{ margin: '16px 0 8px' }}>{t('最近执行记录')}</h4>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th style={{ width: '16%' }}>{t('时间')}</th>
+                  <th style={{ width: '16%' }}>{t('容器')}</th>
+                  <th style={{ width: '20%' }}>{t('触发原因')}</th>
+                  <th style={{ width: '10%' }}>{t('动作')}</th>
+                  <th style={{ width: '10%' }}>{t('结果')}</th>
+                  <th style={{ width: '28%' }}>{t('详情')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selfHealEvents.map((ev) => (
+                  <tr key={ev.id}>
+                    <td>{formatTime(ev.createdAt)}</td>
+                    <td><strong>{ev.containerName}</strong></td>
+                    <td>{t(SELFHEAL_WATCH_LABELS[ev.watchType] || ev.watchType)}</td>
+                    <td>{t(SELFHEAL_ACTION_LABELS[ev.action] || ev.action)}</td>
+                    <td>
+                      <span className={ev.success ? 'notify-state notify-state--on' : 'notify-state'}>
+                        {ev.success ? t('成功') : t('失败')}
+                      </span>
+                    </td>
+                    <td className="notify-dim">{ev.detail || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         )}
       </Card>
 

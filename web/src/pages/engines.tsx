@@ -33,6 +33,16 @@ interface Engine {
   isCurrent: boolean;
 }
 
+/** 跨引擎批量清理单台结果（1.39.0） */
+interface PruneResult {
+  engineId: string;
+  name: string;
+  ok: boolean;
+  prunedContainers: number;
+  prunedImages: number;
+  detail: string;
+}
+
 /** 列表响应 */
 interface EnginesResponse {
   engines: Engine[];
@@ -320,6 +330,41 @@ export default function EnginesPage() {
     }
   }, [currentEngine, transferImage, selectedTargets, showToast]);
 
+  /**
+   * 跨引擎批量清理（1.39.0）
+   */
+  const [pruneOpen, setPruneOpen] = useState(false);
+  const [pruneSelected, setPruneSelected] = useState<Record<string, boolean>>({});
+  const [pruneType, setPruneType] = useState<'both' | 'containers' | 'images'>('both');
+  const [pruneRunning, setPruneRunning] = useState(false);
+  const [pruneResults, setPruneResults] = useState<PruneResult[] | null>(null);
+
+  const openPrune = useCallback(() => {
+    setPruneSelected({});
+    setPruneResults(null);
+    setPruneType('both');
+    setPruneOpen(true);
+  }, []);
+
+  const handleBatchPrune = useCallback(async () => {
+    const engineIds = engines.filter((e) => pruneSelected[e.id]).map((e) => e.id);
+    if (engineIds.length === 0) {
+      showToast(t('请至少选择一个引擎'), 'error');
+      return;
+    }
+    setPruneRunning(true);
+    try {
+      const res = await post<{ results: PruneResult[] }>('/api/engines/batch-prune', { engineIds, type: pruneType });
+      setPruneResults(res?.results || []);
+      const okCount = (res?.results || []).filter((r) => r.ok).length;
+      showToast(t('批量清理完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: engineIds.length - okCount }));
+    } catch (e: any) {
+      showToast(e?.message || t('批量清理失败'), 'error');
+    } finally {
+      setPruneRunning(false);
+    }
+  }, [engines, pruneSelected, pruneType, showToast]);
+
   const totalCount = aggregate?.length || 0;
   const onlineCount = aggregate?.filter((a) => a.online).length || 0;
   const runningContainers = aggregate?.reduce((s, a) => s + (a.counts?.running || 0), 0) || 0;
@@ -339,6 +384,7 @@ export default function EnginesPage() {
 
       <div className="toolbar">
         <Button onClick={openCreate}>{t('+ 新增引擎')}</Button>
+        <Button variant="secondary" onClick={openPrune} disabled={!canManage} title={t('对多台引擎批量清理停止容器/悬空镜像')}>{t('批量清理')}</Button>
         <Button variant="ghost" onClick={load}>{t('刷新')}</Button>
       </div>
 
@@ -644,6 +690,67 @@ export default function EnginesPage() {
                   ) : (
                     <div className="en-card__error">{r.error || t('分发失败')}</div>
                   )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 跨引擎批量清理弹窗（1.39.0） */}
+      <Modal
+        open={pruneOpen}
+        title={t('跨引擎批量清理')}
+        onClose={() => setPruneOpen(false)}
+        footer={
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setPruneOpen(false)}>{t('关闭')}</Button>
+            <Button loading={pruneRunning} onClick={handleBatchPrune}>{t('开始清理')}</Button>
+          </div>
+        }
+      >
+        <p className="en-hint" style={{ marginBottom: 12 }}>
+          {t('对勾选的引擎批量执行 Docker prune：清理已停止容器与悬空镜像，不影响运行中容器和在用镜像。')}
+        </p>
+
+        <Field label={t('清理范围')}>
+          <Select value={pruneType} onChange={(e) => setPruneType(e.target.value as 'both' | 'containers' | 'images')}>
+            <option value="both">{t('停止容器 + 悬空镜像')}</option>
+            <option value="containers">{t('仅停止的容器')}</option>
+            <option value="images">{t('仅悬空镜像')}</option>
+          </Select>
+        </Field>
+
+        <Field label={t('目标引擎（可多选）')} required>
+          {engines.length === 0 ? (
+            <div className="en-hint">{t('尚无可用引擎')}</div>
+          ) : (
+            engines.map((tg) => (
+              <label key={tg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!!pruneSelected[tg.id]}
+                  onChange={(e) => setPruneSelected((prev) => ({ ...prev, [tg.id]: e.target.checked }))}
+                />
+                <span>{tg.name}</span>
+                {tg.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
+              </label>
+            ))
+          )}
+        </Field>
+
+        {pruneResults && (
+          <div style={{ marginTop: 12 }}>
+            <div className="en-cards" style={{ gridTemplateColumns: '1fr' }}>
+              {pruneResults.map((r) => (
+                <div key={r.engineId} className="en-card">
+                  <div className="en-card__head">
+                    <span className="en-card__name">{r.name}</span>
+                    <span className={`en-badge ${r.ok ? 'en-badge--online' : 'en-badge--offline'}`}>
+                      {r.ok ? t('成功') : t('失败')}
+                    </span>
+                  </div>
+                  <div className="en-card__meta">{r.detail}</div>
                 </div>
               ))}
             </div>

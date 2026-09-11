@@ -8,7 +8,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../storage';
-import { resetDockerCache, testEngineEndpoint } from '../docker/client';
+import { resetDockerCache, testEngineEndpoint, getDockerClientForEndpoint } from '../docker/client';
 import { restartEventMonitor } from '../docker/events';
 import { resetMonitorState } from '../docker/monitor';
 import { resetContainerMetricsState } from '../docker/containerMetrics';
@@ -223,6 +223,69 @@ router.post(
 
     logOperation(res.locals.username, '切换Docker引擎', '引擎', row.name);
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /api/engines/batch-prune
+ * 跨引擎批量清理（1.39.0）：对多台引擎批量执行 prune。
+ * body: { engineIds: string[], type: 'containers' | 'images' | 'both' }
+ * containers = 清理已停止容器；images = 清理悬空镜像（不动在用镜像）。
+ */
+router.post(
+  '/batch-prune',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ids: string[] = Array.isArray(req.body?.engineIds)
+      ? req.body.engineIds.map((x: unknown) => String(x)).filter(Boolean)
+      : [];
+    const type = ['containers', 'images', 'both'].includes(req.body?.type) ? req.body.type : 'both';
+    if (ids.length === 0) return res.status(400).json({ error: '需要 engineIds 参数' });
+    const d = getDb();
+    const results: Array<{
+      engineId: string;
+      name: string;
+      endpoint: string;
+      ok: boolean;
+      prunedContainers: number;
+      prunedImages: number;
+      detail: string;
+    }> = [];
+    for (const id of ids) {
+      const row = d.prepare('SELECT id, name, endpoint FROM docker_engines WHERE id = ?').get(id) as
+        | { id: string; name: string; endpoint: string }
+        | undefined;
+      if (!row) {
+        results.push({ engineId: id, name: '', endpoint: '', ok: false, prunedContainers: 0, prunedImages: 0, detail: '引擎不存在' });
+        continue;
+      }
+      const out = { engineId: id, name: row.name, endpoint: row.endpoint, ok: true, prunedContainers: 0, prunedImages: 0, detail: '' };
+      try {
+        const client = getDockerClientForEndpoint(row.endpoint);
+        if (type === 'containers' || type === 'both') {
+          const r = (await client.pruneContainers()) as any;
+          out.prunedContainers = Number(r?.ContainersDeleted) || 0;
+        }
+        if (type === 'images' || type === 'both') {
+          const r = (await client.pruneImages()) as any;
+          out.prunedImages = Array.isArray(r?.ImagesDeleted) ? r.ImagesDeleted.length : 0;
+        }
+        out.detail = `清理容器 ${out.prunedContainers} 个，镜像 ${out.prunedImages} 个`;
+      } catch (err: any) {
+        out.ok = false;
+        out.detail = err?.message || '清理失败';
+      }
+      results.push(out);
+    }
+    logOperation(
+      res.locals.username,
+      '跨引擎批量清理',
+      '引擎',
+      results.map((r) => r.name).filter(Boolean).join(', '),
+      `type: ${type}`,
+      results.every((r) => r.ok),
+    );
+    res.json({ ok: results.every((r) => r.ok), results });
   }),
 );
 

@@ -3139,4 +3139,32 @@ export const en: Record<string, string> = {
   "容器白名单": "Container allowlist",
   "如 web-*、nginx，留空不限制": "e.g. web-*, nginx; empty = unrestricted",
   "已保存 {{name}} 的容器白名单": "Container allowlist for {{name}} saved",
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '批量清理': 'Batch Cleanup',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '跨引擎批量清理': 'Cross-Engine Batch Cleanup',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '对多台引擎批量清理停止容器/悬空镜像': 'Batch-clean stopped containers / dangling images across multiple engines',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '对勾选的引擎批量执行 Docker prune：清理已停止容器与悬空镜像，不影响运行中容器和在用镜像。': 'Runs Docker prune on the selected engines: removes stopped containers and dangling images without touching running containers or in-use images.',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '停止容器 + 悬空镜像': 'Stopped containers + dangling images',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '仅停止的容器': 'Stopped containers only',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '仅悬空镜像': 'Dangling images only',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '开始清理': 'Start Cleanup',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '请至少选择一个引擎': 'Select at least one engine',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '批量清理完成：成功 {{v1}}，失败 {{v2}}': 'Batch cleanup finished: {{v1}} succeeded, {{v2}} failed',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '批量清理失败': 'Batch cleanup failed',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '最近执行记录': 'Recent Executions',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '触发原因': 'Trigger',
+  // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
+  '容器已退出': 'Container exited',
 };

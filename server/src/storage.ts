@@ -779,6 +779,19 @@ function createTables(): void {
       created_at        INTEGER NOT NULL,
       updated_at        INTEGER NOT NULL
     );
+
+    -- 自愈执行记录表（1.39.0）：每次触发自愈动作的留痕（成功/失败与详情）
+    CREATE TABLE IF NOT EXISTS selfheal_events (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id        INTEGER,
+      container_name TEXT NOT NULL,
+      watch_type     TEXT NOT NULL,
+      action         TEXT NOT NULL,
+      success        INTEGER NOT NULL DEFAULT 1,
+      detail         TEXT,
+      created_at     INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_selfheal_events_created ON selfheal_events(created_at DESC);
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）
