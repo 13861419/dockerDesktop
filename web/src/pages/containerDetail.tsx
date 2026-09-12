@@ -147,7 +147,11 @@ export default function ContainerDetailPage() {
   const { showToast } = useToast();
   const [detail, setDetail] = useState<ContainerDetailInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<TabKey>('detail');
+  const [tab, setTab] = useState<TabKey>(() => {
+    // 支持 ?tab= 直达指定标签页（如 Compose 页服务跳转终端）
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return (['detail', 'logs', 'terminal', 'stats', 'files', 'inspect'].includes(t || '') ? (t as TabKey) : 'detail');
+  });
   // 镜像自动更新：条目（null = 未加入）
   const [autoUpd, setAutoUpd] = useState<AutoUpdItem | null>(null);
   const [autoUpdBusy, setAutoUpdBusy] = useState(false);

@@ -4,6 +4,7 @@
  * 展示主机上的 Compose 项目列表，支持新建项目、启动 / 停止 / 重启服务、
  * 查看配置与删除项目等操作。
  */
+import { useNavigate } from 'react-router-dom';
 import React, { useCallback, useEffect, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -216,6 +217,13 @@ export default function ComposePage() {
   const [histLoading, setHistLoading] = useState(false);
   const [histItems, setHistItems] = useState<Array<{ id: number; username: string; createdAt: number }>>([]);
   const [histLoadingId, setHistLoadingId] = useState<number | null>(null);
+  // 环境变量（.env）编辑（1.54.0）
+  const [envOpen, setEnvOpen] = useState(false);
+  const [envLoading, setEnvLoading] = useState(false);
+  const [envName, setEnvName] = useState('');
+  const [envContent, setEnvContent] = useState('');
+  const [envExists, setEnvExists] = useState(false);
+  const [envSaving, setEnvSaving] = useState(false);
 
   // 用户保存的 Compose 模板（来自 /api/compose-templates，用于"从模板新建"下拉）
   const [userTemplates, setUserTemplates] = useState<ComposeTemplate[]>([]);
@@ -280,6 +288,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
 
   // 操作中的项目与删除确认状态（删除时额外记录是否删除数据卷）
   const [opName, setOpName] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [deleteTarget, setDeleteTarget] = useState<ComposeProject | null>(null);
   const [deleteVolumes, setDeleteVolumes] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -897,6 +906,43 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     [editName, showToast]
   );
 
+  /** 打开环境变量（.env）编辑弹窗（1.54.0） */
+  const openEnv = useCallback(
+    async (project: ComposeProject) => {
+      setEnvName(project.name);
+      setEnvContent('');
+      setEnvExists(false);
+      setEnvOpen(true);
+      setEnvLoading(true);
+      try {
+        const data = await get<{ content: string; exists: boolean }>(projectUrl(project.name) + '/env');
+        setEnvContent(data?.content || '');
+        setEnvExists(!!data?.exists);
+      } catch (e: any) {
+        showToast(e?.message || t('读取环境变量失败'), 'error');
+        setEnvOpen(false);
+      } finally {
+        setEnvLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  /** 保存 .env（保存后需再次「启动」应用） */
+  const saveEnv = useCallback(async () => {
+    setEnvSaving(true);
+    try {
+      await post(projectUrl(envName) + '/env', { content: envContent });
+      showToast(t('环境变量已保存，重新「启动」项目后生效'), 'success');
+      setEnvExists(true);
+      setEnvOpen(false);
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    } finally {
+      setEnvSaving(false);
+    }
+  }, [envName, envContent, showToast]);
+
   /** 执行停止（down）操作，带删卷选择 */
   const handleStopConfirm = useCallback(async () => {
     if (!stopTarget) return;
@@ -1041,24 +1087,27 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                     )}
                   </td>
                   <td className="status-cell">
-                    {statusMap[proj.name] && statusMap[proj.name].length > 0 ? (
-                      <div className="status-list">
-                        {statusMap[proj.name].map((svc) => (
-                          <span
-                            key={svc.ID || svc.Name || svc.Service}
-                            className={`status-item badge ${
-                              /running|up/i.test(svc.State || '')
-                                ? 'badge--running'
-                                : 'badge--muted'
-                            }`}
-                            title={`${svc.Name || svc.Service || ''} - ${svc.State || svc.Status || ''}`}
-                          >
-                            {svc.Name || svc.Service || '-'}
-                            <em>{svc.State || svc.Status || '-'}</em>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
+                        {statusMap[proj.name] && statusMap[proj.name].length > 0 ? (
+                          <div className="status-list">
+                            {statusMap[proj.name].map((svc) => (
+                              <span
+                                key={svc.ID || svc.Name || svc.Service}
+                                className={`status-item badge ${
+                                  /running|up/i.test(svc.State || '')
+                                    ? 'badge--running'
+                                    : 'badge--muted'
+                                }`}
+                                title={`${svc.Name || svc.Service || ''} - ${svc.State || svc.Status || ''}`}
+                                style={svc.ID ? { cursor: 'pointer' } : undefined}
+                                onClick={() => {
+                                  if (svc.ID) navigate(`/containerDetail/${svc.ID}`);
+                                }}
+                              >
+                                {svc.Name || svc.Service || '-'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
                       <span className="badge badge--muted">-</span>
                     )}
                   </td>
@@ -1128,6 +1177,17 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => void openStats(proj.name)}>
                         {t('看板')}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEnv(proj)}>
+                        {t('环境变量')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={proj.path}
+                        onClick={() => navigate(`/files?path=${encodeURIComponent(proj.path)}`)}
+                      >
+                        {t('目录')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -1376,6 +1436,47 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               ))}
             </tbody>
           </table>
+        )}
+      </Modal>
+
+      {/* 环境变量（.env）编辑弹窗（1.54.0） */}
+      <Modal
+        open={envOpen}
+        title={t('环境变量 - {{envName}}', { envName })}
+        onClose={() => setEnvOpen(false)}
+        width={640}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEnvOpen(false)} disabled={envSaving}>
+              {t('取消')}
+            </Button>
+            <Button onClick={saveEnv} loading={envSaving}>
+              {t('保存')}
+            </Button>
+          </>
+        }
+      >
+        {envLoading ? (
+          <div className="log-empty">{t('正在加载…')}</div>
+        ) : (
+          <>
+            {!envExists && (
+              <div className="name-sub" style={{ marginBottom: 8 }}>
+                {t('项目目录下还没有 .env 文件，保存后将创建。')}
+              </div>
+            )}
+            <textarea
+              className="compose-env-textarea"
+              value={envContent}
+              onChange={(e) => setEnvContent(e.target.value)}
+              rows={16}
+              spellCheck={false}
+              placeholder={t('KEY=value 格式，每行一条，如：') + '\nDATABASE_URL=postgres://postgres:pass@postgres:5432/postgres'}
+            />
+            <div className="name-sub" style={{ marginTop: 6 }}>
+              {t('提示：保存后需重新「启动」项目才会应用环境变量')}
+            </div>
+          </>
         )}
       </Modal>
 

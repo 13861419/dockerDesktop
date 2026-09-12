@@ -136,9 +136,10 @@ export default function HostFilesPage() {
     }
   }, [showToast]);
 
-  // 首次加载盘符列表
+  // 首次加载盘符列表（支持 ?path= 直达指定目录，如 Compose 页「目录」跳转）
   useEffect(() => {
-    load('');
+    const p = new URLSearchParams(window.location.search).get('path') || '';
+    load(p);
   }, [load]);
 
   /**

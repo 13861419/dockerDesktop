@@ -1296,6 +1296,48 @@ router.get(
 );
 
 /**
+ * GET /api/compose/:name/env
+ * 读取项目目录下的 .env 环境变量文件（不存在时返回空内容）
+ */
+router.get(
+  '/:name/env',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await resolveProjectCtx(req.params.name);
+    if (!ctx) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const envPath = path.join(ctx.dir, '.env');
+    const exists = fs.existsSync(envPath);
+    res.json({ path: envPath, exists, content: exists ? fs.readFileSync(envPath, 'utf8') : '' });
+  }),
+);
+
+/**
+ * POST /api/compose/:name/env
+ * 保存项目目录下的 .env 环境变量文件（body: { content }）
+ * 注意：保存后需再次 up 才会应用到容器
+ */
+router.post(
+  '/:name/env',
+  requirePermission('compose.write'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await resolveProjectCtx(req.params.name);
+    if (!ctx) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const content = req.body?.content;
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: '缺少 content 参数' });
+    }
+    const envPath = path.join(ctx.dir, '.env');
+    fs.writeFileSync(envPath, content, 'utf8');
+    logOperation(res.locals.username, '保存 Compose 环境变量', 'compose', req.params.name, `文件: ${envPath}`);
+    res.json({ ok: true, path: envPath });
+  }),
+);
+
+/**
  * POST /api/compose/:name/up
  * 启动 compose 项目（docker compose up -d）
  */

@@ -5,6 +5,13 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  "环境变量 - {{envName}}": "Environment - {{envName}}",
+  "读取环境变量失败": "Failed to load environment",
+  "环境变量已保存，重新「启动」项目后生效": "Environment saved — restart the project (up) to apply",
+  "项目目录下还没有 .env 文件，保存后将创建。": "No .env file yet in the project directory; one will be created on save.",
+  "提示：保存后需重新「启动」项目才会应用环境变量": "Tip: run \"Start\" again after saving to apply the environment variables",
+  "KEY=value 格式，每行一条，如：": "One KEY=value per line, e.g.:",
+  "正在加载…": "Loading…",
   "暂无历史版本记录": "No versions yet",
   "历史版本": "Version history",
   "历史版本 - {{editName}}": "Version history - {{editName}}",
