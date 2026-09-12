@@ -1002,6 +1002,12 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：自愈规则监控范围（1.42.0）：local = 仅当前引擎；all = 全部引擎
+  try {
+    d.exec("ALTER TABLE selfheal_rules ADD COLUMN engine_scope TEXT NOT NULL DEFAULT 'local'");
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 approvals 补充 1.3.0 多级审批列（编号 / 级数 / 已完成级数 / 审批轨迹 / 超时提醒标记）
   try {
     d.exec("ALTER TABLE approvals ADD COLUMN ticket_no TEXT NOT NULL DEFAULT ''");

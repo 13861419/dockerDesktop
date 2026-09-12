@@ -387,13 +387,15 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     }
   }, [statsName, driftEngine]);
 
-  /** 漂移自动修复（1.40.0）：勾选要修复的服务，按本地配置重建 */
+  /** 漂移自动修复（1.40.0）：勾选要修复的服务，按本地配置重建；1.42.0 支持删除本地缺失（remoteOnly） */
   const [fixSel, setFixSel] = useState<Record<string, boolean>>({});
+  const [fixSelRemove, setFixSelRemove] = useState<Record<string, boolean>>({});
   const [fixRunning, setFixRunning] = useState(false);
 
   const fixDrift = useCallback(async () => {
     const services = Object.keys(fixSel).filter((k) => fixSel[k]);
-    if (services.length === 0) {
+    const removeServices = Object.keys(fixSelRemove).filter((k) => fixSelRemove[k]);
+    if (services.length === 0 && removeServices.length === 0) {
       showToast(t('请勾选要修复的服务'), 'error');
       return;
     }
@@ -401,18 +403,23 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     try {
       const r = await post<{ ok: boolean; results: Array<{ service: string; ok: boolean; detail: string }> }>(
         projectUrl(statsName) + '/fix-drift',
-        { services, ...(driftEngine.trim() ? { endpoint: driftEngine.trim() } : {}) },
+        {
+          services,
+          removeServices,
+          ...(driftEngine.trim() ? { endpoint: driftEngine.trim() } : {}),
+        },
       );
       const okCount = (r?.results || []).filter((x) => x.ok).length;
-      showToast(t('修复完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: services.length - okCount }));
+      showToast(t('修复完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: services.length + removeServices.length - okCount }));
       setFixSel({});
+      setFixSelRemove({});
       await driftCheck();
     } catch (e: any) {
       showToast(e?.message || t('修复失败'), 'error');
     } finally {
       setFixRunning(false);
     }
-  }, [fixSel, statsName, driftEngine, driftCheck, showToast]);
+  }, [fixSel, fixSelRemove, statsName, driftEngine, driftCheck, showToast]);
 
   /** 跨引擎镜像分发：把项目镜像预拉取到远端引擎，可选继续代理部署（1.35.0） */
   const distribute = useCallback(async () => {
@@ -1675,8 +1682,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               {t('一键修复（按本地配置重建）')}
             </Button>
           </div>
-        )}
-        {driftResult && (
+        )}        {driftResult && (
           <div style={{ marginTop: 12 }}>
             <p style={{ fontSize: 13, margin: '4px 0 8px' }}>
               {driftResult.driftCount === 0
@@ -1704,6 +1710,13 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                             type="checkbox"
                             checked={!!fixSel[s.service]}
                             onChange={(e) => setFixSel((prev) => ({ ...prev, [s.service]: e.target.checked }))}
+                          />
+                        ) : s.status === 'remoteOnly' ? (
+                          <input
+                            type="checkbox"
+                            title={t('删除远端上该服务的容器')}
+                            checked={!!fixSelRemove[s.service]}
+                            onChange={(e) => setFixSelRemove((prev) => ({ ...prev, [s.service]: e.target.checked }))}
                           />
                         ) : (
                           '—'

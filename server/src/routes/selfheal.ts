@@ -93,13 +93,70 @@ router.delete(
 );
 
 /**
+ * 解析 /events 与 /events/export 共用的筛选参数
+ */
+function parseEventFilters(req: Request): {
+  container?: string;
+  success?: boolean | null;
+  since?: number | null;
+} {
+  const container = req.query.container ? String(req.query.container).trim() : '';
+  const successRaw = req.query.success;
+  let success: boolean | null = null;
+  if (successRaw === 'true' || successRaw === '1') success = true;
+  else if (successRaw === 'false' || successRaw === '0') success = false;
+  const since = Number(req.query.since) > 0 ? Number(req.query.since) : null;
+  return { container: container || undefined, success, since };
+}
+
+/** CSV 字段转义（防公式注入：前缀 + - = @ 的值前加单引号） */
+function csvCell(v: unknown): string {
+  let s = v === null || v === undefined ? '' : String(v);
+  if (/^[=+\-@]/.test(s)) s = `'` + s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+/**
  * GET /api/selfheal/events
- * 查询最近的自愈执行记录（默认 50 条，最新在前）
+ * 查询最近的自愈执行记录（默认 50 条，最新在前；1.42.0 支持 container/success/since 筛选）
  */
 router.get(
   '/events',
   asyncHandler(async (req: Request, res: Response) => {
-    res.json({ events: listSelfHealEvents(Number(req.query.limit) || 50) });
+    const events = listSelfHealEvents(Number(req.query.limit) || 50, parseEventFilters(req));
+    res.json({ events });
+  }),
+);
+
+/**
+ * GET /api/selfheal/events/export
+ * 导出自愈执行记录 CSV（1.42.0），与 /events 支持相同筛选参数
+ */
+router.get(
+  '/events/export',
+  asyncHandler(async (req: Request, res: Response) => {
+    const events = listSelfHealEvents(500, parseEventFilters(req));
+    const header = ['ID', '容器', '监控类型', '动作', '结果', '详情', '时间'];
+    const lines = [header.join(',')];
+    for (const e of events) {
+      lines.push(
+        [
+          e.id,
+          e.containerName,
+          e.watchType,
+          e.action,
+          e.success ? '成功' : '失败',
+          e.detail || '',
+          new Date(e.createdAt).toISOString(),
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+    // BOM 便于 Excel 正确识别 UTF-8
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="selfheal-events-${Date.now()}.csv"`);
+    res.send('\uFEFF' + lines.join('\r\n'));
   }),
 );
 

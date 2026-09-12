@@ -44,6 +44,7 @@ const TYPE_OPTIONS: Array<{ value: TaskType; label: string; badge: string }> = [
   { value: 'git-pull-build', label: 'Git 自动部署', badge: 'indigo' },
   { value: 'baselineScan', label: '安全基线扫描', badge: 'red' },
   { value: 'imageGc', label: '镜像清理', badge: 'orange' },
+  { value: 'crossPrune', label: '跨引擎清理', badge: 'cyan' },
   { value: 'sqliteBackup', label: '数据库备份', badge: 'blue' },
   { value: 'vulnScan', label: '漏洞定时扫描', badge: 'violet' },
   { value: 'imageUpdate', label: '镜像自动更新', badge: 'green' },
@@ -1189,6 +1190,46 @@ function ConfigEditor({
           ))}
         </div>
       </Field>
+    );
+  }
+
+  // crossPrune：跨引擎批量清理（1.42.0）：清理范围 + 可选引擎名单
+  if (type === 'crossPrune') {
+    return (
+      <>
+        <Field label={t('清理范围')} hint={t('遍历全部已注册引擎执行清理；单引擎失败不影响其余引擎')}>
+          <div className="tasks__checks">
+            {PRUNE_ITEMS.map((item) => (
+              <label key={item.key} className="tasks__check">
+                <input
+                  type="checkbox"
+                  checked={config[item.key] === undefined ? true : !!config[item.key]}
+                  onChange={(e) => setKey(item.key, e.target.checked)}
+                />
+                {t(item.label)}
+              </label>
+            ))}
+          </div>
+        </Field>
+        <Field
+          label={t('引擎名单（可选）')}
+          hint={t('多个引擎名用英文逗号分隔，留空 = 全部已注册引擎')}
+        >
+          <Input
+            value={Array.isArray(config.engines) ? config.engines.join(',') : ''}
+            placeholder={t('本机 Docker,测试机')}
+            onChange={(e) =>
+              setKey(
+                'engines',
+                e.target.value
+                  .split(',')
+                  .map((v) => v.trim())
+                  .filter(Boolean)
+              )
+            }
+          />
+        </Field>
+      </>
     );
   }
 

@@ -3221,4 +3221,34 @@ export const en: Record<string, string> = {
   '仅预览（只列出将删除的对象，不执行删除）': 'Preview only (list objects to be deleted without deleting)',
   // ---- 1.41.0：批量清理预览 ----
   '预览完成（未删除任何对象）': 'Preview finished (nothing was deleted)',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '仅当前引擎': 'Current engine only',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '全部引擎（含远端）': 'All engines (incl. remote)',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '全部引擎': 'All engines',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '按容器名筛选': 'Filter by container name',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '全部结果': 'All results',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '仅成功': 'Success only',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '仅失败': 'Failed only',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '暂无执行记录': 'No self-heal events yet',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '监控范围': 'Scope',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '删除远端上该服务的容器': 'Delete containers of this service on the target engine',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '跨引擎清理': 'Cross-engine prune',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '遍历全部已注册引擎执行清理；单引擎失败不影响其余引擎': 'Prune runs on every registered engine; one engine failing does not block the others',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '引擎名单（可选）': 'Engine list (optional)',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '多个引擎名用英文逗号分隔，留空 = 全部已注册引擎': 'Comma-separated engine names; empty = all registered engines',
+  // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
+  '本机 Docker,测试机': 'Local Docker,Test box',
 };

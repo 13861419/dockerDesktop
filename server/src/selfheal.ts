@@ -11,9 +11,10 @@
  *（成功 → recovery，失败 → danger），复用多渠道路由策略。
  */
 import { getDb } from './storage';
-import { getDockerClient } from './docker/client';
+import { getDockerClient, getDockerClientForEndpoint } from './docker/client';
 import { resolveTargetChannels, pushToTargets } from './alerting';
 import type { ChannelInfo } from './notify';
+import type Dockerode from 'dockerode';
 
 /** 巡检间隔：与告警检测同节奏（10s） */
 const TICK_MS = 10000;
@@ -36,6 +37,7 @@ interface SelfHealRuleRow {
   max_triggers: number;
   trigger_window_sec: number;
   limit_notified_at: number | null;
+  engine_scope: string;
   created_at: number;
   updated_at: number;
 }
@@ -57,6 +59,8 @@ export interface SelfHealRule {
   triggerWindowSec: number;
   /** 上次超限告警时间（1.40.0） */
   limitNotifiedAt: number | null;
+  /** 监控范围（1.42.0）：local = 仅当前引擎；all = 全部已注册引擎 */
+  engineScope: 'local' | 'all';
   createdAt: number;
   updatedAt: number;
 }
@@ -74,6 +78,7 @@ function normalizeRule(r: SelfHealRuleRow): SelfHealRule {
     maxTriggers: Math.max(0, Math.floor(Number(r.max_triggers) || 0)),
     triggerWindowSec: Math.max(60, Math.floor(Number(r.trigger_window_sec) || 3600)),
     limitNotifiedAt: r.limit_notified_at || null,
+    engineScope: r.engine_scope === 'all' ? 'all' : 'local',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -133,6 +138,7 @@ function validateInput(body: any, forUpdate = false): {
   matchLabel: string;
   maxTriggers: number;
   triggerWindowSec: number;
+  engineScope: 'local' | 'all';
 } {
   const matchLabel = String(body?.matchLabel ?? '').trim();
   if (matchLabel && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*(=[a-zA-Z0-9_.-]*)?$/.test(matchLabel)) {
@@ -173,6 +179,14 @@ function validateInput(body: any, forUpdate = false): {
       throw Object.assign(new Error('统计窗口需为 60-86400 秒'), { statusCode: 400 });
     }
   }
+  let engineScope: 'local' | 'all' = 'local';
+  if (body?.engineScope !== undefined && body?.engineScope !== null && body?.engineScope !== '') {
+    const scope = String(body.engineScope);
+    if (!['local', 'all'].includes(scope)) {
+      throw Object.assign(new Error('监控范围需为 local 或 all'), { statusCode: 400 });
+    }
+    engineScope = scope as 'local' | 'all';
+  }
   const enabled = body?.enabled === undefined ? 1 : body.enabled ? 1 : 0;
   return {
     containerName,
@@ -183,6 +197,7 @@ function validateInput(body: any, forUpdate = false): {
     matchLabel,
     maxTriggers,
     triggerWindowSec,
+    engineScope,
   };
 }
 
@@ -206,9 +221,9 @@ export function createSelfHealRule(body: any): SelfHealRule {
   const now = Date.now();
   const info = d
     .prepare(
-      "INSERT INTO selfheal_rules (container_name, watch_type, action, cooldown_sec, enabled, last_triggered_at, match_label, max_triggers, trigger_window_sec, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+      "INSERT INTO selfheal_rules (container_name, watch_type, action, cooldown_sec, enabled, last_triggered_at, match_label, max_triggers, trigger_window_sec, engine_scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
     )
-    .run(v.containerName, v.watchType, v.action, v.cooldownSec, v.enabled, v.matchLabel, v.maxTriggers, v.triggerWindowSec, now, now);
+    .run(v.containerName, v.watchType, v.action, v.cooldownSec, v.enabled, v.matchLabel, v.maxTriggers, v.triggerWindowSec, v.engineScope, now, now);
   return normalizeRule(getRuleRow(Number(info.lastInsertRowid))!);
 }
 
@@ -228,13 +243,14 @@ export function updateSelfHealRule(id: number, body: any): SelfHealRule {
     match_label: body?.matchLabel !== undefined ? v.matchLabel : row.match_label || '',
     max_triggers: body?.maxTriggers !== undefined ? v.maxTriggers : row.max_triggers,
     trigger_window_sec: body?.triggerWindowSec !== undefined ? v.triggerWindowSec : row.trigger_window_sec,
+    engine_scope: body?.engineScope !== undefined ? v.engineScope : row.engine_scope === 'all' ? 'all' : 'local',
   };
   if (!next.container_name && !next.match_label) throw Object.assign(new Error('请输入容器名或匹配标签'), { statusCode: 400 });
   getDb()
     .prepare(
-      'UPDATE selfheal_rules SET container_name = ?, watch_type = ?, action = ?, cooldown_sec = ?, enabled = ?, match_label = ?, max_triggers = ?, trigger_window_sec = ?, updated_at = ? WHERE id = ?',
+      'UPDATE selfheal_rules SET container_name = ?, watch_type = ?, action = ?, cooldown_sec = ?, enabled = ?, match_label = ?, max_triggers = ?, trigger_window_sec = ?, engine_scope = ?, updated_at = ? WHERE id = ?',
     )
-    .run(next.container_name, next.watch_type, next.action, next.cooldown_sec, next.enabled, next.match_label, next.max_triggers, next.trigger_window_sec, Date.now(), id);
+    .run(next.container_name, next.watch_type, next.action, next.cooldown_sec, next.enabled, next.match_label, next.max_triggers, next.trigger_window_sec, next.engine_scope, Date.now(), id);
   return normalizeRule(getRuleRow(id)!);
 }
 
@@ -274,9 +290,10 @@ async function recordAndPush(level: 'recovery' | 'danger', message: string): Pro
 /** 执行单个容器恢复动作 */
 async function applyAction(
   action: SelfHealAction,
+  client: Dockerode,
   containerId: string,
 ): Promise<void> {
-  const container = (await getDockerClient()).getContainer(containerId);
+  const container = client.getContainer(containerId);
   if (action === 'restart') {
     await container.restart();
   } else {
@@ -323,9 +340,12 @@ function recordSelfHealEvent(
 }
 
 /**
- * 查询最近的自愈执行记录（最新在前）
+ * 查询最近的自愈执行记录（最新在前，1.42.0 支持容器名/结果/时间筛选）
  */
-export function listSelfHealEvents(limit = 50): Array<{
+export function listSelfHealEvents(
+  limit = 50,
+  filters?: { container?: string; success?: boolean | null; since?: number | null },
+): Array<{
   id: number;
   ruleId: number | null;
   containerName: string;
@@ -335,12 +355,27 @@ export function listSelfHealEvents(limit = 50): Array<{
   detail: string | null;
   createdAt: number;
 }> {
-  const lim = Math.min(Math.max(1, Number(limit) || 50), 200);
+  const lim = Math.min(Math.max(1, Number(limit) || 50), 500);
+  const conds: string[] = [];
+  const params: Array<string | number> = [];
+  if (filters?.container) {
+    conds.push('container_name LIKE ?');
+    params.push(`%${filters.container}%`);
+  }
+  if (filters?.success === true || filters?.success === false) {
+    conds.push('success = ?');
+    params.push(filters.success ? 1 : 0);
+  }
+  if (filters?.since && Number(filters.since) > 0) {
+    conds.push('created_at >= ?');
+    params.push(Math.floor(Number(filters.since)));
+  }
+  const where = conds.length ? ` WHERE ${conds.join(' AND ')}` : '';
   const rows = getDb()
     .prepare(
-      'SELECT id, rule_id, container_name, watch_type, action, success, detail, created_at FROM selfheal_events ORDER BY id DESC LIMIT ?',
+      `SELECT id, rule_id, container_name, watch_type, action, success, detail, created_at FROM selfheal_events${where} ORDER BY id DESC LIMIT ?`,
     )
-    .all(lim) as unknown as Array<{
+    .all(...params, lim) as unknown as Array<{
     id: number;
     rule_id: number | null;
     container_name: string;
@@ -394,86 +429,130 @@ export function evalTriggerLimit(
 }
 
 /**
- * 巡检全部启用的自愈规则：命中即执行动作，带冷却期防重
+ * 巡检全部启用的自愈规则：命中即执行动作，带冷却期防重。
+ * 规则 engineScope = 'local' 仅巡检当前引擎；'all' 巡检全部已注册引擎（1.42.0）。
  * @returns 本轮实际触发动作的规则数
  */
 export async function runSelfHealCheck(): Promise<{ triggered: number }> {
   const rules = listSelfHealRules().filter((r) => r.enabled);
   if (rules.length === 0) return { triggered: 0 };
-  const docker = await getDockerClient();
+  if (!rules.some((r) => r.engineScope === 'all')) {
+    // 全部为 local：沿用单引擎快路径
+    const docker = await getDockerClient();
+    const single = await runRulesOnTargets(rules, [{ name: '', client: docker }]);
+    return { triggered: single };
+  }
+  // 需要多引擎：构造目标引擎列表（全部注册引擎，去重）
+  const targets: Array<{ name: string; client: Dockerode }> = [];
+  let engineRows: Array<{ name: string; endpoint: string }> = [];
+  try {
+    engineRows = getDb()
+      .prepare('SELECT name, endpoint FROM docker_engines ORDER BY id')
+      .all() as unknown as Array<{ name: string; endpoint: string }>;
+  } catch {
+    engineRows = [];
+  }
+  if (engineRows.length === 0) {
+    targets.push({ name: '', client: await getDockerClient() });
+  } else {
+    for (const er of engineRows) {
+      try {
+        targets.push({ name: er.name, client: getDockerClientForEndpoint(er.endpoint) });
+      } catch {
+        // 单个引擎构造失败跳过
+      }
+    }
+  }
+  const triggered = await runRulesOnTargets(rules, targets);
+  return { triggered };
+}
+
+/**
+ * 在给定引擎目标列表上执行自愈规则巡检（供单引擎/多引擎两种模式复用）
+ * @param rules 启用的规则列表
+ * @param targets 引擎目标（name 为空表示本机当前引擎，消息中不额外标注）
+ */
+async function runRulesOnTargets(
+  rules: SelfHealRule[],
+  targets: Array<{ name: string; client: Dockerode }>,
+): Promise<number> {
   let triggered = 0;
   const now = Date.now();
   for (const rule of rules) {
-    try {
-      // 解析目标容器：优先按标签匹配（1.40.0），否则按名称精确匹配
-      const list = (await docker.listContainers({ all: true }).catch(() => [])) as any[];
-      const found = list.find((c) => {
-        if (rule.matchLabel) return matchesLabelRule(rule.matchLabel, c.Labels || {});
-        return (c.Names || []).some((n: string) => n.replace(/^\//, '') === rule.containerName);
-      });
-      if (!found) continue;
-      let info: any;
+    const ruleTargets = rule.engineScope === 'all' ? targets : targets.slice(0, 1);
+    for (const target of ruleTargets) {
+      const tag = target.name ? `[${target.name}] ` : '';
       try {
-        info = await docker.getContainer(found.Id).inspect();
-      } catch {
-        continue;
-      }
-      const state = info?.State?.Status || '';
-      const health = info?.State?.Health?.Status || 'none';
-      const decision = shouldTrigger(
-        { cooldownSec: rule.cooldownSec, lastTriggeredAt: rule.lastTriggeredAt },
-        rule.watchType,
-        state,
-        health,
-        now,
-      );
-      if (!decision.hit) continue;
-      const targetName = rule.containerName || (info.Name || '').replace(/^\//, '') || rule.matchLabel;
-      // 触发次数上限（1.40.0）：统计窗口内已触发次数达到上限则暂停自愈并发一次危险告警
-      if (rule.maxTriggers > 0) {
-        const cntRow = getDb()
-          .prepare('SELECT count(*) AS c FROM selfheal_events WHERE rule_id = ? AND created_at > ?')
-          .get(rule.id, now - rule.triggerWindowSec * 1000) as { c: number };
-        const verdict = evalTriggerLimit(rule.maxTriggers, rule.triggerWindowSec, cntRow?.c || 0, rule.limitNotifiedAt, now);
-        if (verdict.limited) {
-          if (verdict.notify) {
-            getDb().prepare('UPDATE selfheal_rules SET limit_notified_at = ? WHERE id = ?').run(now, rule.id);
-            await recordAndPush(
-              'danger',
-              `Docker 面板【自愈】容器 ${targetName} 在 ${Math.round(rule.triggerWindowSec / 60)} 分钟内已触发 ${cntRow.c} 次自愈（上限 ${rule.maxTriggers}），已暂停自动恢复，请人工排查`,
-            );
-          }
+        // 解析目标容器：优先按标签匹配（1.40.0），否则按名称精确匹配
+        const list = (await target.client.listContainers({ all: true }).catch(() => [])) as any[];
+        const found = list.find((c) => {
+          if (rule.matchLabel) return matchesLabelRule(rule.matchLabel, c.Labels || {});
+          return (c.Names || []).some((n: string) => n.replace(/^\//, '') === rule.containerName);
+        });
+        if (!found) continue;
+        let info: any;
+        try {
+          info = await target.client.getContainer(found.Id).inspect();
+        } catch {
           continue;
         }
-      }
-      getDb()
-        .prepare('UPDATE selfheal_rules SET last_triggered_at = ? WHERE id = ?')
-        .run(now, rule.id);
-      triggered++;
-      const head = `Docker 面板【自愈】容器 ${targetName} ${WATCH_LABELS[rule.watchType]}`;
-      try {
-        await applyAction(rule.action, found.Id);
-        recordSelfHealEvent(rule.id, targetName, rule.watchType, rule.action, true, `已自动${ACTION_LABELS[rule.action]}`);
-        await recordAndPush('recovery', `${head}，已自动${ACTION_LABELS[rule.action]}`);
-      } catch (err: any) {
-        recordSelfHealEvent(
-          rule.id,
-          targetName,
+        const state = info?.State?.Status || '';
+        const health = info?.State?.Health?.Status || 'none';
+        const decision = shouldTrigger(
+          { cooldownSec: rule.cooldownSec, lastTriggeredAt: rule.lastTriggeredAt },
           rule.watchType,
-          rule.action,
-          false,
-          `自动${ACTION_LABELS[rule.action]}失败: ${String(err?.message || err).slice(0, 200)}`,
+          state,
+          health,
+          now,
         );
-        await recordAndPush(
-          'danger',
-          `${head}，自动${ACTION_LABELS[rule.action]}失败: ${String(err?.message || err).slice(0, 200)}`,
-        );
+        if (!decision.hit) continue;
+        const targetName = rule.containerName || (info.Name || '').replace(/^\//, '') || rule.matchLabel;
+        // 触发次数上限（1.40.0）：统计窗口内已触发次数达到上限则暂停自愈并发一次危险告警
+        if (rule.maxTriggers > 0) {
+          const cntRow = getDb()
+            .prepare('SELECT count(*) AS c FROM selfheal_events WHERE rule_id = ? AND created_at > ?')
+            .get(rule.id, now - rule.triggerWindowSec * 1000) as { c: number };
+          const verdict = evalTriggerLimit(rule.maxTriggers, rule.triggerWindowSec, cntRow?.c || 0, rule.limitNotifiedAt, now);
+          if (verdict.limited) {
+            if (verdict.notify) {
+              getDb().prepare('UPDATE selfheal_rules SET limit_notified_at = ? WHERE id = ?').run(now, rule.id);
+              await recordAndPush(
+                'danger',
+                `Docker 面板【自愈】容器 ${targetName} 在 ${Math.round(rule.triggerWindowSec / 60)} 分钟内已触发 ${cntRow.c} 次自愈（上限 ${rule.maxTriggers}），已暂停自动恢复，请人工排查`,
+              );
+            }
+            continue;
+          }
+        }
+        getDb()
+          .prepare('UPDATE selfheal_rules SET last_triggered_at = ? WHERE id = ?')
+          .run(now, rule.id);
+        triggered++;
+        const head = `Docker 面板【自愈】容器 ${targetName}${target.name ? `（引擎 ${target.name}）` : ''} ${WATCH_LABELS[rule.watchType]}`;
+        try {
+          await applyAction(rule.action, target.client, found.Id);
+          recordSelfHealEvent(rule.id, targetName, rule.watchType, rule.action, true, `${tag}已自动${ACTION_LABELS[rule.action]}`);
+          await recordAndPush('recovery', `${head}，已自动${ACTION_LABELS[rule.action]}`);
+        } catch (err: any) {
+          recordSelfHealEvent(
+            rule.id,
+            targetName,
+            rule.watchType,
+            rule.action,
+            false,
+            `${tag}自动${ACTION_LABELS[rule.action]}失败: ${String(err?.message || err).slice(0, 200)}`,
+          );
+          await recordAndPush(
+            'danger',
+            `${head}，自动${ACTION_LABELS[rule.action]}失败: ${String(err?.message || err).slice(0, 200)}`,
+          );
+        }
+      } catch (err: any) {
+        console.error(`[selfheal] 规则 ${rule.id}(${rule.containerName || rule.matchLabel}) 巡检失败:`, String(err?.message || err));
       }
-    } catch (err: any) {
-      console.error(`[selfheal] 规则 ${rule.id}(${rule.containerName || rule.matchLabel}) 巡检失败:`, String(err?.message || err));
     }
   }
-  return { triggered };
+  return triggered;
 }
 
 /** 是否已启动 */

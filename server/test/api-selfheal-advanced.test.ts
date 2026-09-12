@@ -87,3 +87,46 @@ test('selfheal：标签匹配 + 触发次数上限', async () => {
   await req('DELETE', '/api/selfheal/rules/' + ruleId);
   sh('docker rm -f e2e-lbl');
 });
+
+test('selfheal：监控范围 engineScope 全部引擎（1.42.0）', async () => {
+  sh('docker rm -f e2e-scope 2>nul & docker run -d --name e2e-scope alpine sleep 60 & docker stop e2e-scope');
+  const bad = await req('POST', '/api/selfheal/rules', {
+    containerName: 'e2e-scope', watchType: 'exited', action: 'start', cooldownSec: 10, engineScope: 'invalid', enabled: true,
+  });
+  assert.equal(bad.status, 400, '非法 engineScope 应 400');
+  const rule = await req('POST', '/api/selfheal/rules', {
+    containerName: 'e2e-scope', watchType: 'exited', action: 'start', cooldownSec: 10, engineScope: 'all', enabled: true,
+  });
+  assert.equal(rule.status, 201, '创建 all 范围规则成功');
+  assert.equal(rule.data.rule.engineScope, 'all');
+  const upd = await req('PUT', '/api/selfheal/rules/' + rule.data.rule.id, { engineScope: 'local' });
+  assert.equal(upd.status, 200);
+  assert.equal(upd.data.rule.engineScope, 'local', 'engineScope 可更新为 local');
+  await req('DELETE', '/api/selfheal/rules/' + rule.data.rule.id);
+  sh('docker rm -f e2e-scope');
+});
+
+test('selfheal：执行记录筛选 + CSV 导出（1.42.0）', async () => {
+  // 先制造一条记录
+  sh('docker rm -f e2e-ev2 2>nul & docker run -d --name e2e-ev2 alpine sleep 60 & docker stop e2e-ev2');
+  const rule = await req('POST', '/api/selfheal/rules', {
+    containerName: 'e2e-ev2', watchType: 'exited', action: 'start', cooldownSec: 10, enabled: true,
+  });
+  assert.equal(rule.status, 201);
+  await req('POST', '/api/selfheal/run');
+  const filtered = await req('GET', '/api/selfheal/events?limit=50&container=e2e-ev2&success=true');
+  assert.equal(filtered.status, 200);
+  assert.ok((filtered.data.events || []).length >= 1, '容器名筛选命中');
+  assert.ok((filtered.data.events || []).every((e: any) => e.containerName === 'e2e-ev2'), '筛选结果只含目标容器');
+  const none = await req('GET', '/api/selfheal/events?limit=50&container=e2e-no-such-container-xyz');
+  assert.equal(none.data.events.length, 0, '不存在的容器名筛选为空');
+  const exp = await fetch(BASE + '/api/selfheal/events/export?container=e2e-ev2', {
+    headers: { Authorization: 'Bearer ' + adminToken },
+  });
+  assert.equal(exp.status, 200);
+  const csv = await exp.text();
+  assert.ok(csv.includes('e2e-ev2'), 'CSV 含目标容器');
+  assert.ok(csv.includes('ID,容器,监控类型'), 'CSV 表头存在');
+  await req('DELETE', '/api/selfheal/rules/' + rule.data.rule.id);
+  sh('docker rm -f e2e-ev2');
+});

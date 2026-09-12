@@ -200,6 +200,7 @@ interface SelfHealRule {
   matchLabel: string;
   maxTriggers: number;
   triggerWindowSec: number;
+  engineScope: 'local' | 'all';
   createdAt: number;
   updatedAt: number;
 }
@@ -277,7 +278,7 @@ export default function NotificationsPage() {
   const [selfHealRules, setSelfHealRules] = useState<SelfHealRule[]>([]);
   const [selfHealLoading, setSelfHealLoading] = useState(true);
   const [selfHealModal, setSelfHealModal] = useState<{ editing: SelfHealRule | null; open: boolean }>({ editing: null, open: false });
-  const [selfHealForm, setSelfHealForm] = useState({ containerName: '', matchLabel: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', maxTriggers: '', triggerWindowSec: '', enabled: true });
+  const [selfHealForm, setSelfHealForm] = useState({ containerName: '', matchLabel: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', maxTriggers: '', triggerWindowSec: '', engineScope: 'local', enabled: true });
   const [selfHealError, setSelfHealError] = useState('');
   const [selfHealSaving, setSelfHealSaving] = useState(false);
   const [selfHealRunning, setSelfHealRunning] = useState(false);
@@ -481,16 +482,33 @@ export default function NotificationsPage() {
     Array<{ id: number; containerName: string; watchType: string; action: string; success: boolean; detail: string | null; createdAt: number }>
   >([]);
 
-  const loadSelfHealEvents = useCallback(async () => {
+  const loadSelfHealEvents = useCallback(async (filters?: { container?: string; success?: string }) => {
     try {
+      const qs = new URLSearchParams({ limit: '50' });
+      if (filters?.container) qs.set('container', filters.container);
+      if (filters?.success === 'true' || filters?.success === 'false') qs.set('success', filters.success);
       const res = await get<{ events: Array<{ id: number; containerName: string; watchType: string; action: string; success: boolean; detail: string | null; createdAt: number }> }>(
-        '/api/selfheal/events?limit=50'
+        `/api/selfheal/events?${qs.toString()}`
       );
       setSelfHealEvents(res?.events || []);
     } catch {
       // 静默：执行记录仅作展示
     }
   }, []);
+
+  /** 自愈记录筛选（1.42.0）：容器名 + 结果 */
+  const [selfHealEventFilter, setSelfHealEventFilter] = useState({ container: '', success: '' });
+  const loadSelfHealEventsFiltered = useCallback(() => {
+    loadSelfHealEvents({ container: selfHealEventFilter.container.trim(), success: selfHealEventFilter.success });
+  }, [loadSelfHealEvents, selfHealEventFilter]);
+
+  /** 导出自愈执行记录 CSV（带当前筛选） */
+  const exportSelfHealEvents = useCallback(async () => {
+    const qs = new URLSearchParams();
+    if (selfHealEventFilter.container.trim()) qs.set('container', selfHealEventFilter.container.trim());
+    if (selfHealEventFilter.success === 'true' || selfHealEventFilter.success === 'false') qs.set('success', selfHealEventFilter.success);
+    await download(`/api/selfheal/events/export${qs.toString() ? `?${qs.toString()}` : ''}`, 'selfheal-events.csv');
+  }, [download, selfHealEventFilter]);
 
   useEffect(() => {
     loadSelfHealEvents();
@@ -500,7 +518,7 @@ export default function NotificationsPage() {
    * 打开新增自愈规则弹窗
    */
   const openCreateSelfHeal = useCallback(() => {
-    setSelfHealForm({ containerName: '', matchLabel: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', maxTriggers: '', triggerWindowSec: '', enabled: true });
+    setSelfHealForm({ containerName: '', matchLabel: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', maxTriggers: '', triggerWindowSec: '', engineScope: 'local', enabled: true });
     setSelfHealError('');
     setSelfHealModal({ editing: null, open: true });
   }, []);
@@ -517,6 +535,7 @@ export default function NotificationsPage() {
       cooldownSec: String(rule.cooldownSec),
       maxTriggers: rule.maxTriggers ? String(rule.maxTriggers) : '',
       triggerWindowSec: rule.triggerWindowSec ? String(rule.triggerWindowSec) : '',
+      engineScope: rule.engineScope === 'all' ? 'all' : 'local',
       enabled: rule.enabled,
     });
     setSelfHealError('');
@@ -545,6 +564,7 @@ export default function NotificationsPage() {
         action: selfHealForm.action,
         cooldownSec,
         enabled: selfHealForm.enabled,
+        engineScope: selfHealForm.engineScope === 'all' ? 'all' : 'local',
       };
       if (selfHealForm.maxTriggers !== '') payload.maxTriggers = Math.floor(Number(selfHealForm.maxTriggers) || 0);
       if (selfHealForm.triggerWindowSec !== '') payload.triggerWindowSec = Math.floor(Number(selfHealForm.triggerWindowSec) || 3600);
@@ -1273,7 +1293,12 @@ export default function NotificationsPage() {
                   <td>
                     <strong>{r.matchLabel ? `🏷 ${r.matchLabel}` : r.containerName}</strong>
                   </td>
-                  <td>{t(SELFHEAL_WATCH_LABELS[r.watchType] || r.watchType)}</td>
+                  <td>
+                    {t(SELFHEAL_WATCH_LABELS[r.watchType] || r.watchType)}
+                    {r.engineScope === 'all' && (
+                      <span className="notify-dim" style={{ marginLeft: 6 }}>🖥 {t('全部引擎')}</span>
+                    )}
+                  </td>
                   <td>{t(SELFHEAL_ACTION_LABELS[r.action] || r.action)}</td>
                   <td>{r.cooldownSec}s</td>
                   <td>
@@ -1290,40 +1315,64 @@ export default function NotificationsPage() {
           </table>
         )}
 
-        {/* 自愈执行记录（1.39.0 留档） */}
-        {selfHealEvents.length > 0 && (
-          <>
-            <h4 style={{ margin: '16px 0 8px' }}>{t('最近执行记录')}</h4>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: '16%' }}>{t('时间')}</th>
-                  <th style={{ width: '16%' }}>{t('容器')}</th>
-                  <th style={{ width: '20%' }}>{t('触发原因')}</th>
-                  <th style={{ width: '10%' }}>{t('动作')}</th>
-                  <th style={{ width: '10%' }}>{t('结果')}</th>
-                  <th style={{ width: '28%' }}>{t('详情')}</th>
+        {/* 自愈执行记录（1.39.0 留档；1.42.0 支持筛选与导出） */}
+        <>
+          <div style={{ margin: '16px 0 8px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <h4 style={{ margin: 0 }}>{t('最近执行记录')}</h4>
+            <input
+              className="notify-input"
+              placeholder={t('按容器名筛选')}
+              value={selfHealEventFilter.container}
+              onChange={(e) => setSelfHealEventFilter((f) => ({ ...f, container: e.target.value }))}
+              style={{ width: 160 }}
+            />
+            <select
+              className="notify-input"
+              value={selfHealEventFilter.success}
+              onChange={(e) => setSelfHealEventFilter((f) => ({ ...f, success: e.target.value }))}
+              style={{ width: 110 }}
+            >
+              <option value="">{t('全部结果')}</option>
+              <option value="true">{t('仅成功')}</option>
+              <option value="false">{t('仅失败')}</option>
+            </select>
+            <Button variant="ghost" size="sm" onClick={loadSelfHealEventsFiltered}>{t('筛选')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setSelfHealEventFilter({ container: '', success: '' }); loadSelfHealEvents({}); }}>{t('重置')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => void exportSelfHealEvents()}>{t('导出 CSV')}</Button>
+          </div>
+          {selfHealEvents.length === 0 ? (
+            <p className="notify-dim">{t('暂无执行记录')}</p>
+          ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: '16%' }}>{t('时间')}</th>
+                <th style={{ width: '16%' }}>{t('容器')}</th>
+                <th style={{ width: '20%' }}>{t('触发原因')}</th>
+                <th style={{ width: '10%' }}>{t('动作')}</th>
+                <th style={{ width: '10%' }}>{t('结果')}</th>
+                <th style={{ width: '28%' }}>{t('详情')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selfHealEvents.map((ev) => (
+                <tr key={ev.id}>
+                  <td>{formatTime(ev.createdAt)}</td>
+                  <td><strong>{ev.containerName}</strong></td>
+                  <td>{t(SELFHEAL_WATCH_LABELS[ev.watchType] || ev.watchType)}</td>
+                  <td>{t(SELFHEAL_ACTION_LABELS[ev.action] || ev.action)}</td>
+                  <td>
+                    <span className={ev.success ? 'notify-state notify-state--on' : 'notify-state'}>
+                      {ev.success ? t('成功') : t('失败')}
+                    </span>
+                  </td>
+                  <td className="notify-dim">{ev.detail || '—'}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {selfHealEvents.map((ev) => (
-                  <tr key={ev.id}>
-                    <td>{formatTime(ev.createdAt)}</td>
-                    <td><strong>{ev.containerName}</strong></td>
-                    <td>{t(SELFHEAL_WATCH_LABELS[ev.watchType] || ev.watchType)}</td>
-                    <td>{t(SELFHEAL_ACTION_LABELS[ev.action] || ev.action)}</td>
-                    <td>
-                      <span className={ev.success ? 'notify-state notify-state--on' : 'notify-state'}>
-                        {ev.success ? t('成功') : t('失败')}
-                      </span>
-                    </td>
-                    <td className="notify-dim">{ev.detail || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
+              ))}
+            </tbody>
+          </table>
+          )}
+        </>
       </Card>
 
       {/* 容器告警规则 */}
@@ -2215,6 +2264,15 @@ export default function NotificationsPage() {
             />
             <span>{t('统计窗口（秒）')}</span>
           </div>
+        </Field>
+        <Field label={t('监控范围')}>
+          <Select
+            value={selfHealForm.engineScope}
+            onChange={(e) => setSelfHealForm((f) => ({ ...f, engineScope: e.target.value }))}
+          >
+            <option value="local">{t('仅当前引擎')}</option>
+            <option value="all">{t('全部引擎（含远端）')}</option>
+          </Select>
         </Field>
         <Field label={t('启用状态')}>
           <label className="notify-checkbox">

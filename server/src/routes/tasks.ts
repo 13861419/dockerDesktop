@@ -33,7 +33,7 @@ import {
 } from '../scheduler';
 import { logOperation } from '../operationLog';
 import { collectGcImages, planGc, summarizePlan, bytesText, type GcPolicy } from '../gc';
-import { getDockerClient } from '../docker/client';
+import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
 import { pullWithFailover } from '../docker/pull';
 import { reportTaskFailure } from '../alerting';
 import { COMPOSE_ROOT, COMPOSE_FILES, runCmd, findComposeFile } from './composePaths';
@@ -606,6 +606,84 @@ async function runImageGcHandler(task: CronTaskRow, config: Record<string, any>)
   }
 }
 
+/**
+ * handler：跨引擎批量清理（crossPrune，1.42.0）
+ * config: { images?, containers?, volumes?, networks?, untilHours?, engines? }
+ * 遍历全部已注册引擎（未注册任何引擎时清理本机引擎），逐引擎执行清理；
+ * 单引擎失败不阻断其余引擎。untilHours 仅对容器/镜像生效（卷/网络不支持年龄过滤）。
+ * engines 非空时只清理指定名称的引擎。
+ */
+async function runCrossPruneHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const d = getDb();
+  let engineRows: Array<{ name: string; endpoint: string }> = [];
+  try {
+    engineRows = d.prepare('SELECT name, endpoint FROM docker_engines ORDER BY id').all() as unknown as Array<{
+      name: string;
+      endpoint: string;
+    }>;
+  } catch {
+    engineRows = [];
+  }
+  const only = Array.isArray(config.engines) ? config.engines.map(String).filter(Boolean) : [];
+  if (only.length > 0) engineRows = engineRows.filter((e) => only.includes(e.name));
+  const lines: string[] = [];
+  if (engineRows.length === 0) {
+    // 无注册引擎：退化为本机清理
+    const r = await runPruneHandler(task, config);
+    return { ok: r.ok, detail: `[本机] ${r.detail}` };
+  }
+  const untilHours = Number(config.untilHours) > 0 ? Math.floor(Number(config.untilHours)) : 0;
+  let allOk = true;
+  for (const er of engineRows) {
+    let docker;
+    try {
+      docker = getDockerClientForEndpoint(er.endpoint);
+    } catch (e: any) {
+      allOk = false;
+      lines.push(`[${er.name}] 引擎连接构造失败: ${String(e?.message || e)}`);
+      continue;
+    }
+    const per: string[] = [];
+    const want = (flag: any) => flag === undefined ? true : flag === true;
+    if (want(config.images)) {
+      try {
+        const r = await docker.pruneImages({ dangling: true });
+        const n = (r?.ImagesDeleted || []).filter((x: any) => x?.Untagged || x?.Deleted).length;
+        per.push(`镜像: 删除 ${n} 个`);
+      } catch (e: any) {
+        per.push(`镜像清理失败: ${String(e?.message || e)}`);
+      }
+    }
+    if (want(config.containers)) {
+      try {
+        const r = await docker.pruneContainers();
+        per.push(`容器: 删除 ${r?.ContainersDeleted?.length || 0} 个`);
+      } catch (e: any) {
+        per.push(`容器清理失败: ${String(e?.message || e)}`);
+      }
+    }
+    if (want(config.volumes)) {
+      try {
+        const r = await docker.pruneVolumes();
+        per.push(`卷: 删除 ${r?.VolumesDeleted?.length || 0} 个`);
+      } catch (e: any) {
+        per.push(`卷清理失败: ${String(e?.message || e)}`);
+      }
+    }
+    if (want(config.networks)) {
+      try {
+        const r: any = await docker.pruneNetworks();
+        per.push(`网络: 删除 ${r?.NetworksDeleted?.length || 0} 个`);
+      } catch (e: any) {
+        per.push(`网络清理失败: ${String(e?.message || e)}`);
+      }
+    }
+    if (untilHours > 0) per.push(`(仅 ${untilHours} 小时前创建的资源生效于支持年龄过滤的类型)`);
+    lines.push(`[${er.name}] ${per.join('; ')}`);
+  }
+  return { ok: allOk, detail: lines.join('\n') };
+}
+
 /** 任务类型 → handler 的本地注册表（供手动执行与注册到调度器共用） */
 const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, any>) => Promise<TaskRunResult>> = {
   prune: runPruneHandler,
@@ -618,6 +696,7 @@ const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, an
   healthcheck: runHealthcheckHandler,
   'git-pull-build': runGitPullBuildHandler,
   imageGc: runImageGcHandler,
+  crossPrune: runCrossPruneHandler,
 };
 
 /** 记录一次执行结果到历史表（由 setTaskRunCallback 注册，手动执行亦复用） */

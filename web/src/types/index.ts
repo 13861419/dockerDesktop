@@ -364,6 +364,7 @@ export type TaskType =
   | 'healthcheck'
   | 'git-pull-build'
   | 'imageGc'
+  | 'crossPrune'
   | 'baselineScan'
   | 'sqliteBackup'
   | 'vulnScan'
