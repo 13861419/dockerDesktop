@@ -24,6 +24,19 @@ import './appstore.less';
 /** 视图过滤类型：全部 或 仅已安装 */
 type ViewFilter = 'all' | 'installed';
 
+/** Git 应用源（/api/appstore/sources 返回结构） */
+interface GitSource {
+  id: string;
+  name: string;
+  url: string;
+  branch: string | null;
+  enabled: boolean;
+  lastSyncedAt: number | null;
+  lastError: string | null;
+  appCount: number;
+  createdAt: number;
+}
+
 /** 应用商店页标题说明 */
 const APP_LABEL = t('应用商店');
 
@@ -112,6 +125,18 @@ export default function AppStorePage() {
   const [deleteTarget, setDeleteTarget] = useState<AppStoreItem | null>(null);
   // 删除是否进行中
   const [deleting, setDeleting] = useState(false);
+  // Git 应用源管理弹窗是否打开
+  const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  // Git 应用源列表
+  const [gitSources, setGitSources] = useState<GitSource[]>([]);
+  // 应用源表单字段
+  const [srcName, setSrcName] = useState('');
+  const [srcUrl, setSrcUrl] = useState('');
+  const [srcBranch, setSrcBranch] = useState('');
+  // 应用源表单提交中
+  const [srcSubmitting, setSrcSubmitting] = useState(false);
+  // 正在同步/删除的应用源 id
+  const [srcBusyId, setSrcBusyId] = useState<string | null>(null);
 
   /**
    * 拉取应用商店列表
@@ -149,6 +174,108 @@ export default function AppStorePage() {
   useEffect(() => {
     loadSources();
   }, [loadSources]);
+
+  /**
+   * 拉取 Git 应用源列表
+   */
+  const fetchGitSources = useCallback(async () => {
+    try {
+      const data = await get<{ sources: GitSource[] }>('/api/appstore/sources');
+      setGitSources(data?.sources || []);
+    } catch {
+      setGitSources([]);
+    }
+  }, []);
+
+  /** 打开应用源管理弹窗（同时刷新列表） */
+  const openSourceModal = useCallback(() => {
+    setSourceModalOpen(true);
+    fetchGitSources();
+  }, [fetchGitSources]);
+
+  /** 提交新增应用源（创建后服务端立即同步一次） */
+  const handleAddSource = useCallback(async () => {
+    if (!srcName.trim() || !srcUrl.trim()) {
+      showToast(t('请填写名称与仓库 URL'), 'error');
+      return;
+    }
+    setSrcSubmitting(true);
+    try {
+      const data = await post<{ source: GitSource; warning?: string }>('/api/appstore/sources', {
+        name: srcName.trim(),
+        url: srcUrl.trim(),
+        branch: srcBranch.trim(),
+      });
+      if (data?.warning) {
+        showToast(t('已创建，但同步失败：') + data.warning, 'error');
+      } else {
+        showToast(t('应用源已添加并同步成功'), 'success');
+      }
+      setSrcName('');
+      setSrcUrl('');
+      setSrcBranch('');
+      await fetchGitSources();
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('添加应用源失败'), 'error');
+    } finally {
+      setSrcSubmitting(false);
+    }
+  }, [srcName, srcUrl, srcBranch, fetchGitSources, showToast]);
+
+  /** 立即同步指定应用源 */
+  const handleSyncSource = useCallback(
+    async (id: string) => {
+      setSrcBusyId(id);
+      try {
+        const data = await post<{ count: number }>(`/api/appstore/sources/${id}/sync`, {});
+        showToast(t('同步完成，共 {{n}} 个应用', { n: data?.count ?? 0 }), 'success');
+        await fetchGitSources();
+        setRefreshKey((k) => k + 1);
+      } catch (e: any) {
+        showToast(e?.message || t('同步失败'), 'error');
+        await fetchGitSources();
+      } finally {
+        setSrcBusyId(null);
+      }
+    },
+    [fetchGitSources, showToast],
+  );
+
+  /** 删除应用源（同步删除其带来的应用条目，不影响已安装实例） */
+  const handleDeleteSource = useCallback(
+    async (id: string) => {
+      setSrcBusyId(id);
+      try {
+        await del(`/api/appstore/sources/${id}`);
+        showToast(t('应用源已删除'), 'success');
+        await fetchGitSources();
+        setRefreshKey((k) => k + 1);
+      } catch (e: any) {
+        showToast(e?.message || t('删除失败'), 'error');
+      } finally {
+        setSrcBusyId(null);
+      }
+    },
+    [fetchGitSources, showToast],
+  );
+
+  /** 切换应用源启用/禁用 */
+  const handleToggleSource = useCallback(
+    async (source: GitSource) => {
+      setSrcBusyId(source.id);
+      try {
+        await put(`/api/appstore/sources/${source.id}`, { enabled: !source.enabled });
+        await fetchGitSources();
+        setRefreshKey((k) => k + 1);
+      } catch (e: any) {
+        showToast(e?.message || t('操作失败'), 'error');
+      } finally {
+        setSrcBusyId(null);
+      }
+    },
+    [fetchGitSources, showToast],
+  );
 
   /** 根据视图、分类与关键字过滤后的应用列表 */
   const filteredApps = useMemo(() => {
@@ -673,6 +800,14 @@ export default function AppStorePage() {
           </div>
         )}
 
+        {app.sourceName && (
+          <div className="appstore-card__tags">
+            <span className="appstore-card__tag appstore-card__tag--suite" title={t('来自 Git 应用源')}>
+              ⇉ {app.sourceName}
+            </span>
+          </div>
+        )}
+
         {portInfo && (
           <div className="appstore-card__ports">
             <span className="appstore-card__ports-label">{t('端口')}</span>
@@ -839,6 +974,12 @@ export default function AppStorePage() {
                 {t('已安装 (')}{installedCount})
               </button>
             </div>
+            {canManage && (
+              <Button variant="secondary" size="sm" onClick={openSourceModal}>
+                {t('应用源')}
+                {gitSources.length > 0 ? ` (${gitSources.length})` : ''}
+              </Button>
+            )}
             {canManage && (
               <Button variant="primary" size="sm" onClick={openCustomAdd}>
                 {t('新增自定义应用')}
@@ -1014,6 +1155,86 @@ export default function AppStorePage() {
         onConfirm={handleCustomDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* Git 应用源管理弹窗 */}
+      <Modal
+        open={sourceModalOpen}
+        title={t('Git 应用源')}
+        width={640}
+        onClose={() => setSourceModalOpen(false)}
+        footer={
+          <Button variant="ghost" size="md" onClick={() => setSourceModalOpen(false)}>
+            {t('关闭')}
+          </Button>
+        }
+      >
+        <div className="appstore-tip">
+          {t('应用源是一个 git 仓库，根目录放置 apps.json（应用定义数组）即可批量引入应用。格式见帮助中心。')}
+        </div>
+
+        <div className="appstore-src-form">
+          <Field label={t('名称')} className="appstore-src-field">
+            <Input value={srcName} placeholder={t('如：社区精选')} onChange={(ev) => setSrcName(ev.target.value)} />
+          </Field>
+          <Field label={t('仓库 URL')} className="appstore-src-field appstore-src-field--url">
+            <Input
+              value={srcUrl}
+              placeholder="https://github.com/user/dm-apps.git"
+              onChange={(ev) => setSrcUrl(ev.target.value)}
+            />
+          </Field>
+          <Field label={t('分支（可选）')} className="appstore-src-field">
+            <Input value={srcBranch} placeholder="main" onChange={(ev) => setSrcBranch(ev.target.value)} />
+          </Field>
+          <div className="appstore-src-form__btn">
+            <Button variant="primary" size="sm" onClick={handleAddSource} disabled={srcSubmitting}>
+              {srcSubmitting ? t('添加中…') : t('添加并同步')}
+            </Button>
+          </div>
+        </div>
+
+        {gitSources.length === 0 ? (
+          <Empty kind="empty" title={t('暂无应用源')} description={t('添加一个 git 仓库作为应用源，即可批量同步其中的应用。')} />
+        ) : (
+          <div className="appstore-src-list">
+            {gitSources.map((s) => (
+              <div className="appstore-src-item" key={s.id}>
+                <div className="appstore-src-item__main">
+                  <div className="appstore-src-item__name">
+                    {s.name}
+                    <label className="appstore-src-item__switch">
+                      <input
+                        type="checkbox"
+                        checked={s.enabled}
+                        disabled={srcBusyId === s.id}
+                        onChange={() => handleToggleSource(s)}
+                      />
+                      {t('启用')}
+                    </label>
+                  </div>
+                  <div className="appstore-src-item__url" title={s.url}>
+                    {s.url}
+                    {s.branch ? ` (${s.branch})` : ''}
+                  </div>
+                  <div className="appstore-src-item__meta">
+                    {t('{{n}} 个应用', { n: s.appCount })}
+                    {s.lastSyncedAt ? ` · ${t('同步于')} ${new Date(s.lastSyncedAt).toLocaleString()}` : ` · ${t('未同步')}`}
+                  </div>
+                  {s.lastError && <div className="appstore-src-item__error">{s.lastError}</div>}
+                </div>
+                <div className="appstore-src-item__actions">
+                  <Button variant="secondary" size="sm" disabled={srcBusyId === s.id} onClick={() => handleSyncSource(s.id)}>
+                    {srcBusyId === s.id ? t('同步中…') : t('同步')}
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={srcBusyId === s.id} onClick={() => handleDeleteSource(s.id)}>
+                    {t('删除')}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

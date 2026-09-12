@@ -19,6 +19,9 @@ export const APP_LABEL_KEY = 'com.dockermanager.app';
 /** 自定义应用 id 前缀：用于区分内置应用与该前缀下的用户自定义应用 */
 export const CUSTOM_APP_PREFIX = 'custom-';
 
+/** 应用源应用 id 前缀：来自 Git 应用源的应用 id 为 src-<sourceId>-<appId> */
+export const SOURCE_APP_PREFIX = 'src-';
+
 /** 端口映射定义 */
 export interface AppPort {
   /** 容器内部端口 */
@@ -94,6 +97,8 @@ export interface AppDefinition {
   compose?: AppComposeDef;
   /** 是否为用户自定义应用（仅 appstore_custom_apps 表来源的应用有此标记） */
   isCustom?: boolean;
+  /** 来源应用源名称（仅 appstore_source_apps 表来源的应用有此标记） */
+  sourceName?: string;
 }
 
 /** 内置应用目录 */
@@ -496,12 +501,57 @@ export function loadCustomApps(): AppDefinition[] {
 }
 
 /**
- * 获取全部应用定义（内置 + 用户自定义合并）
- * 保持内置应用在前、自定义应用在后的稳定顺序。
+ * 从应用源表中加载启用的 Git 应用源应用
+ *
+ * appstore_source_apps.app_json 存储同步时的完整 AppDefinition JSON；
+ * 读取时统一改写 id 为 src-<sourceId>-<appId>（避免与内置/自定义应用冲突），
+ * 并附带来源名称 sourceName。同步已完成校验，这里解析失败的单条记录直接跳过。
+ * @returns 应用源应用定义列表
+ */
+export function loadSourceApps(): AppDefinition[] {
+  let rows: Array<{ id: string; source_id: string; source_name: string; app_json: string }>;
+  try {
+    rows = getDb()
+      .prepare(
+        `SELECT a.id, a.source_id, a.app_json, s.name AS source_name
+         FROM appstore_source_apps a
+         JOIN appstore_git_sources s ON s.id = a.source_id
+         WHERE s.enabled = 1`,
+      )
+      .all() as unknown as Array<{
+      id: string;
+      source_id: string;
+      source_name: string;
+      app_json: string;
+    }>;
+  } catch {
+    return [];
+  }
+  const apps: AppDefinition[] = [];
+  for (const row of rows || []) {
+    try {
+      const parsed = JSON.parse(row.app_json);
+      if (!parsed || typeof parsed !== 'object') continue;
+      const app: AppDefinition = {
+        ...parsed,
+        id: row.id,
+        sourceName: row.source_name,
+      };
+      apps.push(app);
+    } catch {
+      // 单条坏数据跳过，不影响整体目录
+    }
+  }
+  return apps;
+}
+
+/**
+ * 获取全部应用定义（内置 + 用户自定义 + Git 应用源合并）
+ * 保持内置应用在前、自定义应用居中、应用源在后的稳定顺序。
  * @returns 全部应用定义列表
  */
 export function getAllApps(): AppDefinition[] {
-  return [...APP_CATALOG, ...loadCustomApps()];
+  return [...APP_CATALOG, ...loadCustomApps(), ...loadSourceApps()];
 }
 
 /**
@@ -513,8 +563,14 @@ export function findApp(id: string): AppDefinition | undefined {
   // 优先在内置目录中查找
   const builtin = APP_CATALOG.find((app) => app.id === id);
   if (builtin) return builtin;
-  // 内置未命中且非自定义前缀直接返回（避免无谓的数据库查询）
-  if (!id || !id.startsWith(CUSTOM_APP_PREFIX)) return undefined;
+  if (!id) return undefined;
   // 再从用户自定义应用表中查找
-  return loadCustomApps().find((app) => app.id === id);
+  if (id.startsWith(CUSTOM_APP_PREFIX)) {
+    return loadCustomApps().find((app) => app.id === id);
+  }
+  // 最后从 Git 应用源应用中查找（src- 前缀）
+  if (id.startsWith(SOURCE_APP_PREFIX)) {
+    return loadSourceApps().find((app) => app.id === id);
+  }
+  return undefined;
 }

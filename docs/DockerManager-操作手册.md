@@ -585,6 +585,7 @@ journalctl -u docker-manager -f
 5. 可对已安装实例执行停止 / 卸载等管理操作。
 6. **升级版本对比（1.46.0）**：Compose 套件应用安装的版本与商店最新版本不一致时，卡片显示「↗ 可升级」徽标（悬停查看当前版本 → 目标版本），升级前心里有数。
 7. **端口冲突预检（1.49.0）**：安装时在提交前对宿主端口做占用检测，端口已被容器映射或宿主机进程监听时直接拦截安装并列明占用来源，改完端口再装即可。
+8. **Git 应用源（1.55.0，仅管理员）**：点击工具栏「应用源」打开管理弹窗，把任意 git 仓库作为应用源——仓库根目录放置 `apps.json`（应用定义数组）即可批量引入应用。创建后自动同步一次；支持手动同步、启用 / 禁用（禁用后其应用从商店隐藏但实例不受影响）与删除。同步时逐条校验清单（id 仅限字母数字下划线中划线、镜像或 compose 必填），非法条目自动跳过并在应用源上记录错误；卡片上带来源徽标（⇉ 源名称）。`apps.json` 格式与自定义应用字段一致（id / name / description / category / image / icon / ports / env / volumes / tags / compose）。
 
 ![应用商店截图](../images/appstore.png)
 
@@ -989,6 +990,11 @@ journalctl -u docker-manager -f
 - **挂载卷**（单容器）：来源（宿主机路径或卷名）、容器路径（如 `/data`）、只读
 - **镜像源**：默认镜像源 或 指定已启用源（留空则依次尝试，多源容灾）
 
+Git 应用源（1.55.0，仅管理员）：
+- **名称 *、仓库 URL ***：git 仓库地址（https / ssh / git 协议），根目录放置 `apps.json` 清单
+- **分支**：可选，留空使用仓库默认分支
+- 同步失败时应用源条目会显示错误原因，修正 URL / 分支后重新同步即可；删除应用源不影响已安装实例
+
 ### 25.10 备份恢复（`/backups`）
 
 - 类型：`面板数据库` / `数据卷` / `Compose 配置` / `站点配置`
@@ -1009,6 +1015,7 @@ journalctl -u docker-manager -f
 | Linux 安装后无法连接 Docker | 确保 `dockerman` 用户已加入 docker 组（`sudo usermod -aG docker dockerman`），并重启服务。 |
 | Windows 安装后无法访问 | 确认 Docker Desktop 已启动，且 nssm 服务状态正常（`services.msc` 中查看 DockerManager 服务）。 |
 | 防火墙拦截 | Linux：`firewall-cmd --permanent --add-port=9528/tcp && firewall-cmd --reload`；Windows：通过面板「防火墙」页面放行端口。 |
+| 应用源同步失败（1.55.0） | 检查仓库 URL 与分支是否正确、面板所在主机能否访问该 git 仓库；错误信息会显示在应用源条目上。同步时非法的应用条目（id 不合法、缺镜像/compose）会被自动跳过，其余应用正常引入。 |
 
 ---
 

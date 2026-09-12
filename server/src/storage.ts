@@ -586,6 +586,28 @@ function createTables(): void {
       updated_at  INTEGER NOT NULL
     );
 
+    -- 应用商店 Git 应用源表：外部 git 仓库来源（仓库根目录放 apps.json 清单即可）
+    CREATE TABLE IF NOT EXISTS appstore_git_sources (
+      id             TEXT PRIMARY KEY,
+      name           TEXT NOT NULL,
+      url            TEXT NOT NULL,
+      branch         TEXT,
+      enabled        INTEGER NOT NULL DEFAULT 1,
+      last_synced_at INTEGER,
+      last_error     TEXT,
+      app_count      INTEGER NOT NULL DEFAULT 0,
+      created_at     INTEGER NOT NULL
+    );
+
+    -- 应用源应用表：同步自 git 仓库的应用定义（原始 AppDefinition JSON）
+    CREATE TABLE IF NOT EXISTS appstore_source_apps (
+      id         TEXT PRIMARY KEY,  -- src-<sourceId>-<appId>
+      source_id  TEXT NOT NULL,
+      app_json   TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_appstore_source_apps_source ON appstore_source_apps(source_id);
+
     -- Compose 模板库表：用户保存的常用 Compose 配置（YAML 文本），供新建项目时快速复用
     CREATE TABLE IF NOT EXISTS compose_templates (
       id          TEXT PRIMARY KEY,

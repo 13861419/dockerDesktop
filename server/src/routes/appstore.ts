@@ -30,7 +30,8 @@ import {
 import { pullWithFailover } from '../docker/pull';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
-import { getDb } from '../storage';
+import { getDb, DATA_DIR } from '../storage';
+import { gitCloneOrPull } from '../gitCli';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -321,11 +322,287 @@ function genCustomAppId(): string {
   return id;
 }
 
+// ============ Git 应用源 ============
+
+/** 应用源清单文件（仓库根目录，按顺序探测） */
+const SOURCE_MANIFEST_FILES = ['apps.json', 'manifest.json'];
+
+/** 应用源应用 id 合法字符（字母数字下划线中划线，防注入与路径拼接问题） */
+const SOURCE_APP_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+interface GitSourceRow {
+  id: string;
+  name: string;
+  url: string;
+  branch: string | null;
+  enabled: number;
+  last_synced_at: number | null;
+  last_error: string | null;
+  app_count: number;
+  created_at: number;
+}
+
+/** 应用源克隆目录 */
+function sourceCloneDir(id: string): string {
+  return path.join(DATA_DIR, 'appstore-sources', id);
+}
+
+/** 0/1 → boolean 并补全空字段，输出统一的响应体 */
+function serializeSource(row: GitSourceRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    branch: row.branch,
+    enabled: !!row.enabled,
+    lastSyncedAt: row.last_synced_at,
+    lastError: row.last_error,
+    appCount: row.app_count,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * 校验清单中的应用定义：id/name 必填且格式合法，image 或 compose.compose 至少其一存在。
+ * @param raw 清单数组元素
+ * @returns 校验通过并补全默认值的应用定义；不合法返回 null
+ */
+function validateSourceApp(raw: unknown): AppDefinition | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const app = raw as Partial<AppDefinition> & Record<string, unknown>;
+  if (typeof app.id !== 'string' || !SOURCE_APP_ID_RE.test(app.id)) return null;
+  if (typeof app.name !== 'string' || !app.name.trim()) return null;
+  const hasImage = typeof app.image === 'string' && !!app.image.trim();
+  const compose = app.compose as AppComposeDef | undefined;
+  const hasCompose = !!compose && typeof compose === 'object' && typeof compose.compose === 'string' && !!compose.compose;
+  if (!hasImage && !hasCompose) return null;
+  const def: AppDefinition = {
+    ...(app as AppDefinition),
+    id: app.id,
+    name: app.name.trim(),
+    description: typeof app.description === 'string' ? app.description : '',
+    category: typeof app.category === 'string' && app.category.trim() ? app.category.trim() : '应用源',
+    image: hasImage ? (app.image as string).trim() : '',
+    icon: typeof app.icon === 'string' && app.icon ? app.icon : '📦',
+  };
+  return def;
+}
+
+/**
+ * 同步单个 Git 应用源：clone/pull 仓库 → 解析清单 → 原子替换该源的应用记录。
+ * @param id 应用源 id
+ * @returns 同步成功的应用数量
+ */
+async function syncGitSource(id: string): Promise<number> {
+  const row = getDb().prepare('SELECT * FROM appstore_git_sources WHERE id = ?').get(id) as
+    | GitSourceRow
+    | undefined;
+  if (!row) {
+    const err: any = new Error('应用源不存在');
+    err.statusCode = 404;
+    throw err;
+  }
+  let count = 0;
+  try {
+    const dir = sourceCloneDir(id);
+    await gitCloneOrPull({ repoUrl: row.url, dir, branch: row.branch || undefined, cred: null });
+    // 探测清单文件
+    let manifestPath: string | null = null;
+    for (const name of SOURCE_MANIFEST_FILES) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) {
+        manifestPath = p;
+        break;
+      }
+    }
+    if (!manifestPath) {
+      throw new Error(`仓库中未找到清单文件（${SOURCE_MANIFEST_FILES.join(' 或 ')}）`);
+    }
+    let list: unknown;
+    try {
+      list = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch {
+      throw new Error('清单文件不是合法的 JSON');
+    }
+    if (!Array.isArray(list)) {
+      throw new Error('清单文件内容应为应用数组（AppDefinition[]）');
+    }
+    // 校验并准备写入记录
+    const now = Date.now();
+    const rows: Array<{ id: string; source_id: string; app_json: string; created_at: number }> = [];
+    for (const raw of list) {
+      const def = validateSourceApp(raw);
+      if (!def) continue;
+      rows.push({
+        id: `src-${id}-${def.id}`,
+        source_id: id,
+        app_json: JSON.stringify(def),
+        created_at: now,
+      });
+    }
+    // 原子替换该源的全部应用
+    const db = getDb();
+    const insert = db.prepare(
+      'INSERT INTO appstore_source_apps (id, source_id, app_json, created_at) VALUES (?, ?, ?, ?)',
+    );
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM appstore_source_apps WHERE source_id = ?').run(id);
+      for (const r of rows) insert.run(r.id, r.source_id, r.app_json, r.created_at);
+      db.prepare('UPDATE appstore_git_sources SET last_synced_at = ?, last_error = NULL, app_count = ? WHERE id = ?').run(now, rows.length, id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    count = rows.length;
+  } catch (err: any) {
+    const detail = String(err?.message || err || '同步失败');
+    getDb().prepare('UPDATE appstore_git_sources SET last_error = ? WHERE id = ?').run(detail, id);
+    const apiErr: any = new Error(detail);
+    apiErr.statusCode = 400;
+    throw apiErr;
+  }
+  return count;
+}
+
+/** 生成唯一的应用源 id */
+function genSourceId(): string {
+  let id = '';
+  let exists = true;
+  while (exists) {
+    id = `gsrc${Date.now().toString(36)}${crypto.randomBytes(4).toString('hex')}`;
+    exists = !!getDb().prepare('SELECT id FROM appstore_git_sources WHERE id = ?').get(id);
+  }
+  return id;
+}
+
+/**
+ * GET /api/appstore/sources
+ * 列出全部 Git 应用源（含未启用的）。
+ */
+router.get(
+  '/sources',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const rows = getDb()
+      .prepare('SELECT * FROM appstore_git_sources ORDER BY created_at ASC')
+      .all() as unknown as GitSourceRow[];
+    res.json({ sources: (rows || []).map(serializeSource) });
+  }),
+);
+
+/**
+ * POST /api/appstore/sources
+ * 新增 Git 应用源：{ name, url, branch? }。创建后立即尝试同步（失败不回滚创建，错误记录到 last_error）。
+ */
+router.post(
+  '/sources',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    const branch = typeof req.body?.branch === 'string' ? req.body.branch.trim() : '';
+    if (!name) {
+      res.status(400).json({ error: '应用源名称不能为空' });
+      return;
+    }
+    if (!url) {
+      res.status(400).json({ error: '仓库 URL 不能为空' });
+      return;
+    }
+    const id = genSourceId();
+    const now = Date.now();
+    getDb()
+      .prepare(
+        'INSERT INTO appstore_git_sources (id, name, url, branch, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?)',
+      )
+      .run(id, name, url, branch || null, now);
+    let warning: string | undefined;
+    try {
+      await syncGitSource(id);
+    } catch (err: any) {
+      warning = String(err?.message || '同步失败');
+    }
+    const row = getDb().prepare('SELECT * FROM appstore_git_sources WHERE id = ?').get(id) as unknown as GitSourceRow;
+    res.status(201).json({ source: serializeSource(row), warning });
+    if (!warning) {
+      logOperation(res.locals.username, '同步应用源', 'app', row.id, `${name}（${url}），应用数：${row.app_count}`);
+    }
+  }),
+);
+
+/**
+ * PUT /api/appstore/sources/:id
+ * 更新应用源（当前支持启用/禁用）：{ enabled }
+ */
+router.put(
+  '/sources/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = getDb().prepare('SELECT * FROM appstore_git_sources WHERE id = ?').get(req.params.id) as
+      | GitSourceRow
+      | undefined;
+    if (!row) {
+      res.status(404).json({ error: '应用源不存在' });
+      return;
+    }
+    if (typeof req.body?.enabled === 'boolean') {
+      getDb().prepare('UPDATE appstore_git_sources SET enabled = ? WHERE id = ?').run(req.body.enabled ? 1 : 0, row.id);
+    }
+    const updated = getDb().prepare('SELECT * FROM appstore_git_sources WHERE id = ?').get(row.id) as unknown as GitSourceRow;
+    res.json({ source: serializeSource(updated) });
+  }),
+);
+
+/**
+ * POST /api/appstore/sources/:id/sync
+ * 立即同步应用源：拉取最新仓库内容并重建应用清单。
+ */
+router.post(
+  '/sources/:id/sync',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const count = await syncGitSource(req.params.id);
+    const row = getDb().prepare('SELECT * FROM appstore_git_sources WHERE id = ?').get(req.params.id) as unknown as GitSourceRow;
+    res.json({ source: serializeSource(row), count });
+    logOperation(res.locals.username, '同步应用源', 'app', row.id, `${row.name}，应用数：${count}`);
+  }),
+);
+
+/**
+ * DELETE /api/appstore/sources/:id
+ * 删除应用源及其同步的全部应用（不影响已安装实例）。
+ */
+router.delete(
+  '/sources/:id',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = getDb().prepare('SELECT * FROM appstore_git_sources WHERE id = ?').get(req.params.id) as
+      | GitSourceRow
+      | undefined;
+    if (!row) {
+      res.status(404).json({ error: '应用源不存在' });
+      return;
+    }
+    const db = getDb();
+    db.prepare('DELETE FROM appstore_source_apps WHERE source_id = ?').run(row.id);
+    db.prepare('DELETE FROM appstore_git_sources WHERE id = ?').run(row.id);
+    try {
+      fs.rmSync(sourceCloneDir(row.id), { recursive: true, force: true });
+    } catch {
+      // 目录清理失败不阻塞删除
+    }
+    res.json({ ok: true });
+    logOperation(res.locals.username, '删除应用源', 'app', row.id, row.name);
+  }),
+);
+
 /**
  * POST /api/appstore/custom
  * 新增自定义应用：组装字段写入 appstore_custom_apps 表并返回新建条目。
  * body: { name, description?, category?, image, icon?, ports?, env?, volumes?, tags?, compose? }
  */
+
 router.post(
   '/custom',
   requireAdmin,

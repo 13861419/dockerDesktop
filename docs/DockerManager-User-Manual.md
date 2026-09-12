@@ -572,6 +572,7 @@ Menu: **App Store** (`/appstore`)
 5. Stop / uninstall installed instances as needed.
 6. **Upgrade version comparison (1.46.0)**: when an installed Compose suite version differs from the latest store version, the card shows an "upgrade available" badge (hover to see current → target), so upgrades are informed decisions.
 7. **Port conflict precheck (1.49.0)**: before submitting an install, host ports are checked for occupancy; conflicts block the install with the holder listed — change the port and retry.
+8. **Git app sources (1.55.0, admins only)**: click "App Sources" in the toolbar to add any git repository as an app source — place an `apps.json` manifest (array of app definitions) at the repository root to import apps in bulk. A sync runs right after creation; manual sync, enable/disable (disabled sources are hidden from the store while installed instances stay intact) and delete are supported. Entries are validated one by one (id characters, image/compose required) and invalid ones are skipped with the error recorded on the source; source apps carry a source badge (⇉ name). The `apps.json` format matches the custom-app fields (id / name / description / category / image / icon / ports / env / volumes / tags / compose).
 
 ![App Store](../images/appstore.png)
 
@@ -965,6 +966,11 @@ Install-time configuration:
 - **Volume mounts** (single container): source (host path or volume name), container path (e.g. `/data`), read-only
 - **Image source**: default mirror or a specific enabled source (blank tries all in order)
 
+Git app sources (1.55.0, admins only):
+- **Name * / Repository URL ***: git repo address (https / ssh / git protocol) with an `apps.json` manifest at the root
+- **Branch**: optional; leave blank for the repo's default branch
+- On sync failure the error is shown on the source entry — fix the URL / branch and sync again; deleting a source does not affect installed instances
+
 ### 25.10 Backup & Restore (`/backups`)
 
 - Type: `Panel database` / `Volumes` / `Compose config` / `Site config`
@@ -987,6 +993,7 @@ Install-time configuration:
 | Why does the login button read "登 录" | The button text is "登 录" (with a space) — normal. Enter credentials and click it to log in. |
 | Cannot connect after Linux install | Ensure the `dockerman` user is in the docker group: `sudo usermod -aG docker dockerman`, then restart the service. |
 | Cannot access after Windows install | Confirm Docker Desktop is running and the NSSM service is healthy (check `services.msc` for the DockerManager service). |
+| App source sync fails (1.55.0) | Verify the repo URL / branch and that the panel host can reach the git repo; the error is shown on the source entry. Invalid entries (bad id, missing image/compose) are skipped automatically while the rest are imported. |
 | Firewall blocks access | Linux: `firewall-cmd --permanent --add-port=9528/tcp && firewall-cmd --reload`; Windows: use the panel's **Firewall** page to allow the port. |
 
 ---

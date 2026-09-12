@@ -411,3 +411,92 @@
   border: 1px solid var(--primary);
   margin-bottom: 8px;
 }
+
+/* Git 应用源管理 */
+.appstore-src-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.appstore-src-field {
+  flex: 1 1 120px;
+  min-width: 120px;
+}
+
+.appstore-src-field--url {
+  flex: 2 1 240px;
+}
+
+.appstore-src-form__btn {
+  padding-bottom: 6px;
+}
+
+.appstore-src-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.appstore-src-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-body);
+}
+
+.appstore-src-item__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.appstore-src-item__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.appstore-src-item__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.appstore-src-item__url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appstore-src-item__meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.appstore-src-item__error {
+  font-size: 12px;
+  color: var(--danger, #d64541);
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.appstore-src-item__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}

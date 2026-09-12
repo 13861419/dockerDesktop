@@ -322,6 +322,8 @@ export interface AppStoreApp {
   tags?: string[];
   /** 是否为用户自定义应用（id 以 custom- 前缀的为自定义，true 时前端显示编辑/删除入口） */
   isCustom?: boolean;
+  /** 来源 Git 应用源名称（应用源同步的应用才有此字段） */
+  sourceName?: string;
 }
 
 /** 应用商店应用及其实时安装状态（/api/appstore 返回的单个应用项） */
