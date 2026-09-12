@@ -40,11 +40,13 @@ export function setupTerminalServer(httpServer: HttpServer): void {
       rejectWsUpgrade(socket, 401, '未登录或权限不足，无法连接容器终端');
       return true;
     }
-    const upgrade = () => {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req, containerId);
-      });
-    };
+  const upgrade = () => {
+    // 会话级审计（1.44.0）：记录终端连接建立（命令级审计见 HTTP /exec）
+    logOperation(session.username, '打开容器终端', 'container', containerId, 'WebSocket 终端会话', true);
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req, containerId);
+    });
+  };
     // 容器资源级授权（1.40.0）：名单外容器拒绝建立终端连接（与 HTTP 403 守卫同口径）
     const allowlist = getContainerAllowlist(session.username);
     if (allowlist) {

@@ -272,6 +272,15 @@ router.post(
 
     try {
       const { output, exitCode } = await runShell(shell, command, cwd, timeout);
+      // 命令级审计（1.44.0）：成功执行的命令同样留痕（此前 catch 不可达，成功命令无审计）
+      logOperation(
+        res.locals.username,
+        '执行宿主机命令',
+        'hostTerminal',
+        shell,
+        `${cwd}: ${command.slice(0, 200)}; exit=${exitCode}`,
+        exitCode === 0,
+      );
       res.json({ output: truncate(output), exitCode, cwd: sessionCwd });
     } catch (err: any) {
       // child_process 错误：倾印 message（可能含 stderr）

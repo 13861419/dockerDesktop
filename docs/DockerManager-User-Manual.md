@@ -316,6 +316,8 @@ To back up, copy the entire data directory.
 > Sessions use an in-memory token; they expire when the service restarts.
 >
 > Login failure protection (1.43.0): 5 consecutive failures on one account lock it for 10 minutes — the counter is **persisted**, so lockouts survive panel restarts. The same IP failing 20 times within a 10-minute sliding window is locked for 5 minutes (higher threshold for NAT scenarios; tunable via env vars), preventing username rotation around brute-force protection.
+>
+> Login auditing (1.44.0): successful logins, failures and rejections (account lock, IP lock, allowlist denial) are written to the operation log with source IP and User-Agent for full traceability.
 
 ---
 
@@ -570,6 +572,7 @@ Menu: **Scheduled Tasks** (`/tasks`)
 - Enable / pause, run now, delete, and edit tasks.
 - **Run logs** show the result and failure reason of each run.
 - **Run-history retention (1.43.0)**: task run logs are auto-purged daily per the "Task run-history retention (days)" setting (default 90; 0 = keep forever), preventing unbounded growth.
+- **Re-entry protection (1.44.0)**: while a task is running, manual / Webhook triggers return "task is already running" — the lock is shared with the scheduler so long tasks cannot run concurrently.
 - **Cross-engine prune (crossPrune, 1.42.0)**: on schedule, prune images / containers / volumes / networks across all (or selected) registered engines; one engine failing does not block the others. Same semantics as the cross-engine batch cleanup on the Engines page.
 
 ![Scheduled tasks](../images/tasks.png)

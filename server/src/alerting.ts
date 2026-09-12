@@ -546,8 +546,15 @@ async function check(): Promise<void> {
   // 容器资源异常检测（ctnRes 规则，覆盖全部运行容器）
   await checkContainerAnomaly();
   // 磁盘写满趋势预测（1.34.0：基于 24h 历史采样线性回归，内部限频）
-    await checkDiskForecast();
-    await checkMemForecast();
+  await checkDiskForecast();
+  await checkMemForecast();
+  // 站点证书到期检测（1.44.0：≤30 天提醒 / ≤7 天紧急，动态加载避免循环依赖）
+  try {
+    const { checkSiteCertExpiry } = await import('./certExpiry');
+    await checkSiteCertExpiry();
+  } catch {
+    // 检测失败不影响告警主流程
+  }
 }
 
 // ==================== 磁盘写满趋势预测（1.34.0） ====================

@@ -233,12 +233,20 @@ export function getMonthlyUsage(profileId: number): { tokens: number; cost: numb
   const from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const row = getDb()
     .prepare(
-      `SELECT COALESCE(SUM(total_tokens), 0) AS tokens
-       FROM ai_usage
-       WHERE profile_id = ? AND created_at >= ? AND success = 1`,
+      `SELECT COALESCE(SUM(total_tokens), 0) AS tokens,
+      COALESCE(SUM(CASE WHEN model='gpt-4o' THEN prompt_tokens * 0.0000025 + completion_tokens * 0.00001
+      WHEN model='gpt-4o-mini' THEN prompt_tokens * 0.00000015 + completion_tokens * 0.0000006
+      WHEN model='deepseek-chat' THEN prompt_tokens * 0.00000014 + completion_tokens * 0.00000028
+      WHEN model='deepseek-reasoner' THEN prompt_tokens * 0.00000055 + completion_tokens * 0.00000219
+      WHEN model LIKE '%claude-3-5-sonnet%' THEN prompt_tokens * 0.000003 + completion_tokens * 0.000015
+      WHEN model LIKE '%claude-3-5-haiku%' THEN prompt_tokens * 0.0000008 + completion_tokens * 0.000004
+      ELSE 0 END), 0) AS cost
+      FROM ai_usage
+      WHERE profile_id = ? AND created_at >= ? AND success = 1`,
     )
-    .get(profileId, from) as { tokens: number } | undefined;
-  return { tokens: row?.tokens || 0, cost: 0 };
+    .get(profileId, from) as { tokens: number; cost: number } | undefined;
+  // 费用为按内置价格表的估算值（1.44.0 起生效，此前恒为 0 导致费用预算永不触发）
+  return { tokens: row?.tokens || 0, cost: row?.cost || 0 };
 }
 
 /** 性能指标（按模型聚合） */

@@ -2020,11 +2020,21 @@ router.post(
         const inspect = await exec.inspect();
         exitCode = inspect?.ExitCode ?? null;
       } catch {
-        // 退出码查询失败时置空，不影响返回结果
-        exitCode = null;
-      }
+      // 退出码查询失败时置空，不影响返回结果
+      exitCode = null;
+    }
 
-      res.json({ ok: true, exitCode, output });
+    // 命令级审计（1.44.0）
+    logOperation(
+      res.locals.username,
+      '容器内执行命令',
+      'container',
+      req.params.id,
+      `${cmd.slice(0, 200)}; exit=${exitCode}`,
+      exitCode === 0 || exitCode === null,
+    );
+
+    res.json({ ok: true, exitCode, output });
     } finally {
       // 尽力销毁 exec 流，避免资源泄漏
       try { (stream as any).destroy(); } catch { /* ignore */ }

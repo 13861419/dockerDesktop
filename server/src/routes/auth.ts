@@ -20,6 +20,7 @@ import { isLocked, getLockRemaining, registerFailure, registerIpFailure, isIpLoc
 import { getUserRole, getUserSecurity, setMustChangePassword, userExists } from '../users';
 import { listRoles } from '../rbac';
 import { isIpAllowed, isPasswordExpired, requestIp } from '../security';
+import { logOperation } from '../operationLog';
 import { verifyTotp } from '../totp';
 
 const router = Router();
@@ -54,9 +55,11 @@ router.post(
       }
       const sec = getUserSecurity(ticketUser);
       if (!sec.totpEnabled || !verifyTotp(sec.totpSecret, String(code || ''))) {
+        logOperation(ticketUser, '登录失败', 'auth', ticketUser, `IP: ${ip}; 2FA 验证码错误`, false);
         return res.status(401).json({ error: '2FA 验证码不正确', totpRequired: true, ticket, totpUser: ticketUser });
       }
       const token = createSession(ticketUser, ip, String(req.headers['user-agent'] || ''));
+      logOperation(ticketUser, '登录成功', 'auth', ticketUser, `IP: ${ip}`, true);
       return res.json({ token, username: ticketUser, role: getUserRole(ticketUser), mustChangePassword: false });
     }
 
@@ -68,6 +71,7 @@ router.post(
     // 检查账号（用户名维度）与来源 IP 是否已被锁定
     const remaining = getLockRemaining(user);
     if (isLocked(user) || remaining > 0) {
+      logOperation(user, '登录被拒', 'auth', user, `IP: ${ip}; 账号锁定中`, false);
       return res.status(429).json({
         error: `登录失败次数过多，账号已暂时锁定，请在 ${remaining} 秒后重试`,
         locked: true,
@@ -76,6 +80,7 @@ router.post(
     }
     const ipRemaining = getIpLockRemaining(ip);
     if (isIpLocked(ip) || ipRemaining > 0) {
+      logOperation(user, '登录被拒', 'auth', user, `IP: ${ip}; IP 锁定中`, false);
       return res.status(429).json({
         error: `该 IP 登录失败次数过多，已暂时锁定，请在 ${ipRemaining} 秒后重试`,
         locked: true,
@@ -91,6 +96,7 @@ router.post(
       // 用户不存在：交给下方密码校验返回 401
     }
     if (sec && !isIpAllowed(ip, sec.ipAllowlist)) {
+      logOperation(user, '登录被拒', 'auth', user, `IP: ${ip}; 不在 IP 白名单内`, false);
       return res.status(403).json({ error: '当前 IP 不在允许访问的白名单内' });
     }
 
@@ -99,6 +105,7 @@ router.post(
       // 记录一次失败（用户名 + IP 双维度，可能触发锁定）
       registerFailure(user, userExists(user));
       registerIpFailure(ip);
+      logOperation(user, '登录失败', 'auth', user, `IP: ${ip}; 用户名或密码错误`, false);
       const locked = getLockRemaining(user);
       const ipLocked = getIpLockRemaining(ip);
       const effLocked = Math.max(locked, ipLocked);
@@ -125,6 +132,7 @@ router.post(
     // 登录成功，清除失败记录（含 IP 维度）
     resetFailures(user, ip);
     const token = createSession(user, ip, String(req.headers['user-agent'] || ''));
+    logOperation(user, '登录成功', 'auth', user, `IP: ${ip}; UA: ${String(req.headers['user-agent'] || '').slice(0, 120)}`, true);
     res.json({ token, username: user, role: getUserRole(user), mustChangePassword: mustChange });
   }),
 );

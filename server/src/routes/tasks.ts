@@ -28,6 +28,8 @@ import {
   getRegisteredHandler,
   setTaskRunCallback,
   nextRunTime,
+  tryAcquireTaskRun,
+  releaseTaskRun,
   CronTaskRow,
   TaskRunResult,
 } from '../scheduler';
@@ -729,6 +731,18 @@ export async function dispatchTask(id: string): Promise<TaskRunResult> {
     notFound.statusCode = 404;
     throw notFound;
   }
+  // 重入保护（1.44.0）：与调度器共用执行锁，任务执行中时手动 / Webhook 触发直接拒绝
+  if (!tryAcquireTaskRun(row.id)) {
+    return { ok: false, detail: '任务正在执行中，请等待本次执行结束后再触发' };
+  }
+  try {
+    return await runDispatch(row);
+  } finally {
+    releaseTaskRun(row.id);
+  }
+}
+
+async function runDispatch(row: CronTaskRow): Promise<TaskRunResult> {
   let config: Record<string, any> = {};
   try {
     config = JSON.parse(row.config || '{}');

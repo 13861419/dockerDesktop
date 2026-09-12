@@ -57,6 +57,21 @@ let timer: NodeJS.Timeout | null = null;
 const runningIds = new Set<string>();
 
 /**
+ * 尝试占用任务执行锁（1.44.0）：成功返回 true；任务已在执行中返回 false。
+ * 供调度器 tick 与手动 / Webhook 触发（dispatchTask）共用，防止并发重入。
+ */
+export function tryAcquireTaskRun(id: string): boolean {
+  if (runningIds.has(id)) return false;
+  runningIds.add(id);
+  return true;
+}
+
+/** 释放任务执行锁（与 tryAcquireTaskRun 配对使用） */
+export function releaseTaskRun(id: string): void {
+  runningIds.delete(id);
+}
+
+/**
  * 注册某任务类型的执行函数
  * @param type 任务类型（如 prune / backup / pull）
  * @param fn 执行函数
@@ -217,14 +232,13 @@ async function tick(): Promise<void> {
     )
     .all(now) as unknown as CronTaskRow[];
   for (const row of rows) {
-    if (runningIds.has(row.id)) continue; // 避免并发重入
-    runningIds.add(row.id);
+    if (!tryAcquireTaskRun(row.id)) continue; // 避免并发重入
     try {
       await executeTask(row);
     } catch {
       // task 内部已捕获错误，此处兜底
     } finally {
-      runningIds.delete(row.id);
+      releaseTaskRun(row.id);
     }
   }
 }
