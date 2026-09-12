@@ -3,6 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.56.0] - 2026-09-12
+
+### Added（新增）
+
+- **SSL 证书自动签发（ACME）**：新增「SSL 证书」页（`/certs`），基于 Let's Encrypt 自动签发证书——面板内置零依赖的 ACME v2 客户端（RSA JWS + 手写 DER/PKCS#10 CSR，不引入第三方包），http-01 验证服务监听 80 端口（`ACME_HTTP_PORT` 可覆盖）
+- **站点反代集成**：签发的证书与私钥按 `<主域名>.pem / .key` 落盘于数据目录 `certs/`，站点编辑弹窗可直接从下拉选择已签发证书自动填充路径
+- **自动续期**：每日巡检，剩余有效期不足 30 天自动重新签发；支持手动「续期巡检」与 Let's Encrypt staging 环境切换（`ACME_DIRECTORY_URL`）
+
+### Fixed（修复）
+
+- **E2E 冒烟测试**：登录断言改为先展开「容器管理」侧栏分组再检查链接（手风琴分组默认收起后旧断言失效，该用例自 1.51.0 起在 CI 持续失败）
+
+### Test（测试）
+
+- 新增单测 `acme-jose.test.ts`（b64url / JWK 指纹 / JWS 可验证 / CSR DER 结构 / 密钥持久化 / http-01 挑战服务）
+- 新增 API 契约测试 `api-features-156.test.ts`（列表 / 状态 / 参数校验 / 删除）
+
 ## [1.55.0] - 2026-09-12
 
 ### Added（新增）

@@ -112,6 +112,14 @@ export default function SitesPage() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certStatus, setCertStatus] = useState<CertStatus | null>(null);
   const [savingCert, setSavingCert] = useState(false);
+  // ACME 证书列表（用于证书路径下拉快选）
+  const [acmeCerts, setAcmeCerts] = useState<Array<{ id: string; domains: string[]; certPath: string }>>([]);
+
+  useEffect(() => {
+    get<{ certs: Array<{ id: string; domains: string[]; certPath: string }> }>('/api/certs')
+      .then((d) => setAcmeCerts(d?.certs || []))
+      .catch(() => setAcmeCerts([]));
+  }, []);
 
   /**
    * 加载站点列表
@@ -504,8 +512,25 @@ export default function SitesPage() {
           <span>{t('启用 HTTPS')}</span>
         </label>
         {form.enableHttps && (
-          <Field label={t('证书文件路径')} hint={t('证书 .crt 文件在宿主机上的绝对路径')}>
+          <Field label={t('证书文件路径')} hint={t('证书 .crt 文件在宿主机上的绝对路径；已用「SSL 证书」页签发的证书可直接从下拉选择')}>
             <Input value={form.certPath} placeholder={t('如 C:\\certs\\app.pem')} onChange={(e) => setForm((f) => ({ ...f, certPath: e.target.value }))} />
+            {acmeCerts.length > 0 && (
+              <select
+                className="site-acme-select"
+                value=""
+                onChange={(e) => {
+                  const path = e.target.value;
+                  if (path) setForm((f) => ({ ...f, certPath: path }));
+                }}
+              >
+                <option value="">{t('选择已签发的 ACME 证书…')}</option>
+                {acmeCerts.map((c) => (
+                  <option key={c.id} value={c.certPath}>
+                    {c.id}（{c.domains.join(', ')}）
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
         )}
 

@@ -48,6 +48,10 @@ const FAQ_ITEMS: FaqItem[] = [
     a: t('应用商店「应用源」（管理员）支持把任意 git 仓库作为应用来源：仓库根目录放置 apps.json 清单即可。同步失败时错误会显示在条目上（检查 URL / 分支 / 网络连通性）；id 不合法或缺镜像的条目会被自动跳过；禁用应用源会临时隐藏其应用但已安装实例不受影响。'),
   },
   {
+    q: t('SSL 证书签发失败或如何自动续期？'),
+    a: t('「SSL 证书」页（管理员）基于 Let’s Encrypt http-01 验证：需要域名解析到面板主机且 80 端口可达（被占用时页面顶部会提示）。签发后证书写入数据目录 certs/ 下并可在站点反代中直接选择；每日自动巡检，剩余不足 30 天自动续期，也可手动点「续期巡检」。测试环境可用 ACME_DIRECTORY_URL 切换到 staging。'),
+  },
+  {
     q: t('高危操作审批流如何开启？'),
     a: t('「设置 → 系统参数 → 安全」中开启「高危操作审批流」。开启后非管理员的删除容器/卷、停止编排、批量删镜像、清理类等高危操作会进入「审批中心」待审批，管理员批准后系统执行；普通用户也可在审批中心主动提交申请。若在「角色管理」中为角色授予了对应操作权限（如「删除容器」），该角色可直接执行、无需审批。'),
   },
@@ -150,6 +154,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell') },
   { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；跨引擎批量清理（容器/镜像/卷/网络，按年龄过滤，支持预览，1.41.0），可建跨引擎清理计划任务（1.42.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
+{ path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01）；证书文件可直接用于站点反代（1.56.0）') },
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份；支持云端上传与从云端拉回恢复（1.43.0）；备份覆盖率体检（哪些对象没备份一目了然，1.48.0）') },
   { path: '/databases', name: t('数据库'), desc: t('MySQL / PostgreSQL / Redis 可视化，表数据一键导出 CSV（1.46.0）；SQL 查询历史与收藏（1.48.0）') },

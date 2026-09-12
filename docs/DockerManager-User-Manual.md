@@ -786,6 +786,20 @@ Menu: **Sites (proxy / port mapping)** (`/sites`, admin only)
 
 ![Sites](../images/sites.png)
 
+### 22.1 SSL Certificates (`/certs`, 1.56.0)
+
+Menu: **SSL Certificates** (`/certs`, admin only)
+
+Issue and auto-renew certificates via **Let's Encrypt** (ACME http-01 validation, zero extra dependencies):
+
+1. Click **Issue Certificate**, enter domains (comma-separated; the first is the primary; wildcards are not supported).
+2. The panel temporarily answers Let's Encrypt http-01 validation on local **port 80** (override with the `ACME_HTTP_PORT` env var); the whole flow takes about 10-30 seconds.
+3. Once issued, the certificate and key are written to the panel data dir at `certs/<primary>/<primary>.pem` and `.key` (naming matches the site proxy cert-path derivation), and appear in the list.
+4. **Sites integration**: in the site editor, after enabling HTTPS, pick an issued ACME certificate from the dropdown to fill the paths automatically.
+5. **Auto renewal**: a daily check re-issues certificates with less than 30 days left; use "Renewal Check" to trigger manually.
+6. **Prerequisites**: the domain must resolve to the panel host with port 80 reachable (a hint is shown at the top when the port is occupied; http-01 does not fit intranet-only domains).
+7. Switch to the Let's Encrypt **staging** environment (set `ACME_DIRECTORY_URL` to the staging directory) for testing to avoid production rate limits.
+
 ---
 
 ## 23. Firewall 🔒

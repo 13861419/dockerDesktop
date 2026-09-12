@@ -608,6 +608,18 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_appstore_source_apps_source ON appstore_source_apps(source_id);
 
+    -- SSL 证书表：ACME 自动签发的证书（私钥仅存本地，绝不上传）
+    CREATE TABLE IF NOT EXISTS ssl_certs (
+      id          TEXT PRIMARY KEY,  -- 主域名
+      domains     TEXT NOT NULL,     -- JSON 数组（SAN 全量）
+      cert_pem    TEXT NOT NULL,     -- 证书链 PEM
+      key_pem     TEXT NOT NULL,     -- 私钥 PEM
+      source      TEXT NOT NULL DEFAULT 'acme',
+      issued_at   INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL,
+      created_at  INTEGER NOT NULL
+    );
+
     -- Compose 模板库表：用户保存的常用 Compose 配置（YAML 文本），供新建项目时快速复用
     CREATE TABLE IF NOT EXISTS compose_templates (
       id          TEXT PRIMARY KEY,

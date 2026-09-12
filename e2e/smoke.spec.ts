@@ -23,8 +23,9 @@ test('登录页加载并成功登录跳转总览', async ({ page }) => {
   await page.goto('/login');
   await expect(page.getByText('登录 Docker 管理面板')).toBeVisible();
   await login(page);
-  // 总览页已渲染（侧边栏出现「容器」导航）
-  await expect(page.getByRole('link', { name: /容器/ }).first()).toBeVisible();
+  // 总览页已渲染（展开「容器管理」分组后出现「容器」导航）
+  await page.getByRole('button', { name: /容器管理/ }).click();
+  await expect(page.getByRole('link', { name: /^容器$/ })).toBeVisible();
 });
 
 test('容器页：列表与搜索框可见', async ({ page }) => {

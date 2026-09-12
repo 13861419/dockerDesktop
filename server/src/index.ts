@@ -22,6 +22,8 @@ import { startApprovalReminder } from './approvals';
 import { initStorage, closeDb } from './storage';
 import { ensureInitialUser } from './users';
 import { ensureBuiltinRoles } from './rbac';
+import { startChallengeServer } from './acme/challengeServer';
+import { startCertRenewal } from './acme/renewal';
 
 const PORT = Number(process.env.PORT) || 9528;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -105,6 +107,17 @@ const server = app.listen(PORT, HOST, () => {
       console.error('计划任务调度器启动失败:', err);
     }
   }, 800);
+
+  // 启动 ACME http-01 挑战服务（1.56.0，尽力而为：端口占用不阻塞启动）
+  setTimeout(async () => {
+    try {
+      const r = await startChallengeServer();
+      if (!r.ok) console.log(`ACME 挑战服务未启动：${r.error}（签发证书时再提示）`);
+      startCertRenewal();
+    } catch (err) {
+      console.error('ACME 服务启动失败:', err);
+    }
+  }, 900);
 
   // 启动资源告警服务（异步，依赖监控采集器就绪，稍晚启动）
   setTimeout(() => {
