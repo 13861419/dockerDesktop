@@ -208,6 +208,13 @@ export default function ComposePage() {
   const [editYamlErr, setEditYamlErr] = useState<{ message: string; line: number | null }>({ message: '', line: null });
   const [editLoading, setEditLoading] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  // 编辑弹窗全屏（1.52.0）
+  const [editFull, setEditFull] = useState(false);
+  // compose 文件编辑历史（1.52.0）
+  const [histOpen, setHistOpen] = useState(false);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histItems, setHistItems] = useState<Array<{ id: number; username: string; createdAt: number }>>([]);
+  const [histLoadingId, setHistLoadingId] = useState<number | null>(null);
 
   // 用户保存的 Compose 模板（来自 /api/compose-templates，用于"从模板新建"下拉）
   const [userTemplates, setUserTemplates] = useState<ComposeTemplate[]>([]);
@@ -846,10 +853,46 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   /** 关闭编辑弹窗 */
   const closeEdit = useCallback(() => {
     setEditOpen(false);
+    setEditFull(false);
     setEditName('');
     setEditContent('');
     setEditYamlErr({ message: '', line: null });
   }, []);
+
+  /** 打开 compose 文件编辑历史（1.52.0） */
+  const openHistory = useCallback(async () => {
+    if (!editName) return;
+    setHistOpen(true);
+    setHistLoading(true);
+    try {
+      const data = await get<{ items: Array<{ id: number; username: string; createdAt: number }> }>(
+        projectUrl(editName) + '/history'
+      );
+      setHistItems(data?.items || []);
+    } catch {
+      setHistItems([]);
+    } finally {
+      setHistLoading(false);
+    }
+  }, [editName]);
+
+  /** 载入某个历史版本到编辑器（保存后生效） */
+  const loadHistoryVersion = useCallback(
+    async (id: number) => {
+      setHistLoadingId(id);
+      try {
+        const data = await get<{ content: string }>(projectUrl(editName) + '/history/' + id + '/content');
+        setEditContent(data?.content || '');
+        setHistOpen(false);
+        showToast(t('已载入历史版本，保存后生效'), 'success');
+      } catch (e: any) {
+        showToast(e?.message || t('载入历史版本失败'), 'error');
+      } finally {
+        setHistLoadingId(null);
+      }
+    },
+    [editName, showToast]
+  );
 
   /** 执行停止（down）操作，带删卷选择 */
   const handleStopConfirm = useCallback(async () => {
@@ -1258,8 +1301,15 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         title={t('编辑 {{editName}} - docker-compose.yml', { editName })}
         onClose={closeEdit}
         width={720}
+        fullscreen={editFull}
+        onToggleFullscreen={() => setEditFull((f) => !f)}
         footer={
           <>
+            {!editLoading && (
+              <Button variant="ghost" onClick={openHistory} disabled={savingEdit}>
+                {t('历史版本')}
+              </Button>
+            )}
             {!editLoading && (
               <Button
                 variant="secondary"
@@ -1288,11 +1338,48 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                 setEditContent(v);
                 if (editYamlErr.message) setEditYamlErr({ message: '', line: null });
               }}
-              rows={18}
+              rows={editFull ? 40 : 18}
               errorLine={editYamlErr.line}
               errorMessage={editYamlErr.message || undefined}
             />
           </Field>
+        )}
+      </Modal>
+
+      {/* 历史版本弹窗（1.52.0） */}
+      <Modal
+        open={histOpen}
+        title={t('历史版本 - {{editName}}', { editName })}
+        onClose={() => setHistOpen(false)}
+        width={520}
+      >
+        {histLoading ? (
+          <SkeletonRows rows={4} />
+        ) : histItems.length === 0 ? (
+          <Empty title={t('暂无历史版本记录')} description={t('每次保存前的上一版内容会自动记录（保留最近 20 条），可随时载入回退')} />
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{t('保存时间')}</th>
+                <th>{t('保存人')}</th>
+                <th style={{ width: 90 }}>{t('操作')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {histItems.map((h) => (
+                <tr key={h.id}>
+                  <td className="mono">{new Date(h.createdAt).toLocaleString()}</td>
+                  <td>{h.username || '—'}</td>
+                  <td>
+                    <Button variant="ghost" size="sm" onClick={() => loadHistoryVersion(h.id)} loading={histLoadingId === h.id}>
+                      {t('载入')}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Modal>
 

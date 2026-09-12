@@ -15,6 +15,7 @@ import { requireAdmin, requireAuth } from '../auth';
 import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
+import { getDb } from '../storage';
 import { inferCompose, type InferInput } from '../composeInfer';
 import { parseRunCommand } from '../run2compose';
 
@@ -223,6 +224,27 @@ async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
     // docker 不可用时按未找到处理
   }
   return null;
+}
+
+/**
+ * 保存前记录 compose 文件的上一版内容（1.52.0），用于历史回退
+ * 内容未变不记录；每个文件最多保留 20 条；记录失败不阻断保存
+ */
+function recordComposeHistory(composeFile: string, projectName: string, username: string, nextContent: string): void {
+  try {
+    if (!fs.existsSync(composeFile)) return;
+    const old = fs.readFileSync(composeFile, 'utf8');
+    if (old === nextContent) return;
+    const d = getDb();
+    d.prepare(
+      'INSERT INTO compose_file_history (project_name, compose_file, content, username, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(projectName, composeFile, old, String(username || ''), Date.now());
+    d.prepare(
+      'DELETE FROM compose_file_history WHERE compose_file = ? AND id NOT IN (SELECT id FROM compose_file_history WHERE compose_file = ? ORDER BY created_at DESC, id DESC LIMIT 20)',
+    ).run(composeFile, composeFile);
+  } catch {
+    // 忽略记录失败
+  }
 }
 
 // ============ 项目列表 ============
@@ -1170,6 +1192,7 @@ router.post(
       const externals = await discoverExternalProjects();
       const ext = externals.get(safeName);
       if (ext && ext.composeFile) {
+        recordComposeHistory(ext.composeFile, safeName, res.locals.username, content);
         fs.writeFileSync(ext.composeFile, content, 'utf8');
         logOperation(res.locals.username, '保存 Compose（外部）', 'compose', safeName, `文件: ${ext.composeFile}`);
         return res.status(201).json({ name: safeName, path: ext.dir, composeFile: ext.composeFile, external: true });
@@ -1180,6 +1203,7 @@ router.post(
     const dir = path.join(COMPOSE_ROOT, safeName);
     ensureDir(dir);
     const targetFile = fileName && COMPOSE_FILES.includes(fileName) ? fileName : 'docker-compose.yml';
+    recordComposeHistory(path.join(dir, targetFile), safeName, res.locals.username, content);
     fs.writeFileSync(path.join(dir, targetFile), content, 'utf8');
     logOperation(res.locals.username, '保存 Compose', 'compose', safeName, `文件: ${targetFile}`);
     res.status(201).json({ name: safeName, path: dir, composeFile: targetFile });
@@ -1223,6 +1247,51 @@ router.get(
     const composeFile = projCtx.composeFile;
     const content = fs.readFileSync(composeFile, 'utf8');
     res.json({ name: req.params.name, composeFile, content });
+  }),
+);
+
+/**
+ * GET /api/compose/:name/history
+ * 获取 compose 文件的编辑历史列表（最近优先，最多 20 条）
+ */
+router.get(
+  '/:name/history',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await resolveProjectCtx(req.params.name);
+    if (!ctx) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const d = getDb();
+    const rows = d
+      .prepare('SELECT id, username, created_at FROM compose_file_history WHERE compose_file = ? ORDER BY id DESC LIMIT 20')
+      .all(ctx.composeFile) as unknown as Array<{ id: number; username: string; created_at: number }>;
+    res.json({ items: rows.map((r) => ({ id: r.id, username: r.username, createdAt: Number(r.created_at) })) });
+  }),
+);
+
+/**
+ * GET /api/compose/:name/history/:id/content
+ * 读取某一历史版本的文件内容（前端载入编辑器，保存后生效）
+ */
+router.get(
+  '/:name/history/:id/content',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await resolveProjectCtx(req.params.name);
+    if (!ctx) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const d = getDb();
+    const row = d
+      .prepare('SELECT content, username, created_at FROM compose_file_history WHERE id = ? AND compose_file = ?')
+      .get(Number(req.params.id), ctx.composeFile) as
+      | { content: string; username: string; created_at: number }
+      | undefined;
+    if (!row) {
+      return res.status(404).json({ error: '历史版本不存在' });
+    }
+    res.json({ content: row.content, username: row.username, createdAt: Number(row.created_at) });
   }),
 );
 

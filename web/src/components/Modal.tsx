@@ -14,13 +14,26 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   width?: number;
+  /** 全屏模式（1.51.0）：弹窗占满视口，适合编辑大文件 */
+  fullscreen?: boolean;
+  /** 传入时在标题栏渲染全屏切换按钮 */
+  onToggleFullscreen?: () => void;
 }
 
 /**
  * 模态框：点击遮罩或关闭按钮可关闭
  * @param param0 属性
  */
-export default function Modal({ open, title, onClose, children, footer, width = 560 }: ModalProps) {
+export default function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  footer,
+  width = 560,
+  fullscreen = false,
+  onToggleFullscreen,
+}: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   // 用 ref 持有最新 onClose，避免内联函数导致 effect 频繁重跑
@@ -60,8 +73,8 @@ export default function Modal({ open, title, onClose, children, footer, width = 
     <div className="modal-overlay" onClick={onClose}>
       <div
         ref={panelRef}
-        className="modal"
-        style={{ width: Math.min(width, window.innerWidth - 32) }}
+        className={`modal${fullscreen ? ' modal--fullscreen' : ''}`}
+        style={fullscreen ? undefined : { width: Math.min(width, window.innerWidth - 32) }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -72,11 +85,31 @@ export default function Modal({ open, title, onClose, children, footer, width = 
           <div className="modal__title" id={titleId.current}>
             {title}
           </div>
-          <button className="modal__close" onClick={onClose} aria-label="关闭">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="modal__header-actions">
+            {onToggleFullscreen && (
+              <button
+                className="modal__close"
+                onClick={onToggleFullscreen}
+                aria-label={fullscreen ? '还原' : '放大'}
+                title={fullscreen ? '还原' : '放大'}
+              >
+                {fullscreen ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 3H3v6M15 21h6v-6M3 15v6h6M21 9V3h-6" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 9h6V3M21 15h-6v6M15 3h6v6M9 21H3v-6" />
+                  </svg>
+                )}
+              </button>
+            )}
+            <button className="modal__close" onClick={onClose} aria-label="关闭">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="modal__body">{children}</div>
         {footer && <div className="modal__footer">{footer}</div>}

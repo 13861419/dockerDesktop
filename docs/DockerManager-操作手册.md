@@ -556,6 +556,7 @@ journalctl -u docker-manager -f
 菜单：**Compose**（`/compose`）
 
 - 列表展示 Compose 项目名称、状态、Compose 文件与路径。
+- **编辑器放大与版本历史（1.52.0）**：编辑弹窗标题栏可一键放大为全屏（编辑区约 40 行，适合大文件）；每次保存前自动记录上一版内容（每文件保留最近 20 条），编辑弹窗「历史版本」按钮可查看时间与操作人并一键载入到编辑器，保存后生效——写错随时退回。
 - **外部项目纳管（1.51.0）**：自动发现宿主机上非面板创建的 Compose 项目（从容器 `com.docker.compose.project` 标签反查），来源标注「外部」并附运行数（运行中/总数）；外部项目同样支持编辑 compose 文件（保存直接覆写原文件）并 `up -d` 生效，全部操作（启动 / 停止 / 重启 / 拉取 / 构建 / 服务级操作 / 日志 / 资源 / 漂移检测）通用；**删除外部项目仅下线容器并保留 compose 文件**，不会误删 1Panel 等第三方工具管理的项目。
 - **新建 / 编辑**：填写或多行粘贴 `docker-compose.yml` 内容。
 - **从 docker run 导入（1.29.1）**：新建项目弹窗内点击「从 docker run 导入」，粘贴完整 `docker run` 命令即可自动转换为 compose service YAML 并填入编辑器。支持映射：`--name` / `-p` 端口 / `-v` 与 `--mount` 卷（bind、命名卷自动归集顶层声明、匿名卷）/ `-e` 环境变量 / `--restart` / 自定义网络 / `--label` / `--user` / `--workdir` / `--privileged` / `--cap-add` / `--cap-drop` / `--device` / `--cpus` / `-m --memory` / `--entrypoint` / `--health-*`，镜像后的命令参数映射为 `command`；`--gpus`、`--env-file`、host 网络与未知选项不会静默丢弃，而是逐条告警提示手动补充。

@@ -5,6 +5,13 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  "暂无历史版本记录": "No versions yet",
+  "历史版本": "Version history",
+  "历史版本 - {{editName}}": "Version history - {{editName}}",
+  "载入": "Load",
+  "已载入历史版本，保存后生效": "Version loaded — click Save to apply",
+  "载入历史版本失败": "Failed to load version",
+  "每次保存前的上一版内容会自动记录（保留最近 20 条），可随时载入回退": "The previous content is recorded on each save (last 20 kept); load any version to roll back",
   "外部": "External",
   "外部项目已下线容器，compose 文件已保留": "External project containers removed; the compose file is kept",
   "备份后上传云端": "Upload to cloud after backup",

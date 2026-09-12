@@ -985,6 +985,21 @@ function createTables(): void {
   } catch {
     // 表已存在则忽略
   }
+  // 迁移：compose 文件编辑历史（1.52.0）
+  try {
+    d.exec(
+      'CREATE TABLE IF NOT EXISTS compose_file_history (' +
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+        'project_name TEXT NOT NULL, ' +
+        'compose_file TEXT NOT NULL, ' +
+        'content TEXT NOT NULL, ' +
+        'username TEXT, ' +
+        'created_at INTEGER NOT NULL)',
+    );
+    d.exec('CREATE INDEX IF NOT EXISTS idx_cfh_file ON compose_file_history (compose_file, created_at)');
+  } catch {
+    // 表已存在则忽略
+  }
   // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');
