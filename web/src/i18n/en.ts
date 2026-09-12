@@ -5,6 +5,11 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  '端口冲突，未提交安装：{{v1}}，请修改端口后重试': 'Port conflict, install not submitted: {{v1}}. Change the port and retry',
+  '重跑失败': 'Rerun failed',
+  '重跑仍失败：{{v1}}': 'Rerun failed again: {{v1}}',
+  '重跑完成': 'Rerun finished',
+  '重跑': 'Rerun',
   '40': '有,Yes',
   '39': '定时任务,Scheduled task',
   '38': '最近备份,Last backup',

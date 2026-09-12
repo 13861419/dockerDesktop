@@ -22,8 +22,47 @@ import { listRoles } from '../rbac';
 import { isIpAllowed, isPasswordExpired, requestIp } from '../security';
 import { logOperation } from '../operationLog';
 import { verifyTotp } from '../totp';
+import { getSetting } from '../settings';
+import { pushToTargets } from '../alerting';
 
 const router = Router();
+
+/** 登录提醒节流：同一 user+IP 60 秒内只推送一条（防爆破刷屏） */
+const loginNotifyAt = new Map<string, number>();
+
+/**
+ * 登录提醒（1.49.0）：开关 security.loginNotify（默认关）开启时，
+ * 把登录成功（recovery 路由）/ 登录失败（warn 路由）推送到通知渠道；
+ * 同一 user+IP 组合 60 秒内最多推送一条，防暴力尝试刷屏。
+ * @param level 级别（warn=失败/被拒，recovery=成功）
+ * @param text 推送文案
+ * @param throttleKey 节流键（失败提醒用 user+ip；成功不节流传 null）
+ */
+function notifyLogin(level: 'warn' | 'recovery', text: string, throttleKey: string | null): void {
+  try {
+    if (getSetting<boolean>('security.loginNotify') !== true) return;
+    if (throttleKey) {
+      const now = Date.now();
+      const last = loginNotifyAt.get(throttleKey) || 0;
+      if (now - last < 60 * 1000) return;
+      loginNotifyAt.set(throttleKey, now);
+      if (loginNotifyAt.size > 500) {
+        for (const [k, v] of loginNotifyAt) {
+          if (now - v > 10 * 60 * 1000) loginNotifyAt.delete(k);
+        }
+      }
+    }
+    void pushToTargets(level, text).catch(() => {});
+  } catch {
+    // 提醒失败不影响登录主流程
+  }
+}
+
+/** 组装带时间的登录提醒文案 */
+function loginText(event: string, user: string, ip: string, extra = ''): string {
+  const time = new Date().toLocaleString('zh-CN', { hour12: false });
+  return `Docker 面板【登录提醒】${event}：账号 ${user}，IP ${ip}${extra ? '，' + extra : ''}，时间 ${time}`;
+}
 
 /**
  * 统一兜底错误处理
@@ -56,10 +95,12 @@ router.post(
       const sec = getUserSecurity(ticketUser);
       if (!sec.totpEnabled || !verifyTotp(sec.totpSecret, String(code || ''))) {
         logOperation(ticketUser, '登录失败', 'auth', ticketUser, `IP: ${ip}; 2FA 验证码错误`, false);
+        notifyLogin('warn', loginText('登录失败', ticketUser, ip, '2FA 验证码错误'), `2fa-fail:${ticketUser}:${ip}`);
         return res.status(401).json({ error: '2FA 验证码不正确', totpRequired: true, ticket, totpUser: ticketUser });
       }
       const token = createSession(ticketUser, ip, String(req.headers['user-agent'] || ''));
       logOperation(ticketUser, '登录成功', 'auth', ticketUser, `IP: ${ip}`, true);
+      notifyLogin('recovery', loginText('登录成功', ticketUser, ip), null);
       return res.json({ token, username: ticketUser, role: getUserRole(ticketUser), mustChangePassword: false });
     }
 
@@ -106,6 +147,7 @@ router.post(
       registerFailure(user, userExists(user));
       registerIpFailure(ip);
       logOperation(user, '登录失败', 'auth', user, `IP: ${ip}; 用户名或密码错误`, false);
+      notifyLogin('warn', loginText('登录失败', user, ip, '用户名或密码错误'), `fail:${user}:${ip}`);
       const locked = getLockRemaining(user);
       const ipLocked = getIpLockRemaining(ip);
       const effLocked = Math.max(locked, ipLocked);
@@ -133,6 +175,7 @@ router.post(
     resetFailures(user, ip);
     const token = createSession(user, ip, String(req.headers['user-agent'] || ''));
     logOperation(user, '登录成功', 'auth', user, `IP: ${ip}; UA: ${String(req.headers['user-agent'] || '').slice(0, 120)}`, true);
+    notifyLogin('recovery', loginText('登录成功', user, ip), null);
     res.json({ token, username: user, role: getUserRole(user), mustChangePassword: mustChange });
   }),
 );

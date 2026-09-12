@@ -320,6 +320,8 @@ To back up, copy the entire data directory.
 > API rate limiting (1.45.0): all write endpoints are rate-limited per source IP with a sliding window — 600 requests/min with credentials, 60/min anonymous, 30/min for the anonymous webhook entry. Thresholds are tunable via environment variables (API_AUTH_RATE_LIMIT / API_ANON_RATE_LIMIT / WEBHOOK_RATE_LIMIT / RATE_LIMIT_WINDOW_MS; 0 disables a tier).
 >
 > Login auditing (1.44.0): successful logins, failures and rejections (account lock, IP lock, allowlist denial) are written to the operation log with source IP and User-Agent for full traceability.
+>
+> Login notification (1.49.0): with "Security → Login notification" enabled in Settings, successful and failed logins (wrong password / wrong 2FA code) are pushed to the enabled notification channels with account / IP / time (successes via the recovery route, failures via warn); at most one push per account+IP within 60 seconds to avoid flooding during brute-force attempts.
 
 ---
 
@@ -564,6 +566,7 @@ Menu: **App Store** (`/appstore`)
 4. Click **Install** to deploy with one click; installed instances show their status.
 5. Stop / uninstall installed instances as needed.
 6. **Upgrade version comparison (1.46.0)**: when an installed Compose suite version differs from the latest store version, the card shows an "upgrade available" badge (hover to see current → target), so upgrades are informed decisions.
+7. **Port conflict precheck (1.49.0)**: before submitting an install, host ports are checked for occupancy; conflicts block the install with the holder listed — change the port and retry.
 
 ![App Store](../images/appstore.png)
 
@@ -577,6 +580,7 @@ Menu: **Scheduled Tasks** (`/tasks`)
 - **New task**: choose task type, schedule (cron / interval), target container, and action.
 - Enable / pause, run now, delete, and edit tasks.
 - **Run logs** show the result and failure reason of each run.
+- **Rerun failed runs (1.49.0)**: failed entries in the run-history dialog get a "Rerun" button that executes the task immediately with its existing config — no need to wait for the next schedule.
 - **Run-history retention (1.43.0)**: task run logs are auto-purged daily per the "Task run-history retention (days)" setting (default 90; 0 = keep forever), preventing unbounded growth.
 - **Re-entry protection (1.44.0)**: while a task is running, manual / Webhook triggers return "task is already running" — the lock is shared with the scheduler so long tasks cannot run concurrently.
 - **Cross-engine prune (crossPrune, 1.42.0)**: on schedule, prune images / containers / volumes / networks across all (or selected) registered engines; one engine failing does not block the others. Same semantics as the cross-engine batch cleanup on the Engines page.
@@ -757,6 +761,7 @@ Menu: **Notifications** (`/notifications`, admin only)
 - **Push aggregation (anti-storm)**: system parameter `alerts.pushAggWindowSec` (default 60s, 0 = off). Multiple warn/danger alerts within the window are merged into a single digest (up to 5 original messages plus a total count), and different levels are never mixed into one digest; **recovery notices are always pushed immediately**. Aggregated alert records are still stored individually with push status "aggregated"; aggregated pushes do not trigger AI diagnosis.
 - **Channel delivery stats**: the "Delivery stats" card aggregates the last 7 days of pushes per channel — success / failure counts, delivery rate, last success / failure times — plus a recent-failure list with causes, making it easy to spot misconfigured channels. It covers every push path: alerts / recovery / self-heal / approvals / AI diagnosis / weekly reports / test pushes.
 - **Memory-exhaustion forecast (v1.35.0)**: same framework as the disk forecast — a linear regression over the last 24 hours of memory growth; an alert fires when the predicted days to exhaustion reach the threshold (system parameter "Memory-exhaustion forecast threshold (days)", default 7, 0 = off), deduplicated per 24 hours.
+- **Emergency disk cleanup (1.49.0)**: when the disk-full forecast fires, an image cleanup can run automatically (dangling + keep the latest N per repository, unused images only). Toggle "Notifications → Emergency disk cleanup" in Settings (off by default) with a per-repo keep count (default 3); 24h cooldown, results are logged and pushed.
 - **Forecast records (v1.35.1)**: forecast alerts are persisted in the alert records center (types "Disk forecast" / "Memory forecast") sharing the same push aggregation and delivery-status pipeline, so past predictions stay reviewable on the notifications page.
 - **On-call channel for silent windows (v1.34.0)**: while an alert rule is inside its silent window, its digest can be forwarded to a designated on-call channel (system parameter "Silent-window on-call channel"). Silence no longer means blind — the on-call gets a fallback notice at most once per rule per 30 minutes.
 

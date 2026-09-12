@@ -259,6 +259,28 @@ export default function AppStorePage() {
               target: v.target.trim(),
               readonly: v.readonly,
             }));
+      // 端口冲突预检（1.49.0）：host 端口在提交前检测，冲突直接拦截（预检接口异常时不阻断）
+      const hostPorts = ports
+        .filter((p) => p.host)
+        .map((p) => ({ port: Number(p.host), protocol: p.protocol === 'udp' ? 'udp' : 'tcp' }));
+      if (hostPorts.length) {
+        try {
+          const r = await post<{
+            results: Array<{ port: number; busy: boolean; containerOccupied: boolean; containerNames: string[]; hostListening: boolean }>;
+          }>('/api/containers/port-check', { ports: hostPorts });
+          const busy = (r?.results || []).filter((x) => x.busy);
+          if (busy.length) {
+            const desc = busy
+              .map((b) => `端口 ${b.port}${b.containerOccupied ? `（容器 ${b.containerNames.join(', ')}）` : '（宿主机监听中）'}`)
+              .join('、');
+            showToast(t('端口冲突，未提交安装：{{v1}}，请修改端口后重试', { v1: desc }), 'error');
+            setInstallingId(null);
+            return;
+          }
+        } catch {
+          // 预检失败不阻断安装（安装时 Docker 仍会做最终校验）
+        }
+      }
       try {
         await post(`/api/appstore/${app.id}/install`, {
           env: installEnv,

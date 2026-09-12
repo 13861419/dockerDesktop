@@ -654,6 +654,23 @@ export default function TasksPage() {
     [showToast]
   );
 
+  /**
+   * 一键重跑：对失败的历史记录复用任务配置立即执行一次
+   * @param item 失败的历史条目
+   */
+  const handleRerun = useCallback(
+    async (item: CronTaskLogItem) => {
+      try {
+        const r = await post<{ ok: boolean; detail: string }>(`/api/tasks/${encodeURIComponent(item.taskId)}/run`);
+        showToast(r?.ok ? t('重跑完成') : t('重跑仍失败：{{v1}}', { v1: r?.detail || '' }), r?.ok ? 'success' : 'error');
+        if (logsTarget) loadLogs(logsTarget, logsPage);
+      } catch (e: any) {
+        showToast(e?.message || t('重跑失败'), 'error');
+      }
+    },
+    [logsTarget, logsPage, loadLogs, showToast]
+  );
+
   /** 类型选项 → 中文标签 */
   const typeLabel = useMemo(() => {
     const m: Record<string, string> = {};
@@ -1023,6 +1040,7 @@ export default function TasksPage() {
                     <th>{t('执行时间')}</th>
                     <th>{t('结果')}</th>
                     <th>{t('详情')}</th>
+                    <th style={{ width: 70 }}>{t('操作')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1038,6 +1056,13 @@ export default function TasksPage() {
                       </td>
                       <td className="tasks__logs-detail" title={item.detail || ''}>
                         {item.detail || '-'}
+                      </td>
+                      <td>
+                        {item.status !== 0 && canManage && (
+                          <button className="tasks__page-btn" onClick={() => handleRerun(item)}>
+                            {t('重跑')}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

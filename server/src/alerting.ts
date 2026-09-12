@@ -18,6 +18,8 @@ import { getCurrentMonitor } from './docker/monitor';
 import { getDockerClient } from './docker/client';
 import { listChannels, sendAlert, type ChannelInfo } from './notify';
 import { createPushAggregator } from './pushAggregator';
+import { collectGcImages, planGc, bytesText } from './gc';
+import { logOperation } from './operationLog';
 
 /** 资源类型（含容器级告警的监控类型，用于告警记录 type 字段） */
 export type AlertType = 'cpu' | 'mem' | 'disk' | 'task' | 'exited' | 'health' | 'port' | 'gpu' | 'net' | 'k8s' | 'ctnRes';
@@ -657,8 +659,56 @@ export async function checkDiskForecast(): Promise<void> {
       100
     ).toFixed(1)}%，24h 增速 ${(slopePerHour * 24 / 1024 / 1024 / 1024).toFixed(2)} GB/天），请及时扩容或清理。`;
     await emitForecastAlert('disk', msg);
+    await maybeRunDiskAutoGc(daysToFull);
   } catch {
     // 预测失败不影响告警主流程
+  }
+}
+
+// ============ 磁盘应急自动清理（1.49.0） ============
+
+/** 上次应急清理时间（模块级冷却，进程重启后重置） */
+let lastDiskAutoGcAt = 0;
+
+/**
+ * 磁盘应急自动清理：磁盘写满预测触发时，若开关（alerts.diskAutoGc，默认关）已开启
+ * 且距上次执行超过 24 小时（冷却期），自动执行一次镜像 GC（悬空清理 + 每仓库保留
+ * alerts.diskAutoGcKeep 个，默认 3），结果留痕（操作日志 + 预测告警记录 + 推送）。
+ * 仅清理未被任何容器引用的镜像，业务容器不受影响。
+ * @param daysToFull 预计写满天数（用于推送文案）
+ */
+export async function maybeRunDiskAutoGc(daysToFull: number): Promise<void> {
+  try {
+    if (getSetting<boolean>('alerts.diskAutoGc') !== true) return;
+    const now = Date.now();
+    if (now - lastDiskAutoGcAt < 24 * 60 * 60 * 1000) return;
+    lastDiskAutoGcAt = now;
+    const docker = await getDockerClient();
+    const images = await collectGcImages(docker);
+    const keep = Math.floor(Number(getSetting<number>('alerts.diskAutoGcKeep') ?? 3));
+    const plan = planGc(images, {
+      keepPerRepo: keep > 0 ? keep : undefined,
+      pruneDangling: true,
+    });
+    let deleted = 0;
+    let bytes = 0;
+    for (const cand of plan.candidates) {
+      try {
+        await docker.getImage(cand.id).remove();
+        deleted++;
+        bytes += cand.size || 0;
+      } catch {
+        // 单镜像删除失败跳过
+      }
+    }
+    const detail = `候选 ${plan.candidates.length} 个，实际删除 ${deleted} 个，释放 ${bytesText(bytes)}`;
+    logOperation('system', '磁盘应急自动清理', 'system', 'imageGc', detail, true);
+    await emitForecastAlert(
+      'disk',
+      `Docker 面板【应急清理】磁盘预计 ${daysToFull.toFixed(1)} 天后写满，已自动执行镜像清理：${detail}`,
+    );
+  } catch {
+    // 应急清理失败不影响预测告警主流程
   }
 }
 
