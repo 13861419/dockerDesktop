@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.51.0] - 2026-09-12
+
+### Added（新增）
+
+- **外部 Compose 项目纳管**：Compose 页自动发现宿主机上所有 Compose 项目（从容器 `com.docker.compose.project` 标签反查工作目录与 compose 文件路径），与面板自建项目合并展示并标注来源（面板创建 / 外部）；外部项目同样支持查看与编辑 compose 文件（保存直接覆写原文件）、up / down / 重启 / 拉取 / 构建 / 服务级操作 / 日志 / 资源统计 / 漂移检测；删除外部项目仅下线容器并保留文件，避免误删第三方工具（如 1Panel）管理的项目
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-151.test.ts`（2 例：外部项目发现-读取-编辑全流程、不存在项目 404）
+
 ## [1.50.0] - 2026-09-12
 
 ### Added（新增）

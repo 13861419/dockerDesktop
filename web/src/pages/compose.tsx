@@ -773,8 +773,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     }
     setDeleting(true);
     try {
-      await del(projectUrl(deleteTarget.name), { volumes: deleteVolumes });
-      showToast(t('项目删除成功'));
+      const r = await del<{ ok: boolean; external?: boolean }>(projectUrl(deleteTarget.name), { volumes: deleteVolumes });
+      showToast(r?.external ? t('外部项目已下线容器，compose 文件已保留') : t('项目删除成功'));
       setDeleteTarget(null);
       setDeleteVolumes(false);
       setRefreshKey((k) => k + 1);
@@ -980,10 +980,15 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               {projects.map((proj) => (
                 <tr key={proj.name}>
                   <td className="col-name">
-                    <div className="name-main" title={proj.name}>
+                    <div className="name-main" title={proj.source === 'external' ? proj.path : proj.name}>
                       {proj.name}
                     </div>
-                    {proj.hasCompose ? (
+                    {proj.source === 'external' ? (
+                      <div className="name-sub badge badge--muted" title={proj.path}>
+                        {t('外部')}
+                        {typeof proj.running === 'number' ? ` · ${proj.running}/${proj.total ?? '-'}` : ''}
+                      </div>
+                    ) : proj.hasCompose ? (
                       <div className="name-sub badge badge--running">{t('已配置')}</div>
                     ) : (
                       <div className="name-sub badge badge--muted">{t('未配置')}</div>

@@ -167,6 +167,12 @@ export interface ComposeProject {
   path: string;
   composeFile: string | null;
   hasCompose: boolean;
+  /** 项目来源：panel=面板目录内创建；external=外部导入（手动 compose up / 第三方工具） */
+  source?: 'panel' | 'external';
+  /** 外部项目运行中容器数（1.51.0） */
+  running?: number;
+  /** 外部项目容器总数（1.51.0） */
+  total?: number;
 }
 
 /** Compose 服务状态 */

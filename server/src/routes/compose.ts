@@ -163,6 +163,68 @@ async function validateComposeYaml(content: string): Promise<string | null> {
   }
 }
 
+// ============ 项目定位（本地目录 + 外部发现，1.51.0） ============
+
+/** 项目上下文：dir 为工作目录，composeFile 为绝对路径 */
+type ComposeCtx = { dir: string; composeFile: string; source: 'panel' | 'external' };
+
+/**
+ * 从容器标签反查主机上所有外部 compose 项目
+ * （在面板目录之外创建的项目，如手动 docker compose up 或第三方工具创建）
+ */
+async function discoverExternalProjects(): Promise<
+  Map<string, { dir: string; composeFile: string; running: number; total: number }>
+> {
+  const docker = await getDockerClient();
+  const containers = await docker.listContainers({ all: true });
+  const map = new Map<string, { dir: string; composeFile: string; running: number; total: number }>();
+  const rootAbs = path.resolve(COMPOSE_ROOT);
+  for (const c of containers) {
+    const labels = c.Labels || {};
+    const project = labels['com.docker.compose.project'];
+    const workingDir = labels['com.docker.compose.project.working_dir'];
+    if (!project || !workingDir) continue;
+    // 面板自己目录下的项目已在列表中，跳过
+    const wd = path.resolve(workingDir);
+    if (wd === rootAbs || wd.startsWith(rootAbs + path.sep)) continue;
+    let entry = map.get(project);
+    if (!entry) {
+      const configFiles = labels['com.docker.compose.project.config_files'] || '';
+      const firstFile = configFiles.split(',')[0]?.trim();
+      const composeFile =
+        (firstFile && fs.existsSync(firstFile) ? firstFile : '') || findComposeFile(workingDir) || '';
+      entry = { dir: workingDir, composeFile, running: 0, total: 0 };
+      map.set(project, entry);
+    }
+    entry.total += 1;
+    if (c.State === 'running') entry.running += 1;
+  }
+  return map;
+}
+
+/**
+ * 按项目名定位 compose 项目：先查面板本地目录，再从容器标签反查外部项目
+ * @returns 找不到时返回 null
+ */
+async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
+  if (!name || /[\\/]/.test(name) || name === '.' || name === '..') return null;
+  const localDir = path.join(COMPOSE_ROOT, name);
+  const localFile = findComposeFile(localDir);
+  if (localFile) {
+    return { dir: localDir, composeFile: path.join(localDir, localFile), source: 'panel' };
+  }
+  try {
+    const externals = await discoverExternalProjects();
+    const ext = externals.get(name);
+    if (ext && ext.composeFile) {
+      return { dir: ext.dir, composeFile: ext.composeFile, source: 'external' };
+    }
+  } catch {
+    // docker 不可用时按未找到处理
+  }
+  return null;
+}
+
 // ============ 项目列表 ============
 
 /**
@@ -173,7 +235,15 @@ router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
     const dirs = listProjectDirs();
-    const projects = dirs.map((name) => {
+    const projects: Array<{
+      name: string;
+      path: string;
+      composeFile: string | null;
+      hasCompose: boolean;
+      source: 'panel' | 'external';
+      running?: number;
+      total?: number;
+    }> = dirs.map((name) => {
       const dir = path.join(COMPOSE_ROOT, name);
       const composeFile = findComposeFile(dir);
       return {
@@ -181,8 +251,27 @@ router.get(
         path: dir,
         composeFile,
         hasCompose: !!composeFile,
+        source: 'panel' as const,
       };
     });
+    // 外部项目（1.51.0）：从容器标签反查宿主机上其他 compose 项目
+    try {
+      const externals = await discoverExternalProjects();
+      for (const [name, info] of externals) {
+        if (!info.composeFile) continue; // compose 文件已丢失的外部项目暂不收录
+        projects.push({
+          name,
+          path: info.dir,
+          composeFile: info.composeFile,
+          hasCompose: true,
+          source: 'external' as const,
+          running: info.running,
+          total: info.total,
+        });
+      }
+    } catch {
+      // docker 不可用时仅返回本地项目
+    }
     res.json(projects);
   }),
 );
@@ -217,11 +306,12 @@ router.post('/run2compose', requireAuth, (req: Request, res: Response) => {
 router.get(
   '/:name',
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
+    const projCtx = await resolveProjectCtx(req.params.name);
+    if (!projCtx) {
       return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
     }
+    const dir = projCtx.dir;
+    const composeFile = projCtx.composeFile;
     const psOutput = await runCmd(`docker compose -f "${composeFile}" ps -a --format json`, dir);
     let services: any[] = [];
     try {
@@ -229,7 +319,7 @@ router.get(
     } catch {
       services = [];
     }
-    res.json({ name: req.params.name, path: dir, composeFile, services });
+    res.json({ name: req.params.name, path: dir, composeFile, services, source: projCtx.source });
   }),
 );
 
@@ -1075,6 +1165,18 @@ router.post(
     }
     // 防目录穿越
     const safeName = path.basename(name);
+    // 外部项目同名保存（1.51.0）：直接覆写外部 compose 文件，不在面板目录创建副本
+    try {
+      const externals = await discoverExternalProjects();
+      const ext = externals.get(safeName);
+      if (ext && ext.composeFile) {
+        fs.writeFileSync(ext.composeFile, content, 'utf8');
+        logOperation(res.locals.username, '保存 Compose（外部）', 'compose', safeName, `文件: ${ext.composeFile}`);
+        return res.status(201).json({ name: safeName, path: ext.dir, composeFile: ext.composeFile, external: true });
+      }
+    } catch {
+      // docker 不可用时按本地项目处理
+    }
     const dir = path.join(COMPOSE_ROOT, safeName);
     ensureDir(dir);
     const targetFile = fileName && COMPOSE_FILES.includes(fileName) ? fileName : 'docker-compose.yml';
@@ -1113,12 +1215,13 @@ router.post(
 router.get(
   '/:name/file',
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
+    const projCtx = await resolveProjectCtx(req.params.name);
+    if (!projCtx) {
       return res.status(404).json({ error: '未找到 compose 文件' });
     }
-    const content = fs.readFileSync(path.join(dir, composeFile), 'utf8');
+    const dir = projCtx.dir;
+    const composeFile = projCtx.composeFile;
+    const content = fs.readFileSync(composeFile, 'utf8');
     res.json({ name: req.params.name, composeFile, content });
   }),
 );
@@ -1151,12 +1254,11 @@ router.post(
  * @throws compose 文件不存在时抛 404
  */
 export async function composeProjectDown(name: string, volumes: boolean): Promise<string> {
-  const dir = path.join(COMPOSE_ROOT, name);
-  const composeFile = findComposeFile(dir);
-  if (!composeFile) {
+  const ctx = await resolveProjectCtx(name);
+  if (!ctx) {
     throw Object.assign(new Error('未找到 compose 文件'), { statusCode: 404 });
   }
-  return runCmd(`docker compose -f "${composeFile}" down${volumes ? ' -v' : ''}`, dir);
+  return runCmd(`docker compose -f "${ctx.composeFile}" down${volumes ? ' -v' : ''}`, ctx.dir);
 }
 
 /**
@@ -1258,19 +1360,26 @@ router.delete(
   '/:name',
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    if (fs.existsSync(dir)) {
-      // 兼容字符串 "true" 与字面量 true 两种写法（Express 查询串通常为字符串）
-      const volumes = req.query.volumes === 'true' || (req.query.volumes as unknown) === true;
-      const downVolumes = volumes ? ' -v' : '';
-      await runCmd(
-        `docker compose -f "${findComposeFile(dir) || 'docker-compose.yml'}" down${downVolumes}`,
-        dir,
-      ).catch(() => undefined);
-      fs.rmSync(dir, { recursive: true, force: true });
+    const ctx = await resolveProjectCtx(req.params.name);
+    if (!ctx) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
     }
-    logOperation(res.locals.username, '删除 Compose', 'compose', req.params.name);
-    res.json({ ok: true });
+    // 兼容字符串 "true" 与字面量 true 两种写法（Express 查询串通常为字符串）
+    const volumes = req.query.volumes === 'true' || (req.query.volumes as unknown) === true;
+    const downVolumes = volumes ? ' -v' : '';
+    await runCmd(`docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
+    // 外部项目仅下线容器，不删除 compose 文件（避免误删第三方工具管理的项目文件）
+    if (ctx.source === 'panel') {
+      fs.rmSync(ctx.dir, { recursive: true, force: true });
+    }
+    logOperation(
+      res.locals.username,
+      '删除 Compose',
+      'compose',
+      req.params.name,
+      ctx.source === 'external' ? '外部项目：仅下线容器并保留文件' : undefined
+    );
+    res.json({ ok: true, external: ctx.source === 'external' });
   }),
 );
 
@@ -1420,13 +1529,14 @@ router.get(
  * @param username 操作者用户名
  */
 async function runServiceAction(name: string, service: string, action: string, username: string): Promise<string> {
-  const dir = path.join(COMPOSE_ROOT, name);
-  const composeFile = findComposeFile(dir);
-  if (!composeFile) {
+  const ctx = await resolveProjectCtx(name);
+  if (!ctx) {
     const apiErr: any = new Error('未找到 compose 文件');
     apiErr.statusCode = 404;
     throw apiErr;
   }
+  const dir = ctx.dir;
+  const composeFile = ctx.composeFile;
   // 服务名经 shell 单引号包裹并转义防止注入
   const safeService = service.replace(/'/g, "'\\''");
   const output = await runCmd(
