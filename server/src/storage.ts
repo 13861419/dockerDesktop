@@ -981,6 +981,27 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：自愈规则增强（1.40.0）：标签匹配 + 窗口内触发次数上限
+  try {
+    d.exec("ALTER TABLE selfheal_rules ADD COLUMN match_label TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE selfheal_rules ADD COLUMN max_triggers INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE selfheal_rules ADD COLUMN trigger_window_sec INTEGER NOT NULL DEFAULT 3600');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE selfheal_rules ADD COLUMN limit_notified_at INTEGER');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 approvals 补充 1.3.0 多级审批列（编号 / 级数 / 已完成级数 / 审批轨迹 / 超时提醒标记）
   try {
     d.exec("ALTER TABLE approvals ADD COLUMN ticket_no TEXT NOT NULL DEFAULT ''");

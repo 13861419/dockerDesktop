@@ -40,8 +40,18 @@ interface PruneResult {
   ok: boolean;
   prunedContainers: number;
   prunedImages: number;
+  prunedVolumes: number;
+  prunedNetworks: number;
   detail: string;
 }
+
+/** 批量清理对象类型 */
+const PRUNE_TYPES: Array<{ key: string; label: string }> = [
+  { key: 'containers', label: '停止的容器' },
+  { key: 'images', label: '悬空镜像' },
+  { key: 'volumes', label: '未使用卷' },
+  { key: 'networks', label: '未使用网络' },
+];
 
 /** 列表响应 */
 interface EnginesResponse {
@@ -335,14 +345,16 @@ export default function EnginesPage() {
    */
   const [pruneOpen, setPruneOpen] = useState(false);
   const [pruneSelected, setPruneSelected] = useState<Record<string, boolean>>({});
-  const [pruneType, setPruneType] = useState<'both' | 'containers' | 'images'>('both');
+  const [pruneTypes, setPruneTypes] = useState<Record<string, boolean>>({ containers: true, images: true, volumes: false, networks: false });
+  const [pruneUntil, setPruneUntil] = useState('');
   const [pruneRunning, setPruneRunning] = useState(false);
   const [pruneResults, setPruneResults] = useState<PruneResult[] | null>(null);
 
   const openPrune = useCallback(() => {
     setPruneSelected({});
     setPruneResults(null);
-    setPruneType('both');
+    setPruneTypes({ containers: true, images: true, volumes: false, networks: false });
+    setPruneUntil('');
     setPruneOpen(true);
   }, []);
 
@@ -352,9 +364,19 @@ export default function EnginesPage() {
       showToast(t('请至少选择一个引擎'), 'error');
       return;
     }
+    const types = PRUNE_TYPES.map((x) => x.key).filter((k) => pruneTypes[k]);
+    if (types.length === 0) {
+      showToast(t('请至少选择一种清理对象'), 'error');
+      return;
+    }
     setPruneRunning(true);
     try {
-      const res = await post<{ results: PruneResult[] }>('/api/engines/batch-prune', { engineIds, type: pruneType });
+      const untilHours = Number(pruneUntil);
+      const res = await post<{ results: PruneResult[] }>('/api/engines/batch-prune', {
+        engineIds,
+        types,
+        ...(Number.isFinite(untilHours) && untilHours > 0 ? { untilHours } : {}),
+      });
       setPruneResults(res?.results || []);
       const okCount = (res?.results || []).filter((r) => r.ok).length;
       showToast(t('批量清理完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: engineIds.length - okCount }));
@@ -363,7 +385,7 @@ export default function EnginesPage() {
     } finally {
       setPruneRunning(false);
     }
-  }, [engines, pruneSelected, pruneType, showToast]);
+  }, [engines, pruneSelected, pruneTypes, pruneUntil, showToast]);
 
   const totalCount = aggregate?.length || 0;
   const onlineCount = aggregate?.filter((a) => a.online).length || 0;
@@ -714,11 +736,33 @@ export default function EnginesPage() {
         </p>
 
         <Field label={t('清理范围')}>
-          <Select value={pruneType} onChange={(e) => setPruneType(e.target.value as 'both' | 'containers' | 'images')}>
-            <option value="both">{t('停止容器 + 悬空镜像')}</option>
-            <option value="containers">{t('仅停止的容器')}</option>
-            <option value="images">{t('仅悬空镜像')}</option>
-          </Select>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            {PRUNE_TYPES.map((pt) => (
+              <label key={pt.key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!!pruneTypes[pt.key]}
+                  onChange={(e) => setPruneTypes((prev) => ({ ...prev, [pt.key]: e.target.checked }))}
+                />
+                <span>{t(pt.label)}</span>
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <Field label={t('按年龄过滤（可选）')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {t('仅清理')}{' '}
+            <input
+              type="number"
+              min={1}
+              style={{ width: 90 }}
+              value={pruneUntil}
+              onChange={(e) => setPruneUntil(e.target.value)}
+              placeholder={t('不限')}
+            />
+            {t('小时前未使用的对象')}
+          </div>
         </Field>
 
         <Field label={t('目标引擎（可多选）')} required>

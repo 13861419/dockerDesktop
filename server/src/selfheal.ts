@@ -32,6 +32,10 @@ interface SelfHealRuleRow {
   cooldown_sec: number;
   enabled: number;
   last_triggered_at: number | null;
+  match_label: string;
+  max_triggers: number;
+  trigger_window_sec: number;
+  limit_notified_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -45,6 +49,14 @@ export interface SelfHealRule {
   cooldownSec: number;
   enabled: boolean;
   lastTriggeredAt: number | null;
+  /** 标签匹配（1.40.0）：非空时按 Docker label 匹配容器（如 `team=api` 或仅 key），此时 containerName 为空 */
+  matchLabel: string;
+  /** 窗口内最大触发次数（1.40.0）：0 = 不限制 */
+  maxTriggers: number;
+  /** 触发次数统计窗口秒数（1.40.0） */
+  triggerWindowSec: number;
+  /** 上次超限告警时间（1.40.0） */
+  limitNotifiedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -58,6 +70,10 @@ function normalizeRule(r: SelfHealRuleRow): SelfHealRule {
     cooldownSec: Math.max(10, Math.floor(Number(r.cooldown_sec) || 300)),
     enabled: r.enabled === 1,
     lastTriggeredAt: r.last_triggered_at || null,
+    matchLabel: r.match_label || '',
+    maxTriggers: Math.max(0, Math.floor(Number(r.max_triggers) || 0)),
+    triggerWindowSec: Math.max(60, Math.floor(Number(r.trigger_window_sec) || 3600)),
+    limitNotifiedAt: r.limit_notified_at || null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -114,12 +130,19 @@ function validateInput(body: any, forUpdate = false): {
   action: SelfHealAction;
   cooldownSec: number;
   enabled: number;
+  matchLabel: string;
+  maxTriggers: number;
+  triggerWindowSec: number;
 } {
+  const matchLabel = String(body?.matchLabel ?? '').trim();
+  if (matchLabel && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*(=[a-zA-Z0-9_.-]*)?$/.test(matchLabel)) {
+    throw Object.assign(new Error('标签格式应为 key 或 key=value'), { statusCode: 400 });
+  }
   const containerName = String(forUpdate ? (body?.containerName ?? '') : body?.containerName || '').trim();
   if (forUpdate && body?.containerName === undefined) {
     // 更新时未传保持原值（由调用方兜底）
-  } else if (!containerName) {
-    throw Object.assign(new Error('请输入容器名'), { statusCode: 400 });
+  } else if (!containerName && !matchLabel) {
+    throw Object.assign(new Error('请输入容器名或匹配标签'), { statusCode: 400 });
   }
   const watchType = String(body?.watchType ?? '') as SelfHealWatchType;
   if (watchType && !['unhealthy', 'exited'].includes(watchType)) {
@@ -136,6 +159,20 @@ function validateInput(body: any, forUpdate = false): {
       throw Object.assign(new Error('冷却期需为 10-86400 秒'), { statusCode: 400 });
     }
   }
+  let maxTriggers = 0;
+  if (body?.maxTriggers !== undefined && body?.maxTriggers !== null && body?.maxTriggers !== '') {
+    maxTriggers = Math.floor(Number(body.maxTriggers));
+    if (!Number.isFinite(maxTriggers) || maxTriggers < 0 || maxTriggers > 100) {
+      throw Object.assign(new Error('触发上限需为 0-100（0 = 不限制）'), { statusCode: 400 });
+    }
+  }
+  let triggerWindowSec = 3600;
+  if (body?.triggerWindowSec !== undefined && body?.triggerWindowSec !== null && body?.triggerWindowSec !== '') {
+    triggerWindowSec = Math.floor(Number(body.triggerWindowSec));
+    if (!Number.isFinite(triggerWindowSec) || triggerWindowSec < 60 || triggerWindowSec > 86400) {
+      throw Object.assign(new Error('统计窗口需为 60-86400 秒'), { statusCode: 400 });
+    }
+  }
   const enabled = body?.enabled === undefined ? 1 : body.enabled ? 1 : 0;
   return {
     containerName,
@@ -143,6 +180,9 @@ function validateInput(body: any, forUpdate = false): {
     action: action || undefined!,
     cooldownSec,
     enabled,
+    matchLabel,
+    maxTriggers,
+    triggerWindowSec,
   };
 }
 
@@ -151,20 +191,24 @@ function validateInput(body: any, forUpdate = false): {
  */
 export function createSelfHealRule(body: any): SelfHealRule {
   const v = validateInput(body);
-  if (!v.containerName) throw Object.assign(new Error('请输入容器名'), { statusCode: 400 });
+  if (!v.containerName && !v.matchLabel) throw Object.assign(new Error('请输入容器名或匹配标签'), { statusCode: 400 });
   if (!v.watchType) throw Object.assign(new Error('请选择监控类型'), { statusCode: 400 });
   if (!v.action) throw Object.assign(new Error('请选择恢复动作'), { statusCode: 400 });
   const d = getDb();
-  const dup = d
-    .prepare('SELECT id FROM selfheal_rules WHERE container_name = ? AND watch_type = ?')
-    .get(v.containerName, v.watchType);
+  const dup = v.matchLabel
+    ? d
+        .prepare("SELECT id FROM selfheal_rules WHERE match_label = ? AND watch_type = ? AND container_name = ''")
+        .get(v.matchLabel, v.watchType)
+    : d
+        .prepare('SELECT id FROM selfheal_rules WHERE container_name = ? AND watch_type = ? AND match_label = ?')
+        .get(v.containerName, v.watchType, '');
   if (dup) throw Object.assign(new Error('该容器已存在同类型的自愈规则'), { statusCode: 409 });
   const now = Date.now();
   const info = d
     .prepare(
-      'INSERT INTO selfheal_rules (container_name, watch_type, action, cooldown_sec, enabled, last_triggered_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)',
+      "INSERT INTO selfheal_rules (container_name, watch_type, action, cooldown_sec, enabled, last_triggered_at, match_label, max_triggers, trigger_window_sec, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
     )
-    .run(v.containerName, v.watchType, v.action, v.cooldownSec, v.enabled, now, now);
+    .run(v.containerName, v.watchType, v.action, v.cooldownSec, v.enabled, v.matchLabel, v.maxTriggers, v.triggerWindowSec, now, now);
   return normalizeRule(getRuleRow(Number(info.lastInsertRowid))!);
 }
 
@@ -181,13 +225,16 @@ export function updateSelfHealRule(id: number, body: any): SelfHealRule {
     action: v.action ?? row.action,
     cooldown_sec: body?.cooldownSec !== undefined ? v.cooldownSec : row.cooldown_sec,
     enabled: body?.enabled !== undefined ? v.enabled : row.enabled,
+    match_label: body?.matchLabel !== undefined ? v.matchLabel : row.match_label || '',
+    max_triggers: body?.maxTriggers !== undefined ? v.maxTriggers : row.max_triggers,
+    trigger_window_sec: body?.triggerWindowSec !== undefined ? v.triggerWindowSec : row.trigger_window_sec,
   };
-  if (!next.container_name) throw Object.assign(new Error('请输入容器名'), { statusCode: 400 });
+  if (!next.container_name && !next.match_label) throw Object.assign(new Error('请输入容器名或匹配标签'), { statusCode: 400 });
   getDb()
     .prepare(
-      'UPDATE selfheal_rules SET container_name = ?, watch_type = ?, action = ?, cooldown_sec = ?, enabled = ?, updated_at = ? WHERE id = ?',
+      'UPDATE selfheal_rules SET container_name = ?, watch_type = ?, action = ?, cooldown_sec = ?, enabled = ?, match_label = ?, max_triggers = ?, trigger_window_sec = ?, updated_at = ? WHERE id = ?',
     )
-    .run(next.container_name, next.watch_type, next.action, next.cooldown_sec, next.enabled, Date.now(), id);
+    .run(next.container_name, next.watch_type, next.action, next.cooldown_sec, next.enabled, next.match_label, next.max_triggers, next.trigger_window_sec, Date.now(), id);
   return normalizeRule(getRuleRow(id)!);
 }
 
@@ -327,11 +374,15 @@ export async function runSelfHealCheck(): Promise<{ triggered: number }> {
   const now = Date.now();
   for (const rule of rules) {
     try {
-      // 按名称解析容器（取首个精确匹配）
+      // 解析目标容器：优先按标签匹配（1.40.0），否则按名称精确匹配
       const list = (await docker.listContainers({ all: true }).catch(() => [])) as any[];
-      const found = list.find((c) =>
-        (c.Names || []).some((n: string) => n.replace(/^\//, '') === rule.containerName),
-      );
+      const found = list.find((c) => {
+        if (rule.matchLabel) {
+          const [lk, lv] = rule.matchLabel.split('=');
+          return Object.entries(c.Labels || {}).some(([k, v]) => k === lk && (lv === undefined || lv === v));
+        }
+        return (c.Names || []).some((n: string) => n.replace(/^\//, '') === rule.containerName);
+      });
       if (!found) continue;
       let info: any;
       try {
@@ -349,19 +400,36 @@ export async function runSelfHealCheck(): Promise<{ triggered: number }> {
         now,
       );
       if (!decision.hit) continue;
+      const targetName = rule.containerName || (info.Name || '').replace(/^\//, '') || rule.matchLabel;
+      // 触发次数上限（1.40.0）：统计窗口内已触发次数达到上限则暂停自愈并发一次危险告警
+      if (rule.maxTriggers > 0) {
+        const cntRow = getDb()
+          .prepare('SELECT count(*) AS c FROM selfheal_events WHERE rule_id = ? AND created_at > ?')
+          .get(rule.id, now - rule.triggerWindowSec * 1000) as { c: number };
+        if ((cntRow?.c || 0) >= rule.maxTriggers) {
+          if (!rule.limitNotifiedAt || now - rule.limitNotifiedAt > rule.triggerWindowSec * 1000) {
+            getDb().prepare('UPDATE selfheal_rules SET limit_notified_at = ? WHERE id = ?').run(now, rule.id);
+            await recordAndPush(
+              'danger',
+              `Docker 面板【自愈】容器 ${targetName} 在 ${Math.round(rule.triggerWindowSec / 60)} 分钟内已触发 ${cntRow.c} 次自愈（上限 ${rule.maxTriggers}），已暂停自动恢复，请人工排查`,
+            );
+          }
+          continue;
+        }
+      }
       getDb()
         .prepare('UPDATE selfheal_rules SET last_triggered_at = ? WHERE id = ?')
         .run(now, rule.id);
       triggered++;
-      const head = `Docker 面板【自愈】容器 ${rule.containerName} ${WATCH_LABELS[rule.watchType]}`;
+      const head = `Docker 面板【自愈】容器 ${targetName} ${WATCH_LABELS[rule.watchType]}`;
       try {
         await applyAction(rule.action, found.Id);
-        recordSelfHealEvent(rule.id, rule.containerName, rule.watchType, rule.action, true, `已自动${ACTION_LABELS[rule.action]}`);
+        recordSelfHealEvent(rule.id, targetName, rule.watchType, rule.action, true, `已自动${ACTION_LABELS[rule.action]}`);
         await recordAndPush('recovery', `${head}，已自动${ACTION_LABELS[rule.action]}`);
       } catch (err: any) {
         recordSelfHealEvent(
           rule.id,
-          rule.containerName,
+          targetName,
           rule.watchType,
           rule.action,
           false,
@@ -373,7 +441,7 @@ export async function runSelfHealCheck(): Promise<{ triggered: number }> {
         );
       }
     } catch (err: any) {
-      console.error(`[selfheal] 规则 ${rule.id}(${rule.containerName}) 巡检失败:`, String(err?.message || err));
+      console.error(`[selfheal] 规则 ${rule.id}(${rule.containerName || rule.matchLabel}) 巡检失败:`, String(err?.message || err));
     }
   }
   return { triggered };

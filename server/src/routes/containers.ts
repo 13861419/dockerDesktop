@@ -696,7 +696,7 @@ router.post(
 /**
  * 判断 allowlist 条目是否匹配容器（支持 `前缀*` 通配；匹配名称 / 完整 ID / 12 位短 ID）
  */
-function matchAllowlistEntry(entry: string, name: string, id: string): boolean {
+export function matchAllowlistEntry(entry: string, name: string, id: string): boolean {
   const e = entry.trim();
   if (!e) return false;
   if (e.endsWith('*')) {

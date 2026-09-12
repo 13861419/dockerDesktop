@@ -13,6 +13,9 @@ import { StringDecoder } from 'string_decoder';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDockerClient } from './client';
 import { registerWsHandler, authenticateWs, rejectWsUpgrade } from './wsRouter';
+import { getContainerAllowlist } from '../users';
+import { matchAllowlistEntry } from '../routes/containers';
+import { logOperation } from '../operationLog';
 import type Dockerode from 'dockerode';
 
 /** 从 URL 中解析容器 ID：/ws/terminal/<id> */
@@ -32,13 +35,38 @@ export function setupTerminalServer(httpServer: HttpServer): void {
     const containerId = parsePath(url.pathname);
     if (!containerId) return false;
     // 终端会在容器内执行 shell（高危），要求已登录且具备运维（operator/admin）权限
-    if (!authenticateWs(url, { requireOperator: true })) {
+    const session = authenticateWs(url, { requireOperator: true });
+    if (!session) {
       rejectWsUpgrade(socket, 401, '未登录或权限不足，无法连接容器终端');
       return true;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req, containerId);
-    });
+    const upgrade = () => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req, containerId);
+      });
+    };
+    // 容器资源级授权（1.40.0）：名单外容器拒绝建立终端连接（与 HTTP 403 守卫同口径）
+    const allowlist = getContainerAllowlist(session.username);
+    if (allowlist) {
+      void (async () => {
+        try {
+          const docker = await getDockerClient();
+          const info = await docker.getContainer(containerId).inspect();
+          const name = (info.Name || '').replace(/^\//, '');
+          const id = info.Id || containerId;
+          if (!allowlist.some((e) => matchAllowlistEntry(e, name, id))) {
+            rejectWsUpgrade(socket, 403, '无权访问该容器（不在资源级授权名单内）');
+            logOperation(session.username, '终端连接被拒绝', '终端', name || containerId, '不在容器白名单内', false);
+            return;
+          }
+          upgrade();
+        } catch {
+          rejectWsUpgrade(socket, 403, '容器不存在或无法访问');
+        }
+      })();
+    } else {
+      upgrade();
+    }
     return true;
   });
 

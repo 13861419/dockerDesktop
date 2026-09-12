@@ -684,6 +684,7 @@ async function remoteDeployServices(
   dir: string,
   client: any,
   recreate: boolean,
+  onlyServices?: string[],
 ): Promise<Array<{ service: string; name: string; ok: boolean; detail: string }>> {
   const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
   // 兼容单行与多行缩进两种 JSON 输出（不同 docker CLI 版本行为不一）：取首个 { 到最后一个 } 之间解析
@@ -692,6 +693,7 @@ async function remoteDeployServices(
   const parsed = jsonStart >= 0 && jsonEnd > jsonStart ? JSON.parse(output.slice(jsonStart, jsonEnd + 1)) : null;
   const serviceConfigs = (parsed as any)?.services || {};
   const results: Array<{ service: string; name: string; ok: boolean; detail: string }> = [];
+  const only = Array.isArray(onlyServices) && onlyServices.length ? onlyServices : null;
 
   // 远端创建项目默认网络（服务名互访）；已存在或失败时回退默认桥接
   const netName = `${projectName}_default`;
@@ -712,6 +714,7 @@ async function remoteDeployServices(
   const nameOf = (svc: string) => `${projectName}-${svc}-1`;
 
   for (const svc of Object.keys(serviceConfigs)) {
+    if (only && !only.includes(svc)) continue;
     const cfg = serviceConfigs[svc] || {};
     const cname = nameOf(svc);
     try {
@@ -865,6 +868,85 @@ router.post(
       results.every((r) => r.ok),
     );
     res.json({ ok: results.every((r) => r.ok), endpoint, results });
+  }),
+);
+
+/**
+ * POST /api/compose/:name/fix-drift
+ * 漂移自动修复（1.40.0）：按本地 compose 配置重建目标引擎上漂移的服务。
+ * body: { endpoint?: string, services: string[] }
+ * endpoint 为空 = 本地引擎（docker compose up -d --force-recreate <services>）；
+ * 远端引擎走 remoteDeployServices 逐服务重建（recreate = true，先拉取镜像）。
+ */
+router.post(
+  '/:name/fix-drift',
+  requirePermission('compose.write'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const dir = path.join(COMPOSE_ROOT, req.params.name);
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) {
+      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
+    }
+    const services: string[] = Array.isArray(req.body?.services)
+      ? req.body.services.map((x: unknown) => String(x)).filter(Boolean)
+      : [];
+    if (services.length === 0) return res.status(400).json({ error: '需要 services 参数（要修复的服务列表）' });
+    const endpoint = String(req.body?.endpoint || '').trim();
+
+    if (!endpoint) {
+      // 本地引擎：直接用 compose CLI 重建指定服务
+      try {
+        await runCmd(
+          `docker compose -f "${composeFile}" up -d --force-recreate ${services.map((s) => `"${s}"`).join(' ')}`,
+          dir,
+        );
+      } catch (err: any) {
+        return res.status(500).json({ error: err?.message || '本地重建失败' });
+      }
+      logOperation(
+        res.locals.username,
+        '漂移自动修复',
+        'compose',
+        req.params.name,
+        `本地引擎; services: ${services.join(', ')}`,
+      );
+      return res.json({
+        ok: true,
+        mode: 'local',
+        results: services.map((s) => ({ service: s, name: `${req.params.name}-${s}-1`, ok: true, detail: '已按本地配置重建' })),
+      });
+    }
+
+    // 远端引擎：先确保镜像存在（拉取失败不中断，由逐服务创建兜底报错），再按本地配置重建
+    const client = getDockerClientForEndpoint(endpoint);
+    const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+    const jsonStart = output.indexOf('{');
+    const jsonEnd = output.lastIndexOf('}');
+    const parsed = jsonStart >= 0 && jsonEnd > jsonStart ? JSON.parse(output.slice(jsonStart, jsonEnd + 1)) : null;
+    const serviceConfigs: Record<string, any> = (parsed as any)?.services || {};
+    for (const svc of services) {
+      const image = serviceConfigs[svc]?.image;
+      if (!image) continue;
+      await new Promise<void>((resolve) => {
+        client.pull(image, (err: any, stream: any) => {
+          if (stream) {
+            stream.on('end', () => resolve());
+            stream.on('error', () => resolve());
+            stream.resume();
+          } else resolve();
+        });
+      }).catch(() => undefined);
+    }
+    const results = await remoteDeployServices(req.params.name, composeFile, dir, client, true, services);
+    logOperation(
+      res.locals.username,
+      '漂移自动修复',
+      'compose',
+      req.params.name,
+      `endpoint: ${endpoint}; services: ${services.join('/')}`,
+      results.every((r) => r.ok),
+    );
+    res.json({ ok: results.every((r) => r.ok), mode: 'remote', endpoint, results });
   }),
 );
 

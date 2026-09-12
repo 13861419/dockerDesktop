@@ -3167,4 +3167,52 @@ export const en: Record<string, string> = {
   '触发原因': 'Trigger',
   // ---- 1.39.0：自愈执行留档 / 跨引擎批量清理 ----
   '容器已退出': 'Container exited',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '未使用卷': 'Unused volumes',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '未使用网络': 'Unused networks',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '停止的容器': 'Stopped containers',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '按年龄过滤（可选）': 'Age filter (optional)',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '仅清理': 'Only clean objects unused for',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '小时前未使用的对象': 'hours',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '请至少选择一种清理对象': 'Select at least one object type',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '对勾选的引擎批量执行 Docker prune：清理已停止容器、悬空镜像、未使用卷与网络，不影响运行中容器和在用镜像。': 'Runs Docker prune on the selected engines: removes stopped containers, dangling images, unused volumes and networks without touching running containers or in-use images.',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '匹配标签': 'Match label',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '如：team=api': 'e.g. team=api',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '按 Docker label 匹配一批容器（如 team=api 或仅 key）；填写后优先于容器名，1.40.0': 'Match a batch of containers by Docker label (e.g. team=api or just a key); takes precedence over container name, 1.40.0',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '请输入容器名或匹配标签': 'Enter a container name or a match label',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '触发上限': 'Trigger limit',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '统计窗口（秒）': 'Stats window (sec)',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '窗口 3600 秒': 'window 3600 sec',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '统计窗口内最多触发次数（0 留空 = 不限制）；超限后暂停自愈并发一次危险告警，防止崩溃循环无限重启，1.40.0': 'Max triggers within the stats window (0 / empty = unlimited); when exceeded self-heal pauses and sends one danger alert to prevent endless crash-restart loops, 1.40.0',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '工程管理、yaml 编辑、docker run 命令导入、容器逆向推导；项目看板（服务级资源聚合）、服务滚动更新（健康检查+自动回滚）、全部滚动更新与漂移检测（1.38.0）、跨引擎镜像分发与远端代理部署（1.34.0）': 'Project management, yaml editor, docker run import, container reverse-engineering; project board (per-service resource aggregation), rolling update (health check + auto rollback), update-all & drift detection (1.38.0), cross-engine image distribution & remote proxy deploy (1.34.0)',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '多引擎管理与切换；跨引擎批量清理（批量 prune 停止容器/悬空镜像，1.39.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）': 'Multi-engine management & switching; cross-engine batch cleanup (batch prune of stopped containers / dangling images, 1.39.0); built-in pull-through image cache (registry:2, port 5060, 1.34.0)',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、磁盘写满与内存耗尽趋势预测、静默期值班渠道、容器自愈与执行记录留档（1.39.0）、记录与 AI 诊断': 'Alert rules with debounce, 7 channel types, multi-channel routing, delivery stats, disk-full & memory-exhaustion forecasts, on-call channels, container self-heal with execution records (1.39.0), records & AI diagnosis',
+  // ---- 1.40.0：终端白名单 / 批量清理扩展 / 自愈增强 / 漂移修复 ----
+  '账号、角色管理（RBAC）、2FA 两步验证、在线会话、IP 白名单、密码策略、容器白名单（资源级授权）、MCP 接入、界面语言切换、备份、AI 配置、系统参数、用户管理': 'Account, role management (RBAC), 2FA, sessions, IP allowlist, password policy, container allowlist (resource-level authz), MCP access, UI language, backup, AI config, system parameters, user management',
+  // ---- 1.40.0 F4：漂移一键修复 ----
+  '一键修复（按本地配置重建）': 'Fix all (rebuild from local config)',
+  // ---- 1.40.0 F4：漂移一键修复 ----
+  '修复': 'Fix',
+  // ---- 1.40.0 F4：漂移一键修复 ----
+  '请勾选要修复的服务': 'Select the services to fix',
+  // ---- 1.40.0 F4：漂移一键修复 ----
+  '修复完成：成功 {{v1}}，失败 {{v2}}': 'Fix finished: {{v1}} succeeded, {{v2}} failed',
 };

@@ -197,6 +197,9 @@ interface SelfHealRule {
   cooldownSec: number;
   enabled: boolean;
   lastTriggeredAt: number | null;
+  matchLabel: string;
+  maxTriggers: number;
+  triggerWindowSec: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -274,7 +277,7 @@ export default function NotificationsPage() {
   const [selfHealRules, setSelfHealRules] = useState<SelfHealRule[]>([]);
   const [selfHealLoading, setSelfHealLoading] = useState(true);
   const [selfHealModal, setSelfHealModal] = useState<{ editing: SelfHealRule | null; open: boolean }>({ editing: null, open: false });
-  const [selfHealForm, setSelfHealForm] = useState({ containerName: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', enabled: true });
+  const [selfHealForm, setSelfHealForm] = useState({ containerName: '', matchLabel: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', maxTriggers: '', triggerWindowSec: '', enabled: true });
   const [selfHealError, setSelfHealError] = useState('');
   const [selfHealSaving, setSelfHealSaving] = useState(false);
   const [selfHealRunning, setSelfHealRunning] = useState(false);
@@ -497,7 +500,7 @@ export default function NotificationsPage() {
    * 打开新增自愈规则弹窗
    */
   const openCreateSelfHeal = useCallback(() => {
-    setSelfHealForm({ containerName: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', enabled: true });
+    setSelfHealForm({ containerName: '', matchLabel: '', watchType: 'unhealthy', action: 'restart', cooldownSec: '300', maxTriggers: '', triggerWindowSec: '', enabled: true });
     setSelfHealError('');
     setSelfHealModal({ editing: null, open: true });
   }, []);
@@ -508,9 +511,12 @@ export default function NotificationsPage() {
   const openEditSelfHeal = useCallback((rule: SelfHealRule) => {
     setSelfHealForm({
       containerName: rule.containerName,
+      matchLabel: rule.matchLabel || '',
       watchType: rule.watchType,
       action: rule.action,
       cooldownSec: String(rule.cooldownSec),
+      maxTriggers: rule.maxTriggers ? String(rule.maxTriggers) : '',
+      triggerWindowSec: rule.triggerWindowSec ? String(rule.triggerWindowSec) : '',
       enabled: rule.enabled,
     });
     setSelfHealError('');
@@ -521,8 +527,8 @@ export default function NotificationsPage() {
    * 提交自愈规则新增 / 编辑
    */
   const handleSaveSelfHeal = useCallback(async () => {
-    if (!selfHealForm.containerName.trim()) {
-      setSelfHealError(t('请输入容器名'));
+    if (!selfHealForm.containerName.trim() && !selfHealForm.matchLabel.trim()) {
+      setSelfHealError(t('请输入容器名或匹配标签'));
       return;
     }
     const cooldownSec = Math.floor(Number(selfHealForm.cooldownSec) || 0);
@@ -532,13 +538,16 @@ export default function NotificationsPage() {
     }
     setSelfHealSaving(true);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         containerName: selfHealForm.containerName.trim(),
+        matchLabel: selfHealForm.matchLabel.trim(),
         watchType: selfHealForm.watchType,
         action: selfHealForm.action,
         cooldownSec,
         enabled: selfHealForm.enabled,
       };
+      if (selfHealForm.maxTriggers !== '') payload.maxTriggers = Math.floor(Number(selfHealForm.maxTriggers) || 0);
+      if (selfHealForm.triggerWindowSec !== '') payload.triggerWindowSec = Math.floor(Number(selfHealForm.triggerWindowSec) || 3600);
       if (selfHealModal.editing) {
         await put(`/api/selfheal/rules/${selfHealModal.editing.id}`, payload);
         showToast(t('自愈规则已更新'));
@@ -1261,7 +1270,9 @@ export default function NotificationsPage() {
             <tbody>
               {selfHealRules.map((r) => (
                 <tr key={r.id}>
-                  <td><strong>{r.containerName}</strong></td>
+                  <td>
+                    <strong>{r.matchLabel ? `🏷 ${r.matchLabel}` : r.containerName}</strong>
+                  </td>
                   <td>{t(SELFHEAL_WATCH_LABELS[r.watchType] || r.watchType)}</td>
                   <td>{t(SELFHEAL_ACTION_LABELS[r.action] || r.action)}</td>
                   <td>{r.cooldownSec}s</td>
@@ -2141,11 +2152,18 @@ export default function NotificationsPage() {
           </div>
         }
       >
-        <Field label={t('容器名')} required hint={t('精确匹配容器名（docker ps 的 NAME 列），容器重建后依然生效')}>
+        <Field label={t('容器名')} hint={t('精确匹配容器名（docker ps 的 NAME 列），容器重建后依然生效；与「匹配标签」二选一')}>
           <Input
             value={selfHealForm.containerName}
             placeholder={t('如：nginx-proxy')}
             onChange={(e) => setSelfHealForm((f) => ({ ...f, containerName: e.target.value }))}
+          />
+        </Field>
+        <Field label={t('匹配标签')} hint={t('按 Docker label 匹配一批容器（如 team=api 或仅 key）；填写后优先于容器名，1.40.0')}>
+          <Input
+            value={selfHealForm.matchLabel}
+            placeholder={t('如：team=api')}
+            onChange={(e) => setSelfHealForm((f) => ({ ...f, matchLabel: e.target.value }))}
           />
         </Field>
         <Field label={t('监控条件')} required>
@@ -2174,6 +2192,29 @@ export default function NotificationsPage() {
             value={selfHealForm.cooldownSec}
             onChange={(e) => setSelfHealForm((f) => ({ ...f, cooldownSec: e.target.value }))}
           />
+        </Field>
+        <Field label={t('触发上限')} hint={t('统计窗口内最多触发次数（0 留空 = 不限制）；超限后暂停自愈并发一次危险告警，防止崩溃循环无限重启，1.40.0')}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              style={{ width: 120 }}
+              value={selfHealForm.maxTriggers}
+              placeholder={t('不限')}
+              onChange={(e) => setSelfHealForm((f) => ({ ...f, maxTriggers: e.target.value }))}
+            />
+            <Input
+              type="number"
+              min={60}
+              max={86400}
+              style={{ width: 140 }}
+              value={selfHealForm.triggerWindowSec}
+              placeholder={t('窗口 3600 秒')}
+              onChange={(e) => setSelfHealForm((f) => ({ ...f, triggerWindowSec: e.target.value }))}
+            />
+            <span>{t('统计窗口（秒）')}</span>
+          </div>
         </Field>
         <Field label={t('启用状态')}>
           <label className="notify-checkbox">

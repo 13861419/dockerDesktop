@@ -232,8 +232,8 @@ const [statsData, setStatsData] = useState<ProjectStatService[] | null>(null);
 const [statsLoading, setStatsLoading] = useState(false);
 const [rollingSvc, setRollingSvc] = useState('');
 const [rollingAllRunning, setRollingAllRunning] = useState(false);
-const [driftOpen, setDriftOpen] = useState(false);
-const [driftEngine, setDriftEngine] = useState('');
+  const [driftOpen, setDriftOpen] = useState(false);
+  const [driftEngine, setDriftEngine] = useState('');
 const [driftRunning, setDriftRunning] = useState(false);
 const [driftResult, setDriftResult] = useState<{ engine: string; driftCount: number; services: Array<{ service: string; status: string; diffs: string[]; local: any; remote: any; containers: number }> } | null>(null);
 const [distEngines, setDistEngines] = useState('');
@@ -386,6 +386,33 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       setDriftRunning(false);
     }
   }, [statsName, driftEngine]);
+
+  /** 漂移自动修复（1.40.0）：勾选要修复的服务，按本地配置重建 */
+  const [fixSel, setFixSel] = useState<Record<string, boolean>>({});
+  const [fixRunning, setFixRunning] = useState(false);
+
+  const fixDrift = useCallback(async () => {
+    const services = Object.keys(fixSel).filter((k) => fixSel[k]);
+    if (services.length === 0) {
+      showToast(t('请勾选要修复的服务'), 'error');
+      return;
+    }
+    setFixRunning(true);
+    try {
+      const r = await post<{ ok: boolean; results: Array<{ service: string; ok: boolean; detail: string }> }>(
+        projectUrl(statsName) + '/fix-drift',
+        { services, ...(driftEngine.trim() ? { endpoint: driftEngine.trim() } : {}) },
+      );
+      const okCount = (r?.results || []).filter((x) => x.ok).length;
+      showToast(t('修复完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: services.length - okCount }));
+      setFixSel({});
+      await driftCheck();
+    } catch (e: any) {
+      showToast(e?.message || t('修复失败'), 'error');
+    } finally {
+      setFixRunning(false);
+    }
+  }, [fixSel, statsName, driftEngine, driftCheck, showToast]);
 
   /** 跨引擎镜像分发：把项目镜像预拉取到远端引擎，可选继续代理部署（1.35.0） */
   const distribute = useCallback(async () => {
@@ -1642,6 +1669,13 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             {t('开始检测')}
           </Button>
         </div>
+        {driftResult && driftResult.driftCount > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            <Button variant="secondary" loading={fixRunning} onClick={() => void fixDrift()}>
+              {t('一键修复（按本地配置重建）')}
+            </Button>
+          </div>
+        )}
         {driftResult && (
           <div style={{ marginTop: 12 }}>
             <p style={{ fontSize: 13, margin: '4px 0 8px' }}>
@@ -1655,6 +1689,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th>{t('修复')}</th>
                     <th>{t('服务')}</th>
                     <th>{t('状态')}</th>
                     <th>{t('差异项')}</th>
@@ -1663,6 +1698,17 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                 <tbody>
                   {driftResult.services.map((s) => (
                     <tr key={s.service}>
+                      <td>
+                        {s.status === 'drift' || s.status === 'localOnly' ? (
+                          <input
+                            type="checkbox"
+                            checked={!!fixSel[s.service]}
+                            onChange={(e) => setFixSel((prev) => ({ ...prev, [s.service]: e.target.checked }))}
+                          />
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="col-name">{s.service}</td>
                       <td>
                         {s.status === 'match'

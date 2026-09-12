@@ -229,8 +229,9 @@ router.post(
 /**
  * POST /api/engines/batch-prune
  * 跨引擎批量清理（1.39.0）：对多台引擎批量执行 prune。
- * body: { engineIds: string[], type: 'containers' | 'images' | 'both' }
- * containers = 清理已停止容器；images = 清理悬空镜像（不动在用镜像）。
+ * body: { engineIds: string[], types?: string[], untilHours?: number }
+ * types 为 ['containers','images','volumes','networks'] 子集（缺省全部）；
+ * untilHours 提供时仅清理超过该小时数未使用的对象（卷 prune 的 until 需 Docker ≥ 23 / API 1.42）。
  */
 router.post(
   '/batch-prune',
@@ -239,7 +240,17 @@ router.post(
     const ids: string[] = Array.isArray(req.body?.engineIds)
       ? req.body.engineIds.map((x: unknown) => String(x)).filter(Boolean)
       : [];
-    const type = ['containers', 'images', 'both'].includes(req.body?.type) ? req.body.type : 'both';
+    const VALID_TYPES = ['containers', 'images', 'volumes', 'networks'];
+    const legacyType = ['containers', 'images', 'both'].includes(req.body?.type) ? req.body.type : null;
+    let types: string[] = Array.isArray(req.body?.types)
+      ? req.body.types.map((x: unknown) => String(x)).filter((x: string) => VALID_TYPES.includes(x))
+      : [];
+    if (!types.length && legacyType) types = legacyType === 'both' ? ['containers', 'images'] : [legacyType];
+    if (!types.length) types = ['containers', 'images'];
+    types = [...new Set(types)].filter((t) => VALID_TYPES.includes(t));
+    const untilHours = Number(req.body?.untilHours);
+    const filters: Record<string, string[]> | null =
+      Number.isFinite(untilHours) && untilHours > 0 ? { until: [`${Math.floor(untilHours)}h`] } : null;
     if (ids.length === 0) return res.status(400).json({ error: '需要 engineIds 参数' });
     const d = getDb();
     const results: Array<{
@@ -249,6 +260,8 @@ router.post(
       ok: boolean;
       prunedContainers: number;
       prunedImages: number;
+      prunedVolumes: number;
+      prunedNetworks: number;
       detail: string;
     }> = [];
     for (const id of ids) {
@@ -256,21 +269,38 @@ router.post(
         | { id: string; name: string; endpoint: string }
         | undefined;
       if (!row) {
-        results.push({ engineId: id, name: '', endpoint: '', ok: false, prunedContainers: 0, prunedImages: 0, detail: '引擎不存在' });
+        results.push({ engineId: id, name: '', endpoint: '', ok: false, prunedContainers: 0, prunedImages: 0, prunedVolumes: 0, prunedNetworks: 0, detail: '引擎不存在' });
         continue;
       }
-      const out = { engineId: id, name: row.name, endpoint: row.endpoint, ok: true, prunedContainers: 0, prunedImages: 0, detail: '' };
+      const out = { engineId: id, name: row.name, endpoint: row.endpoint, ok: true, prunedContainers: 0, prunedImages: 0, prunedVolumes: 0, prunedNetworks: 0, detail: '' };
       try {
         const client = getDockerClientForEndpoint(row.endpoint);
-        if (type === 'containers' || type === 'both') {
-          const r = (await client.pruneContainers()) as any;
+        const opts: any = filters ? { filters } : {};
+        const skipped: string[] = [];
+        if (types.includes('containers')) {
+          const r = await (client as any).pruneContainers(opts);
           out.prunedContainers = Number(r?.ContainersDeleted) || 0;
         }
-        if (type === 'images' || type === 'both') {
-          const r = (await client.pruneImages()) as any;
+        if (types.includes('images')) {
+          const r = await (client as any).pruneImages(opts);
           out.prunedImages = Array.isArray(r?.ImagesDeleted) ? r.ImagesDeleted.length : 0;
         }
-        out.detail = `清理容器 ${out.prunedContainers} 个，镜像 ${out.prunedImages} 个`;
+        if (types.includes('volumes')) {
+          if (filters) {
+            skipped.push('卷不支持按年龄过滤已跳过');
+          } else {
+            const r = await (client as any).pruneVolumes({});
+            out.prunedVolumes = Array.isArray(r?.VolumesDeleted) ? r.VolumesDeleted.length : 0;
+          }
+        }
+        if (types.includes('networks')) {
+          const r = await (client as any).pruneNetworks(opts);
+          out.prunedNetworks = Array.isArray(r?.NetworksDeleted) ? r.NetworksDeleted.length : 0;
+        }
+        out.detail =
+          `容器 ${out.prunedContainers} 个，镜像 ${out.prunedImages} 个，卷 ${out.prunedVolumes} 个，网络 ${out.prunedNetworks} 个` +
+          (filters ? `（仅 ${untilHours} 小时前未使用）` : '') +
+          (skipped.length ? `；${skipped.join('、')}` : '');
       } catch (err: any) {
         out.ok = false;
         out.detail = err?.message || '清理失败';
@@ -282,7 +312,7 @@ router.post(
       '跨引擎批量清理',
       '引擎',
       results.map((r) => r.name).filter(Boolean).join(', '),
-      `type: ${type}`,
+      `types: ${types.join('/')}${filters ? `, until: ${untilHours}h` : ''}`,
       results.every((r) => r.ok),
     );
     res.json({ ok: results.every((r) => r.ok), results });
