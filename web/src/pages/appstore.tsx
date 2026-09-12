@@ -137,6 +137,14 @@ export default function AppStorePage() {
   const [srcSubmitting, setSrcSubmitting] = useState(false);
   // 正在同步/删除的应用源 id
   const [srcBusyId, setSrcBusyId] = useState<string | null>(null);
+  // 绑定域名弹窗（应用安装后一键建站点）
+  const [bindTarget, setBindTarget] = useState<AppStoreItem | null>(null);
+  const [bindDomain, setBindDomain] = useState('');
+  const [bindPort, setBindPort] = useState('');
+  const [bindHttps, setBindHttps] = useState(false);
+  const [bindSubmitting, setBindSubmitting] = useState(false);
+  // 已签发的 ACME 证书（绑定域名时选择启用 HTTPS）
+  const [acmeCerts, setAcmeCerts] = useState<Array<{ id: string; certPath: string }>>([]);
 
   /**
    * 拉取应用商店列表
@@ -276,6 +284,51 @@ export default function AppStorePage() {
     },
     [fetchGitSources, showToast],
   );
+
+  /** 打开绑定域名弹窗：预填应用首个宿主机端口，并检查是否有同名域名的已签发证书 */
+  const openBindModal = useCallback((app: AppStoreItem) => {
+    setBindTarget(app);
+    setBindDomain('');
+    const hostPort = String(app.port || '').split(':')[0];
+    setBindPort(/^\d+$/.test(hostPort) ? hostPort : '');
+    setBindHttps(false);
+    get<{ certs: Array<{ id: string; certPath: string }> }>('/api/certs')
+      .then((d) => setAcmeCerts(d?.certs || []))
+      .catch(() => setAcmeCerts([]));
+  }, []);
+
+  /** 提交绑定域名：创建站点（可选自动启用 HTTPS） */
+  const handleBindSubmit = useCallback(async () => {
+    const domain = bindDomain.trim().toLowerCase();
+    if (!domain) {
+      showToast(t('请填写域名'), 'error');
+      return;
+    }
+    const port = bindPort.trim();
+    if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
+      showToast(t('请填写有效的上游端口'), 'error');
+      return;
+    }
+    setBindSubmitting(true);
+    try {
+      // 同名证书存在且勾选 HTTPS 时自动填充证书路径
+      const cert = bindHttps ? acmeCerts.find((c) => c.id === domain || c.id === domain.split('.').slice(1).join('.')) : null;
+      await post('/api/sites', {
+        domain,
+        upstreamHost: '127.0.0.1',
+        upstreamPort: port,
+        listenPort: cert ? '443' : '80',
+        enableHttps: !!cert,
+        certPath: cert?.certPath || '',
+      });
+      showToast(t('站点已创建并应用，域名 {{v1}} → 127.0.0.1:{{v2}}', { v1: domain, v2: port }), 'success');
+      setBindTarget(null);
+    } catch (e: any) {
+      showToast(e?.message || t('绑定失败'), 'error');
+    } finally {
+      setBindSubmitting(false);
+    }
+  }, [bindDomain, bindPort, bindHttps, acmeCerts, showToast]);
 
   /** 根据视图、分类与关键字过滤后的应用列表 */
   const filteredApps = useMemo(() => {
@@ -819,6 +872,11 @@ export default function AppStorePage() {
           <Button variant="ghost" size="sm" onClick={() => setDetailTarget(app)}>
             {t('详情')}
           </Button>
+          {canManage && app.installed && (
+            <Button variant="secondary" size="sm" onClick={() => openBindModal(app)}>
+              {t('绑定域名')}
+            </Button>
+          )}
           {isCustomApp(app) && canManage && (
             <>
               <Button
@@ -1155,6 +1213,49 @@ export default function AppStorePage() {
         onConfirm={handleCustomDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* 绑定域名弹窗 */}
+      <Modal
+        open={!!bindTarget}
+        title={t('绑定域名：{{v1}}', { v1: bindTarget?.name || '' })}
+        onClose={() => setBindTarget(null)}
+        footer={
+          <>
+            <Button variant="ghost" size="md" onClick={() => setBindTarget(null)} disabled={bindSubmitting}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" size="md" onClick={handleBindSubmit} disabled={bindSubmitting}>
+              {bindSubmitting ? t('创建中…') : t('创建站点')}
+            </Button>
+          </>
+        }
+      >
+        <Field label={t('域名')} required hint={t('需已解析到面板所在主机（站点反代将自动生成并应用配置）')}>
+          <Input value={bindDomain} placeholder="app.example.com" onChange={(ev) => setBindDomain(ev.target.value)} />
+        </Field>
+        <Field label={t('上游端口')} required hint={t('应用容器映射到宿主机的端口（已按应用默认端口预填）')}>
+          <Input value={bindPort} onChange={(ev) => setBindPort(ev.target.value)} />
+        </Field>
+        <label className="appstore-bind-https">
+          <input
+            type="checkbox"
+            checked={bindHttps}
+            onChange={(ev) => setBindHttps(ev.target.checked)}
+          />
+          <span>
+            {(() => {
+              const d = bindDomain.trim().toLowerCase();
+              const matched = !!d && acmeCerts.some((c) => c.id === d || c.id === d.split('.').slice(1).join('.'));
+              return matched
+                ? t('自动启用 HTTPS（检测到同名已签发证书）')
+                : t('启用 HTTPS（未检测到同名证书，建议先在「SSL 证书」页签发）');
+            })()}
+          </span>
+        </label>
+        <div className="appstore-tip">
+          {t('创建后即可用 http://域名 直接访问该应用；需要 HTTPS 时先在「SSL 证书」页签发同名证书再勾选，或稍后在站点设置中开启。')}
+        </div>
+      </Modal>
 
       {/* Git 应用源管理弹窗 */}
       <Modal
