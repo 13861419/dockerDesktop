@@ -183,7 +183,7 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_cron_tasks_next_run ON cron_tasks(next_run_at);
 
-    -- 定时任务执行历史表：记录每次定时/手动执行的日志（最多保留最近 N 条见 tasks.ts）
+    -- 定时任务执行历史表：记录每次定时/手动执行的日志（按 tasks.logRetentionDays 天数自动清理，见 retention.ts）
     CREATE TABLE IF NOT EXISTS cron_task_logs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id    TEXT NOT NULL,
@@ -1005,6 +1005,17 @@ function createTables(): void {
   // 迁移：自愈规则监控范围（1.42.0）：local = 仅当前引擎；all = 全部引擎
   try {
     d.exec("ALTER TABLE selfheal_rules ADD COLUMN engine_scope TEXT NOT NULL DEFAULT 'local'");
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：登录失败保护持久化（1.43.0）：按用户名持久化失败计数与锁定截止时间
+  try {
+    d.exec('ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE users ADD COLUMN locked_until INTEGER');
   } catch {
     // 列已存在则忽略
   }

@@ -50,3 +50,24 @@ export function purgeExpiredTable(retentionDaysSetting: string, throttleKey: str
     // 清理失败静默，不影响正常读取
   }
 }
+
+/**
+ * 按保留天数清理计划任务执行历史（cron_task_logs，时间列为 run_at）
+ * 设置键 tasks.logRetentionDays（默认 90 天，<= 0 表示永久保留）
+ */
+export function purgeExpiredTaskLogs(): void {
+  const days = Number(getSetting<number>('tasks.logRetentionDays'));
+  if (!Number.isFinite(days) || days <= 0) return;
+
+  const last = getLastPurgeAt('tasks.log.lastPurgeAt');
+  if (Date.now() - last < PURGE_THROTTLE_MS) return;
+
+  try {
+    getDb()
+      .prepare('DELETE FROM cron_task_logs WHERE run_at < ?')
+      .run(Date.now() - days * 86400_000);
+    setLastPurgeAt('tasks.log.lastPurgeAt', Date.now());
+  } catch {
+    // 清理失败静默，不影响正常读取
+  }
+}

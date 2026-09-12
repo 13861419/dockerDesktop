@@ -79,3 +79,34 @@ test('fix-drift：项目不存在返回 404，空 services 返回 400', async ()
   assert.equal(r.status, 400);
   await req('DELETE', '/api/compose/e2e-fix');
 });
+
+test('drift：labels 比对维度（1.43.0）', async () => {
+  // 本地配置：带自定义标签 + healthcheck
+  const content =
+    'services:\n' +
+    '  e2e-dim-svc:\n' +
+    '    image: alpine\n' +
+    '    command: sleep 600\n' +
+    '    labels:\n' +
+    '      e2e.dim: "v1"\n' +
+    '    healthcheck:\n' +
+    '      test: ["CMD-SHELL", "true"]\n';
+  await req('POST', '/api/compose', { name: 'e2e-dim', content });
+  const fix = await req('POST', '/api/compose/e2e-dim/fix-drift', { services: ['e2e-dim-svc'] });
+  assert.equal(fix.status, 200);
+  // 部署后远端与本地一致 → match
+  let drift = await req('GET', '/api/compose/e2e-dim/drift');
+  let svc = (drift.data.services || []).find((x: any) => x.service === 'e2e-dim-svc');
+  assert.ok(svc, '漂移检测包含 e2e-dim-svc');
+  assert.equal(svc.status, 'match', '部署后一致');
+  // 修改本地标签值 → 检出 labels 漂移
+  const content2 = content.replace('e2e.dim: "v1"', 'e2e.dim: "v2"');
+  await req('POST', '/api/compose', { name: 'e2e-dim', content: content2 });
+  drift = await req('GET', '/api/compose/e2e-dim/drift');
+  svc = (drift.data.services || []).find((x: any) => x.service === 'e2e-dim-svc');
+  assert.equal(svc.status, 'drift', '标签修改后应检出漂移');
+  assert.ok((svc.diffs || []).includes('labels'), '差异项包含 labels');
+  // 清理
+  sh('docker rm -f e2e-dim-e2e-dim-svc-1');
+  await req('DELETE', '/api/compose/e2e-dim');
+});

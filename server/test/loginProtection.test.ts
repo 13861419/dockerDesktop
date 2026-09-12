@@ -15,6 +15,8 @@ import {
   isLocked,
   getLockRemaining,
   registerFailure,
+  registerIpFailure,
+  isIpLocked,
   resetFailures,
   getLoginPolicy,
 } from '../src/loginProtection';
@@ -33,16 +35,16 @@ test('getLockRemaining: 未锁定时返回 0', () => {
 
 test('registerFailure: 累积失败次数', () => {
   resetFailures(TEST_KEY);
-  registerFailure(TEST_KEY);
-  registerFailure(TEST_KEY);
+  registerFailure(TEST_KEY, false);
+  registerFailure(TEST_KEY, false);
   // 还未达到阈值，不应锁定
   assert.strictEqual(isLocked(TEST_KEY), false);
 });
 
 test('resetFailures: 重置后解除锁定', () => {
   resetFailures(TEST_KEY);
-  registerFailure(TEST_KEY);
-  registerFailure(TEST_KEY);
+  registerFailure(TEST_KEY, false);
+  registerFailure(TEST_KEY, false);
   resetFailures(TEST_KEY);
   assert.strictEqual(isLocked(TEST_KEY), false);
 });
@@ -61,7 +63,7 @@ test('锁定触发：连续失败达阈值后 isLocked 为 true', () => {
   const policy = getLoginPolicy();
   // 连续失败 maxAttempts 次
   for (let i = 0; i < policy.maxAttempts; i++) {
-    registerFailure(TEST_KEY);
+    registerFailure(TEST_KEY, false);
   }
   assert.strictEqual(isLocked(TEST_KEY), true, `连续失败 ${policy.maxAttempts} 次后应锁定`);
 });
@@ -70,10 +72,22 @@ test('getLockRemaining: 锁定后返回正数', () => {
   resetFailures(TEST_KEY);
   const policy = getLoginPolicy();
   for (let i = 0; i < policy.maxAttempts; i++) {
-    registerFailure(TEST_KEY);
+    registerFailure(TEST_KEY, false);
   }
   const remaining = getLockRemaining(TEST_KEY);
   assert.ok(remaining > 0, `锁定后剩余时间应大于 0，实际 ${remaining}`);
+});
+
+test('IP 维度：独立计数与锁定', () => {
+  const ip = '10.203.0.' + Date.now() % 250;
+  assert.strictEqual(isIpLocked(ip), false);
+  // IP 阈值默认 20（滑动窗口），高于用户维度
+  for (let i = 0; i < 20; i++) {
+    registerIpFailure(ip);
+  }
+  assert.strictEqual(isIpLocked(ip), true, '同 IP 滑动窗口内失败 20 次后应锁定');
+  resetFailures('x', ip);
+  assert.strictEqual(isIpLocked(ip), false);
 });
 
 test('不同 key 独立计数', () => {
@@ -81,9 +95,9 @@ test('不同 key 独立计数', () => {
   const keyB = 'test-user-b';
   resetFailures(keyA);
   resetFailures(keyB);
-  registerFailure(keyA);
-  registerFailure(keyA);
-  registerFailure(keyA);
+  registerFailure(keyA, false);
+  registerFailure(keyA, false);
+  registerFailure(keyA, false);
   // keyA 可能已锁定，keyB 应未锁定
   assert.strictEqual(isLocked(keyB), false);
   resetFailures(keyA);

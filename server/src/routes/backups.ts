@@ -21,7 +21,7 @@ import {
   readBackupManifest,
   restoreBackup,
 } from '../backup/manager';
-import { uploadToCloudTarget } from './cloud';
+import { uploadToCloudTarget, downloadFromCloudTarget } from './cloud';
 import type { BackupKind } from '../backup/types';
 
 const router = Router();
@@ -213,7 +213,49 @@ router.post(
     if (!result.ok) {
       return res.status(502).json({ error: result.message });
     }
-    res.json({ ok: true, id: manifest.id, target: result.target, size: result.size, filename });
+res.json({ ok: true, id: manifest.id, target: result.target, size: result.size, filename });
+}),
+);
+
+/**
+ * POST /api/backups/:id/restore-from-cloud
+ * 从云端目标拉回该备份的负载文件并恢复（1.43.0）。
+ * body: { targetId }
+ * 流程：按上传时的命名规则下载负载 → 覆盖本地负载文件 → 走标准恢复流程。
+ */
+router.post(
+  '/:id/restore-from-cloud',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const targetId = String(req.body?.targetId || '').trim();
+    if (!targetId) {
+      throw Object.assign(new Error('缺少云端目标 targetId'), { statusCode: 400 });
+    }
+    const manifest = readBackupManifest(id);
+    if (!manifest) {
+      throw Object.assign(new Error('备份不存在'), { statusCode: 404 });
+    }
+    if (!fs.existsSync(manifest.filePath)) {
+      throw Object.assign(new Error('备份负载文件缺失，请先创建/保留本地备份文件'), { statusCode: 404 });
+    }
+    const filename = `${manifest.kind}-${manifest.id}-backup${path.extname(manifest.filePath)}`;
+    const content = await downloadFromCloudTarget(targetId, filename);
+    if (!content || content.length === 0) {
+      throw Object.assign(new Error('云端负载文件为空'), { statusCode: 502 });
+    }
+    // 覆盖本地负载文件后走标准恢复
+    fs.writeFileSync(manifest.filePath, content);
+    const result = await restoreBackup(id);
+    logOperation(
+      res.locals.username,
+      result.ok ? '从云端拉回并恢复备份' : '从云端拉回并恢复备份（失败）',
+      '备份',
+      manifest.name,
+      `${filename}（${content.length} 字节）${result.ok ? '：恢复成功' : `：${result.message}`}`,
+      result.ok,
+    );
+    res.json({ result, pulledFromCloud: true, filename, size: content.length });
   }),
 );
 

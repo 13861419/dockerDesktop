@@ -640,6 +640,60 @@ router.get(
       }
       if (localPorts.join(',') !== remotePorts.join(',')) diffs.push('ports');
       if (localRestart && remoteRestart && localRestart !== remoteRestart) diffs.push('restart');
+      // 卷挂载比对（1.43.0）：本地 compose volumes vs 远端 Mounts（命名卷去项目前缀后比对）
+      const localVolumes: string[] = (cfg.volumes || [])
+        .map((v: any) => {
+          if (typeof v === 'string') {
+            const parts = v.split(':');
+            const src = parts[0] || '';
+            const type = src.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(src) ? 'bind' : 'volume';
+            return `${type}:${src}:${parts[1] || ''}`;
+          }
+          return `${v.type || 'bind'}:${v.source || ''}:${v.target || ''}`;
+        })
+        .sort();
+      const remoteVolumes: string[] = (insp.Mounts || [])
+        .map((m: any) => {
+          const src = m.Type === 'volume' ? String(m.Name || '').replace(new RegExp('^' + req.params.name + '_'), '') : m.Source || '';
+          return `${m.Type}:${src}:${m.Destination || ''}`;
+        })
+        .sort();
+      if (localVolumes.join('|') !== remoteVolumes.join('|')) diffs.push('volumes');
+      // 网络比对（1.43.0）：本地声明的自定义网络（解析实际名）vs 远端接入的网络（去项目前缀、排除默认网络）
+      const topNetworks: Record<string, any> = (parsed as any)?.networks || {};
+      const localNetworks: string[] = Object.keys(cfg.networks || {})
+        .filter((k) => k !== 'default')
+        .map((k) => String(topNetworks[k]?.name || k))
+        .sort();
+      const remoteNetworks: string[] = Object.keys(insp.NetworkSettings?.Networks || {})
+        .map((n) => (n.startsWith(req.params.name + '_') ? n.slice(req.params.name.length + 1) : n))
+        .filter((n) => n !== 'default')
+        .sort();
+      if (localNetworks.join(',') !== remoteNetworks.join(',')) diffs.push('networks');
+      // healthcheck 比对（1.43.0）：本地声明了健康检查时，比对检测命令
+      const localHc: string = Array.isArray(cfg.healthcheck?.test) ? cfg.healthcheck.test.join(' ') : String(cfg.healthcheck?.test || '');
+      const remoteHc: string = (insp.Config?.Healthcheck?.Test || []).join(' ');
+      if (localHc && localHc !== remoteHc) diffs.push('healthcheck');
+      // labels 比对（1.43.0）：排除 compose 自身标签后比对
+      const normLabels = (raw: any): Record<string, string> => {
+        const out: Record<string, string> = {};
+        if (Array.isArray(raw)) {
+          for (const item of raw) {
+            const s = String(item);
+            const idx = s.indexOf('=');
+            if (idx > 0) out[s.slice(0, idx)] = s.slice(idx + 1);
+          }
+        } else if (raw && typeof raw === 'object') {
+          Object.assign(out, raw);
+        }
+        for (const k of Object.keys(out)) {
+          if (k.startsWith('com.docker.compose.')) delete out[k];
+        }
+        return out;
+      };
+      const localLabelsStr = Object.entries(normLabels(cfg.labels)).sort().map(([k, v]) => `${k}=${v}`).join('|');
+      const remoteLabelsStr = Object.entries(normLabels(insp.Config?.Labels || {})).sort().map(([k, v]) => `${k}=${v}`).join('|');
+      if (localLabelsStr !== remoteLabelsStr) diffs.push('labels');
       services.push({
         service: svc,
         status: diffs.length ? 'drift' : 'match',

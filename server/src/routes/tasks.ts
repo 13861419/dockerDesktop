@@ -32,6 +32,7 @@ import {
   TaskRunResult,
 } from '../scheduler';
 import { logOperation } from '../operationLog';
+import { purgeExpiredTaskLogs } from '../retention';
 import { collectGcImages, planGc, summarizePlan, bytesText, type GcPolicy } from '../gc';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
 import { pullWithFailover } from '../docker/pull';
@@ -783,6 +784,12 @@ export async function dispatchTask(id: string): Promise<TaskRunResult> {
 router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
+    // 惰性触发执行历史保留清理（每日最多一次，1.43.0）
+    try {
+      purgeExpiredTaskLogs();
+    } catch {
+      // 清理失败不影响列表
+    }
     const rows = getDb()
       .prepare(
         'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks ORDER BY created_at DESC',

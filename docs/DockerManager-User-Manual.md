@@ -314,6 +314,8 @@ To back up, copy the entire data directory.
 4. Use the avatar / menu in the top-right to **log out**.
 
 > Sessions use an in-memory token; they expire when the service restarts.
+>
+> Login failure protection (1.43.0): 5 consecutive failures on one account lock it for 10 minutes — the counter is **persisted**, so lockouts survive panel restarts. The same IP failing 20 times within a 10-minute sliding window is locked for 5 minutes (higher threshold for NAT scenarios; tunable via env vars), preventing username rotation around brute-force protection.
 
 ---
 
@@ -537,7 +539,7 @@ Menu: **Compose** (`/compose`)
 - Actions: **Up**, **Down**, **Pull**, **Build**.
 - **Project dashboard (v1.34.0)**: the "Dashboard" button per project aggregates CPU / memory / network RX-TX / disk read-write by service, and offers per-service **rolling update** (pull the latest image, then recreate only that service with `--no-deps`). Since 1.35.0 the update is followed by an automatic **health check** (the container must stay running for 60s; services with a healthcheck must reach healthy) — on failure the previous image is re-tagged and the service is rolled back automatically, with the outcome reported in the toast.
 - **Project-wide rolling update (new in 1.38.0)**: the "Rolling-update all" button in the dashboard footer walks through the services in compose definition order — pull → recreate → health check → automatic rollback on failure — continuing to the next service when one fails, then reporting per-service results.
-- **Remote config drift detection (new in 1.38.0)**: the "Drift detection" button compares the local compose config against the actual project-labelled containers on a target engine (leave empty for the local engine), checking image / ports / env / restart policy per service and reporting match / drift / missing-on-remote / missing-locally. **Drift auto-fix (1.40.0)**: select the drifted services in the result and apply a one-click fix — the panel re-creates them from the local config (remote engines pull the image first, then rebuild per service); API `POST /api/compose/:name/fix-drift`. **Delete locally-missing services (1.42.0)**: services reported as "missing locally" (remote-only) can also be checked — the one-click fix then removes their containers on the target engine by project/service label (stop first, then remove), for both local and remote engines.
+- **Remote config drift detection (new in 1.38.0)**: the "Drift detection" button compares the local compose config against the actual project-labelled containers on a target engine (leave empty for the local engine), checking image / ports / env / restart policy per service (comparison dimensions extended in 1.43.0 to **volumes / networks / healthcheck / labels** — compose-internal labels are excluded and named volumes are compared with the project prefix stripped) and reporting match / drift / missing-on-remote / missing-locally. **Drift auto-fix (1.40.0)**: select the drifted services in the result and apply a one-click fix — the panel re-creates them from the local config (remote engines pull the image first, then rebuild per service); API `POST /api/compose/:name/fix-drift`. **Delete locally-missing services (1.42.0)**: services reported as "missing locally" (remote-only) can also be checked — the one-click fix then removes their containers on the target engine by project/service label (stop first, then remove), for both local and remote engines.
 - **Cross-engine image distribution & proxy deploy (v1.34.0 / v1.35.0)**: inside the dashboard, "Distribute images to engines" pre-pulls all service images to the given remote engines (one `tcp://host:port` per line); tick "Start on remote after distribution (proxy deploy)" and the services are created and started on the remote engine right after the images arrive — port mappings, volumes, environment, restart policy and the project default network are fully reproduced, and compose labels are written so remote containers join the panel's dashboard and stats. Existing same-name containers are skipped. A standalone `POST /api/compose/:name/remote-deploy` API is also available (`recreate: true` forces recreation).
 - Expand to inspect the Compose file content and structure (port mapping, etc.).
 
@@ -567,6 +569,7 @@ Menu: **Scheduled Tasks** (`/tasks`)
 - **New task**: choose task type, schedule (cron / interval), target container, and action.
 - Enable / pause, run now, delete, and edit tasks.
 - **Run logs** show the result and failure reason of each run.
+- **Run-history retention (1.43.0)**: task run logs are auto-purged daily per the "Task run-history retention (days)" setting (default 90; 0 = keep forever), preventing unbounded growth.
 - **Cross-engine prune (crossPrune, 1.42.0)**: on schedule, prune images / containers / volumes / networks across all (or selected) registered engines; one engine failing does not block the others. Same semantics as the cross-engine batch cleanup on the Engines page.
 
 ![Scheduled tasks](../images/tasks.png)
@@ -604,7 +607,7 @@ Menu: **Docker Engines** (`/engines`, admin only)
 - **Edit / Delete** existing endpoints.
 - **Set current** — switch the active engine.
 - Endpoints are auto-detected and validated.
-- **Pull-through image cache (v1.34.0)**: a built-in `registry:2` proxy cache on port 5060 can be deployed with one click. Point other engines' registry-mirror at `dm-registry-cache:5060` to share a local cache — repeated pulls of the same image no longer traverse the internet. Status view and one-click removal included; combine with the Compose dashboard's image distribution to pre-warm remote engines.
+- **Pull-through image cache (v1.34.0)**: a built-in `registry:2` proxy cache on port 5060 can be deployed with one click. Point other engines' registry-mirror at `dm-registry-cache:5060` to share a local cache — repeated pulls of the same image no longer traverse the internet. Status view and one-click removal included. Since 1.43.0 the deploy can enable optional htpasswd authentication (random credentials returned once in the deploy response); the status endpoint reports the auth state and cache disk usage (MB). Combine with the Compose dashboard's image distribution to pre-warm remote engines.
 
 ![Docker engines](../images/engines.png)
 
@@ -945,6 +948,7 @@ Install-time configuration:
 - Type: `Panel database` / `Volumes` / `Compose config` / `Site config`
 - Name *, source (optional, e.g. a volume name)
 - Upload to cloud requires a target configured under `/cloudbackup`
+- Since 1.43.0, backups previously uploaded to the cloud can be **pulled back and restored** (`POST /api/backups/:id/restore-from-cloud`; WebDAV / S3 / OSS supported) for off-site rollback.
 
 ---
 

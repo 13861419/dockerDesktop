@@ -355,6 +355,14 @@ registerSettings([
     group: 'retention',
   },
   {
+    key: 'tasks.logRetentionDays',
+    label: '任务执行历史保留天数',
+    hint: '计划任务执行历史（cron_task_logs）超过该天数自动清理；0 表示永久保留（默认 90）',
+    type: 'number',
+    def: 90,
+    group: 'retention',
+  },
+  {
     key: 'metrics.token',
     label: 'Prometheus 抓取 Token',
     hint: '配置后 /metrics 端点要求携带 ?token= 或 Authorization: Bearer；留空表示开放访问',

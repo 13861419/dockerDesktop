@@ -16,8 +16,8 @@ import {
   listSessions,
   revokeSessions,
 } from '../auth';
-import { isLocked, getLockRemaining, registerFailure, resetFailures } from '../loginProtection';
-import { getUserRole, getUserSecurity, setMustChangePassword } from '../users';
+import { isLocked, getLockRemaining, registerFailure, registerIpFailure, isIpLocked, getIpLockRemaining, resetFailures } from '../loginProtection';
+import { getUserRole, getUserSecurity, setMustChangePassword, userExists } from '../users';
 import { listRoles } from '../rbac';
 import { isIpAllowed, isPasswordExpired, requestIp } from '../security';
 import { verifyTotp } from '../totp';
@@ -65,13 +65,21 @@ router.post(
     }
     const user = String(username);
 
-    // 检查账号是否已被锁定
+    // 检查账号（用户名维度）与来源 IP 是否已被锁定
     const remaining = getLockRemaining(user);
     if (isLocked(user) || remaining > 0) {
       return res.status(429).json({
         error: `登录失败次数过多，账号已暂时锁定，请在 ${remaining} 秒后重试`,
         locked: true,
         remaining,
+      });
+    }
+    const ipRemaining = getIpLockRemaining(ip);
+    if (isIpLocked(ip) || ipRemaining > 0) {
+      return res.status(429).json({
+        error: `该 IP 登录失败次数过多，已暂时锁定，请在 ${ipRemaining} 秒后重试`,
+        locked: true,
+        remaining: ipRemaining,
       });
     }
 
@@ -88,13 +96,16 @@ router.post(
 
     const auth = verifyCredentials(user, String(password));
     if (!auth.ok) {
-      // 记录一次失败，可能触发锁定
-      registerFailure(user);
+      // 记录一次失败（用户名 + IP 双维度，可能触发锁定）
+      registerFailure(user, userExists(user));
+      registerIpFailure(ip);
       const locked = getLockRemaining(user);
+      const ipLocked = getIpLockRemaining(ip);
+      const effLocked = Math.max(locked, ipLocked);
       res.status(401).json({
-        error: locked > 0 ? `用户名或密码错误，连续失败已触发锁定，请在 ${locked} 秒后重试` : '用户名或密码错误',
-        locked: locked > 0,
-        remaining: locked,
+        error: effLocked > 0 ? `用户名或密码错误，连续失败已触发锁定，请在 ${effLocked} 秒后重试` : '用户名或密码错误',
+        locked: effLocked > 0,
+        remaining: effLocked,
       });
       return;
     }
@@ -111,8 +122,8 @@ router.post(
       return res.json({ totpRequired: true, ticket: t, username: user, mustChangePassword: mustChange });
     }
 
-    // 登录成功，清除失败记录
-    resetFailures(user);
+    // 登录成功，清除失败记录（含 IP 维度）
+    resetFailures(user, ip);
     const token = createSession(user, ip, String(req.headers['user-agent'] || ''));
     res.json({ token, username: user, role: getUserRole(user), mustChangePassword: mustChange });
   }),

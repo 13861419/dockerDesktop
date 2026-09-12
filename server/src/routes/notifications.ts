@@ -12,13 +12,14 @@
  */
 import { Router, Request, Response } from 'express';
 import {
-  listChannels,
-  createChannel,
-  updateChannel,
-  deleteChannel,
-  sendAlert,
-  getPushStats,
-  type ChannelType,
+listChannels,
+createChannel,
+updateChannel,
+deleteChannel,
+sendAlert,
+sendTestToDraft,
+getPushStats,
+type ChannelType,
 } from '../notify';
 import {
   getAlertRules,
@@ -172,6 +173,33 @@ router.post(
       : 'Docker 管理面板 测试消息（监控未就绪，仅验证通道连通性）';
     const result = await sendAlert(id, text);
     logOperation(res.locals.username, '测试推送告警', '通知', id, result.ok ? '成功' : `失败: ${result.detail}`);
+    if (!result.ok) {
+      return res.status(502).json({ error: `推送失败: ${result.detail}`, detail: result.detail });
+    }
+    res.json({ ok: true, detail: result.detail });
+  }),
+);
+
+/**
+ * POST /api/notifications/channels/test-draft
+ * 测试未保存的渠道配置（1.43.0）：body: { type, config }
+ * 仅验证连通性，不落库。
+ */
+router.post(
+  '/channels/test-draft',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const draft = { type: String(req.body?.type || ''), config: req.body?.config || {} };
+    const text = 'Docker 管理面板 测试消息（未保存配置的连通性验证）';
+    const result = await sendTestToDraft(draft, text);
+    logOperation(
+      res.locals.username,
+      '测试未保存渠道配置',
+      '通知',
+      draft.type,
+      result.ok ? '成功' : `失败: ${result.detail}`,
+      result.ok,
+    );
     if (!result.ok) {
       return res.status(502).json({ error: `推送失败: ${result.detail}`, detail: result.detail });
     }

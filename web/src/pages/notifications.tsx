@@ -800,6 +800,23 @@ export default function NotificationsPage() {
     [showToast],
   );
 
+  /** 测试未保存的渠道配置（1.43.0）：用当前弹窗表单直接发一条测试消息 */
+  const [testingDraft, setTestingDraft] = useState(false);
+  const testDraftChannel = useCallback(async () => {
+    setTestingDraft(true);
+    try {
+      await post('/api/notifications/channels/test-draft', {
+        type: form.type,
+        config: buildChannelConfig(),
+      });
+      showToast(t('测试消息已发送'));
+    } catch (e: any) {
+      showToast(e?.message || t('测试推送失败'), 'error');
+    } finally {
+      setTestingDraft(false);
+    }
+  }, [form.type, showToast]);
+
   /**
    * 确认删除渠道
    */
@@ -1721,8 +1738,9 @@ export default function NotificationsPage() {
         onClose={() => setChannelModal({ editing: null, open: false })}
         footer={
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setChannelModal({ editing: null, open: false })}>{t('取消')}</Button>
-            <Button loading={saving} onClick={handleSaveChannel}>{channelModal.editing ? t('保存') : t('创建')}</Button>
+<Button variant="ghost" onClick={() => setChannelModal({ editing: null, open: false })}>{t('取消')}</Button>
+<Button variant="ghost" loading={testingDraft} onClick={() => void testDraftChannel()}>{t('测试连接')}</Button>
+<Button loading={saving} onClick={handleSaveChannel}>{channelModal.editing ? t('保存') : t('创建')}</Button>
           </div>
         }
       >

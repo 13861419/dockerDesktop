@@ -449,6 +449,82 @@ export async function uploadToCloudTarget(
 }
 
 /**
+ * 二进制安全的 HTTP 请求（响应体保留原始 Buffer，供文件下载）
+ */
+function httpRequestRaw(url: string, method: string, headers: Record<string, string>): Promise<{ status: number; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const mod = u.protocol === 'https:' ? https : http;
+    const req = mod.request(
+      u,
+      { method, headers },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks) }));
+      },
+    );
+    req.on('error', (e) => reject(e));
+    req.setTimeout(120000, () => {
+      req.destroy(new Error('请求超时'));
+    });
+    req.end();
+  });
+}
+
+/**
+ * 从指定云端目标下载文件（1.43.0，供备份回拉恢复复用）
+ * @param targetId 云端目标 id
+ * @param filename 文件名（拼接在目标基路径下）
+ * @returns 文件内容
+ */
+export async function downloadFromCloudTarget(targetId: string, filename: string): Promise<Buffer> {
+  const cfg = resolveTarget({ id: targetId });
+  const objectPath = [cfg.path, filename].filter(Boolean).join('/');
+
+  if (cfg.type === 'webdav') {
+    const base = cfg.endpoint.replace(/\/+$/, '');
+    const url = base + '/' + objectPath.split('/').map(encodeURIComponent).join('/');
+    const auth = 'Basic ' + Buffer.from(`${cfg.accessKey}:${cfg.secret}`, 'utf8').toString('base64');
+    const r = await httpRequestRaw(url, 'GET', { Authorization: auth });
+    if (r.status < 200 || r.status >= 300) {
+      throw new Error(`下载失败（HTTP ${r.status}）`);
+    }
+    return r.body;
+  }
+
+  const bucket = cfg.bucket;
+  if (!bucket) throw Object.assign(new Error('缺少桶名（bucket）'), { statusCode: 400 });
+  const region = cfg.region || 'us-east-1';
+
+  if (cfg.type === 'oss') {
+    const base = cfg.endpoint.replace(/\/+$/, '');
+    const u = new URL(base);
+    const host = `${cfg.bucket}.${u.host}`;
+    const url = `https://${host}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
+    const date = new Date().toUTCString();
+    const auth = signOSS(cfg, objectPath, '', date);
+    const r = await httpRequestRaw(url, 'GET', { Authorization: auth, Date: date });
+    if (r.status < 200 || r.status >= 300) {
+      throw new Error(`下载失败（HTTP ${r.status}）`);
+    }
+    return r.body;
+  }
+
+  // S3 GET（SigV4，空负载哈希）
+  const base = cfg.endpoint.replace(/\/+$/, '');
+  const u = new URL(base);
+  const host = `${cfg.bucket}.${u.host}`;
+  const url = `https://${host}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
+  const sigHeaders = signS3(cfg, objectPath, Buffer.alloc(0), 'GET', region, host);
+  const r = await httpRequestRaw(url, 'GET', { ...sigHeaders });
+  if (r.status < 200 || r.status >= 300) {
+    throw new Error(`下载失败（HTTP ${r.status}）`);
+  }
+  return r.body;
+}
+
+/**
  * POST /api/cloud/upload
  * 上传文件到云端目标
  * 请求体：express.raw（application/octet-stream），query 传 id=目标id & filename=文件名

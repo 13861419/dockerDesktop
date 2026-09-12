@@ -352,6 +352,28 @@ export async function sendAlert(
   return result;
 }
 
+/**
+ * 直接向"未保存的渠道配置"发送测试消息（1.43.0）
+ * 仅校验配置并尝试推送一次，不落库、不写推送留痕。
+ * @param input 渠道类型与配置（与新增渠道表单字段一致）
+ * @param text 测试文本
+ */
+export async function sendTestToDraft(
+  input: { type: string; config: Record<string, any> },
+  text: string,
+): Promise<{ ok: boolean; detail: string }> {
+  const type = String(input?.type || '');
+  if (!['webhook', 'email', 'dingtalk', 'feishu', 'telegram', 'wecom', 'slack'].includes(type)) {
+    return { ok: false, detail: '不支持的渠道类型' };
+  }
+  try {
+    validateConfig(type as ChannelType, input?.config || {});
+  } catch (e: any) {
+    return { ok: false, detail: e?.message || '配置校验失败' };
+  }
+  return dispatch(type as ChannelType, input?.config || {}, text);
+}
+
 /** 推送日志保留条数上限（超出时裁剪最旧记录） */
 const PUSH_LOG_LIMIT = 5000;
 
