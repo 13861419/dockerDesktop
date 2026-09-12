@@ -412,6 +412,7 @@ Click a container to open its detail page (`containerDetail`), which provides:
 9. **Processes in container (new in 1.37.0)**: a process card on the "Detail" tab (docker top) lists all processes inside the container (user / PID / CPU / memory / command line) with manual refresh.
 10. **Operation log (new in 1.37.0)**: the "Detail" tab also matches the operation log by container name / short ID and shows the latest 10 operations on this container (time / operator / action / result), making start-stop / update / delete actions fully traceable.
 11. **File changes (new in 1.48.0)**: the "Detail" tab gains a "File changes" card (docker diff) listing files added / modified / deleted during the container's runtime, filterable by change type — useful for spotting unexpected writes or intrusion traces.
+12. **Config snapshot compare (new in 1.50.0)**: the "Detail" tab gains a "Config snapshots" card — click "Save snapshot" to record the container's current config (image / port mappings / env / volumes / restart policy / network mode / privileged), then pick any two snapshots for a field-level compare (base → target); changed fields are listed row by row with old and new values. Up to 50 snapshots are kept per container — save one before and after rebuilding a container to spot config drift.
 
 ![Container list](../images/containers.png)
 
@@ -966,6 +967,7 @@ Install-time configuration:
 - Name *, source (optional, e.g. a volume name)
 - Upload to cloud requires a target configured under `/cloudbackup`
 - Database restores run an automatic **SQLite integrity check** (quick_check, 1.45.0) first — a corrupted backup file is rejected instead of overwriting the live database.
+- **Scheduled backups auto-upload to the cloud (new in 1.50.0)**: backup cron tasks (panel database / volumes) gain an "Upload to cloud after backup" dropdown — when a cloud target is selected, a successful run automatically uploads the backup file to that target (WebDAV / S3 / OSS); the upload result is recorded in the run details. Upload failures are only noted and do not affect the backup itself. Together with cloud pull-back restore this closes the off-site disaster-recovery loop.
 - Since 1.43.0, backups previously uploaded to the cloud can be **pulled back and restored** (`POST /api/backups/:id/restore-from-cloud`; WebDAV / S3 / OSS supported) for off-site rollback.
 
 ---

@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { get, del, post, download } from '../api/client';
+import { isAdmin } from '../api/auth';
 import { ContainerDetailInfo, ContainerStats } from '../types';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -264,6 +265,13 @@ export default function ContainerDetailPage() {
   const [diffItems, setDiffItems] = useState<Array<{ path: string; kind: number; kindLabel: string }> | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffFilter, setDiffFilter] = useState<'all' | 'added' | 'modified' | 'deleted'>('all');
+  // 容器配置快照对比
+  const [snapshots, setSnapshots] = useState<Array<{ id: number; username: string; createdAt: number }>>([]);
+  const [snapLoading, setSnapLoading] = useState(false);
+  const [snapFrom, setSnapFrom] = useState('');
+  const [snapTo, setSnapTo] = useState('');
+  const [snapDiff, setSnapDiff] = useState<Array<{ field: string; label: string; from: string; to: string }> | null>(null);
+  const [snapSaving, setSnapSaving] = useState(false);
   // 容器相关操作记录 (最近 20 条)
   const [operations, setOperations] = useState<
     Array<{ id: number; username: string; action: string; detail: string | null; success: boolean; createdAt: number }>
@@ -342,6 +350,72 @@ export default function ContainerDetailPage() {
       setDiffLoading(false);
     }
   }, [id]);
+
+  /** 拉取配置快照列表 */
+  const fetchSnapshots = useCallback(async () => {
+    if (!id) return;
+    setSnapLoading(true);
+    try {
+      const data = await get<{ items: Array<{ id: number; username: string; createdAt: number }> }>(
+        `/api/containers/${encodeURIComponent(id)}/snapshots`
+      );
+      setSnapshots(data?.items || []);
+    } catch {
+      setSnapshots([]);
+    } finally {
+      setSnapLoading(false);
+    }
+  }, [id]);
+
+  /** 保存当前配置为快照 */
+  const saveSnapshot = useCallback(async () => {
+    if (!id) return;
+    setSnapSaving(true);
+    try {
+      await post(`/api/containers/${encodeURIComponent(id)}/snapshot`);
+      showToast(t('快照已保存'), 'success');
+      fetchSnapshots();
+    } catch (e: any) {
+      showToast(e?.message || t('保存快照失败'), 'error');
+    } finally {
+      setSnapSaving(false);
+    }
+  }, [id, fetchSnapshots, showToast]);
+
+  /** 删除一条快照 */
+  const deleteSnapshot = useCallback(
+    async (snapId: number) => {
+      try {
+        await del(`/api/containers/snapshots/${snapId}`);
+        showToast(t('快照已删除'), 'success');
+        fetchSnapshots();
+      } catch (e: any) {
+        showToast(e?.message || t('删除快照失败'), 'error');
+      }
+    },
+    [fetchSnapshots, showToast]
+  );
+
+  /** 对比两份快照 */
+  const runSnapshotDiff = useCallback(async () => {
+    if (!id || !snapFrom || !snapTo) {
+      showToast(t('请选择要对比的两份快照'), 'error');
+      return;
+    }
+    if (snapFrom === snapTo) {
+      showToast(t('两份快照相同，无需对比'), 'error');
+      return;
+    }
+    try {
+      const data = await get<{ diffs: Array<{ field: string; label: string; from: string; to: string }> }>(
+        `/api/containers/${encodeURIComponent(id)}/snapshot-diff?from=${snapFrom}&to=${snapTo}`
+      );
+      setSnapDiff(data?.diffs || []);
+    } catch (e: any) {
+      showToast(e?.message || t('对比失败'), 'error');
+    }
+  }, [id, snapFrom, snapTo, showToast]);
+
 
   /** 拉取该容器的操作记录 */
   const fetchOperations = useCallback(async () => {
@@ -1958,6 +2032,101 @@ export default function ContainerDetailPage() {
                     </div>
                   );
                 })()}
+              </Card>
+
+              <Card
+                title={t('配置快照')}
+                extra={
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Button variant="ghost" size="sm" onClick={fetchSnapshots} disabled={snapLoading}>
+                      {t('刷新')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={saveSnapshot} loading={snapSaving} disabled={!isAdmin()}>
+                      {t('保存快照')}
+                    </Button>
+                  </div>
+                }
+              >
+                {snapshots.length === 0 ? (
+                  <Empty title={t('暂无快照')} description={t('点击「保存快照」记录当前容器配置（镜像/端口/环境变量/挂载卷等），随时对比两次快照找出配置变更')} />
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                      <Select style={{ width: 200 }} value={snapFrom} onChange={(e: any) => setSnapFrom(e.target.value)}>
+                        <option value="">{t('基准快照')}</option>
+                        {snapshots.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {new Date(s.createdAt).toLocaleString()}（{s.username || '-'}）
+                          </option>
+                        ))}
+                      </Select>
+                      <span>→</span>
+                      <Select style={{ width: 200 }} value={snapTo} onChange={(e: any) => setSnapTo(e.target.value)}>
+                        <option value="">{t('对比快照')}</option>
+                        {snapshots.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {new Date(s.createdAt).toLocaleString()}（{s.username || '-'}）
+                          </option>
+                        ))}
+                      </Select>
+                      <Button variant="primary" size="sm" onClick={runSnapshotDiff}>
+                        {t('对比')}
+                      </Button>
+                    </div>
+                    {snapDiff !== null && (
+                      snapDiff.length === 0 ? (
+                        <div className="desc-value">{t('两份快照配置一致')}</div>
+                      ) : (
+                        <div className="kv-scroll">
+                          <table className="detail-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: 90 }}>{t('字段')}</th>
+                                <th>{t('原值')}</th>
+                                <th>{t('新值')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {snapDiff.map((d, i) => (
+                                <tr key={i}>
+                                  <td>{d.label}</td>
+                                  <td className="mono" style={{ whiteSpace: 'pre-wrap' }}>{d.from || '—'}</td>
+                                  <td className="mono" style={{ whiteSpace: 'pre-wrap' }}>{d.to || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    )}
+                    <div className="kv-scroll" style={{ marginTop: 8 }}>
+                      <table className="detail-table">
+                        <thead>
+                          <tr>
+                            <th>{t('保存时间')}</th>
+                            <th>{t('保存人')}</th>
+                            <th style={{ width: 70 }}>{t('操作')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {snapshots.map((s) => (
+                            <tr key={s.id}>
+                              <td className="mono">{new Date(s.createdAt).toLocaleString()}</td>
+                              <td>{s.username || '—'}</td>
+                              <td>
+                                {isAdmin() && (
+                                  <Button variant="ghost" size="sm" onClick={() => deleteSnapshot(s.id)}>
+                                    {t('删除')}
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </Card>
 
               <Card

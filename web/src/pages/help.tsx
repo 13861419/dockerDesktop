@@ -125,7 +125,7 @@ const FAQ_ITEMS: FaqItem[] = [
 const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/', name: t('总览'), desc: t('引擎信息、宿主机×容器双维度资源监控曲线、无限制容器风险提示、一键体检入口、监控指标导出 CSV 与运维周报 PDF（1.34.0）') },
   { path: '/health', name: t('健康体检'), desc: t('一键体检：悬空镜像、停止容器、网络、卷、安全配置') },
-  { path: '/containers', name: t('容器'), desc: t('生命周期管理、终端、日志、标签过滤、批量操作、镜像自动更新与回滚、Inspect 查看、容器内进程与操作记录') },
+  { path: '/containers', name: t('容器'), desc: t('生命周期管理、终端、日志、标签过滤、批量操作、镜像自动更新与回滚、Inspect 查看、容器内进程与操作记录、配置快照对比（1.50.0）') },
   { path: '/templates', name: t('容器模板'), desc: t('模板一键创建容器') },
   { path: '/orchestrate', name: t('编排'), desc: t('多容器启动依赖顺序编排与执行') },
   { path: '/assistant', name: t('AI 助手'), desc: t('对话、知识库、巡检、告警诊断、周报、用量治理') },
@@ -140,7 +140,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/compose', name: t('Compose'), desc: t('工程管理、yaml 编辑、docker run 命令导入、容器逆向推导；项目看板（服务级资源聚合）、服务滚动更新（健康检查+自动回滚）、全部滚动更新、漂移检测与一键修复（本地缺失可勾选删除，1.42.0）；漂移比对维度含卷挂载/网络/healthcheck/labels（1.43.0）、跨引擎镜像分发与远端代理部署（1.34.0）') },
   { path: '/deploys', name: t('Git 部署'), desc: t('Git 仓库绑定为部署应用，一键 compose up --build；Webhook 自动部署、HMAC 签名校验（1.46.0）、加密凭据、部署历史与失败告警') },
   { path: '/appstore', name: t('应用商店'), desc: t('一键部署常用应用，升级前版本对比（1.46.0）、安装前端口冲突预检（1.49.0）') },
-  { path: '/tasks', name: t('计划任务'), desc: t('定时备份/清理/跨引擎清理/构建/Webhook 触发，执行历史按保留天数自动清理（1.43.0）；失败记录一键重跑（1.49.0）') },
+  { path: '/tasks', name: t('计划任务'), desc: t('定时备份/清理/跨引擎清理/构建/Webhook 触发，执行历史按保留天数自动清理（1.43.0）；失败记录一键重跑（1.49.0）；备份成功自动上传云端目标（1.50.0）') },
   { path: '/files', name: t('文件管理'), desc: t('容器文件浏览与传输') },
   { path: '/hostfiles', name: t('宿主机文件'), desc: t('宿主机文件管理') },
   { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell') },

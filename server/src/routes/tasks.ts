@@ -17,6 +17,7 @@ import { gitCloneOrPull, gitAvailable, randomHex, GitCred } from '../gitCli';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { uploadToCloudTarget } from './cloud';
 import { requireAdmin } from '../auth';
 import {
   getDb,
@@ -249,6 +250,17 @@ async function runBackupHandler(task: CronTaskRow, config: Record<string, any>):
   const target = config.target === 'volumes' ? 'volumes' : 'database';
   const keepCount = Number(config.keepCount) > 0 ? Number(config.keepCount) : 0;
   const dataDir = getDataDir();
+  /** 备份成功后自动上传云端（1.49.0+）；上传失败不影响备份结果 */
+  const cloudTargetId = typeof config.cloudTargetId === 'string' && config.cloudTargetId ? config.cloudTargetId : '';
+  const uploadToCloud = async (fileName: string, filePath: string): Promise<string> => {
+    if (!cloudTargetId) return '';
+    try {
+      const r = await uploadToCloudTarget(cloudTargetId, fileName, fs.readFileSync(filePath));
+      return r.ok ? `；已上传云端（${r.target}）` : `；云端上传失败：${r.message}`;
+    } catch (e: any) {
+      return `；云端上传失败：${String(e?.message || e)}`;
+    }
+  };
 
   // 备份数据库（default）分支
   if (target === 'database') {
@@ -265,8 +277,9 @@ async function runBackupHandler(task: CronTaskRow, config: Record<string, any>):
     } catch {
       // 源临时文件删除失败不阻断
     }
+    const cloudNote = await uploadToCloud(fileName, dest);
     cleanupBackups(destDir, keepCount);
-    return { ok: true, detail: `数据库备份: ${fileName}` };
+    return { ok: true, detail: `数据库备份: ${fileName}${cloudNote}` };
   }
 
   // 备份命名卷分支
@@ -305,7 +318,23 @@ async function runBackupHandler(task: CronTaskRow, config: Record<string, any>):
     generated.push(fileName);
   }
   cleanupBackups(destDir, keepCount);
-  return { ok: true, detail: `卷备份文件:\n${generated.join('\n')}` };
+  let cloudNote = '';
+  if (cloudTargetId) {
+    let okCount = 0;
+    const fails: string[] = [];
+    for (const fileName of generated) {
+      if (!fileName.endsWith('.tar.gz')) continue; // 打包失败的条目跳过
+      try {
+        const r = await uploadToCloudTarget(cloudTargetId, fileName, fs.readFileSync(path.join(destDir, fileName)));
+        if (r.ok) okCount++;
+        else fails.push(`${fileName}: ${r.message}`);
+      } catch (e: any) {
+        fails.push(`${fileName}: ${String(e?.message || e)}`);
+      }
+    }
+    cloudNote = `；云端上传 ${okCount} 个成功${fails.length ? `，${fails.length} 个失败（${fails.join('；')}）` : ''}`;
+  }
+  return { ok: true, detail: `卷备份文件:\n${generated.join('\n')}${cloudNote}` };
 }
 
 /**

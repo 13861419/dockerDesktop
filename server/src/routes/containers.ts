@@ -7,6 +7,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import net from 'net';
 import { getDockerClient } from '../docker/client';
+import { getDb } from '../storage';
 import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
 import Dockerode from 'dockerode';
@@ -1707,6 +1708,158 @@ router.post(
 
     logOperation(res.locals.username, '网络连通性诊断', 'container', sourceName, `目标: ${targetName}(${targetIp}):${port}`);
     res.json({ source: sourceName, target: targetName, targetIp, port, results });
+  }),
+);
+
+// ============ 容器配置快照对比 ============
+
+/** 从容器 inspect 中提取快照配置（稳定字段集，便于 diff） */
+function extractSnapshotConfig(info: Dockerode.ContainerInspectInfo) {
+  const hostConfig = info.HostConfig || ({} as Dockerode.HostConfig);
+  const ports: string[] = [];
+  const bindings = (hostConfig.PortBindings || {}) as Record<string, Array<{ HostIp?: string; HostPort?: string }>>;
+  for (const [containerPort, binds] of Object.entries(bindings)) {
+    for (const b of binds || []) {
+      if (b?.HostPort) ports.push(`${b.HostIp ? `${b.HostIp}:` : ''}${b.HostPort}:${containerPort}`);
+    }
+  }
+  return {
+    image: info.Config?.Image || '',
+    ports,
+    env: info.Config?.Env || [],
+    volumes: hostConfig.Binds || [],
+    restartPolicy: hostConfig.RestartPolicy?.Name || '',
+    networkMode: hostConfig.NetworkMode || '',
+    privileged: !!hostConfig.Privileged,
+  };
+}
+
+/** 快照配置字段中文名 */
+const SNAPSHOT_FIELD_LABEL: Record<string, string> = {
+  image: '镜像',
+  ports: '端口映射',
+  env: '环境变量',
+  volumes: '挂载卷',
+  restartPolicy: '重启策略',
+  networkMode: '网络模式',
+  privileged: '特权模式',
+};
+
+/**
+ * POST /api/containers/:id/snapshot
+ * 保存当前容器配置快照（镜像 / 端口 / 环境变量 / 挂载卷 / 重启策略 / 网络模式 / 特权）
+ */
+router.post(
+  '/:id/snapshot',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const info = await container.inspect();
+    const name = (info.Name || '').replace(/^\//, '');
+    const config = extractSnapshotConfig(info);
+    const d = getDb();
+    const createdAt = Date.now();
+    const r = d
+      .prepare(
+        'INSERT INTO container_snapshots (container_name, container_id, username, config, created_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(name, info.Id, String(res.locals.username || ''), JSON.stringify(config), createdAt);
+    // 每容器最多保留 50 份快照，超限清理最旧
+    d.prepare(
+      'DELETE FROM container_snapshots WHERE container_name = ? AND id NOT IN (SELECT id FROM container_snapshots WHERE container_name = ? ORDER BY created_at DESC, id DESC LIMIT 50)',
+    ).run(name, name);
+    logOperation(res.locals.username, '保存容器配置快照', 'container', name, `镜像: ${config.image}`);
+    res.status(201).json({ snapshot: { id: Number(r.lastInsertRowid), containerName: name, username: res.locals.username, createdAt } });
+  }),
+);
+
+/**
+ * GET /api/containers/:id/snapshots
+ * 列出该容器（按名称）的全部配置快照，最近优先，最多 50 条
+ */
+router.get(
+  '/:id/snapshots',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const name = (await container.inspect()).Name.replace(/^\//, '');
+    const d = getDb();
+    const rows = d
+      .prepare('SELECT id, username, created_at FROM container_snapshots WHERE container_name = ? ORDER BY created_at DESC, id DESC LIMIT 50')
+      .all(name) as unknown as Array<{ id: number; username: string; created_at: number }>;
+    res.json({
+      containerName: name,
+      items: rows.map((r) => ({ id: r.id, username: r.username, createdAt: Number(r.created_at) })),
+    });
+  }),
+);
+
+/**
+ * DELETE /api/containers/snapshots/:id
+ * 删除一条配置快照
+ */
+router.delete(
+  '/snapshots/:id',
+  requireAdmin,
+  (req: Request, res: Response) => {
+    const d = getDb();
+    const r = d.prepare('DELETE FROM container_snapshots WHERE id = ?').run(Number(req.params.id));
+    if (r.changes === 0) {
+      res.status(404).json({ error: '快照不存在' });
+      return;
+    }
+    logOperation(res.locals.username, '删除容器配置快照', 'container', String(req.params.id));
+    res.json({ ok: true });
+  },
+);
+
+/**
+ * GET /api/containers/:id/snapshot-diff?from=&to=
+ * 对比同一容器的两份配置快照，返回字段级差异
+ */
+router.get(
+  '/:id/snapshot-diff',
+  asyncHandler(async (req: Request, res: Response) => {
+    const fromId = Number(req.query.from);
+    const toId = Number(req.query.to);
+    if (!fromId || !toId) {
+      res.status(400).json({ error: '缺少 from/to 快照 id' });
+      return;
+    }
+    const d = getDb();
+    const load = (id: number) => d.prepare('SELECT id, container_name, config, created_at, username FROM container_snapshots WHERE id = ?').get(id) as
+      | { id: number; container_name: string; config: string; created_at: number; username: string }
+      | undefined;
+    const fromRow = load(fromId);
+    const toRow = load(toId);
+    if (!fromRow || !toRow) {
+      res.status(404).json({ error: '快照不存在' });
+      return;
+    }
+    if (fromRow.container_name !== toRow.container_name) {
+      res.status(400).json({ error: '两份快照必须属于同一容器' });
+      return;
+    }
+    const a = JSON.parse(fromRow.config);
+    const b = JSON.parse(toRow.config);
+    const diffs: Array<{ field: string; label: string; from: string; to: string }> = [];
+    for (const field of Object.keys(SNAPSHOT_FIELD_LABEL)) {
+      const av = JSON.stringify(a[field]);
+      const bv = JSON.stringify(b[field]);
+      if (av !== bv) {
+        diffs.push({
+          field,
+          label: SNAPSHOT_FIELD_LABEL[field],
+          from: Array.isArray(a[field]) ? a[field].join('\n') : String(a[field]),
+          to: Array.isArray(b[field]) ? b[field].join('\n') : String(b[field]),
+        });
+      }
+    }
+    res.json({
+      containerName: fromRow.container_name,
+      diffs,
+    });
   }),
 );
 

@@ -1146,6 +1146,13 @@ function ConfigEditor({
   containers: ContainerListItem[];
   gitCred?: CronTask['gitCred'];
 }) {
+  // 云端备份目标列表（备份任务「备份后上传云端」下拉用）
+  const [cloudTargets, setCloudTargets] = useState<Array<{ id: string; name: string; type: string }>>([]);
+  useEffect(() => {
+    get<{ targets: Array<{ id: string; name: string; type: string }> }>('/api/cloud/targets')
+      .then((d) => setCloudTargets(d?.targets || []))
+      .catch(() => setCloudTargets([]));
+  }, []);
   /**
    * 更新配置的单个字段
    * @param key 字段名
@@ -1352,6 +1359,20 @@ function ConfigEditor({
             placeholder={t('如 7')}
             onChange={(e) => setKey('keepCount', e.target.value === '' ? undefined : Number(e.target.value))}
           />
+        </Field>
+
+        <Field
+          label={t('备份后上传云端')}
+          hint={t('选择云端目标后，备份成功即自动上传（需先在「云端备份」页配置目标）；上传失败会在任务详情中标注，不影响备份本身')}
+        >
+          <Select value={config.cloudTargetId || ''} onChange={(e) => setKey('cloudTargetId', e.target.value || undefined)}>
+            <option value="">{t('不上传')}</option>
+            {cloudTargets.map((ct) => (
+              <option key={ct.id} value={ct.id}>
+                {ct.name}（{ct.type}）
+              </option>
+            ))}
+          </Select>
         </Field>
       </>
     );
