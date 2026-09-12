@@ -14,6 +14,7 @@ import YamlEditor from '../components/YamlEditor';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import StateActions from '../components/StateActions';
 import { useCanManage } from '../hooks/useCanManage';
 import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
 import { translateNow as t } from '../i18n';
@@ -1067,34 +1068,26 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                   </td>
                   <td className="col-actions">
                     <div className="row-actions">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={opName === proj.name}
-                        disabled={!canManage}
-                        onClick={() => runAction(proj, 'up', t('项目启动成功'))}
-                      >
-                        {t('启动')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setStopVolumes(false);
-                          setStopTarget(proj);
+                      {/* 生命周期操作：状态下拉（启动/停止/重启），与容器页一致（1.52.0） */}
+                      <StateActions
+                        state={
+                          (statusMap[proj.name] || []).some((svc) => /running|up/i.test(svc.State || ''))
+                            ? 'running'
+                            : 'exited'
+                        }
+                        onAction={(action) => {
+                          if (action === 'up') runAction(proj, 'up', t('项目启动成功'));
+                          else if (action === 'down') {
+                            setStopVolumes(false);
+                            setStopTarget(proj);
+                          } else if (action === 'restart') runAction(proj, 'restart', t('项目重启成功'));
                         }}
-                      >
-                        {t('停止')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={opName === proj.name}
-                        disabled={!canManage}
-                        onClick={() => runAction(proj, 'restart', t('项目重启成功'))}
-                      >
-                        {t('重启')}
-                      </Button>
+                        customActions={[
+                          { key: 'up', label: t('启动'), disabled: !canManage || opName === proj.name },
+                          { key: 'down', label: t('停止') },
+                          { key: 'restart', label: t('重启'), disabled: !canManage || opName === proj.name },
+                        ]}
+                      />
                       <Button
                         variant="ghost"
                         size="sm"

@@ -8,13 +8,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLang } from '../i18n';
 import './StateActions.less';
 
-export type ContainerAction = 'start' | 'stop' | 'restart' | 'kill' | 'pause' | 'unpause';
+export type ContainerAction = 'start' | 'stop' | 'restart' | 'kill' | 'pause' | 'unpause' | 'up' | 'down';
 
 interface StateActionsProps {
   /** Docker 容器状态（running / paused / exited ...） */
   state: string;
   /** 点击某个可用操作时回调 */
   onAction: (action: ContainerAction) => void;
+  /** 自定义动作集（1.52.0）：提供后菜单使用该列表（Compose 项目等场景），条目自带禁用态 */
+  customActions?: Array<{ key: ContainerAction; label: string; disabled?: boolean }>;
 }
 
 /** 状态 → 触发按钮文案与配色（与 1Panel 一致：绿色「已启动」胶囊） */
@@ -39,10 +41,13 @@ function availableActions(state: string): Record<ContainerAction, boolean> {
     kill: running || paused,
     pause: running,
     unpause: paused,
+    // 仅通过自定义动作集（customActions）触发的键，容器状态机不使用
+    up: false,
+    down: false,
   };
 }
 
-export default function StateActions({ state, onAction }: StateActionsProps) {
+export default function StateActions({ state, onAction, customActions }: StateActionsProps) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -59,6 +64,10 @@ export default function StateActions({ state, onAction }: StateActionsProps) {
     { key: 'pause', label: t('暂停') },
     { key: 'unpause', label: t('恢复') },
   ];
+  // 自定义动作集（Compose 项目等）：按传入顺序渲染，禁用态由调用方控制
+  const items: Array<{ key: ContainerAction; label: string; disabled?: boolean }> = customActions
+    ? customActions
+    : ACTIONS.map((a) => ({ ...a, disabled: !avail[a.key] }));
 
   function toggle() {
     if (!open && ref.current) {
@@ -118,15 +127,15 @@ export default function StateActions({ state, onAction }: StateActionsProps) {
           className="state-actions__menu"
           style={{ top: menuPos.top, left: menuPos.left ?? 'auto', right: menuPos.right ?? 'auto' }}
         >
-          {ACTIONS.map((a) => (
+          {items.map((a) => (
             <button
               key={a.key}
               type="button"
-              className={`state-actions__item${!avail[a.key] ? ' state-actions__item--disabled' : ''}`}
-              disabled={!avail[a.key]}
+              className={`state-actions__item${a.disabled ? ' state-actions__item--disabled' : ''}`}
+              disabled={!!a.disabled}
               onClick={() => {
                 setOpen(false);
-                if (avail[a.key]) onAction(a.key);
+                if (!a.disabled) onAction(a.key);
               }}
             >
               {a.label}

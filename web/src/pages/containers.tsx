@@ -1802,6 +1802,9 @@ export default function ContainersPage() {
                   kill: handleKill,
                   pause: handlePause,
                   unpause: handleUnpause,
+                  // 仅 Compose 项目菜单使用的键，容器菜单不会触发
+                  up: () => undefined,
+                  down: () => undefined,
                 };
                 handlers[action](c.Id, name);
               }}
