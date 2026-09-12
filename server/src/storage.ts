@@ -954,6 +954,22 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：数据库查询历史与收藏（1.48.0）
+  try {
+    d.exec(
+      'CREATE TABLE IF NOT EXISTS db_query_history (' +
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+        'username TEXT NOT NULL, ' +
+        'instance_id INTEGER, ' +
+        'instance_name TEXT, ' +
+        'sql_text TEXT NOT NULL, ' +
+        'favorite INTEGER NOT NULL DEFAULT 0, ' +
+        'created_at INTEGER NOT NULL)',
+    );
+    d.exec('CREATE INDEX IF NOT EXISTS idx_dbqh_user ON db_query_history (username, created_at)');
+  } catch {
+    // 表已存在则忽略
+  }
   // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');

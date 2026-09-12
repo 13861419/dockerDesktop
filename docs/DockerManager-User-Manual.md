@@ -409,6 +409,7 @@ Click a container to open its detail page (`containerDetail`), which provides:
 8. **Inspect tab (new in 1.37.0)**: view the container's raw Inspect JSON in a formatted view, with one-click copy and download as `containerName-inspect.json` for troubleshooting and archiving.
 9. **Processes in container (new in 1.37.0)**: a process card on the "Detail" tab (docker top) lists all processes inside the container (user / PID / CPU / memory / command line) with manual refresh.
 10. **Operation log (new in 1.37.0)**: the "Detail" tab also matches the operation log by container name / short ID and shows the latest 10 operations on this container (time / operator / action / result), making start-stop / update / delete actions fully traceable.
+11. **File changes (new in 1.48.0)**: the "Detail" tab gains a "File changes" card (docker diff) listing files added / modified / deleted during the container's runtime, filterable by change type — useful for spotting unexpected writes or intrusion traces.
 
 ![Container list](../images/containers.png)
 
@@ -528,6 +529,7 @@ Menu: **Image Build** (`/build`, admin only)
 - **Delete** — remove unused networks.
 - **Detail** — view connected containers and IPAM subnet.
 - **Prune** — reclaim networks without containers.
+- **Connectivity diagnostics (1.48.0)**: the Networks page gains a "Connectivity diagnostics" card — pick a source container (running), a target container and a port, then run the check. Three probes are shown per item: ① DNS resolution (`getent hosts` inside the source container); ② container-to-container TCP (nc first, falling back to bash /dev/tcp); ③ a host-side TCP probe against the target's published port. Run it first whenever containers "suddenly cannot reach each other".
 
 ![Volumes & networks](../images/volumes-networks.png)
 
@@ -642,6 +644,7 @@ Menu: **Backup & Restore** (`/backups`)
 
 - Backup types: **DATA (panel data) / Compose / Volumes / Sites**.
 - Click "New backup", pick a type, and run it to create a backup record.
+- **Backup coverage check (1.48.0)**: a check card at the top of the page automatically inventories Compose projects / named volumes / database instances / the panel database, and marks each object as "Covered / Task only / Backup stale / Not covered" (stale = no backup in the last 7 days) based on the backup manifest and scheduled backup tasks, with per-status totals — objects without any backup safety net stand out at a glance.
 
 ### 15.2 Restore & Download
 
@@ -694,6 +697,7 @@ Menu: **Databases** (`/databases`)
 
 - Open an instance to view table structure, run read-only queries, and browse data.
 - **Table CSV export (1.46.0)**: the data-browse dialog has an "Export CSV" button that downloads the full table (up to 50,000 rows) as a UTF-8 (BOM) CSV file; exports are written to the operation log.
+- **SQL query history & favorites (1.48.0)**: the SQL query panel gains "Query history" — the latest 100 queries per user are kept automatically (browsable up to 200), with favorite (★), fill-in and delete actions; history is per-user, so closing the dialog by accident no longer loses a query.
 - Provides read-only display only — **no destructive write operations**.
 
 ![Databases](../images/databases.png)

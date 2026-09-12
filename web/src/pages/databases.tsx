@@ -1163,6 +1163,50 @@ function SqlQueryPanel({
   const [db, setDb] = useState(activeDb);
   const [querying, setQuerying] = useState(false);
   const [result, setResult] = useState<SqlQueryResult | null>(null);
+  // 查询历史与收藏
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTab, setHistoryTab] = useState<'recent' | 'fav'>('recent');
+  const [historyItems, setHistoryItems] = useState<
+    Array<{ id: number; instance_id: number; instance_name: string; sql_text: string; favorite: number; created_at: number }>
+  >([]);
+
+  const loadHistory = useCallback(
+    async (tab: 'recent' | 'fav') => {
+      try {
+        const data = await get<{ items: Array<{ id: number; instance_id: number; instance_name: string; sql_text: string; favorite: number; created_at: number }> }>(
+          `/api/databases/query-history${tab === 'fav' ? '?favorites=1' : ''}`
+        );
+        setHistoryItems(data?.items || []);
+      } catch {
+        setHistoryItems([]);
+      }
+    },
+    []
+  );
+
+  const toggleFavorite = useCallback(
+    async (id: number) => {
+      try {
+        await post(`/api/databases/query-history/${id}/favorite`, {});
+        loadHistory(historyTab);
+      } catch (e: any) {
+        showToast(e?.message || t('操作失败'), 'error');
+      }
+    },
+    [historyTab, loadHistory, showToast]
+  );
+
+  const removeHistory = useCallback(
+    async (id: number) => {
+      try {
+        await del(`/api/databases/query-history/${id}`);
+        loadHistory(historyTab);
+      } catch (e: any) {
+        showToast(e?.message || t('删除失败'), 'error');
+      }
+    },
+    [historyTab, loadHistory, showToast]
+  );
 
   // 当外部选中库变化时同步默认查询库
   useEffect(() => {
@@ -1228,7 +1272,59 @@ function SqlQueryPanel({
         >
           {t('执行查询')}
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            const next = !historyOpen;
+            setHistoryOpen(next);
+            if (next) loadHistory(historyTab);
+          }}
+        >
+          {historyOpen ? t('收起历史') : t('查询历史')}
+        </Button>
       </div>
+
+      {historyOpen && (
+        <div className="db-sql__history" style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <Button variant={historyTab === 'recent' ? 'secondary' : 'ghost'} size="sm" onClick={() => { setHistoryTab('recent'); loadHistory('recent'); }}>
+              {t('最近查询')}
+            </Button>
+            <Button variant={historyTab === 'fav' ? 'secondary' : 'ghost'} size="sm" onClick={() => { setHistoryTab('fav'); loadHistory('fav'); }}>
+              {t('收藏')}
+            </Button>
+          </div>
+          {historyItems.length === 0 ? (
+            <div className="db-list__empty">{t('暂无记录')}</div>
+          ) : (
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {historyItems.map((h) => (
+                <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', borderBottom: '1px dashed var(--border, #f0f0f0)' }}>
+                  <Button variant="ghost" size="sm" onClick={() => { setSql(h.sql_text); }}>
+                    {t('填入')}
+                  </Button>
+                  <span
+                    className="mono"
+                    title={`${h.instance_name || ''} · ${new Date(h.created_at).toLocaleString()}`}
+                    style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', fontSize: 12 }}
+                    onClick={() => setSql(h.sql_text)}
+                  >
+                    {h.instance_name ? `[${h.instance_name}] ` : ''}
+                    {h.sql_text.length > 90 ? h.sql_text.slice(0, 90) + '…' : h.sql_text}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => toggleFavorite(h.id)}>
+                    {h.favorite ? '★' : '☆'}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => removeHistory(h.id)}>
+                    {t('删除')}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {result && (
         <div className="db-sql__result">

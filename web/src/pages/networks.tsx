@@ -261,6 +261,12 @@ const checking = checkingAdmin;
   const [connecting, setConnecting] = useState(false);
   const [disconnectId, setDisconnectId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 连通性诊断
+  const [ntSource, setNtSource] = useState('');
+  const [ntTarget, setNtTarget] = useState('');
+  const [ntPort, setNtPort] = useState('');
+  const [ntRunning, setNtRunning] = useState(false);
+  const [ntResults, setNtResults] = useState<Array<{ name: string; ok: boolean; detail: string }>>([]);
 
   const fetchNetworks = useCallback(async () => {
     setLoading(true);
@@ -382,6 +388,26 @@ const checking = checkingAdmin;
       showToast(e?.message || t('拉取容器列表失败'), 'error');
     }
   }, [showToast]);
+
+  /**
+   * 执行网络连通性诊断：源容器 → 目标容器端口
+   */
+  const runNetTest = useCallback(async () => {
+    if (!ntSource || !ntTarget || !ntPort) return;
+    setNtRunning(true);
+    setNtResults([]);
+    try {
+      const data = await post<{ results: Array<{ name: string; ok: boolean; detail: string }> }>(
+        `/api/containers/${encodeURIComponent(ntSource)}/net-test`,
+        { targetId: ntTarget, port: Number(ntPort) }
+      );
+      setNtResults(data?.results || []);
+    } catch (e: any) {
+      showToast(e?.message || t('诊断失败'), 'error');
+    } finally {
+      setNtRunning(false);
+    }
+  }, [ntSource, ntTarget, ntPort, showToast]);
 
   /**
    * 打开网络详情：拉取完整 inspect 并加载容器列表
@@ -568,6 +594,81 @@ const checking = checkingAdmin;
                       {t('删除')}
                     </Button>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card title={t('连通性诊断')}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', marginBottom: 12 }}>
+          <div style={{ width: 220 }}>
+          <Field label={t('源容器')}>
+            <Select value={ntSource} onChange={(e: any) => setNtSource(e.target.value)} style={{ width: '100%' }}>
+              <option value="">{t('请选择源容器')}</option>
+              {containers.filter((c) => c.State === 'running').map((c) => (
+                <option key={c.Id} value={c.Id}>
+                  {c.Names[0]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          </div>
+          <div style={{ width: 220 }}>
+          <Field label={t('目标容器')}>
+            <Select value={ntTarget} onChange={(e: any) => setNtTarget(e.target.value)}>
+              <option value="">{t('请选择目标容器')}</option>
+              {containers.map((c) => (
+                <option key={c.Id} value={c.Id}>
+                  {c.Names[0]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          </div>
+          <div style={{ width: 110 }}>
+          <Field label={t('目标端口')}>
+            <Input
+              type="number"
+              min={1}
+              max={65535}
+              value={ntPort}
+              onChange={(e: any) => setNtPort(e.target.value)}
+              placeholder="80"
+            />
+          </Field>
+          </div>
+          <Button
+            variant="primary"
+            size="md"
+            loading={ntRunning}
+            disabled={!ntSource || !ntTarget || !ntPort || !canDelete}
+            onClick={runNetTest}
+          >
+            {t('开始诊断')}
+          </Button>
+        </div>
+        {!canDelete && <div className="db-list__empty">{t('仅管理员可执行连通性诊断')}</div>}
+        {ntResults.length > 0 && (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: '40%' }}>{t('检测项')}</th>
+                <th style={{ width: 80 }}>{t('结果')}</th>
+                <th>{t('详情')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ntResults.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.name}</td>
+                  <td>
+                    <span className={`badge ${r.ok ? 'badge--primary' : 'badge--danger'}`}>
+                      {r.ok ? t('通过') : t('失败')}
+                    </span>
+                  </td>
+                  <td className="col-mono">{r.detail}</td>
                 </tr>
               ))}
             </tbody>

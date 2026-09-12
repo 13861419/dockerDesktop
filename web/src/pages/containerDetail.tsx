@@ -260,6 +260,10 @@ export default function ContainerDetailPage() {
   // 容器内进程列表 (docker top)
   const [topData, setTopData] = useState<{ titles: string[]; processes: string[][] } | null>(null);
   const [topLoading, setTopLoading] = useState(false);
+  // 容器文件系统变更 (docker diff)
+  const [diffItems, setDiffItems] = useState<Array<{ path: string; kind: number; kindLabel: string }> | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffFilter, setDiffFilter] = useState<'all' | 'added' | 'modified' | 'deleted'>('all');
   // 容器相关操作记录 (最近 20 条)
   const [operations, setOperations] = useState<
     Array<{ id: number; username: string; action: string; detail: string | null; success: boolean; createdAt: number }>
@@ -322,6 +326,22 @@ export default function ContainerDetailPage() {
   useEffect(() => {
     if (tab === 'detail' && detail?.state === 'running') fetchTop();
   }, [tab, detail?.state, fetchTop]);
+
+  /** 拉取容器文件系统变更 (docker diff) */
+  const fetchDiff = useCallback(async () => {
+    if (!id) return;
+    setDiffLoading(true);
+    try {
+      const data = await get<{ items: Array<{ path: string; kind: number; kindLabel: string }> }>(
+        `/api/containers/${encodeURIComponent(id)}/diff`
+      );
+      setDiffItems(data?.items || []);
+    } catch {
+      setDiffItems([]);
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [id]);
 
   /** 拉取该容器的操作记录 */
   const fetchOperations = useCallback(async () => {
@@ -1867,6 +1887,77 @@ export default function ContainerDetailPage() {
                 ) : (
                   <Empty title={t('无进程')} description={t('容器未运行或无法获取进程列表')} />
                 )}
+              </Card>
+
+              <Card
+                title={t('文件变更')}
+                extra={
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Select
+                      style={{ width: 96 }}
+                      value={diffFilter}
+                      onChange={(e: any) => setDiffFilter(e.target.value)}
+                    >
+                      <option value="all">{t('全部')}</option>
+                      <option value="added">{t('新增')}</option>
+                      <option value="modified">{t('修改')}</option>
+                      <option value="deleted">{t('删除')}</option>
+                    </Select>
+                    <Button variant="ghost" size="sm" onClick={fetchDiff} disabled={diffLoading}>
+                      {t('刷新')}
+                    </Button>
+                  </div>
+                }
+              >
+                {diffLoading && !diffItems ? (
+                  <div className="desc-value">{t('加载中...')}</div>
+                ) : !diffItems ? (
+                  <Empty title={t('尚未加载')} description={t('点击「刷新」加载容器运行期文件系统变更（docker diff）')} />
+                ) : (() => {
+                  const filtered = diffItems.filter((it) => diffFilter === 'all' || it.kindLabel === diffFilter);
+                  if (filtered.length === 0) {
+                    return <Empty title={t('无变更')} description={t('容器运行期没有匹配的文件系统变更')} />;
+                  }
+                  return (
+                    <div className="kv-scroll">
+                      <table className="detail-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: 80 }}>{t('类型')}</th>
+                            <th>{t('路径')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((it, i) => (
+                            <tr key={i}>
+                              <td>
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    color:
+                                      it.kindLabel === 'added'
+                                        ? 'var(--success, #22c55e)'
+                                        : it.kindLabel === 'deleted'
+                                          ? 'var(--danger, #ef4444)'
+                                          : 'var(--warning, #f5a623)',
+                                  }}
+                                >
+                                  {it.kindLabel === 'added'
+                                    ? t('新增')
+                                    : it.kindLabel === 'deleted'
+                                      ? t('删除')
+                                      : t('修改')}
+                                </span>
+                              </td>
+                              <td className="mono">{it.path}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </Card>
 
               <Card

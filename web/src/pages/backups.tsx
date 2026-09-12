@@ -72,6 +72,23 @@ interface CloudTarget {
   hasSecret: boolean;
 }
 
+/** 覆盖率体检行 */
+interface CoverageItem {
+  domain: 'panel' | 'compose' | 'volume' | 'database';
+  name: string;
+  lastAt: number | null;
+  backupCount: number;
+  hasTask: boolean;
+  status: 'covered' | 'taskOnly' | 'stale' | 'none';
+}
+
+/** 覆盖率体检响应 */
+interface CoverageResponse {
+  items: CoverageItem[];
+  summary: { total: number; covered: number; taskOnly: number; stale: number; none: number };
+  staleDays: number;
+}
+
 /** 备份类型中文标签 */
 const KIND_LABEL: Record<BackupKind, string> = {
   database: t('面板数据库'),
@@ -85,6 +102,30 @@ const STATUS_LABEL: Record<BackupListItem['status'], string> = {
   ready: t('正常'),
   restoring: t('恢复中'),
   failed: t('失败'),
+};
+
+/** 覆盖率体检：对象类型中文标签 */
+const COVERAGE_DOMAIN_LABEL: Record<string, string> = {
+  panel: t('面板数据库'),
+  compose: t('Compose 项目'),
+  volume: t('数据卷'),
+  database: t('数据库实例'),
+};
+
+/** 覆盖率体检：状态中文标签 */
+const COVERAGE_STATUS_LABEL: Record<string, string> = {
+  covered: t('已覆盖'),
+  taskOnly: t('仅定时任务'),
+  stale: t('备份过期'),
+  none: t('未覆盖'),
+};
+
+/** 覆盖率体检：状态颜色 */
+const COVERAGE_STATUS_COLOR: Record<string, string> = {
+  covered: '#16a34a',
+  taskOnly: '#ca8a04',
+  stale: '#ea580c',
+  none: '#dc2626',
 };
 
 /**
@@ -159,6 +200,26 @@ export default function BackupsPage() {
   const [cloudTargets, setCloudTargets] = useState<CloudTarget[]>([]);
   const [selectedCloudId, setSelectedCloudId] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  // 备份覆盖率体检
+  const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+
+  const loadCoverage = useCallback(async () => {
+    setCoverageLoading(true);
+    try {
+      const data = await get<CoverageResponse>('/api/backups/coverage');
+      setCoverage(data || null);
+    } catch {
+      setCoverage(null);
+    } finally {
+      setCoverageLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCoverage();
+  }, [loadCoverage]);
 
   /**
    * 加载备份列表
@@ -354,6 +415,66 @@ export default function BackupsPage() {
         <Button onClick={openCreate} disabled={!canManage}>{t('+ 创建备份')}</Button>
         <Button variant="ghost" onClick={load}>{t('刷新')}</Button>
       </div>
+
+      <Card
+        title={t('备份覆盖率体检')}
+        extra={
+          <Button variant="ghost" size="sm" onClick={loadCoverage} disabled={coverageLoading}>
+            {t('重新体检')}
+          </Button>
+        }
+      >
+        {!coverage ? (
+          coverageLoading ? (
+            <SkeletonRows rows={2} />
+          ) : (
+            <Empty title={t('体检数据不可用')} description={t('稍后重试')} />
+          )
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10, fontSize: 13 }}>
+              <span>{t('对象总数')}: <strong>{coverage.summary.total}</strong></span>
+              <span style={{ color: '#16a34a' }}>{t('已覆盖')}: {coverage.summary.covered}</span>
+              <span style={{ color: '#ca8a04' }}>{t('仅定时任务')}: {coverage.summary.taskOnly}</span>
+              <span style={{ color: '#ea580c' }}>{t('备份过期')}: {coverage.summary.stale}</span>
+              <span style={{ color: '#dc2626' }}>{t('未覆盖')}: {coverage.summary.none}</span>
+            </div>
+            {coverage.items.length === 0 ? (
+              <Empty title={t('没有可盘点的对象')} description={t('未发现 Compose 项目 / 命名卷 / 数据库实例')} />
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '16%' }}>{t('类型')}</th>
+                    <th style={{ width: '30%' }}>{t('对象')}</th>
+                    <th style={{ width: '20%' }}>{t('最近备份')}</th>
+                    <th style={{ width: '12%' }}>{t('定时任务')}</th>
+                    <th>{t('状态')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coverage.items.map((it, i) => (
+                    <tr key={`${it.domain}-${it.name}-${i}`}>
+                      <td>{COVERAGE_DOMAIN_LABEL[it.domain] || it.domain}</td>
+                      <td className="bk-source">{it.name}</td>
+                      <td className="bk-time">
+                        {it.lastAt ? formatDate(new Date(it.lastAt).toISOString()) : '—'}
+                        {it.backupCount > 0 ? ` (${it.backupCount})` : ''}
+                      </td>
+                      <td>{it.hasTask ? t('有') : '—'}</td>
+                      <td>
+                        <span style={{ fontWeight: 500, color: COVERAGE_STATUS_COLOR[it.status] }}>
+                          {COVERAGE_STATUS_LABEL[it.status]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </Card>
 
       <Card>
         {loading ? (

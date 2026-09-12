@@ -11,7 +11,8 @@
 import fs from 'fs';
 import path from 'path';
 import { Router, Request, Response } from 'express';
-import { DATA_DIR } from '../storage';
+import { DATA_DIR, getDb } from '../storage';
+import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
 import {
@@ -88,6 +89,126 @@ router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
     res.json({ backups: listBackupFiles() });
+  }),
+);
+
+/**
+ * GET /api/backups/coverage
+ * 备份覆盖率体检：盘点 Compose 项目 / 命名卷 / 数据库实例，
+ * 结合备份清单（backups 表）与定时备份任务（cron_tasks type=backup）标注覆盖状态。
+ * status: covered=7 天内有备份 | taskOnly=无备份记录但有定时任务 | stale=最近备份超过 7 天 | none=完全未覆盖
+ */
+router.get(
+  '/coverage',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const d = getDb();
+    const docker = await getDockerClient();
+
+    // 备份清单聚合：kind+name → 最近一次备份时间与次数
+    const lastMap = new Map<string, { lastAt: number; count: number }>();
+    try {
+      const rows = d
+        .prepare('SELECT kind, name, MAX(created_at) AS last_at, COUNT(*) AS cnt FROM backups GROUP BY kind, name')
+        .all() as Array<{ kind: string; name: string; last_at: number; cnt: number }>;
+      for (const r of rows) {
+        lastMap.set(`${r.kind}:${r.name}`, { lastAt: Number(r.last_at) || 0, count: Number(r.cnt) || 0 });
+      }
+    } catch {
+      // 表未就绪时按无备份处理
+    }
+
+    // 定时备份任务覆盖：面板库（target=database）与命名卷（target=volumes + volumes[]）
+    let scheduledPanelDb = false;
+    const scheduledVolumes = new Set<string>();
+    try {
+      const tasks = d
+        .prepare("SELECT config FROM cron_tasks WHERE type = 'backup' AND enabled = 1")
+        .all() as Array<{ config: string | null }>;
+      for (const t of tasks) {
+        let cfg: any = {};
+        try {
+          cfg = JSON.parse(t.config || '{}');
+        } catch {
+          // 配置损坏按未覆盖处理
+        }
+        if (cfg.target === 'database') scheduledPanelDb = true;
+        if (cfg.target === 'volumes' && Array.isArray(cfg.volumes)) {
+          for (const v of cfg.volumes) if (typeof v === 'string' && v) scheduledVolumes.add(v);
+        }
+      }
+    } catch {
+      // 任务表不可用时按未覆盖处理
+    }
+
+    const STALE_MS = 7 * 24 * 3600 * 1000;
+    const now = Date.now();
+    const build = (domain: string, kind: string, name: string, hasTask: boolean) => {
+      const hit = lastMap.get(`${kind}:${name}`);
+      const lastAt = hit?.lastAt || 0;
+      const status = lastAt
+        ? now - lastAt <= STALE_MS
+          ? 'covered'
+          : 'stale'
+        : hasTask
+          ? 'taskOnly'
+          : 'none';
+      return { domain, name, lastAt: lastAt || null, backupCount: hit?.count || 0, hasTask, status };
+    };
+
+    const items: Array<ReturnType<typeof build>> = [];
+
+    // 1) Compose 项目（容器 com.docker.compose.project 标签去重）
+    const projects = new Set<string>();
+    try {
+      const cl = await docker.listContainers({ all: true });
+      for (const c of cl) {
+        const p = (c.Labels || {})['com.docker.compose.project'];
+        if (p) projects.add(p);
+      }
+    } catch {
+      // 引擎不可达时跳过 Compose 盘点
+    }
+    for (const p of Array.from(projects).sort()) items.push(build('compose', 'compose', p, false));
+
+    // 2) 命名卷
+    try {
+      const vs = await docker.listVolumes();
+      for (const v of vs.Volumes || []) {
+        if (v.Labels && v.Labels['com.docker.volume.anonymous'] === 'true') continue;
+        items.push(build('volume', 'volume', v.Name, scheduledVolumes.has(v.Name)));
+      }
+    } catch {
+      // 引擎不可达时跳过卷盘点
+    }
+
+    // 3) 数据库实例
+    try {
+      const insts = d
+        .prepare('SELECT name FROM database_instances ORDER BY id')
+        .all() as Array<{ name: string }>;
+      for (const i of insts) items.push(build('database', 'database', i.name, false));
+    } catch {
+      // 表未就绪时跳过
+    }
+
+    // 面板数据库自身（由定时任务 target=database 覆盖）
+    items.unshift({
+      domain: 'panel',
+      name: '面板数据库 (DATA)',
+      lastAt: null,
+      backupCount: 0,
+      hasTask: scheduledPanelDb,
+      status: scheduledPanelDb ? 'covered' : 'none',
+    });
+
+    const summary = {
+      total: items.length,
+      covered: items.filter((x) => x.status === 'covered').length,
+      taskOnly: items.filter((x) => x.status === 'taskOnly').length,
+      stale: items.filter((x) => x.status === 'stale').length,
+      none: items.filter((x) => x.status === 'none').length,
+    };
+    res.json({ items, summary, staleDays: 7 });
   }),
 );
 

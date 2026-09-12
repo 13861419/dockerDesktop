@@ -832,15 +832,109 @@ router.post(
     const db = req.body?.db ? String(req.body.db) : undefined;
     if (row.type === 'mysql' || row.type === 'mariadb') {
       const output = await mysqlRun(row, ['-B', '-e', sql]);
+      recordQueryHistory(res.locals.username, row.id, row.name, sql);
       res.json(parseTableOutput(output, '\t'));
     } else if (row.type === 'postgres') {
       // psql -A -F "|"：首行列名，后续为数据行（psql 指定分隔符便于统一解析）
       const output = await psqlRun(row, ['-A', '-F', '|', '-c', sql], db);
+      recordQueryHistory(res.locals.username, row.id, row.name, sql);
       res.json(parseTableOutput(output, '|'));
     } else {
       res.status(400).json({ error: '不支持的数据库类型' });
     }
   }),
+);
+
+// ==================== SQL 查询历史与收藏 ====================
+
+/** 每用户保留的未收藏查询历史条数上限 */
+const QUERY_HISTORY_KEEP = 100;
+
+/**
+ * 记录一条查询历史（仅收藏与最近 100 条未收藏保留，超限自动清理最旧）。
+ * 记录失败不影响查询本身。
+ */
+function recordQueryHistory(username: string, instanceId: number, instanceName: string, sqlText: string): void {
+  try {
+    const d = getDb();
+    const sql = sqlText.slice(0, 4000);
+    d.prepare(
+      'INSERT INTO db_query_history (username, instance_id, instance_name, sql_text, favorite, created_at) VALUES (?, ?, ?, ?, 0, ?)',
+    ).run(String(username || ''), instanceId ?? null, instanceName ?? '', sql, Date.now());
+    // 未收藏历史按用户清理到最近 100 条
+    d.prepare(
+      'DELETE FROM db_query_history WHERE username = ? AND favorite = 0 AND id NOT IN ' +
+        '(SELECT id FROM db_query_history WHERE username = ? AND favorite = 0 ORDER BY created_at DESC, id DESC LIMIT ?)',
+    ).run(String(username || ''), String(username || ''), QUERY_HISTORY_KEEP);
+  } catch {
+    // 历史记录失败不阻断查询
+  }
+}
+
+/**
+ * GET /api/databases/query-history
+ * 当前用户的查询历史（最近 100 条，收藏优先展示切换由前端处理）。
+ * query: ?favorites=1 只返回收藏
+ */
+router.get(
+  '/query-history',
+  requireOperator,
+  (req: Request, res: Response) => {
+    const d = getDb();
+    const username = String(res.locals.username || '');
+    const favoritesOnly = req.query.favorites === '1';
+    const rows = d
+      .prepare(
+        'SELECT id, instance_id, instance_name, sql_text, favorite, created_at FROM db_query_history ' +
+          'WHERE username = ?' +
+          (favoritesOnly ? ' AND favorite = 1' : '') +
+          ' ORDER BY created_at DESC, id DESC LIMIT 200',
+      )
+      .all(username);
+    res.json({ items: rows });
+  },
+);
+
+/**
+ * POST /api/databases/query-history/:id/favorite
+ * 切换收藏状态，body 可省略（直接取反）。
+ */
+router.post(
+  '/query-history/:id/favorite',
+  requireOperator,
+  (req: Request, res: Response) => {
+    const d = getDb();
+    const username = String(res.locals.username || '');
+    const id = Number(req.params.id);
+    const row = d
+      .prepare('SELECT id, favorite FROM db_query_history WHERE id = ? AND username = ?')
+      .get(id, username) as { id: number; favorite: number } | undefined;
+    if (!row) {
+      res.status(404).json({ error: '记录不存在' });
+      return;
+    }
+    d.prepare('UPDATE db_query_history SET favorite = ? WHERE id = ?').run(row.favorite ? 0 : 1, id);
+    res.json({ ok: true, favorite: row.favorite ? 0 : 1 });
+  },
+);
+
+/**
+ * DELETE /api/databases/query-history/:id
+ * 删除一条查询历史（仅本人的记录）。
+ */
+router.delete(
+  '/query-history/:id',
+  requireOperator,
+  (req: Request, res: Response) => {
+    const d = getDb();
+    const username = String(res.locals.username || '');
+    const r = d.prepare('DELETE FROM db_query_history WHERE id = ? AND username = ?').run(Number(req.params.id), username);
+    if (r.changes === 0) {
+      res.status(404).json({ error: '记录不存在' });
+      return;
+    }
+    res.json({ ok: true });
+  },
 );
 
 // ==================== Redis 键浏览 ====================

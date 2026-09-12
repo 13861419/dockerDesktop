@@ -5,6 +5,7 @@
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
+import net from 'net';
 import { getDockerClient } from '../docker/client';
 import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
@@ -1477,6 +1478,235 @@ router.get(
       titles: (result as any).Titles || [],
       processes: (result as any).Processes || [],
     });
+  }),
+);
+
+/**
+ * GET /api/containers/:id/diff
+ * 查看容器运行期文件系统变更（docker diff）。
+ * Kind: 0=Modified(修改) 1=Added(新增) 2=Deleted(删除)
+ */
+router.get(
+  '/:id/diff',
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const container = docker.getContainer(req.params.id);
+    const changes = (await (container as any).changes()) as Array<{ Path: string; Kind: number }> | undefined;
+    const kindLabel: Record<number, string> = { 0: 'modified', 1: 'added', 2: 'deleted' };
+    const items = (changes || []).map((c) => ({
+      path: c.Path,
+      kind: c.Kind,
+      kindLabel: kindLabel[c.Kind] ?? String(c.Kind),
+    }));
+    // 最近变更排前，便于快速定位
+    items.sort((a, b) => a.path.localeCompare(b.path));
+    res.json({ items });
+  }),
+);
+
+// ============ 网络连通性诊断 ============
+
+/**
+ * 在容器内执行一条命令并收集输出（多路复用帧剥离）。
+ * @param container 容器对象
+ * @param cmd 参数数组（不经 shell）
+ * @param timeoutMs 超时毫秒数
+ * @returns 退出码与合并输出
+ */
+async function collectExec(
+  container: Dockerode.Container,
+  cmd: string[],
+  timeoutMs = 6000,
+): Promise<{ code: number; output: string }> {
+  const exec = await container.exec({
+    Cmd: cmd,
+    AttachStdout: true,
+    AttachStderr: true,
+    Tty: false,
+  } as any);
+  const stream = (await exec.start({ hijack: true, stdin: false, Tty: false })) as unknown as NodeJS.ReadableStream;
+  let output = '';
+  let frameBuf = Buffer.alloc(0);
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      (stream as any).destroy?.();
+      resolve();
+    }, timeoutMs);
+    stream.on('data', (chunk: Buffer) => {
+      frameBuf = Buffer.concat([frameBuf, chunk]);
+      // Tty=false 时按 8 字节帧头剥离（4 字节头 + 4 字节负载长度）
+      while (frameBuf.length >= 8) {
+        const payloadLen = frameBuf.readUInt32BE(4);
+        if (frameBuf.length < 8 + payloadLen) break;
+        output += frameBuf.subarray(8, 8 + payloadLen).toString('utf8');
+        frameBuf = frameBuf.subarray(8 + payloadLen);
+      }
+    });
+    stream.on('end', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    stream.on('error', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  let code = 0;
+  try {
+    const ins = await exec.inspect();
+    code = ins.ExitCode ?? 0;
+  } catch {
+    // exec 已销毁时按 0 处理
+  }
+  return { code, output: output.trim() };
+}
+
+/** 从宿主机 TCP 拨测目标 host:port（3 秒超时） */
+function hostTcpProbe(host: string, port: number): Promise<{ ok: boolean; detail: string }> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (ok: boolean, detail: string) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve({ ok, detail });
+    };
+    socket.setTimeout(3000);
+    socket.once('connect', () => finish(true, `TCP 连接成功 (${host}:${port})`));
+    socket.once('timeout', () => finish(false, `连接超时 (${host}:${port})`));
+    socket.once('error', (err: Error) => finish(false, `连接失败: ${err.message} (${host}:${port})`));
+    socket.connect(port, host);
+  });
+}
+
+/**
+ * POST /api/containers/:id/net-test
+ * 网络连通性诊断：从源容器视角对目标容器执行 DNS 解析与 TCP 连通测试，
+ * 并从宿主机拨测目标容器的已发布端口。
+ * body: { targetId: string, port?: number, dnsName?: string }
+ */
+router.post(
+  '/:id/net-test',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const source = docker.getContainer(req.params.id);
+    const targetId = String(req.body?.targetId || '');
+    const port = Number(req.body?.port) > 0 ? Math.floor(Number(req.body.port)) : 0;
+    if (!targetId) {
+      res.status(400).json({ error: '缺少目标容器 targetId' });
+      return;
+    }
+    if (!port) {
+      res.status(400).json({ error: '缺少目标端口 port' });
+      return;
+    }
+
+    // 源容器必须运行中
+    let sourceName = '';
+    try {
+      const info = await source.inspect();
+      if (!info.State?.Running) {
+        res.status(400).json({ error: '源容器未运行' });
+        return;
+      }
+      sourceName = (info.Name || '').replace(/^\//, '');
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || '源容器不存在' });
+      return;
+    }
+
+    // 目标容器解析 IP 与名称
+    let targetName = '';
+    let targetIp = '';
+    let hostPort = 0;
+    try {
+      const tinfo = await docker.getContainer(targetId).inspect();
+      targetName = (tinfo.Name || '').replace(/^\//, '');
+      const networks = tinfo.NetworkSettings?.Networks || {};
+      targetIp = Object.values(networks).find((n: any) => n?.IPAddress)?.IPAddress || '';
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || '目标容器不存在' });
+      return;
+    }
+    if (!targetIp) {
+      res.status(400).json({ error: '未获取到目标容器 IP' });
+      return;
+    }
+
+    const results: Array<{ name: string; ok: boolean; detail: string }> = [];
+
+    // 1. DNS 解析（源容器内 getent）
+    const dnsName = String(req.body?.dnsName || targetName);
+    try {
+      const r = await collectExec(source, ['getent', 'hosts', dnsName], 5000);
+      if (r.code === 0 && r.output) {
+        const ip = r.output.split(/\s+/)[0];
+        results.push({ name: `DNS 解析（${dnsName}）`, ok: true, detail: `解析成功 → ${ip}` });
+      } else {
+        results.push({ name: `DNS 解析（${dnsName}）`, ok: false, detail: '解析失败或容器内缺少 getent' });
+      }
+    } catch (e: any) {
+      results.push({ name: `DNS 解析（${dnsName}）`, ok: false, detail: `执行失败: ${String(e?.message || e)}` });
+    }
+
+    // 2. 源容器 → 目标容器 TCP（优先 nc，失败时回退 bash /dev/tcp）
+    try {
+      let r = await collectExec(source, ['nc', '-z', '-w', '3', targetIp, String(port)], 6000);
+      let method = 'nc';
+      if (r.code !== 0) {
+        const fb = await collectExec(source, ['bash', '-c', `echo > /dev/tcp/${targetIp}/${port} && echo ok`], 6000);
+        if (fb.code === 0) {
+          r = fb;
+          method = 'bash /dev/tcp';
+        }
+      }
+      const ok = r.code === 0;
+      results.push({
+        name: `容器间 TCP（${sourceName} → ${targetIp}:${port}）`,
+        ok,
+        detail: ok ? `连接成功（${method}）` : `连接失败（${method}，退出码 ${r.code}）`,
+      });
+    } catch (e: any) {
+      results.push({
+        name: `容器间 TCP（${sourceName} → ${targetIp}:${port}）`,
+        ok: false,
+        detail: `执行失败: ${String(e?.message || e)}`,
+      });
+    }
+
+    // 3. 宿主机 → 目标容器已发布端口（Node TCP 拨测）
+    try {
+      const tinfo = await docker.getContainer(targetId).inspect();
+      const ports = tinfo.NetworkSettings?.Ports || {};
+      for (const [key, mappings] of Object.entries(ports) as Array<[string, any[] | null]>) {
+        const m = (mappings || []).find((x) => x?.HostPort);
+        if (m && key.split('/')[0] === String(port)) {
+          hostPort = Number(m.HostPort);
+          break;
+        }
+      }
+      if (!hostPort) {
+        results.push({
+          name: `宿主机端口（${targetName}）`,
+          ok: true,
+          detail: `目标端口 ${port} 未发布到宿主机（容器网络内直连即可）`,
+        });
+      } else {
+        const r = await hostTcpProbe('127.0.0.1', hostPort);
+        results.push({
+          name: `宿主机端口（127.0.0.1:${hostPort} → 容器 ${port}）`,
+          ok: r.ok,
+          detail: r.detail,
+        });
+      }
+    } catch (e: any) {
+      results.push({ name: `宿主机端口（${targetName}）`, ok: false, detail: `检测失败: ${String(e?.message || e)}` });
+    }
+
+    logOperation(res.locals.username, '网络连通性诊断', 'container', sourceName, `目标: ${targetName}(${targetIp}):${port}`);
+    res.json({ source: sourceName, target: targetName, targetIp, port, results });
   }),
 );
 
