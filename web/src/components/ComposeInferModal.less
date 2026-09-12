@@ -43,9 +43,16 @@
 }
 
 .infer-modal__editor {
-  min-height: 280px;
+  display: block;
+  width: 100%;
+  min-height: 320px;
   font-family: monospace;
   resize: vertical;
+}
+
+/* 全屏编辑模式：编辑器占满视口剩余高度 */
+.infer-modal__editor--full {
+  min-height: 78vh;
 }
 
 .infer-modal__actions {

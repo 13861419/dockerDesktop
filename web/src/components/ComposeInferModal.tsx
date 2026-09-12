@@ -26,6 +26,8 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
   const [content, setContent] = useState('');
   const [projectName, setProjectName] = useState('');
   const [saving, setSaving] = useState(false);
+  // 全屏编辑模式：弹窗占满视口、编辑器拉高
+  const [fullscreen, setFullscreen] = useState(false);
 
   const loadCandidates = useCallback(async () => {
     try {
@@ -37,7 +39,10 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
   }, [showToast]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setFullscreen(false);
+      return;
+    }
     setResult(null);
     setContent('');
     setProjectName('');
@@ -87,7 +92,7 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
   }, [projectName, content, onClose, showToast]);
 
   return (
-    <Modal open={open} title="生成 Compose" onClose={onClose} width={720}>
+    <Modal open={open} title="生成 Compose" onClose={onClose} width={fullscreen ? window.innerWidth - 32 : 720}>
       {inferring ? (
         <SkeletonRows rows={8} />
       ) : result ? (
@@ -114,13 +119,16 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
           )}
           <Field label="Compose 内容" hint="可编辑后再保存">
             <TextArea
-              className="infer-modal__editor"
+              className={`infer-modal__editor ${fullscreen ? 'infer-modal__editor--full' : ''}`}
               value={content}
               onChange={(e: any) => setContent(e.target.value)}
               spellCheck={false}
             />
           </Field>
           <div className="infer-modal__actions">
+            <Button variant="ghost" size="sm" onClick={() => setFullscreen((f) => !f)}>
+              {fullscreen ? '退出全屏' : '全屏编辑'}
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => setResult(null)}>
               返回
             </Button>
