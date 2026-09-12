@@ -31,6 +31,7 @@ interface Engine {
   name: string;
   endpoint: string;
   isCurrent: boolean;
+  online?: boolean;
 }
 
 /** 跨引擎批量清理单台结果（1.39.0） */
@@ -529,14 +530,15 @@ export default function EnginesPage() {
           <Empty title={t('尚未配置引擎')} description={t('当前使用本机自动探测的默认 Docker 引擎。可新增引擎进行多引擎管理。')} />
         ) : (
           <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: '26%' }}>{t('名称')}</th>
-                <th style={{ width: '42%' }}>{t('端点')}</th>
-                <th style={{ width: '14%' }}>{t('状态')}</th>
-                <th style={{ width: '18%' }}>{t('操作')}</th>
-              </tr>
-            </thead>
+<thead>
+<tr>
+<th style={{ width: '24%' }}>{t('名称')}</th>
+<th style={{ width: '36%' }}>{t('端点')}</th>
+<th style={{ width: '12%' }}>{t('连通')}</th>
+<th style={{ width: '12%' }}>{t('状态')}</th>
+<th style={{ width: '16%' }}>{t('操作')}</th>
+</tr>
+</thead>
             <tbody>
               {engines.map((e) => (
                 <tr key={e.id}>
@@ -546,12 +548,20 @@ export default function EnginesPage() {
                       {e.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
                     </div>
                   </td>
-                  <td className="en-endpoint">{e.endpoint}</td>
-                  <td>
-                    <span className={`en-badge ${e.isCurrent ? 'en-badge--current' : 'en-badge--default'}`}>
-                      {e.isCurrent ? t('使用中') : t('备用')}
-                    </span>
-                  </td>
+<td className="en-endpoint">{e.endpoint}</td>
+<td>
+  <span
+    className={`en-badge ${e.online ? 'en-badge--current' : 'en-badge--default'}`}
+    title={e.online ? t('连通正常') : t('连接失败或超时')}
+  >
+    {e.online ? t('在线') : t('离线')}
+  </span>
+</td>
+<td>
+  <span className={`en-badge ${e.isCurrent ? 'en-badge--current' : 'en-badge--default'}`}>
+    {e.isCurrent ? t('使用中') : t('备用')}
+  </span>
+</td>
                   <td>
                     <div style={{ display: 'inline-flex', gap: 6 }}>
                       {!e.isCurrent && (

@@ -52,6 +52,28 @@ export function purgeExpiredTable(retentionDaysSetting: string, throttleKey: str
 }
 
 /**
+ * 数据库空间维护（1.45.0）：
+ *  - 每次调用先做 wal_checkpoint(TRUNCATE)（开销小，回收 WAL 文件）；
+ *  - 每周最多一次惰性 VACUUM（回收删除后的空闲页，设置表记录上次时间）。
+ * 由管理员页面打开路径（如任务列表）惰性触发。
+ */
+export function runDbMaintenance(): void {
+  try {
+    getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } catch {
+    // checkpoint 失败不影响主流程
+  }
+  const last = getLastPurgeAt('db.lastVacuumAt');
+  if (Date.now() - last < 7 * 86400_000) return;
+  try {
+    getDb().exec('VACUUM');
+    setLastPurgeAt('db.lastVacuumAt', Date.now());
+  } catch {
+    // VACUUM 失败静默，下周再试
+  }
+}
+
+/**
  * 按保留天数清理计划任务执行历史（cron_task_logs，时间列为 run_at）
  * 设置键 tasks.logRetentionDays（默认 90 天，<= 0 表示永久保留）
  */

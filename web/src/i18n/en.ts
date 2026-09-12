@@ -3251,4 +3251,6 @@ export const en: Record<string, string> = {
   '多个引擎名用英文逗号分隔，留空 = 全部已注册引擎': 'Comma-separated engine names; empty = all registered engines',
   // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
   '本机 Docker,测试机': 'Local Docker,Test box',
+  '连通正常': 'Reachable',
+  '连接失败或超时': 'Connection failed or timed out',
 };

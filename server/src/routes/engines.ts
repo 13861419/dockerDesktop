@@ -85,10 +85,27 @@ router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
     const d = getDb();
-    const rows = d.prepare('SELECT id, name, endpoint, is_current, created_at, updated_at FROM docker_engines ORDER BY created_at ASC').all() as unknown as EngineRow[];
-    res.json({
-      engines: rows.map((r) => ({ id: r.id, name: r.name, endpoint: r.endpoint, isCurrent: !!r.is_current })),
-    });
+    const rows = d.prepare('SELECT id, name, endpoint, is_current, created_at, updated_at FROM docker_engines ORDER BY created_at').all() as any[];
+    // 健康探测（1.45.0）：逐引擎并发 ping（3 秒超时），列表返回 online 标记
+    const engines = await Promise.all(
+      rows.map(async (r) => {
+        let online = false;
+        if (!r.endpoint) {
+          online = true; // 本机引擎
+        } else {
+          try {
+            online = await Promise.race([
+              testEngineEndpoint(r.endpoint),
+              new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000)),
+            ]);
+          } catch {
+            online = false;
+          }
+        }
+        return { id: r.id, name: r.name, endpoint: r.endpoint, isCurrent: !!r.is_current, online };
+      }),
+    );
+    res.json({ engines });
   }),
 );
 

@@ -69,6 +69,7 @@ import { buildPrometheusText } from './prometheus';
 import mcpRouter from './mcp/server';
 import imageUpdatesRouter from './routes/imageUpdates';
 import deploysRouter from './routes/deploys';
+import { writeRateLimiter, webhookRateLimiter } from './rateLimit';
 
 const app = express();
 
@@ -77,6 +78,9 @@ app.use(cors());
 
 // JSON 请求体解析
 app.use(express.json({ limit: '10mb' }));
+
+// 写接口 IP 限速（1.45.0：POST/PUT/PATCH/DELETE 默认 60 次/分钟/IP，env 可调）
+app.use(writeRateLimiter);
 
 // 请求日志（开发环境使用）
 if (process.env.NODE_ENV !== 'production') {
@@ -94,8 +98,8 @@ app.use('/metrics', metricsRouter);
 // 登录鉴权路由（/login 匿名访问，/logout /me 内部校验会话）
 app.use('/api/auth', authRouter);
 
-// Webhook 触发（匿名入口，靠 token 鉴权，不套 requireAuth）
-app.use('/api/webhook', webhookRouter);
+// Webhook 触发（匿名入口，靠 token 鉴权，不套 requireAuth；另有独立 IP 限速 1.45.0）
+app.use('/api/webhook', webhookRateLimiter, webhookRouter);
 
 // MCP 协议端点（自带 Bearer Token 鉴权，不套 requireAuth）
 app.use('/api/mcp', mcpRouter);

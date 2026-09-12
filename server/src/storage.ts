@@ -1213,6 +1213,29 @@ export function importDatabaseBuffer(buffer: Buffer): { users: number } {
   if (buffer.subarray(0, 16).toString('utf8') !== magic) {
     throw new Error('文件不是有效的 SQLite 数据库');
   }
+  // 完整性预检（1.45.0）：写入临时文件后用独立连接跑 quick_check，
+  // 损坏的备份直接拒绝恢复，避免损坏内容覆盖现有数据库
+  const precheckPath = DB_FILE + '.precheck';
+  fs.writeFileSync(precheckPath, buffer);
+  let checkDb: InstanceType<typeof DatabaseSync> | null = null;
+  try {
+    checkDb = new DatabaseSync(precheckPath);
+    const row = checkDb.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
+    if (row?.quick_check !== 'ok') {
+      throw new Error('数据库完整性校验未通过（' + (row?.quick_check || 'unknown') + '），已取消恢复');
+    }
+  } finally {
+    try {
+      checkDb?.close();
+    } catch {
+      // ignore
+    }
+    try {
+      fs.rmSync(precheckPath, { force: true });
+    } catch {
+      // ignore
+    }
+  }
   closeDb();
   const backupPath = path.join(DATA_DIR, 'docker-manager.pre-restore.db');
   if (fs.existsSync(DB_FILE)) {

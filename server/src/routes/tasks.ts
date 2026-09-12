@@ -34,7 +34,7 @@ import {
   TaskRunResult,
 } from '../scheduler';
 import { logOperation } from '../operationLog';
-import { purgeExpiredTaskLogs } from '../retention';
+import { purgeExpiredTaskLogs, runDbMaintenance } from '../retention';
 import { collectGcImages, planGc, summarizePlan, bytesText, type GcPolicy } from '../gc';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
 import { pullWithFailover } from '../docker/pull';
@@ -798,9 +798,10 @@ async function runDispatch(row: CronTaskRow): Promise<TaskRunResult> {
 router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
-    // 惰性触发执行历史保留清理（每日最多一次，1.43.0）
+    // 惰性触发执行历史保留清理与数据库空间维护（每日 / 每周最多一次，1.43.0 / 1.45.0）
     try {
       purgeExpiredTaskLogs();
+      runDbMaintenance();
     } catch {
       // 清理失败不影响列表
     }

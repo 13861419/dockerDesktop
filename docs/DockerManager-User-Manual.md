@@ -317,6 +317,8 @@ To back up, copy the entire data directory.
 >
 > Login failure protection (1.43.0): 5 consecutive failures on one account lock it for 10 minutes — the counter is **persisted**, so lockouts survive panel restarts. The same IP failing 20 times within a 10-minute sliding window is locked for 5 minutes (higher threshold for NAT scenarios; tunable via env vars), preventing username rotation around brute-force protection.
 >
+> API rate limiting (1.45.0): all write endpoints are rate-limited per source IP with a sliding window — 600 requests/min with credentials, 60/min anonymous, 30/min for the anonymous webhook entry. Thresholds are tunable via environment variables (API_AUTH_RATE_LIMIT / API_ANON_RATE_LIMIT / WEBHOOK_RATE_LIMIT / RATE_LIMIT_WINDOW_MS; 0 disables a tier).
+>
 > Login auditing (1.44.0): successful logins, failures and rejections (account lock, IP lock, allowlist denial) are written to the operation log with source IP and User-Agent for full traceability.
 
 ---
@@ -610,7 +612,7 @@ Menu: **Docker Engines** (`/engines`, admin only)
 - **Edit / Delete** existing endpoints.
 - **Set current** — switch the active engine.
 - Endpoints are auto-detected and validated.
-- **Pull-through image cache (v1.34.0)**: a built-in `registry:2` proxy cache on port 5060 can be deployed with one click. Point other engines' registry-mirror at `dm-registry-cache:5060` to share a local cache — repeated pulls of the same image no longer traverse the internet. Status view and one-click removal included. Since 1.43.0 the deploy can enable optional htpasswd authentication (random credentials returned once in the deploy response); the status endpoint reports the auth state and cache disk usage (MB). Combine with the Compose dashboard's image distribution to pre-warm remote engines.
+- **Pull-through image cache (v1.34.0)**: a built-in `registry:2` proxy cache on port 5060 can be deployed with one click. Point other engines' registry-mirror at `dm-registry-cache:5060` The engine list probes each engine concurrently (3 s timeout) and shows an online / offline badge (1.45.0). to share a local cache — repeated pulls of the same image no longer traverse the internet. Status view and one-click removal included. Since 1.43.0 the deploy can enable optional htpasswd authentication (random credentials returned once in the deploy response); the status endpoint reports the auth state and cache disk usage (MB). Combine with the Compose dashboard's image distribution to pre-warm remote engines.
 
 ![Docker engines](../images/engines.png)
 
@@ -951,6 +953,7 @@ Install-time configuration:
 - Type: `Panel database` / `Volumes` / `Compose config` / `Site config`
 - Name *, source (optional, e.g. a volume name)
 - Upload to cloud requires a target configured under `/cloudbackup`
+- Database restores run an automatic **SQLite integrity check** (quick_check, 1.45.0) first — a corrupted backup file is rejected instead of overwriting the live database.
 - Since 1.43.0, backups previously uploaded to the cloud can be **pulled back and restored** (`POST /api/backups/:id/restore-from-cloud`; WebDAV / S3 / OSS supported) for off-site rollback.
 
 ---
