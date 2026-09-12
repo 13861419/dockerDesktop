@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { getDockerClient } from '../docker/client';
+import { allowlistFilterFor } from '../containerAuth';
 
 const router = Router();
 
@@ -84,10 +85,14 @@ router.get(
     const docker = await getDockerClient();
     const resp: Record<string, any[]> = { containers: [], images: [], volumes: [], networks: [], compose: [] };
 
-    // 容器：按名称 / ID / 镜像名 匹配
+    // 容器：按名称 / ID / 镜像名 匹配（白名单用户先过滤可见性再截断，1.41.0）
     try {
       const list = (await docker.listContainers({ all: true })) as any[];
-      resp.containers = list
+      const allowFilter = allowlistFilterFor(res.locals.username);
+      const visible = allowFilter
+        ? list.filter((c) => allowFilter(containerName(c.Names, c.Id), c.Id || ''))
+        : list;
+      resp.containers = visible
         .filter(
           (c) =>
             hit(q, containerName(c.Names, c.Id)) ||

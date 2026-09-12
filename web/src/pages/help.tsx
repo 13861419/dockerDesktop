@@ -144,7 +144,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/files', name: t('文件管理'), desc: t('容器文件浏览与传输') },
   { path: '/hostfiles', name: t('宿主机文件'), desc: t('宿主机文件管理') },
   { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell') },
-  { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；跨引擎批量清理（容器/镜像/卷/网络，支持按年龄过滤，1.40.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
+  { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；跨引擎批量清理（容器/镜像/卷/网络，按年龄过滤，支持预览，1.41.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份') },

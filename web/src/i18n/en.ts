@@ -3215,4 +3215,10 @@ export const en: Record<string, string> = {
   '请勾选要修复的服务': 'Select the services to fix',
   // ---- 1.40.0 F4：漂移一键修复 ----
   '修复完成：成功 {{v1}}，失败 {{v2}}': 'Fix finished: {{v1}} succeeded, {{v2}} failed',
+  // ---- 1.41.0：批量清理预览 ----
+  '执行方式': 'Execution mode',
+  // ---- 1.41.0：批量清理预览 ----
+  '仅预览（只列出将删除的对象，不执行删除）': 'Preview only (list objects to be deleted without deleting)',
+  // ---- 1.41.0：批量清理预览 ----
+  '预览完成（未删除任何对象）': 'Preview finished (nothing was deleted)',
 };

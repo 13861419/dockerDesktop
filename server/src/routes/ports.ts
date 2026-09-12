@@ -12,6 +12,7 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../storage';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
+import { allowlistFilterFor } from '../containerAuth';
 
 const router = Router();
 
@@ -107,8 +108,10 @@ export function extractEntries(c: any, engine: EngineEndpointRow): PortEntry[] {
  */
 router.get(
   '/map',
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const d = getDb();
+    // 容器资源级授权（1.41.0）：名单外容器的端口条目不可见
+    const allowFilter = allowlistFilterFor(res.locals.username);
     const rows = d
       .prepare('SELECT id, name, endpoint, is_current FROM docker_engines ORDER BY created_at ASC')
       .all() as unknown as EngineEndpointRow[];
@@ -142,9 +145,12 @@ router.get(
       }),
     );
 
-    // 按 宿主端口+协议 分组（保持端口升序展示）
+    // 按 宿主端口+协议 分组（保持端口升序展示）；白名单用户仅见名单内容器
+    const visibleEntries = allowFilter
+      ? entries.filter((e) => allowFilter(e.containerName, e.containerId || ''))
+      : entries;
     const groupMap = new Map<string, PortGroup>();
-    for (const e of entries.sort((a, b) => a.hostPort - b.hostPort)) {
+    for (const e of visibleEntries.sort((a, b) => a.hostPort - b.hostPort)) {
       const key = `${e.hostPort}/${e.protocol}`;
       if (!groupMap.has(key)) {
         groupMap.set(key, { hostPort: e.hostPort, protocol: e.protocol, entries: [], conflict: false, crossEngine: false });
@@ -170,11 +176,11 @@ router.get(
 
     res.json({
       engines: engines.sort((a, b) => a.name.localeCompare(b.name)),
-      entries,
+      entries: visibleEntries,
       groups,
       conflicts,
       summary: {
-        entryCount: entries.length,
+        entryCount: visibleEntries.length,
         hostPortCount: groups.length,
         conflictCount: conflicts.length,
       },

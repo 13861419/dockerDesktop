@@ -14,6 +14,7 @@ import { getDockerClient } from '../docker/client';
 import { fetchContainerLogLines, stripAnsi } from '../docker/logUtil';
 import { queryLogHistory, getLogIndexStatus, pruneLogIndex } from '../docker/logIndexer';
 import { logOperation } from '../operationLog';
+import { allowlistFilterFor } from '../containerAuth';
 
 const router = Router();
 
@@ -35,11 +36,18 @@ function num(v: any, def: number, min = 0, max = Number.MAX_SAFE_INTEGER): numbe
 /** 容器候选 */
 router.get(
   '/containers',
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const docker = await getDockerClient();
     const list = (await docker.listContainers({ all: true }).catch(() => [])) as any[];
+    // 容器资源级授权（1.41.0）：名单外容器不作为日志检索源
+    const allowFilter = allowlistFilterFor(res.locals.username);
+    const visible = allowFilter
+      ? list.filter((c: any) =>
+          allowFilter((c.Names?.[0] || '').replace(/^\//, '') || c.Id?.slice(0, 12) || '', c.Id || ''),
+        )
+      : list;
     res.json(
-      list.map((c: any) => ({
+      visible.map((c: any) => ({
         id: c.Id,
         name: (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.slice(0, 12),
         image: c.Image || '',
@@ -48,6 +56,27 @@ router.get(
     );
   }),
 );
+
+/** 白名单守卫：校验请求的容器 id 全部在名单内（1.41.0，防按 id 越权拉日志） */
+async function assertIdsAllowed(req: Request, res: Response, containerIds: string[]): Promise<boolean> {
+  const allowFilter = allowlistFilterFor(res.locals.username);
+  if (!allowFilter) return true;
+  const docker = await getDockerClient();
+  const list = (await docker.listContainers({ all: true }).catch(() => [])) as any[];
+  const nameById = new Map<string, string>();
+  for (const c of list) {
+    const name = (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.slice(0, 12) || '';
+    nameById.set(c.Id, name);
+    nameById.set(String(c.Id || '').slice(0, 12), name);
+  }
+  const ok = containerIds.every((id) => {
+    const name = nameById.get(id) || nameById.get(id.slice(0, 12)) || '';
+    if (!name) return false;
+    return allowFilter(name, id);
+  });
+  if (!ok) res.status(403).json({ error: '无权访问该容器的日志（不在资源级授权名单内）' });
+  return ok;
+}
 
 /** 核心聚合查询 */
 router.get(
@@ -60,6 +89,7 @@ router.get(
     if (containerIds.length === 0) {
       return res.status(400).json({ error: '缺少 containerIds' });
     }
+    if (!(await assertIdsAllowed(req, res, containerIds))) return res;
 
     const tailPer = num(req.query.tailPer, 500, 1, 5000);
     const since = num(req.query.since, 0, 0);
@@ -119,6 +149,7 @@ router.get(
     if (containerIds.length === 0) {
       return res.status(400).json({ error: '缺少 containerIds' });
     }
+    if (!(await assertIdsAllowed(req, res, containerIds))) return res;
     const tailPer = num(req.query.tailPer, 500, 1, 5000);
     const since = num(req.query.since, 0, 0);
     const until = num(req.query.until, 0, 0);

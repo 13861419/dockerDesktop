@@ -363,6 +363,37 @@ export function listSelfHealEvents(limit = 50): Array<{
 }
 
 /**
+ * 标签匹配（纯函数，便于单测，1.40.0）
+ * @param label 规则上的标签：`key=value` 或仅 `key`
+ * @param labels 容器 Labels 对象
+ */
+export function matchesLabelRule(label: string, labels: Record<string, string> | undefined | null): boolean {
+  const [lk, lv] = String(label || '').split('=');
+  if (!lk) return false;
+  return Object.entries(labels || {}).some(([k, v]) => k === lk && (lv === undefined || lv === v));
+}
+
+/**
+ * 触发次数上限判定（纯函数，便于单测，1.41.0 抽取）
+ * @param maxTriggers 窗口内最大触发次数（<=0 = 不限制）
+ * @param windowSec 统计窗口秒数
+ * @param triggeredCount 窗口内已触发次数
+ * @param limitNotifiedAt 上次超限告警时间
+ * @param now 当前时间戳
+ */
+export function evalTriggerLimit(
+  maxTriggers: number,
+  windowSec: number,
+  triggeredCount: number,
+  limitNotifiedAt: number | null,
+  now: number,
+): { limited: boolean; notify: boolean } {
+  if (!maxTriggers || maxTriggers <= 0) return { limited: false, notify: false };
+  if (triggeredCount < maxTriggers) return { limited: false, notify: false };
+  return { limited: true, notify: !limitNotifiedAt || now - limitNotifiedAt > windowSec * 1000 };
+}
+
+/**
  * 巡检全部启用的自愈规则：命中即执行动作，带冷却期防重
  * @returns 本轮实际触发动作的规则数
  */
@@ -377,10 +408,7 @@ export async function runSelfHealCheck(): Promise<{ triggered: number }> {
       // 解析目标容器：优先按标签匹配（1.40.0），否则按名称精确匹配
       const list = (await docker.listContainers({ all: true }).catch(() => [])) as any[];
       const found = list.find((c) => {
-        if (rule.matchLabel) {
-          const [lk, lv] = rule.matchLabel.split('=');
-          return Object.entries(c.Labels || {}).some(([k, v]) => k === lk && (lv === undefined || lv === v));
-        }
+        if (rule.matchLabel) return matchesLabelRule(rule.matchLabel, c.Labels || {});
         return (c.Names || []).some((n: string) => n.replace(/^\//, '') === rule.containerName);
       });
       if (!found) continue;
@@ -406,8 +434,9 @@ export async function runSelfHealCheck(): Promise<{ triggered: number }> {
         const cntRow = getDb()
           .prepare('SELECT count(*) AS c FROM selfheal_events WHERE rule_id = ? AND created_at > ?')
           .get(rule.id, now - rule.triggerWindowSec * 1000) as { c: number };
-        if ((cntRow?.c || 0) >= rule.maxTriggers) {
-          if (!rule.limitNotifiedAt || now - rule.limitNotifiedAt > rule.triggerWindowSec * 1000) {
+        const verdict = evalTriggerLimit(rule.maxTriggers, rule.triggerWindowSec, cntRow?.c || 0, rule.limitNotifiedAt, now);
+        if (verdict.limited) {
+          if (verdict.notify) {
             getDb().prepare('UPDATE selfheal_rules SET limit_notified_at = ? WHERE id = ?').run(now, rule.id);
             await recordAndPush(
               'danger',

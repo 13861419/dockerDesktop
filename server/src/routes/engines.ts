@@ -251,6 +251,7 @@ router.post(
     const untilHours = Number(req.body?.untilHours);
     const filters: Record<string, string[]> | null =
       Number.isFinite(untilHours) && untilHours > 0 ? { until: [`${Math.floor(untilHours)}h`] } : null;
+    const dryRun = req.body?.dryRun === true;
     if (ids.length === 0) return res.status(400).json({ error: '需要 engineIds 参数' });
     const d = getDb();
     const results: Array<{
@@ -272,35 +273,83 @@ router.post(
         results.push({ engineId: id, name: '', endpoint: '', ok: false, prunedContainers: 0, prunedImages: 0, prunedVolumes: 0, prunedNetworks: 0, detail: '引擎不存在' });
         continue;
       }
-      const out = { engineId: id, name: row.name, endpoint: row.endpoint, ok: true, prunedContainers: 0, prunedImages: 0, prunedVolumes: 0, prunedNetworks: 0, detail: '' };
+      const out: any = { engineId: id, name: row.name, endpoint: row.endpoint, ok: true, prunedContainers: 0, prunedImages: 0, prunedVolumes: 0, prunedNetworks: 0, detail: '', preview: [] as string[] };
       try {
         const client = getDockerClientForEndpoint(row.endpoint);
         const opts: any = filters ? { filters } : {};
         const skipped: string[] = [];
-        if (types.includes('containers')) {
-          const r = await (client as any).pruneContainers(opts);
-          out.prunedContainers = Number(r?.ContainersDeleted) || 0;
-        }
-        if (types.includes('images')) {
-          const r = await (client as any).pruneImages(opts);
-          out.prunedImages = Array.isArray(r?.ImagesDeleted) ? r.ImagesDeleted.length : 0;
-        }
-        if (types.includes('volumes')) {
-          if (filters) {
-            skipped.push('卷不支持按年龄过滤已跳过');
-          } else {
-            const r = await (client as any).pruneVolumes({});
-            out.prunedVolumes = Array.isArray(r?.VolumesDeleted) ? r.VolumesDeleted.length : 0;
+        if (dryRun) {
+          // 预览模式（1.41.0）：只列出将删除的对象，不执行 prune
+          const preview: string[] = [];
+          if (types.includes('containers')) {
+            const list = (await client.listContainers({ all: true })) as any[];
+            for (const c of list) {
+              if ((c.State || '') !== 'running') {
+                preview.push(`容器 ${(c.Names?.[0] || '').replace(/^\//, '')}（${String(c.Image || '')}）`);
+                out.prunedContainers++;
+              }
+            }
           }
+          if (types.includes('images')) {
+            const imgs = (await client.listImages({ filters: { dangling: ['true'] } })) as any[];
+            for (const img of imgs) {
+              preview.push(`悬空镜像 ${img.RepoDigests?.[0]?.split('@')[0] || img.Id?.slice(0, 12) || ''}`);
+              out.prunedImages++;
+            }
+          }
+          if (types.includes('volumes')) {
+            if (filters) {
+              skipped.push('卷不支持按年龄过滤已跳过');
+            } else {
+              const vols = (await client.listVolumes({ filters: { dangling: ['true'] } })) as any;
+              for (const v of vols?.Volumes || []) {
+                preview.push(`卷 ${v.Name}`);
+                out.prunedVolumes++;
+              }
+            }
+          }
+          if (types.includes('networks')) {
+            const nets = (await client.listNetworks()) as any[];
+            for (const n of nets) {
+              if (['bridge', 'host', 'none'].includes(n.Name)) continue;
+              const inUse = n.Containers && Object.keys(n.Containers).length > 0;
+              if (!inUse) {
+                preview.push(`网络 ${n.Name}`);
+                out.prunedNetworks++;
+              }
+            }
+          }
+          out.preview = preview.slice(0, 20);
+          out.detail =
+            `预览：将清理容器 ${out.prunedContainers} 个，镜像 ${out.prunedImages} 个，卷 ${out.prunedVolumes} 个，网络 ${out.prunedNetworks} 个` +
+            (filters ? `（仅 ${untilHours} 小时前未使用）` : '') +
+            (skipped.length ? `；${skipped.join('、')}` : '');
+        } else {
+          if (types.includes('containers')) {
+            const r = await (client as any).pruneContainers(opts);
+            out.prunedContainers = Number(r?.ContainersDeleted) || 0;
+          }
+          if (types.includes('images')) {
+            const r = await (client as any).pruneImages(opts);
+            out.prunedImages = Array.isArray(r?.ImagesDeleted) ? r.ImagesDeleted.length : 0;
+          }
+          if (types.includes('volumes')) {
+            if (filters) {
+              skipped.push('卷不支持按年龄过滤已跳过');
+            } else {
+              const r = await (client as any).pruneVolumes({});
+              out.prunedVolumes = Array.isArray(r?.VolumesDeleted) ? r.VolumesDeleted.length : 0;
+            }
+          }
+          if (types.includes('networks')) {
+            const r = await (client as any).pruneNetworks(opts);
+            out.prunedNetworks = Array.isArray(r?.NetworksDeleted) ? r.NetworksDeleted.length : 0;
+          }
+          out.detail =
+            `容器 ${out.prunedContainers} 个，镜像 ${out.prunedImages} 个，卷 ${out.prunedVolumes} 个，网络 ${out.prunedNetworks} 个` +
+            (filters ? `（仅 ${untilHours} 小时前未使用）` : '') +
+            (skipped.length ? `；${skipped.join('、')}` : '');
         }
-        if (types.includes('networks')) {
-          const r = await (client as any).pruneNetworks(opts);
-          out.prunedNetworks = Array.isArray(r?.NetworksDeleted) ? r.NetworksDeleted.length : 0;
-        }
-        out.detail =
-          `容器 ${out.prunedContainers} 个，镜像 ${out.prunedImages} 个，卷 ${out.prunedVolumes} 个，网络 ${out.prunedNetworks} 个` +
-          (filters ? `（仅 ${untilHours} 小时前未使用）` : '') +
-          (skipped.length ? `；${skipped.join('、')}` : '');
       } catch (err: any) {
         out.ok = false;
         out.detail = err?.message || '清理失败';
@@ -312,7 +361,7 @@ router.post(
       '跨引擎批量清理',
       '引擎',
       results.map((r) => r.name).filter(Boolean).join(', '),
-      `types: ${types.join('/')}${filters ? `, until: ${untilHours}h` : ''}`,
+      `types: ${types.join('/')}${filters ? `, until: ${untilHours}h` : ''}${dryRun ? ', dryRun' : ''}`,
       results.every((r) => r.ok),
     );
     res.json({ ok: results.every((r) => r.ok), results });

@@ -43,6 +43,7 @@ interface PruneResult {
   prunedVolumes: number;
   prunedNetworks: number;
   detail: string;
+  preview: string[];
 }
 
 /** 批量清理对象类型 */
@@ -347,6 +348,7 @@ export default function EnginesPage() {
   const [pruneSelected, setPruneSelected] = useState<Record<string, boolean>>({});
   const [pruneTypes, setPruneTypes] = useState<Record<string, boolean>>({ containers: true, images: true, volumes: false, networks: false });
   const [pruneUntil, setPruneUntil] = useState('');
+  const [pruneDryRun, setPruneDryRun] = useState(false);
   const [pruneRunning, setPruneRunning] = useState(false);
   const [pruneResults, setPruneResults] = useState<PruneResult[] | null>(null);
 
@@ -375,17 +377,22 @@ export default function EnginesPage() {
       const res = await post<{ results: PruneResult[] }>('/api/engines/batch-prune', {
         engineIds,
         types,
+        dryRun: pruneDryRun,
         ...(Number.isFinite(untilHours) && untilHours > 0 ? { untilHours } : {}),
       });
       setPruneResults(res?.results || []);
       const okCount = (res?.results || []).filter((r) => r.ok).length;
-      showToast(t('批量清理完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: engineIds.length - okCount }));
+      showToast(
+        pruneDryRun
+          ? t('预览完成（未删除任何对象）')
+          : t('批量清理完成：成功 {{v1}}，失败 {{v2}}', { v1: okCount, v2: engineIds.length - okCount }),
+      );
     } catch (e: any) {
       showToast(e?.message || t('批量清理失败'), 'error');
     } finally {
       setPruneRunning(false);
     }
-  }, [engines, pruneSelected, pruneTypes, pruneUntil, showToast]);
+  }, [engines, pruneSelected, pruneTypes, pruneUntil, pruneDryRun, showToast]);
 
   const totalCount = aggregate?.length || 0;
   const onlineCount = aggregate?.filter((a) => a.online).length || 0;
@@ -765,6 +772,13 @@ export default function EnginesPage() {
           </div>
         </Field>
 
+        <Field label={t('执行方式')}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={pruneDryRun} onChange={(e) => setPruneDryRun(e.target.checked)} />
+            <span>{t('仅预览（只列出将删除的对象，不执行删除）')}</span>
+          </label>
+        </Field>
+
         <Field label={t('目标引擎（可多选）')} required>
           {engines.length === 0 ? (
             <div className="en-hint">{t('尚无可用引擎')}</div>
@@ -795,6 +809,14 @@ export default function EnginesPage() {
                     </span>
                   </div>
                   <div className="en-card__meta">{r.detail}</div>
+                  {pruneDryRun && r.preview && r.preview.length > 0 && (
+                    <div className="en-card__error" style={{ opacity: 0.85 }}>
+                      {r.preview.slice(0, 8).map((p, i) => (
+                        <div key={i}>· {p}</div>
+                      ))}
+                      {r.preview.length > 8 ? <div>…</div> : null}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

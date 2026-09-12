@@ -9,6 +9,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
+import { allowlistFilterFor } from '../containerAuth';
 
 const router = Router();
 
@@ -40,14 +41,23 @@ router.get(
     const engineParam = typeof req.query.engine === 'string' && req.query.engine ? req.query.engine : '';
     const docker = engineParam ? getDockerClientForEndpoint(engineParam) : await getDockerClient();
 
-    const [containersRaw, networksRaw] = await Promise.all([
-      docker.listContainers({ all: true }).catch(() => [] as any[]),
-      docker.listNetworks().catch(() => [] as any[]),
-    ]);
+    const containersRaw = (await docker
+      .listContainers({ all: true })
+      .catch(() => [] as any[])) as any[];
 
-    const containers = containersRaw as any[];
+    // 容器资源级授权（1.41.0）：名单外容器不出现在拓扑图中
+    const allowFilter = allowlistFilterFor(res.locals.username);
+    const containers = allowFilter
+      ? containersRaw.filter((c: any) =>
+          allowFilter(
+            (c.Names?.[0] || '').replace(/^\//, '') || c.Id?.slice(0, 12) || '',
+            c.Id || '',
+          ),
+        )
+      : containersRaw;
     const truncated = containers.length > MAX_CONTAINERS;
     const slice = containers.slice(0, MAX_CONTAINERS);
+    const networksRaw = await docker.listNetworks().catch(() => [] as any[]);
 
     const nodes: any[] = [];
     const edges: any[] = [];
