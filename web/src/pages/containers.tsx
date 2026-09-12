@@ -568,8 +568,36 @@ export default function ContainersPage() {
     return sortDir === 'asc' ? '↑' : '↓';
   }
 
+  /**
+   * 计算页码按钮的滑动窗口：首页/末页 + 当前页±1 恒定展示，
+   * 中间断档以省略号占位，避免容器很多时渲染成百上千个页码按钮。
+   * @param total 总页数
+   * @param cur 当前页
+   * @returns 页码与省略号标记的渲染序列
+   */
+  function buildPageWindow(total: number, cur: number): Array<number | 'ellipsis'> {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    const pages = new Set<number>([1, 2, cur - 1, cur, cur + 1, total - 1, total]);
+    const sorted = Array.from(pages)
+      .filter((p) => p >= 1 && p <= total)
+      .sort((a, b) => a - b);
+    const out: Array<number | 'ellipsis'> = [];
+    let prev = 0;
+    for (const p of sorted) {
+      if (p - prev > 1) out.push('ellipsis');
+      out.push(p);
+      prev = p;
+    }
+    return out;
+  }
+
   /** 总页数 */
   const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
+
+  /** 页码按钮渲染序列（滑动窗口） */
+  const pageButtons = buildPageWindow(totalPages, page);
 
   /**
    * 切换每页条数：重置到第一页并清空跳转输入
@@ -2140,15 +2168,21 @@ export default function ContainersPage() {
                 >
                   {t('上一页')}
                 </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                  <button
-                    key={p}
-                    className={`containers__page-btn ${p === page ? 'containers__page-btn--active' : ''}`}
-                    onClick={() => setPage(p)}
-                  >
-                    {p}
-                  </button>
-                ))}
+                {pageButtons.map((p, i) =>
+                  p === 'ellipsis' ? (
+                    <span key={`ellipsis-${i}`} className="containers__page-ellipsis">
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      className={`containers__page-btn ${p === page ? 'containers__page-btn--active' : ''}`}
+                      onClick={() => setPage(p)}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
                 <button
                   className="containers__page-btn"
                   disabled={page >= totalPages}

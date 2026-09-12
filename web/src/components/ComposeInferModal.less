@@ -42,17 +42,30 @@
   white-space: pre-wrap;
 }
 
-.infer-modal__editor {
-  display: block;
-  width: 100%;
-  min-height: 320px;
-  font-family: monospace;
-  resize: vertical;
+/* AI 审查结果面板 */
+.infer-modal__ai-result {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg-muted, #f8fafc);
+  max-height: 240px;
+  overflow: auto;
 }
 
-/* 全屏编辑模式：编辑器占满视口剩余高度 */
-.infer-modal__editor--full {
-  min-height: 78vh;
+.infer-modal__ai-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.infer-modal__ai-result pre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
 }
 
 .infer-modal__actions {

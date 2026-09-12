@@ -5,6 +5,10 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  '（AI 未返回内容）': '(AI returned no content)',
+  'AI 审查建议': 'AI review suggestions',
+  '全屏编辑': 'Fullscreen editing',
+  'AI 审查优化': 'AI review & optimize',
   '签名密钥已清除': 'Secret cleared',
   '签名密钥已保存': 'Secret saved',
   '配置后，Webhook 请求必须携带正确的 X-Hub-Signature-256 签名（GitHub/Gitea 兼容）': 'Once configured, webhook requests must carry a valid X-Hub-Signature-256 signature (GitHub/Gitea compatible)',

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Modal from './Modal';
 import Button from './Button';
-import { Field, Input, TextArea } from './Form';
+import { Field, Input } from './Form';
 import Empty from './Empty';
 import { SkeletonRows } from './Loading';
 import { useToast } from './Toast';
 import { get, post } from '../api/client';
+import YamlEditor from './YamlEditor';
 import type { ComposeInferCandidate, ComposeInferResult } from '../types';
 import './ComposeInferModal.less';
 
@@ -28,6 +29,9 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
   const [saving, setSaving] = useState(false);
   // 全屏编辑模式：弹窗占满视口、编辑器拉高
   const [fullscreen, setFullscreen] = useState(false);
+  // AI 审查：加载中与结果文本
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiResult, setAiResult] = useState('');
 
   const loadCandidates = useCallback(async () => {
     try {
@@ -91,6 +95,30 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
     }
   }, [projectName, content, onClose, showToast]);
 
+  /** AI 审查当前 YAML：解释结构、指出问题并给出优化建议 */
+  const aiReview = useCallback(async () => {
+    if (!content.trim() || aiBusy) return;
+    setAiBusy(true);
+    setAiResult('');
+    try {
+      const res = await post<{ reply?: string }>('/api/ai/chat', {
+        messages: [
+          {
+            role: 'user',
+            content:
+              '以下是由 docker run / 容器逆向生成的 docker compose YAML。请用中文简洁地：1) 逐服务解释其结构与作用；2) 指出潜在问题（安全、网络、卷、资源限制等）；3) 给出可直接落地的优化建议。不要整份重写 YAML。\n\n' +
+              content,
+          },
+        ],
+      });
+      setAiResult(res?.reply || '（AI 未返回内容）');
+    } catch (e: any) {
+      showToast(e?.message || 'AI 审查失败', 'error');
+    } finally {
+      setAiBusy(false);
+    }
+  }, [content, aiBusy, showToast]);
+
   return (
     <Modal open={open} title="生成 Compose" onClose={onClose} width={fullscreen ? window.innerWidth - 32 : 720}>
       {inferring ? (
@@ -118,14 +146,19 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
             <div className="infer-modal__validate-error">YAML 校验未通过：{result.validateError}</div>
           )}
           <Field label="Compose 内容" hint="可编辑后再保存">
-            <TextArea
-              className={`infer-modal__editor ${fullscreen ? 'infer-modal__editor--full' : ''}`}
-              value={content}
-              onChange={(e: any) => setContent(e.target.value)}
-              spellCheck={false}
-            />
+            <YamlEditor value={content} onChange={setContent} rows={fullscreen ? 40 : 16} />
           </Field>
+          {aiBusy && <SkeletonRows rows={3} />}
+          {aiResult && (
+            <div className="infer-modal__ai-result">
+              <div className="infer-modal__ai-title">AI 审查建议</div>
+              <pre>{aiResult}</pre>
+            </div>
+          )}
           <div className="infer-modal__actions">
+            <Button variant="ghost" size="sm" disabled={aiBusy || !content.trim()} loading={aiBusy} onClick={aiReview}>
+              AI 审查优化
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setFullscreen((f) => !f)}>
               {fullscreen ? '退出全屏' : '全屏编辑'}
             </Button>

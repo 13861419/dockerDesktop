@@ -553,6 +553,7 @@ journalctl -u docker-manager -f
 - 列表展示 Compose 项目名称、状态、Compose 文件与路径。
 - **新建 / 编辑**：填写或多行粘贴 `docker-compose.yml` 内容。
 - **从 docker run 导入（1.29.1）**：新建项目弹窗内点击「从 docker run 导入」，粘贴完整 `docker run` 命令即可自动转换为 compose service YAML 并填入编辑器。支持映射：`--name` / `-p` 端口 / `-v` 与 `--mount` 卷（bind、命名卷自动归集顶层声明、匿名卷）/ `-e` 环境变量 / `--restart` / 自定义网络 / `--label` / `--user` / `--workdir` / `--privileged` / `--cap-add` / `--cap-drop` / `--device` / `--cpus` / `-m --memory` / `--entrypoint` / `--health-*`，镜像后的命令参数映射为 `command`；`--gpus`、`--env-file`、host 网络与未知选项不会静默丢弃，而是逐条告警提示手动补充。
+- **生成 Compose 编辑器增强（1.47.0）**：容器页「生成 Compose」（docker run / 容器逆向）的内容编辑区升级为带**行号 + YAML 语法高亮**的编辑器，支持**全屏编辑**（编辑器占满视口）与 **AI 审查优化**——一键让 AI 解释各服务结构、指出潜在问题并给出可直接落地的优化建议。
 - 提供编排操作：**Up**（部署启动）、**Down**（停止移除）、**Pull**（拉取镜像）、**Build**（构建镜像）。
 - **项目资源看板（1.34.0）**：每行「看板」按钮按服务聚合展示项目内全部容器的 CPU / 内存 / 网络收发 / 磁盘读写汇总，支持服务级**滚动更新**（pull 最新镜像后仅重建该服务，`--no-deps` 不影响其他服务）。1.35.0 起更新后自动**健康检查**（60 秒内容器须保持运行，配置了 healthcheck 的服务须达到 healthy），失败时自动把旧镜像打回原 tag 并重建回滚，结果在提示中明确反馈。
 - **全项目滚动更新编排（1.38.0 新增）**：看板底部「全部滚动更新」按 compose 定义顺序逐个服务执行 pull → 重建 → 健康检查 → 失败自动回滚，单服务失败默认继续下一服务，完成后按服务汇总成功 / 失败与回滚状态；接口 `POST /api/compose/:name/rolling-update-all`。
