@@ -475,8 +475,10 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const loadStatus = useCallback(
     async (name: string) => {
       try {
-        const data = await get<ComposeService[]>(projectUrl(name));
-        setStatusMap((prev) => ({ ...prev, [name]: data || [] }));
+        const data = await get<{ services?: ComposeService[] }>(projectUrl(name));
+        // 响应形如 { name, path, services }，仅保留服务数组（1.53.0 修复：此前误存整个响应对象）
+        const services = Array.isArray(data?.services) ? data.services : [];
+        setStatusMap((prev) => ({ ...prev, [name]: services }));
       } catch {
         // 拉取失败时不显示具体状态，置为空
         setStatusMap((prev) => ({ ...prev, [name]: [] }));
@@ -1071,7 +1073,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                       {/* 生命周期操作：状态下拉（启动/停止/重启），与容器页一致（1.52.0） */}
                       <StateActions
                         state={
-                          (statusMap[proj.name] || []).some((svc) => /running|up/i.test(svc.State || ''))
+                          (Array.isArray(statusMap[proj.name]) &&
+                            (statusMap[proj.name] as ComposeService[]).some((svc) => /running|up/i.test(svc.State || '')))
                             ? 'running'
                             : 'exited'
                         }
