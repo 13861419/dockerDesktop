@@ -145,11 +145,11 @@ function deleteInstance(appId: string): void {
  * @returns Map<appId, { running, version }>
  */
 async function getComposeRuntimeInfo(): Promise<
-  Map<string, { running: boolean; version: string | null }>
+  Map<string, { running: boolean; version: string | null; availableVersion: string | null }>
 > {
   const docker = await getDockerClient();
   const containers = await docker.listContainers({ all: true });
-  const map = new Map<string, { running: boolean; version: string | null }>();
+  const map = new Map<string, { running: boolean; version: string | null; availableVersion: string | null }>();
   for (const app of getAllApps()) {
     if (!app.compose) continue;
     const project = `dm-${app.id}`;
@@ -160,7 +160,9 @@ async function getComposeRuntimeInfo(): Promise<
     const row = getInstanceRow(app.id);
     map.set(app.id, {
       running,
+      // version 为当前安装记录的版本；availableVersion 为商店清单里的最新版本，用于升级对比
       version: row?.version ?? app.compose?.defaultVersion ?? null,
+      availableVersion: app.compose?.defaultVersion ?? null,
     });
   }
   return map;
@@ -209,6 +211,9 @@ router.get(
             containerName: undefined,
             running: installed ? !!info?.running : undefined,
             version: info?.version ?? undefined,
+            availableVersion: info?.availableVersion ?? undefined,
+            upgradeAvailable:
+              installed && !!info?.availableVersion && !!info?.version && info.version !== info.availableVersion,
             port: null,
           };
         }
@@ -489,6 +494,9 @@ router.get(
         containerId: undefined,
         running: installed ? !!info?.running : undefined,
         version: info?.version ?? undefined,
+        availableVersion: info?.availableVersion ?? undefined,
+        upgradeAvailable:
+          installed && !!info?.availableVersion && !!info?.version && info.version !== info.availableVersion,
         port: null,
         projectName: installed ? `dm-${app.id}` : undefined,
       });

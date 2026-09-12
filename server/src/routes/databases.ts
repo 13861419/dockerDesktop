@@ -1094,6 +1094,54 @@ router.get(
   }),
 );
 
+// ==================== 表数据 CSV 导出 ====================
+
+/**
+ * GET /api/databases/:id/databases/:db/tables/:table/export
+ * 导出全表数据为 CSV（UTF-8 带 BOM，Excel 可直接打开）。
+ * 上限 50000 行防止内存占用过大；仅 mysql/mariadb/postgres 支持。
+ * @param id 实例 id
+ * @param db 库名
+ * @param table 表名
+ */
+router.get(
+  '/:id/databases/:db/tables/:table/export',
+  requireOperator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const row = await requireInstance(req.params.id);
+    const db = String(req.params.db || '').trim();
+    const table = String(req.params.table || '').trim();
+    if (!db || !table) {
+      res.status(400).json({ error: '库名与表名不能为空' });
+      return;
+    }
+    if (row.type === 'redis') {
+      res.status(400).json({ error: 'Redis 不支持表数据导出' });
+      return;
+    }
+    const MAX_ROWS = 50000;
+    let parsed: { columns: string[]; rows: string[][] };
+    if (row.type === 'mysql' || row.type === 'mariadb') {
+      const out = await mysqlRun(row, ['-B', '-e', `SELECT * FROM ${mysqlIdent(db)}.${mysqlIdent(table)} LIMIT ${MAX_ROWS}`]);
+      parsed = parseTableOutput(out, '\t');
+    } else {
+      const out = await psqlRun(row, ['-A', '-F', '\t', '-c', `SELECT * FROM ${psqlIdent(table)} LIMIT ${MAX_ROWS}`], db);
+      parsed = parseTableOutput(out, '\t');
+    }
+    const csvCell = (v: string) => (/["\n\r,]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v);
+    const lines: string[] = [parsed.columns.map(csvCell).join(',')];
+    for (const r of parsed.rows) {
+      lines.push(r.map((c) => csvCell(c ?? '')).join(','));
+    }
+    const csv = '\uFEFF' + lines.join('\r\n') + '\r\n';
+    const safeTable = table.replace(/[^a-zA-Z0-9._-]/g, '_');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="table-${safeTable}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    logOperation(res.locals.username, '导出表数据 CSV', 'database', row.name, `库: ${db} 表: ${table}`);
+    res.send(csv);
+  }),
+);
+
 // ==================== 备份恢复 ====================
 
 /**

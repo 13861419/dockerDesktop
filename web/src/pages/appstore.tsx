@@ -614,6 +614,11 @@ export default function AppStorePage() {
               {app.installed && app.version && (
                 <span className="appstore-card__version">{app.version}</span>
               )}
+              {app.installed && app.upgradeAvailable && app.availableVersion && (
+                <span className="appstore-card__version appstore-card__version--upgrade" title={t('当前 {{v1}}，可升级到 {{v2}}', { v1: app.version || '—', v2: app.availableVersion })}>
+                  ↗ {t('可升级 {{v}}', { v: app.availableVersion })}
+                </span>
+              )}
             </div>
             <div className="appstore-card__category">{app.category}</div>
           </div>
@@ -713,6 +718,7 @@ export default function AppStorePage() {
                   disabled={!!actionId || !canManage}
                   loading={actionId === app.id}
                   onClick={() => handleUpgrade(app)}
+                  title={app.upgradeAvailable ? t('当前 {{v1}}，可升级到 {{v2}}', { v1: app.version || '—', v2: app.availableVersion || '—' }) : undefined}
                 >
                   {t('升级')}
                 </Button>
@@ -1016,7 +1022,15 @@ function AppStoreDetail({ app }: { app: AppStoreItem }) {
       {app.version && (
         <div className="appstore-detail__row">
           <span className="appstore-detail__label">{t('版本')}</span>
-          <span className="appstore-detail__value">{app.version}</span>
+          <span className="appstore-detail__value">
+            {app.version}
+            {app.upgradeAvailable && app.availableVersion && (
+              <span className="appstore-card__version appstore-card__version--upgrade">
+                {' '}
+                ↗ {t('可升级 {{v}}', { v: app.availableVersion })}
+              </span>
+            )}
+          </span>
         </div>
       )}
       {app.running !== undefined ? (

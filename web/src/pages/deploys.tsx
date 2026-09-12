@@ -33,6 +33,8 @@ interface DeployApp {
   compose_path: string;
   also_build: number;
   webhook_token: string;
+  /** 是否已配置 HMAC 签名密钥（1/0） */
+  webhook_secret_set?: number;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -79,6 +81,11 @@ function App() {
   const [historyApp, setHistoryApp] = useState<DeployApp | null>(null);
   const [historyItems, setHistoryItems] = useState<DeployLogItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // 签名密钥弹窗
+  const [secretTarget, setSecretTarget] = useState<DeployApp | null>(null);
+  const [secretValue, setSecretValue] = useState('');
+  const [secretSaving, setSecretSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -222,6 +229,23 @@ function App() {
     }
   }
 
+  /** 保存/清除 HMAC 签名密钥 */
+  async function handleSaveSecret(clear: boolean) {
+    if (!secretTarget) return;
+    const secret = clear ? '' : secretValue.trim();
+    setSecretSaving(true);
+    try {
+      await post(`/api/deploys/${secretTarget.id}/webhook-secret`, { secret });
+      showToast(clear ? t('签名密钥已清除') : t('签名密钥已保存'));
+      setSecretTarget(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    } finally {
+      setSecretSaving(false);
+    }
+  }
+
   function statusBadge(app: DeployApp) {
     if (app.last_status === 'deploying') return <DeployBadge label={t('部署中')} tone="blue" />;
     if (app.last_status === 'ok') return <DeployBadge label={t('部署成功')} tone="green" />;
@@ -288,6 +312,18 @@ function App() {
                   </Button>
                   <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleResetToken(app)}>
                     {t('重置 Token')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!canManage}
+                    onClick={() => {
+                      setSecretTarget(app);
+                      setSecretValue('');
+                    }}
+                    title={t('配置后，Webhook 请求必须携带正确的 X-Hub-Signature-256 签名（GitHub/Gitea 兼容）')}
+                  >
+                    {app.webhook_secret_set ? t('签名密钥 ✓') : t('签名密钥')}
                   </Button>
                   <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleDelete(app)}>
                     {t('删除')}
@@ -375,6 +411,40 @@ function App() {
             </table>
           </div>
         )}
+      </Modal>
+
+      {/* 签名密钥弹窗 */}
+      <Modal
+        open={!!secretTarget}
+        title={`${t('Webhook 签名密钥')} · ${secretTarget?.name || ''}`}
+        onClose={() => setSecretTarget(null)}
+        width={480}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSecretTarget(null)}>
+              {t('取消')}
+            </Button>
+            <Button variant="ghost" disabled={secretSaving} onClick={() => handleSaveSecret(true)}>
+              {t('清除密钥')}
+            </Button>
+            <Button variant="primary" loading={secretSaving} onClick={() => handleSaveSecret(false)}>
+              {t('保存')}
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label={t('HMAC 签名密钥')}
+          required
+          hint={t('与 Git 仓库 Webhook 设置中的 Secret 保持一致；保存后 push 事件必须携带有效签名才会触发部署')}
+        >
+          <Input
+            type="password"
+            value={secretValue}
+            onChange={(e) => setSecretValue(e.target.value)}
+            placeholder={secretTarget?.webhook_secret_set ? t('已配置（输入新值可覆盖）') : t('例如：my-webhook-secret')}
+          />
+        </Field>
       </Modal>
     </div>
   );

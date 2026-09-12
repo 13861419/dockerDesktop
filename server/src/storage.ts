@@ -948,6 +948,12 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：为 deploy_apps 补充 Git Webhook 签名密钥列（NULL/空=未启用 HMAC 签名校验）
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN webhook_secret TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');

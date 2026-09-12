@@ -982,6 +982,26 @@ function TableDetailModal({
     if (open && tab === 'data') loadData();
   }, [open, tab, loadData]);
 
+  const [exporting, setExporting] = useState(false);
+
+  /**
+   * 导出全表数据为 CSV 文件（后端上限 5 万行）
+   */
+  const exportCsv = async () => {
+    if (!table) return;
+    setExporting(true);
+    try {
+      await download(
+        `/api/databases/${instance.id}/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/export`,
+        `table-${table}-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+    } catch (e: any) {
+      showToast(e?.message || t('导出失败'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   /** 最大页码 */
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -1069,6 +1089,9 @@ function TableDetailModal({
                   {t('第 {{page}} / {{totalPages}} 页 · 共 {{total}} 行', { page, totalPages, total })}
                 </span>
                 <div className="db-table__page-actions">
+                  <Button variant="ghost" size="sm" onClick={exportCsv} disabled={exporting} title={t('导出全表数据（上限 5 万行）')}>
+                    {exporting ? t('导出中…') : t('导出 CSV')}
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={prevPage} disabled={page <= 1}>
                     {t('上一页')}
                   </Button>

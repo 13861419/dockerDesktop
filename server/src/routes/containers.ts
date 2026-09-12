@@ -208,6 +208,28 @@ function asyncHandler(
 // ============ 容器列表 ============
 
 /**
+ * 并发受限的批量处理池：按 limit 个 worker 依次消费任务队列。
+ * 用于容器列表的逐个 inspect，避免容器很多时瞬间打满 Docker Engine 连接。
+ * @param items 待处理数组
+ * @param limit 并发上限
+ * @param fn 单项处理函数
+ * @returns 与输入顺序一致的结果数组
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/**
  * GET /api/containers?all=true
  * 获取容器列表，可通过 all 参数控制是否包含已停止容器
  */
@@ -226,24 +248,22 @@ router.get(
         ),
       );
     }
-    // 并发 inspect 每个容器以提取健康检查状态（health）
-    // 注意：会对每个容器发起一次 Docker Engine 请求，容器数量较多时可能略慢
-    const containersWithHealth = await Promise.all(
-      containers.map(async (c) => {
-        try {
-          const info = await docker.getContainer(c.Id).inspect();
-          return {
-            ...c,
-            health: info.State?.Health?.Status || 'none',
-            cpuLimit: info.HostConfig?.NanoCpus || 0,
-            memLimit: info.HostConfig?.Memory || 0,
-          };
-        } catch {
-          // inspect 失败时降级为 'none'，不影响列表整体返回
-          return { ...c, health: 'none', cpuLimit: 0, memLimit: 0 };
-        }
-      }),
-    );
+    // 并发受限地 inspect 每个容器以提取健康检查状态（health）
+    // 注意：会对每个容器发起一次 Docker Engine 请求，并发限制为 8 防止大列表时压垮 Engine
+    const containersWithHealth = await mapWithConcurrency(containers, 8, async (c) => {
+      try {
+        const info = await docker.getContainer(c.Id).inspect();
+        return {
+          ...c,
+          health: info.State?.Health?.Status || 'none',
+          cpuLimit: info.HostConfig?.NanoCpus || 0,
+          memLimit: info.HostConfig?.Memory || 0,
+        };
+      } catch {
+        // inspect 失败时降级为 'none'，不影响列表整体返回
+        return { ...c, health: 'none', cpuLimit: 0, memLimit: 0 };
+      }
+    });
     res.json(containersWithHealth);
   }),
 );

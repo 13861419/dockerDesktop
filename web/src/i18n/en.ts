@@ -5,6 +5,21 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  '签名密钥已清除': 'Secret cleared',
+  '签名密钥已保存': 'Secret saved',
+  '配置后，Webhook 请求必须携带正确的 X-Hub-Signature-256 签名（GitHub/Gitea 兼容）': 'Once configured, webhook requests must carry a valid X-Hub-Signature-256 signature (GitHub/Gitea compatible)',
+  '与 Git 仓库 Webhook 设置中的 Secret 保持一致；保存后 push 事件必须携带有效签名才会触发部署': 'Must match the Secret in the Git repo webhook settings; once saved, push events require a valid signature to trigger a deploy',
+  '例如：my-webhook-secret': 'e.g. my-webhook-secret',
+  '已配置（输入新值可覆盖）': 'Configured (enter a new value to override)',
+  'HMAC 签名密钥': 'HMAC secret',
+  '清除密钥': 'Clear secret',
+  'Webhook 签名密钥': 'Webhook Secret',
+  '签名密钥 ✓': 'Secret ✓',
+  '签名密钥': 'Secret',
+  '当前 {{v1}}，可升级到 {{v2}}': 'Current {{v1}}, upgrade to {{v2}}',
+  '可升级 {{v}}': 'Upgrade available: {{v}}',
+  '导出全表数据（上限 5 万行）': 'Export full table data (up to 50,000 rows)',
+  '导出中…': 'Exporting…',
   // ---- 布局：侧边栏导航 ----
   '总览': 'Overview',
   '健康体检': 'Health Check',

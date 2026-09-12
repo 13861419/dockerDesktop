@@ -8,6 +8,7 @@
  * - POST   /:id/deploy          立即部署（异步执行；结果写部署历史）
  * - GET    /:id/logs            部署历史（最近 50 条）
  * - POST   /:id/webhook-token   重置 webhook token
+ * - POST   /:id/webhook-secret  设置/清除 Git Webhook HMAC 签名密钥
  *
  * 部署动作 = gitCloneOrPull 到 COMPOSE_ROOT/<name> → docker compose up -d [--build]
  * webhook 触发：POST /api/webhook/<deploy_apps.webhook_token>（见 routes/webhook.ts）
@@ -120,7 +121,11 @@ async function deployApp(app: DeployApp, source: string): Promise<{ ok: boolean;
 /** GET / — 应用列表 */
 router.get('/', requireAuth, (_req: Request, res: Response) => {
   const apps = getDb()
-    .prepare('SELECT id, name, repo_url, branch, compose_path, also_build, webhook_token, last_deploy_at, last_status, last_detail, created_at, updated_at FROM deploy_apps ORDER BY id DESC')
+    .prepare(
+      `SELECT id, name, repo_url, branch, compose_path, also_build, webhook_token, last_deploy_at, last_status, last_detail, created_at, updated_at,
+              CASE WHEN webhook_secret IS NOT NULL AND webhook_secret != '' THEN 1 ELSE 0 END AS webhook_secret_set
+       FROM deploy_apps ORDER BY id DESC`,
+    )
     .all();
   res.json({ items: apps });
 });
@@ -199,6 +204,32 @@ router.post('/:id/webhook-token', requireAuth, requireAdmin, (req: Request, res:
   getDb().prepare('UPDATE deploy_apps SET webhook_token = ?, updated_at = ? WHERE id = ?').run(token, Date.now(), Number(req.params.id));
   logOperation(res.locals.username, '重置部署 Webhook Token', 'compose', String(req.params.id), '', true);
   res.json({ ok: true, token });
+});
+
+/** POST /:id/webhook-secret — 设置/清除 Git Webhook HMAC 签名密钥（body.secret 为空串或省略=清除） */
+router.post('/:id/webhook-secret', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const row = getDb().prepare('SELECT name FROM deploy_apps WHERE id = ?').get(id) as any;
+  if (!row) {
+    return res.status(404).json({ error: '应用不存在' });
+  }
+  const raw = req.body?.secret;
+  const secret = raw === undefined || raw === null ? '' : String(raw).trim();
+  if (secret.length > 256) {
+    return res.status(400).json({ error: '签名密钥过长（上限 256 字符）' });
+  }
+  getDb()
+    .prepare('UPDATE deploy_apps SET webhook_secret = ?, updated_at = ? WHERE id = ?')
+    .run(secret || null, Date.now(), id);
+  logOperation(
+    res.locals.username,
+    secret ? '设置部署 Webhook 签名密钥' : '清除部署 Webhook 签名密钥',
+    'compose',
+    row.name || String(id),
+    '',
+    true,
+  );
+  res.json({ ok: true, enabled: !!secret });
 });
 
 export default router;

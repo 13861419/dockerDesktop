@@ -560,6 +560,7 @@ Menu: **App Store** (`/appstore`)
 3. Fill in **app parameters** (ports, image source, etc.; you may use the default mirror).
 4. Click **Install** to deploy with one click; installed instances show their status.
 5. Stop / uninstall installed instances as needed.
+6. **Upgrade version comparison (1.46.0)**: when an installed Compose suite version differs from the latest store version, the card shows an "upgrade available" badge (hover to see current → target), so upgrades are informed decisions.
 
 ![App Store](../images/appstore.png)
 
@@ -691,6 +692,7 @@ Menu: **Databases** (`/databases`)
 ### 17.2 Query & View
 
 - Open an instance to view table structure, run read-only queries, and browse data.
+- **Table CSV export (1.46.0)**: the data-browse dialog has an "Export CSV" button that downloads the full table (up to 50,000 rows) as a UTF-8 (BOM) CSV file; exports are written to the operation log.
 - Provides read-only display only — **no destructive write operations**.
 
 ![Databases](../images/databases.png)
@@ -1299,6 +1301,8 @@ The "Git Deploys" page in the sidebar offers a visual, per-app deployment flow t
 A deployment = clone / pull the repository into the compose project directory → `docker compose up -d [--build]`. Each card shows live status (deploying / ok / failed) and the last deploy time; full git and compose output of every deployment is kept in the "History" dialog (up to 50 records).
 
 Auto-deploy: each app has its own webhook token; the full URL is shown under the card (click to select all) and can be pointed to by Git push events. `X-Docker-Panel-Token` header verification is supported, and a leaked token can be rotated with "Reset Token". Deploy failures push alert notifications automatically.
+
+**HMAC signature verification (1.46.0)**: use the "Secret" button on a card to set a shared secret (matching the Secret in the Git repo's webhook settings). Once configured, webhook requests must carry a valid `X-Hub-Signature-256` (GitHub / Gitea compatible, HMAC-SHA256 with constant-time comparison) or the deploy is rejected with 401 and logged. Clearing the secret restores signature-free triggering.
 
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 

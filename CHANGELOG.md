@@ -3,6 +3,36 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.46.0] - 2026-09-12
+
+### Added（新增）
+
+- **数据库表数据导出 CSV**：数据表浏览弹窗新增「导出 CSV」——全表数据导出为 UTF-8（带 BOM）CSV 文件（上限 5 万行），Excel 直接打开不乱码；导出动作写入操作日志
+- **应用商店升级版本对比**：Compose 套件卡片显示「可升级」徽标并提示当前版本 → 商店最新版本，升级按钮悬停可见版本对比，避免盲升级
+- **Git Webhook HMAC 签名校验**：Git 部署应用可配置签名密钥，Webhook 请求必须携带有效的 `X-Hub-Signature-256`（GitHub / Gitea 兼容，HMAC-SHA256 + 常量时间比较）才会触发部署；未配置密钥时行为不变，密钥可随时清除
+
+### Changed（变更）
+
+- **容器列表性能**：列表页逐容器 inspect（提取健康状态与资源上限）改为 8 并发的受限池，容器数量较多时不再瞬时打满 Docker Engine 连接
+
+### Test（测试）
+
+- 新增单测 `hmac-webhook.test.ts`（签名校验 8 例：有效 / 篡改 / 缺前缀 / 空体 / 大小写容错等，353 例全过）；API 集成测试新增 `api-webhook-hmac.test.ts`（配置 / 校验 / 清除端到端，652 例全过）
+
+
+## [1.45.0] - 2026-09-12
+
+### Added（新增）
+
+- **数据库恢复完整性预检**：恢复前对备份文件独立连接执行 SQLite `PRAGMA quick_check`，损坏的备份文件直接拒绝恢复，不再仅靠文件头魔数判断
+- **引擎列表连通探测**：`GET /api/engines` 逐引擎并发健康探测（3 秒超时），返回在线 / 离线标记，前端引擎表新增「连通」列
+- **API 写接口 IP 限速**：零依赖滑动窗口限速——写接口（POST / PUT / PATCH / DELETE）鉴权请求 600 次/分钟、匿名请求 60 次/分钟、匿名 Webhook 入口 30 次/分钟；阈值可用环境变量（`API_AUTH_RATE_LIMIT` / `API_ANON_RATE_LIMIT` / `WEBHOOK_RATE_LIMIT` / `RATE_LIMIT_WINDOW_MS`）调整，设 0 关闭对应档位
+
+### Changed（变更）
+
+- **SQLite 空间维护**：保留清理后自动执行 `wal_checkpoint(TRUNCATE)` 回收 WAL 空间，每周惰性触发一次 `VACUUM` 整理数据库文件
+
+
 ## [1.44.0] - 2026-09-12
 
 ### Added（新增）

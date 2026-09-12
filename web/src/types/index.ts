@@ -334,6 +334,10 @@ export interface AppStoreItem extends AppStoreApp {
   services?: string[];
   /** 已安装应用的版本号（Compose 套件，来源于安装/升级记录或默认版本） */
   version?: string;
+  /** 商店清单提供的最新版本号（Compose 套件） */
+  availableVersion?: string;
+  /** 当前安装版本与商店最新版本不一致，可升级 */
+  upgradeAvailable?: boolean;
 }
 
 /** 应用安装状态信息（/api/appstore/status 返回的单条目结构） */

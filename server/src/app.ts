@@ -76,8 +76,15 @@ const app = express();
 // 允许跨域访问（前后端分离开发时）
 app.use(cors());
 
-// JSON 请求体解析
-app.use(express.json({ limit: '10mb' }));
+// JSON 请求体解析（verify 回调暂存原始字节，供 Webhook HMAC 签名校验使用）
+app.use(
+  express.json({
+    limit: '10mb',
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  }),
+);
 
 // 写接口 IP 限速（1.45.0：POST/PUT/PATCH/DELETE 默认 60 次/分钟/IP，env 可调）
 app.use(writeRateLimiter);
