@@ -53,6 +53,7 @@
 - [42. Help Center](#42-help-center)
 - [44. Network Topology & Log Aggregation](#44-network-topology--log-aggregation)
 - [45. System Update](#45-system-update)
+- [46. Edge Nodes (Multi-node Management)](#46-edge-nodes-multi-node-management)
 - [43. Kubernetes Read-only Inspection](#43-kubernetes-read-only-inspection)
 
 > **Screenshot placeholders**: images referenced below point to the `docs/images/` directory. Drop screenshots named after each image link into that folder to display them.
