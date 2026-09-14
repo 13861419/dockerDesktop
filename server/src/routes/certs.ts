@@ -87,7 +87,8 @@ router.post(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const domains = sanitizeDomains(req.body?.domains);
-    const result = await issueCertificate(domains, `admin@${domains[0]}`);
+    // 联系邮箱：请求体 > 系统参数 > 主域名自动生成
+    const result = await issueCertificate(domains, String(req.body?.contactEmail || ''));
     res.status(201).json({
       ok: true,
       domains: result.domains,

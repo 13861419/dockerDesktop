@@ -793,13 +793,15 @@ Menu: **SSL Certificates** (`/certs`, admin only)
 
 Issue and auto-renew certificates via **Let's Encrypt** (ACME http-01 validation, zero extra dependencies):
 
-1. Click **Issue Certificate**, enter domains (comma-separated; the first is the primary; wildcards are not supported).
+1. Click **Issue Certificate**, enter domains (comma-separated; the first is the primary).
 2. The panel temporarily answers Let's Encrypt http-01 validation on local **port 80** (override with the `ACME_HTTP_PORT` env var); the whole flow takes about 10-30 seconds.
 3. Once issued, the certificate and key are written to the panel data dir at `certs/<primary>/<primary>.pem` and `.key` (naming matches the site proxy cert-path derivation), and appear in the list.
 4. **Sites integration**: in the site editor, after enabling HTTPS, pick an issued ACME certificate from the dropdown to fill the paths automatically.
 5. **Auto renewal**: a daily check re-issues certificates with less than 30 days left; use "Renewal Check" to trigger manually.
 6. **Prerequisites**: the domain must resolve to the panel host with port 80 reachable (a hint is shown at the top when the port is occupied; http-01 does not fit intranet-only domains).
-7. Switch to the Let's Encrypt **staging** environment (set `ACME_DIRECTORY_URL` to the staging directory) for testing to avoid production rate limits.
+7. Switch to the Let's Encrypt **staging** environment (the "ACME directory URL" system parameter or `ACME_DIRECTORY_URL` env var) for testing to avoid production rate limits.
+8. **Wildcard certificates (new in 1.59.0)**: wildcard domains like `*.example.com` are supported via **DNS-01 validation** — first configure the **DNS provider** (`cloudflare` or `aliyun`) and **DNS API credentials** under Settings → System Parameters → Security (Cloudflare: API Token; Aliyun: `AccessKey ID:AccessKey Secret` joined by a colon). During issuance the panel automatically creates/removes the `_acme-challenge` TXT record and waits for propagation (up to 90s). DNS-01 does not require port 80; wildcard-only orders skip the HTTP challenge server entirely.
+9. **Centralized settings (1.59.0)**: the ACME account email and directory URL (production/staging switch) are configurable in System Parameters, no env vars needed.
 
 ---
 

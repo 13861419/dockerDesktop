@@ -3,6 +3,21 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.59.0] - 2026-09-12
+
+### Added（新增）
+
+- **DNS-01 通配符证书**：支持 `*.example.com` 通配符域名签发——接入 **Cloudflare**（API Token）与**阿里云 DNS**（AccessKey）两类解析商，签发时自动创建/清理 `_acme-challenge` TXT 记录，DoH 轮询等待解析生效（最长 90 秒），验证后自动清理
+- **ACME 设置中心化**：账户邮箱、目录地址（生产/staging 切换）、DNS 解析商与凭证全部进「设置 → 系统参数 → 安全」，不再依赖环境变量（`ACME_DIRECTORY_URL` 仍兼容）
+
+### Changed（变更）
+
+- 纯通配符订单跳过 80 端口 http-01 挑战服务（DNS-01 无需端口可达）；混合域名订单按授权自动选择验证方式
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-159.test.ts`（通配符无凭证 400 提示、域名格式校验、acme 设置项读写）
+
 ## [1.58.0] - 2026-09-12
 
 ### Added（新增）

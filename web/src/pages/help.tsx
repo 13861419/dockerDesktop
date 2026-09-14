@@ -49,7 +49,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: t('SSL 证书签发失败或如何自动续期？'),
-    a: t('「SSL 证书」页（管理员）基于 Let’s Encrypt http-01 验证：需要域名解析到面板主机且 80 端口可达（被占用时页面顶部会提示）。签发后证书写入数据目录 certs/ 下并可在站点反代中直接选择；每日自动巡检，剩余不足 30 天自动续期，也可手动点「续期巡检」。测试环境可用 ACME_DIRECTORY_URL 切换到 staging。'),
+    a: t('「SSL 证书」页（管理员）基于 Let’s Encrypt http-01 验证：需要域名解析到面板主机且 80 端口可达（被占用时页面顶部会提示）。签发后证书写入数据目录 certs/ 下并可在站点反代中直接选择；每日自动巡检，剩余不足 30 天自动续期，也可手动点「续期巡检」。通配符证书（*.example.com）走 DNS-01 验证，需在系统参数配置 DNS 解析商与凭证（Cloudflare / 阿里云）。测试环境可在系统参数「ACME 目录地址」切换到 staging。'),
   },
   {
     q: t('高危操作审批流如何开启？'),
@@ -154,7 +154,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell') },
   { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；跨引擎批量清理（容器/镜像/卷/网络，按年龄过滤，支持预览，1.41.0），可建跨引擎清理计划任务（1.42.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
-{ path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01）；证书文件可直接用于站点反代（1.56.0）') },
+  { path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01 / 通配符 DNS-01）；证书文件可直接用于站点反代') },
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份；支持云端上传与从云端拉回恢复（1.43.0）；备份覆盖率体检（哪些对象没备份一目了然，1.48.0）') },
   { path: '/databases', name: t('数据库'), desc: t('MySQL / PostgreSQL / Redis 可视化，表数据一键导出 CSV（1.46.0）；SQL 查询历史与收藏（1.48.0）') },

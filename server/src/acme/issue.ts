@@ -12,6 +12,8 @@ import crypto from 'crypto';
 import { AcmeClient, DEFAULT_DIRECTORY_URL } from './client';
 import { buildCsr, loadOrCreateKey } from './jose';
 import { putChallenge, startChallengeServer, challengeServerStatus } from './challengeServer';
+import { createTxtRecord, dnsTxtValue, waitTxtVisible } from './dns';
+import { getSetting } from '../settings';
 import { DATA_DIR, getDb } from '../storage';
 
 /** 账户密钥文件 */
@@ -23,8 +25,13 @@ export const CERTS_DIR = path.join(DATA_DIR, 'certs');
 /** 剩余有效期低于该天数时触发续期 */
 const RENEW_BEFORE_DAYS = 30;
 
-/** 域名格式校验（宽松：字母数字点划线，不校验 TLD 合法性） */
+/** 域名格式校验（宽松：字母数字点划线，不校验 TLD 合法性；1.59.0 起支持首段通配符 *.example.com） */
 const DOMAIN_RE = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*$/;
+
+/** 通配符域名判断 */
+export function isWildcard(domain: string): boolean {
+  return domain.startsWith('*.');
+}
 
 /** 校验并整理域名列表（去重、去空白），非法时抛 400 */
 export function sanitizeDomains(input: unknown): string[] {
@@ -42,7 +49,8 @@ export function sanitizeDomains(input: unknown): string[] {
     throw err;
   }
   for (const d of domains) {
-    if (!DOMAIN_RE.test(d) || d.length > 253) {
+    const bare = d.replace(/^\*\./, '');
+    if (!DOMAIN_RE.test(bare) && !DOMAIN_RE.test(d) || d.length > 253) {
       const err: any = new Error(`非法域名：${d}`);
       err.statusCode = 400;
       throw err;
@@ -74,36 +82,76 @@ export async function issueCertificate(domains: string[], contactEmail: string):
   certPem: string;
   keyPem: string;
 }> {
-  // 确保 80 端口挑战服务可用（占用失败时给出明确提示）
-  const st = challengeServerStatus();
-  if (!st.listening) {
-    const started = await startChallengeServer();
-    if (!started.ok) {
-      const err: any = new Error(
-        `HTTP-01 挑战服务未就绪：${started.error}。请释放 80 端口（或设置 ACME_HTTP_PORT 换端口），并确保域名解析指向本机`,
-      );
-      err.statusCode = 400;
-      throw err;
+  // 确保 80 端口挑战服务可用（占用失败时给出明确提示）；纯通配符订单走 DNS-01 无需 80 端口
+  const wildcards = domains.filter(isWildcard);
+  const normals = domains.filter((d) => !isWildcard(d));
+  const dnsProvider = (String(getSetting<string>('acme.dnsProvider') || 'none').toLowerCase() || 'none') as
+    | 'none'
+    | 'cloudflare'
+    | 'aliyun';
+  const dnsToken = String(getSetting<string>('acme.dnsApiToken') || '');
+
+  if (wildcards.length > 0 && (dnsProvider === 'none' || !dnsToken)) {
+    const err: any = new Error(
+      '通配符域名需 DNS-01 验证：请先在「设置 → 系统参数 → 安全」配置 DNS 解析商与 API 凭证',
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (normals.length > 0) {
+    const st = challengeServerStatus();
+    if (!st.listening) {
+      const started = await startChallengeServer();
+      if (!started.ok) {
+        const err: any = new Error(
+          `HTTP-01 挑战服务未就绪：${started.error}。请释放 80 端口（或设置 ACME_HTTP_PORT 换端口），并确保域名解析指向本机`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
     }
   }
 
-  const client = new AcmeClient(loadOrCreateKey(ACCOUNT_KEY_FILE));
+  const client = new AcmeClient(loadOrCreateKey(ACCOUNT_KEY_FILE), currentDirectoryUrl());
   await client.init();
-  await client.ensureAccount(contactEmail || `admin@${domains[0]}`);
+  const email =
+    contactEmail || String(getSetting<string>('acme.contactEmail') || '') || `admin@${domains[0].replace(/^\*\./, '')}`;
+  await client.ensureAccount(email);
 
   const order = await client.newOrder(domains);
   const authorizations: string[] = order.authorizations || [];
-  // 逐域名完成 http-01 挑战
+  // 逐授权完成挑战：通配符域名走 dns-01（写 TXT → 等生效 → 应答 → 清理），其余走 http-01
   for (const authzUrl of authorizations) {
     const authz = await client.fetchAsGet(authzUrl);
     if (authz?.status === 'valid') continue;
-    const challenge = (authz?.challenges || []).find((c: any) => c.type === 'http-01');
-    if (!challenge) throw new Error('授权中未提供 http-01 挑战（域名可能包含通配符，http-01 不支持 *.example.com）');
-    putChallenge(challenge.token, client.keyAuthorization(challenge.token));
-    await client.respondChallenge(challenge.url);
-    const polled = await client.pollUntilValid(authzUrl);
-    if (polled?.status !== 'valid') {
-      throw new Error(`域名 ${authz?.identifier?.value || ''} 验证未通过：${polled?.status}`);
+    const identifierValue: string = authz?.identifier?.value || '';
+    const challenges: any[] = authz?.challenges || [];
+
+    if (isWildcard(identifierValue)) {
+      const challenge = challenges.find((c) => c.type === 'dns-01');
+      if (!challenge) throw new Error(`域名 ${identifierValue} 授权中未提供 dns-01 挑战`);
+      const keyAuth = client.keyAuthorization(challenge.token);
+      const record = await createTxtRecord(dnsProvider, dnsToken, identifierValue, dnsTxtValue(keyAuth));
+      try {
+        await waitTxtVisible(identifierValue, dnsTxtValue(keyAuth));
+        await client.respondChallenge(challenge.url);
+        const polled = await client.pollUntilValid(authzUrl);
+        if (polled?.status !== 'valid') {
+          throw new Error(`域名 ${identifierValue} DNS-01 验证未通过：${polled?.status}`);
+        }
+      } finally {
+        await record.cleanup();
+      }
+    } else {
+      const challenge = challenges.find((c) => c.type === 'http-01');
+      if (!challenge) throw new Error(`域名 ${identifierValue} 授权中未提供 http-01 挑战`);
+      putChallenge(challenge.token, client.keyAuthorization(challenge.token));
+      await client.respondChallenge(challenge.url);
+      const polled = await client.pollUntilValid(authzUrl);
+      if (polled?.status !== 'valid') {
+        throw new Error(`域名 ${identifierValue} 验证未通过：${polled?.status}`);
+      }
     }
   }
 
@@ -158,7 +206,7 @@ export async function renewDueCertificates(): Promise<Array<{ domain: string; ok
       domains = [row.id];
     }
     try {
-      await issueCertificate(domains, `admin@${domains[0]}`);
+      await issueCertificate(domains, '');
       results.push({ domain: row.id, ok: true, detail: '续期成功' });
     } catch (err: any) {
       results.push({ domain: row.id, ok: false, detail: String(err?.message || err) });
@@ -167,7 +215,7 @@ export async function renewDueCertificates(): Promise<Array<{ domain: string; ok
   return results;
 }
 
-/** 当前 ACME 目录地址（前端展示用） */
+/** 当前 ACME 目录地址（设置可覆盖，前端展示用） */
 export function currentDirectoryUrl(): string {
-  return DEFAULT_DIRECTORY_URL;
+  return String(getSetting<string>('acme.directoryUrl') || '').trim() || DEFAULT_DIRECTORY_URL;
 }

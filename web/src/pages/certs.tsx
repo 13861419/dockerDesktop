@@ -215,16 +215,16 @@ export default function CertsPage() {
       >
         <Field
           label={t('域名')}
-          hint={t('多个域名用逗号分隔，首个为主域名（不支持通配符 *.example.com）')}
+          hint={t('多个域名用逗号分隔，首个为主域名；支持通配符 *.example.com（需在系统参数配置 DNS 解析商）')}
         >
           <Input
             value={domainInput}
-            placeholder="example.com, www.example.com"
+            placeholder="example.com, *.example.com"
             onChange={(ev) => setDomainInput(ev.target.value)}
           />
         </Field>
         <div className="certs-tip">
-          {t('签发过程：面板在本机 80 端口应答 Let’s Encrypt 的 http-01 校验（约 10~30 秒）。证书与私钥将写入面板数据目录 certs/ 下，可直接在「站点反代」中引用。')}
+          {t('普通域名：本机 80 端口应答 http-01 校验（约 10~30 秒）。通配符域名：走 DNS-01 校验，需在「设置 → 系统参数 → 安全」配置 DNS 解析商与 API 凭证（Cloudflare / 阿里云）。证书与私钥将写入面板数据目录 certs/ 下，可直接在「站点反代」中引用。')}
         </div>
       </Modal>
 
