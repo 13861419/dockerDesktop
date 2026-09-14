@@ -18,6 +18,7 @@ import {
   AppDefinition,
   AppComposeDef,
   CUSTOM_APP_PREFIX,
+  SOURCE_APP_PREFIX,
   getAllApps,
   findApp,
   renderComposeTemplate,
@@ -753,6 +754,54 @@ router.delete(
  * GET /api/appstore/:id/detail
  * 获取单个应用的详情及其安装状态
  */
+router.get(
+  '/:id/export',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = String(req.params.id || '');
+    let appDef: AppDefinition | undefined;
+    // Git 应用源应用：返回原始 app_json（未加 src- 前缀的原始分享格式）
+    if (id.startsWith(SOURCE_APP_PREFIX)) {
+      const row = getDb()
+        .prepare('SELECT app_json FROM appstore_source_apps WHERE id = ?')
+        .get(id) as unknown as { app_json: string } | undefined;
+      if (!row) {
+        res.status(404).json({ error: '应用不存在' });
+        return;
+      }
+      try {
+        appDef = JSON.parse(row.app_json);
+      } catch {
+        res.status(500).json({ error: '应用定义数据损坏' });
+        return;
+      }
+    } else {
+      const app = findApp(id);
+      if (!app) {
+        res.status(404).json({ error: '应用不存在' });
+        return;
+      }
+      const { isCustom: _c, sourceName: _s, ...def } = app as AppDefinition & Record<string, unknown>;
+      appDef = def as AppDefinition;
+    }
+    // 可选附带安装参数（?params=1）；不含任何容器内敏感数据本身
+    const inst = getInstanceRow(appDef!.id.startsWith(SOURCE_APP_PREFIX) ? id : appDef!.id);
+    let params: Record<string, unknown> | undefined;
+    if (req.query.params === '1' && inst) {
+      try {
+        params = JSON.parse(inst.params || '{}');
+      } catch {
+        params = undefined;
+      }
+    }
+    res.json({
+      app: appDef,
+      params: params ?? null,
+      version: inst?.version ?? null,
+      exportedAt: new Date().toISOString(),
+    });
+  }),
+);
+
 router.get(
   '/:id/detail',
   asyncHandler(async (req: Request, res: Response) => {

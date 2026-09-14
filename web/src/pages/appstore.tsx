@@ -85,6 +85,16 @@ export default function AppStorePage() {
   const [uninstalling, setUninstalling] = useState(false);
   // 查看详情应用（用于详情弹窗）
   const [detailTarget, setDetailTarget] = useState<AppStoreItem | null>(null);
+  // 应用导出（分享为 apps.json 片段）
+  const [exportTarget, setExportTarget] = useState<AppStoreItem | null>(null);
+  const [exportData, setExportData] = useState<{
+    app: Record<string, unknown>;
+    params: Record<string, unknown> | null;
+    version: string | null;
+    exportedAt: string;
+  } | null>(null);
+  const [exportIncludeParams, setExportIncludeParams] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   // 参数修改目标应用（Compose 套件，用于参数修改弹窗）
   const [paramsTarget, setParamsTarget] = useState<AppStoreItem | null>(null);
   // 参数修改的环境变量编辑值
@@ -284,6 +294,50 @@ export default function AppStorePage() {
     },
     [fetchGitSources, showToast],
   );
+
+  /** 打开导出弹窗：拉取应用的 apps.json 分享片段 */
+  const openExport = useCallback(
+    async (app: AppStoreItem, withParams: boolean) => {
+      setExportTarget(app);
+      setExportLoading(true);
+      try {
+        const data = await get<{ app: Record<string, unknown>; params: Record<string, unknown> | null; version: string | null; exportedAt: string }>(
+          `/api/appstore/${app.id}/export`,
+          withParams ? { params: 1 } : undefined,
+        );
+        setExportData(data);
+        setExportIncludeParams(withParams);
+      } catch (e: any) {
+        showToast(e?.message || t('导出失败'), 'error');
+      } finally {
+        setExportLoading(false);
+      }
+    },
+    [showToast],
+  );
+
+  /** 复制导出 JSON 到剪贴板 */
+  const copyExport = useCallback(async () => {
+    if (!exportData) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
+      showToast(t('已复制到剪贴板'));
+    } catch {
+      showToast(t('复制失败，请手动选择复制'), 'error');
+    }
+  }, [exportData, showToast]);
+
+  /** 下载导出 JSON 文件 */
+  const downloadExport = useCallback(() => {
+    if (!exportData || !exportTarget) return;
+    const blob = new Blob([JSON.stringify([exportData.app], null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${exportTarget.id}.apps.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [exportData, exportTarget]);
 
   /** 打开绑定域名弹窗：预填应用首个宿主机端口，并检查是否有同名域名的已签发证书 */
   const openBindModal = useCallback((app: AppStoreItem) => {
@@ -872,6 +926,11 @@ export default function AppStorePage() {
           <Button variant="ghost" size="sm" onClick={() => setDetailTarget(app)}>
             {t('详情')}
           </Button>
+          {canManage && (
+            <Button variant="ghost" size="sm" onClick={() => openExport(app, false)}>
+              {t('导出')}
+            </Button>
+          )}
           {canManage && app.installed && (
             <Button variant="secondary" size="sm" onClick={() => openBindModal(app)}>
               {t('绑定域名')}
@@ -1084,6 +1143,51 @@ export default function AppStorePage() {
         width={520}
       >
         {detailTarget && <AppStoreDetail app={detailTarget} />}
+      </Modal>
+
+      {/* 应用导出弹窗（apps.json 分享片段） */}
+      <Modal
+        open={!!exportTarget}
+        title={exportTarget ? t('导出 {{v1}}', { v1: exportTarget.name }) : t('导出应用')}
+        onClose={() => setExportTarget(null)}
+        width={640}
+        footer={
+          <div className="appstore-export__footer">
+            <label className="appstore-export__params-toggle">
+              <input
+                type="checkbox"
+                checked={exportIncludeParams}
+                onChange={(e) => exportTarget && openExport(exportTarget, e.target.checked)}
+              />
+              <span>{t('包含安装参数（含端口 / 环境变量覆盖值，请确认无敏感信息后再分享）')}</span>
+            </label>
+            <div className="appstore-install__footer">
+              <Button variant="ghost" size="md" onClick={copyExport}>
+                {t('复制 JSON')}
+              </Button>
+              <Button variant="primary" size="md" onClick={downloadExport}>
+                {t('下载 apps.json')}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {exportLoading || !exportData ? (
+          <SkeletonRows rows={6} />
+        ) : (
+          <div className="appstore-export">
+            <div className="appstore-export__hint">
+              {t('将下面内容放入任意 git 仓库的 apps.json 清单，即可在「应用商店 → 应用源」中引入该应用：')}
+            </div>
+            <textarea
+              className="appstore-export__json"
+              readOnly
+              rows={16}
+              value={JSON.stringify(exportData, null, 2)}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          </div>
+        )}
       </Modal>
 
       {/* 安装前环境变量配置弹窗 */}
