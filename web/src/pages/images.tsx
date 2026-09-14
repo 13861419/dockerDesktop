@@ -14,6 +14,7 @@ import { Field, Input, Select } from '../components/Form';
 import { PageLoading, SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
+import MoreMenu from '../components/MoreMenu';
 import { getToken, canOperate } from '../api/auth';
 import { useCanManage } from '../hooks/useCanManage';
 import { ImageItem } from '../types';
@@ -214,8 +215,8 @@ const [trustOpen, setTrustOpen] = useState(false);
   const [pushPassword, setPushPassword] = useState('');
   // 推送是否进行中
   const [pushing, setPushing] = useState(false);
-  // 导出进行中的镜像名（用于行内按钮 loading 显示）
-  const [exportingName, setExportingName] = useState('');
+  // 导出进行中的镜像名（导出入口已收入更多菜单，仅保留状态留档）
+  const [, setExportingName] = useState('');
   // 待迁移的镜像（用于打开迁移弹窗）
   const [transferTarget, setTransferTarget] = useState<ImageItem | null>(null);
   // 迁移弹窗中的引擎列表（来自 /api/engines）
@@ -1016,31 +1017,20 @@ const [trustOpen, setTrustOpen] = useState(false);
                       <Button variant="ghost" size="sm" onClick={() => goDetail(img)}>
                         {t('详情')}
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={exportingName === (img.RepoTags?.[0] || img.Id)}
-                        onClick={() => handleExport(img)}
-                      >
-                        {t('导出')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={!canOperate()}
-                        onClick={() => openTransfer(img)}
-                      >
-                        {t('迁移')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openTag(img)} disabled={!canManage}>
-                        {t('打标签')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openPush(img)} disabled={!canManage}>
-                        {t('推送')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(img)}>
-                        {t('删除')}
-                      </Button>
+                      {/* 次要操作收入"更多"菜单（1.68.0，与 Compose/容器页一致） */}
+                      <MoreMenu
+                        items={[
+                          { label: t('镜像操作'), group: true, onClick: () => {} },
+                          {
+                            label: t('导出'),
+                            onClick: () => handleExport(img),
+                          },
+                          { label: t('迁移'), disabled: !canOperate(), onClick: () => openTransfer(img) },
+                          { label: t('打标签'), disabled: !canManage, onClick: () => openTag(img) },
+                          { label: t('推送'), disabled: !canManage, onClick: () => openPush(img) },
+                          { label: t('删除'), danger: true, onClick: () => setDeleteTarget(img) },
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

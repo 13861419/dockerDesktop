@@ -20,6 +20,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 import StateActions, { type ContainerAction } from '../components/StateActions';
+import MoreMenu from '../components/MoreMenu';
 import Empty from '../components/Empty';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
@@ -181,7 +182,7 @@ export default function ContainersPage() {
   // 迁移提交是否进行中
   const [migrating, setMigrating] = useState(false);
   // 单独记录"正在迁移"的容器 id，用于该行迁移按钮独立 loading
-  const [migratingId, setMigratingId] = useState('');
+  const [, setMigratingId] = useState('');
   // 迁移完成后的结果展示（成功时包含 name / imageTransferred / note 等）
   const [migrateResult, setMigrateResult] = useState<ContainerTransferResult | null>(null);
   // 宿主机端口占用冲突映射（HostPort -> 容器列表）
@@ -1809,46 +1810,29 @@ export default function ContainersPage() {
                 handlers[action](c.Id, name);
               }}
             />
-            <Button variant="secondary" size="sm" onClick={() => openRename(c.Id, name)} disabled={!canDelete}>
-              {t('重命名')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => openEditImage(c.Id, name, c.Image)}
-              disabled={!canDelete}
-            >
-              {t('编辑镜像')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => openClone(c.Id, name)} disabled={!canDelete}>
-              {t('克隆')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => openMigrate(c)}
-              disabled={!canDelete || !hasMigrateTarget}
-              loading={migratingId === c.Id}
-              title={
-                !hasMigrateTarget ? t('无其它可用引擎，无法迁移（需至少配置一个非当前引擎）') : ''
-              }
-            >
-              {t('迁移')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => openLogs(c.Id, name)}>
+            <Button variant="ghost" size="sm" onClick={() => openLogs(c.Id, name)}>
               {t('日志')}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => navigate(`/containerDetail/${c.Id}`)}>
-              {t('详情')}
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => setDeleteTarget({ id: c.Id, name })}
+            {/* 次要操作按语义分组收入"更多"菜单（1.68.0，与 Compose 页一致） */}
+            <MoreMenu
               disabled={!canDelete}
-            >
-              {t('删除')}
-            </Button>
+              items={[
+                { label: t('查看'), group: true, onClick: () => {} },
+                { label: t('详情'), onClick: () => navigate(`/containerDetail/${c.Id}`) },
+                { label: t('编辑配置'), group: true, onClick: () => {} },
+                { label: t('重命名'), onClick: () => openRename(c.Id, name), disabled: !canDelete },
+                { label: t('编辑镜像'), onClick: () => openEditImage(c.Id, name, c.Image), disabled: !canDelete },
+                { label: t('管理'), group: true, onClick: () => {} },
+                { label: t('克隆'), onClick: () => openClone(c.Id, name), disabled: !canDelete },
+                {
+                  label: t('迁移'),
+                  disabled: !canDelete || !hasMigrateTarget,
+                  title: !hasMigrateTarget ? t('无其它可用引擎，无法迁移（需至少配置一个非当前引擎）') : '',
+                  onClick: () => openMigrate(c),
+                },
+                { label: t('删除'), danger: true, disabled: !canDelete, onClick: () => setDeleteTarget({ id: c.Id, name }) },
+              ]}
+            />
           </div>
         </td>
       </tr>

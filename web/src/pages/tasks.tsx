@@ -13,6 +13,7 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import StepFlow from '../components/StepFlow';
 import { Field, Input, Select, TextArea } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
@@ -1128,21 +1129,7 @@ export default function TasksPage() {
         width={760}
       >
         {stepsView?.steps?.length ? (
-          <div className="tasks__steps-flow">
-            {stepsView.steps.map((st, idx) => (
-              <div key={idx} className={`tasks__step tasks__step--${st.status}`}>
-                <div className="tasks__step-head">
-                  <span className="tasks__step-dot" />
-                  <span className="tasks__step-name">{st.name}</span>
-                  <span className={`tasks__step-status tasks__step-status--${st.status}`}>
-                    {st.status === 'ok' ? t('成功') : st.status === 'fail' ? t('失败') : t('跳过')}
-                  </span>
-                  <span className="tasks__step-dur">{st.durationMs} ms</span>
-                </div>
-                {st.output && <pre className="tasks__step-output">{st.output}</pre>}
-              </div>
-            ))}
-          </div>
+          <StepFlow steps={stepsView.steps} />
         ) : (
           <Empty title={t('暂无步骤数据')} />
         )}

@@ -867,6 +867,7 @@ function createTables(): void {
       action     TEXT NOT NULL,
       detail     TEXT,
       ok         INTEGER NOT NULL DEFAULT 1,
+      steps      TEXT,
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_automation_events_created ON automation_events(created_at DESC);
@@ -902,6 +903,13 @@ function createTables(): void {
   // 迁移：任务执行历史步骤化输出（1.66.0，JSON 数组：每节点名称/状态/耗时/输出）
   try {
     d.exec('ALTER TABLE cron_task_logs ADD COLUMN steps TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
+
+  // 迁移：自动化触发记录步骤化输出（1.68.0，JSON 数组：匹配/冷却/动作节点）
+  try {
+    d.exec('ALTER TABLE automation_events ADD COLUMN steps TEXT');
   } catch {
     // 列已存在则忽略
   }

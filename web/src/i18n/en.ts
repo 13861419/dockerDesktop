@@ -5,6 +5,16 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  "执行动作": "Run action",
+  "冷却检查": "Cooldown check",
+  "事件匹配": "Event match",
+  "节点离线，无法部署": "Node is offline; deployment unavailable",
+  "管理": "Manage",
+  "该记录产生于旧版本，暂无节点数据": "Created by an older version — no node data",
+  "暂无步骤数据": "No step data yet",
+  "节点输出": "Node output",
+  "节点流": "Node flow",
+  "全部来源": "All sources",
   "环境变量 - {{envName}}": "Environment - {{envName}}",
   "读取环境变量失败": "Failed to load environment",
   "环境变量已保存，重新「启动」项目后生效": "Environment saved — restart the project (up) to apply",

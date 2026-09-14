@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import StepFlow, { FlowStep } from '../components/StepFlow';
 import { Field, Input, Select } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
@@ -47,6 +48,8 @@ interface AutomationEvent {
   action: string;
   detail: string;
   ok: number;
+  /** 步骤化执行链路（1.68.0，旧记录无此字段） */
+  steps?: FlowStep[] | null;
   created_at: number;
 }
 
@@ -64,6 +67,8 @@ export default function AutomationsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  // 触发记录节点流弹窗（1.68.0）
+  const [stepsView, setStepsView] = useState<AutomationEvent | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -260,7 +265,14 @@ export default function AutomationsPage() {
                     <td>{e.event_type}</td>
                     <td>{e.container}</td>
                     <td>{e.action}</td>
-                    <td className={e.ok ? 'automations-ok' : 'automations-fail'}>{e.ok ? '✓' : '✕'} {e.detail}</td>
+                    <td className={e.ok ? 'automations-ok' : 'automations-fail'}>
+                      {e.ok ? '✓' : '✕'} {e.detail}
+                      {e.steps?.length ? (
+                        <button className="automations-steps-btn" onClick={() => setStepsView(e)}>
+                          {t('节点流')}
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -325,6 +337,20 @@ export default function AutomationsPage() {
         <Field label={t('冷却期（秒）')} hint={t('同一规则在冷却窗口内不重复触发，防止事件风暴')}>
           <Input type="number" value={form.cooldownSec} min={10} onChange={(e: any) => setForm({ ...form, cooldownSec: e.target.value })} />
         </Field>
+      </Modal>
+
+      {/* 触发记录节点流弹窗（Coze 风格，1.68.0） */}
+      <Modal
+        open={!!stepsView}
+        title={`${stepsView?.rule_name || ''} — ${t('节点输出')}`}
+        onClose={() => setStepsView(null)}
+        width={720}
+      >
+        {stepsView?.steps?.length ? (
+          <StepFlow steps={stepsView.steps} />
+        ) : (
+          <Empty title={t('该记录产生于旧版本，暂无节点数据')} />
+        )}
       </Modal>
     </div>
   );

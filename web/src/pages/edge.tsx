@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { translateNow as t } from '../i18n';
+import MoreMenu from '../components/MoreMenu';
 import './edge.less';
 
 interface EdgeNode {
@@ -236,15 +237,19 @@ export default function EdgePage() {
                     <Button size="sm" onClick={() => loadContainers(n)}>
                       {t('查看容器')}
                     </Button>
-                    {admin && n.online && (
-                      <Button size="sm" onClick={() => setDeployNode(n)}>
-                        {t('部署容器')}
-                      </Button>
-                    )}
                     {admin && (
-                      <Button size="sm" variant="danger" onClick={() => removeNode(n.id)}>
-                        {t('删除')}
-                      </Button>
+                      <MoreMenu
+                        items={[
+                          { label: t('管理'), group: true, onClick: () => {} },
+                          {
+                            label: t('部署容器'),
+                            disabled: !n.online,
+                            title: !n.online ? t('节点离线，无法部署') : '',
+                            onClick: () => setDeployNode(n),
+                          },
+                          { label: t('删除'), danger: true, onClick: () => removeNode(n.id) },
+                        ]}
+                      />
                     )}
                   </td>
                 </tr>

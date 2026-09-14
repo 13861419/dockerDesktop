@@ -1,0 +1,78 @@
+/* 步骤化输出节点流（Coze 风格，1.66.0 计划任务 / 1.68.0 自动化共用） */
+.sflow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px 2px;
+}
+
+.sflow__step {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.sflow__step--fail {
+  border-color: rgba(231, 76, 60, 0.5);
+}
+
+.sflow__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sflow__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #27ae60;
+  flex-shrink: 0;
+
+  .sflow__step--skip & {
+    background: #bbb;
+  }
+
+  .sflow__step--fail & {
+    background: #e74c3c;
+  }
+}
+
+.sflow__name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.sflow__status {
+  font-size: 12px;
+  color: #27ae60;
+}
+
+.sflow__status--fail {
+  color: #e74c3c;
+}
+
+.sflow__status--skip {
+  color: #999;
+}
+
+.sflow__dur {
+  margin-left: auto;
+  color: var(--text-muted, #999);
+  font-size: 12px;
+}
+
+.sflow__output {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-tertiary, #f5f6f7);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, Consolas, monospace);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow: auto;
+}

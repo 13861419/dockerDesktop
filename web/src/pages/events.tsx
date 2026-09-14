@@ -120,6 +120,15 @@ const TYPE_COLORS: Record<string, string> = {
   daemon: '#b91c1c',
 };
 
+/** 事件来源显示名：edge:<id> 映射为节点名，其余显示本机 */
+const scopeLabel = (scope: string, nodes: { id: string; name: string }[]) => {
+  if (scope && scope.startsWith('edge:')) {
+    const node = nodes.find((n) => n.id === scope.slice(5));
+    return node ? node.name : scope;
+  }
+  return t('本机');
+};
+
 /**
  * Docker 事件流页面组件
  */
@@ -138,6 +147,10 @@ export default function EventsPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   // 动作过滤
   const [actionFilter, setActionFilter] = useState('all');
+  // 来源过滤：all=全部 / local=本机 / edge:<id>=指定 Edge 节点
+  const [scopeFilter, setScopeFilter] = useState('all');
+  // Edge 节点清单（来源筛选用）
+  const [edgeNodes, setEdgeNodes] = useState<{ id: string; name: string }[]>([]);
   // 是否自动滚动到底部
   const [autoScroll, setAutoScroll] = useState(true);
   // 事件列表滚动容器
@@ -232,6 +245,13 @@ export default function EventsPage() {
     loadStats();
   }, [loadStats]);
 
+  // 拉取 Edge 节点清单（来源筛选用，失败静默）
+  useEffect(() => {
+    get<{ items: { id: string; name: string }[] }>('/api/edge/nodes')
+      .then((r) => setEdgeNodes(r.items || []))
+      .catch(() => setEdgeNodes([]));
+  }, []);
+
   /**
    * 建立（或重建）WebSocket 实时连接，断线自动重连
    */
@@ -324,9 +344,13 @@ export default function EventsPage() {
       events.filter(
         (e) =>
           (typeFilter === 'all' || e.type === typeFilter) &&
-          (actionFilter === 'all' || e.action === actionFilter),
+          (actionFilter === 'all' || e.action === actionFilter) &&
+          (scopeFilter === 'all' ||
+            (scopeFilter === 'local'
+              ? !e.scope || !e.scope.startsWith('edge:')
+              : e.scope === scopeFilter)),
       ),
-    [events, typeFilter, actionFilter],
+    [events, typeFilter, actionFilter, scopeFilter],
   );
 
   // 统计：折线图数据（按 bucket 有序生成标签与计数序列）
@@ -587,6 +611,20 @@ export default function EventsPage() {
           <span className="events-toolbar__title">{t('事件')}</span>
           <div className="events-toolbar__filters">
             <div className="events-toolbar__filter">
+              <span>{t('来源')}</span>
+              <Select
+                value={scopeFilter}
+                onChange={(e) => setScopeFilter(e.target.value)}
+                style={{ minWidth: 110 }}
+              >
+                <option value="all">{t('全部来源')}</option>
+                <option value="local">{t('本机')}</option>
+                {edgeNodes.map((n) => (
+                  <option key={n.id} value={`edge:${n.id}`}>{n.name}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="events-toolbar__filter">
               <span>{t('类型')}</span>
               <Select
                 value={typeFilter}
@@ -669,7 +707,7 @@ export default function EventsPage() {
                   <div className="events-item__main">
                     <span className="events-item__action">{e.action}</span>
                     {e.id && <span className="events-item__id">{e.id}</span>}
-                    <span className="events-item__scope">{e.scope}</span>
+                    <span className="events-item__scope">{scopeLabel(e.scope, edgeNodes)}</span>
                     {e.attributes && Object.keys(e.attributes).length > 0 && (
                       <div className="events-item__attrs">
                         {Object.entries(e.attributes).map(([k, v]) => (

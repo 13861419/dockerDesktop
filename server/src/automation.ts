@@ -194,17 +194,30 @@ export function deleteAutomation(id: number): boolean {
 /** 触发历史（最近 N 条） */
 export function listAutomationEvents(limit = 100): Array<Record<string, unknown>> {
   const n = Math.min(Math.max(Number(limit) || 100, 1), EVENT_KEEP);
-  return getDb()
-    .prepare('SELECT rule_id, rule_name, event_type, container, image, action, detail, ok, created_at FROM automation_events ORDER BY created_at DESC LIMIT ?')
+  const rows = getDb()
+    .prepare('SELECT rule_id, rule_name, event_type, container, image, action, detail, ok, steps, created_at FROM automation_events ORDER BY created_at DESC LIMIT ?')
     .all(n) as unknown as Array<Record<string, unknown>>;
+  // steps 列存 JSON 字符串，响应时解析为数组（旧记录无 steps 保持 undefined）
+  for (const r of rows) {
+    if (typeof r.steps === 'string' && r.steps) {
+      try {
+        r.steps = JSON.parse(r.steps as string);
+      } catch {
+        delete r.steps;
+      }
+    } else {
+      delete r.steps;
+    }
+  }
+  return rows;
 }
 
 /** 写触发留档并裁剪 */
 function logTrigger(row: Record<string, unknown>): void {
   const db = getDb();
   db.prepare(
-    `INSERT INTO automation_events (rule_id, rule_name, event_type, container, image, action, detail, ok, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO automation_events (rule_id, rule_name, event_type, container, image, action, detail, ok, steps, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.rule_id as any,
     row.rule_name as any,
@@ -214,6 +227,7 @@ function logTrigger(row: Record<string, unknown>): void {
     row.action as any,
     row.detail as any,
     row.ok as any,
+    row.steps as any,
     Date.now(),
   );
   db.prepare('DELETE FROM automation_events WHERE id IN (SELECT id FROM automation_events ORDER BY created_at DESC LIMIT -1 OFFSET ?)').run(EVENT_KEEP);
@@ -272,8 +286,36 @@ async function handleEvent(ev: DockerEvent): Promise<void> {
   const now = Date.now();
   for (const row of rows || []) {
     try {
+      // 节点 1：事件匹配（1.68.0 步骤化留档）
+      const tMatch = Date.now();
       if (!ruleMatches(row, ev)) continue;
-      if (row.last_triggered_at && now - row.last_triggered_at < row.cooldown_sec * 1000) continue;
+      const scopeText =
+        ev.scope && ev.scope.startsWith('edge:')
+          ? `Edge 节点 ${ev.scope.slice(5)}`
+          : '本机';
+      const steps: Array<{ name: string; status: string; startedAt: number; durationMs: number; output: string }> = [
+        {
+          name: '事件匹配',
+          status: 'ok',
+          startedAt: tMatch,
+          durationMs: Date.now() - tMatch,
+          output: `事件 ${ev.type}.${ev.action} 命中规则「${row.name}」\n来源：${scopeText}`,
+        },
+      ];
+      // 节点 2：冷却检查
+      const cooldownMs = row.last_triggered_at ? now - row.last_triggered_at : 0;
+      if (row.last_triggered_at && cooldownMs < row.cooldown_sec * 1000) continue;
+      steps.push({
+        name: '冷却检查',
+        status: 'ok',
+        startedAt: tMatch + 1,
+        durationMs: 0,
+        output: row.last_triggered_at
+          ? `距上次触发 ${Math.round(cooldownMs / 1000)}s，冷却窗口 ${row.cooldown_sec}s，允许执行`
+          : `首次触发（冷却窗口 ${row.cooldown_sec}s）`,
+      });
+      // 节点 3：执行动作
+      const tAct = Date.now();
       let detail = '';
       let ok = true;
       try {
@@ -288,6 +330,13 @@ async function handleEvent(ev: DockerEvent): Promise<void> {
         ok = false;
         detail = String(e?.message || e);
       }
+      steps.push({
+        name: '执行动作',
+        status: ok ? 'ok' : 'fail',
+        startedAt: tAct,
+        durationMs: Date.now() - tAct,
+        output: detail,
+      });
       getDb()
         .prepare('UPDATE automation_rules SET last_triggered_at = ?, trigger_count = trigger_count + 1 WHERE id = ?')
         .run(now, row.id);
@@ -300,6 +349,7 @@ async function handleEvent(ev: DockerEvent): Promise<void> {
         action: row.action,
         detail,
         ok: ok ? 1 : 0,
+        steps: JSON.stringify(steps),
       });
     } catch {
       // 单条规则异常不影响其他规则

@@ -378,14 +378,15 @@ The "Resource limits" section at the bottom of the dialog can be set at creation
 
 ### 3.3 Container Actions
 
-The **Actions** column of each row offers:
+The **Actions** column of each row offers (since 1.68.0 it is consolidated into "state pill + Logs + More ▾"; secondary actions are grouped in the More menu):
 
 - **Start / Stop** — toggle running state.
 - **Restart**.
-- **Delete** (optionally remove associated volumes).
-- **Clone** — create a new container from the current configuration.
-- **Rename**.
-- **Logs / Details** — open the detail page; the log dialog supports **fullscreen**, **follow refresh** (3s polling auto-scroll, wheel exits follow), **inline search** (keyword highlight + hit count), **copy all**, **wrap toggle**, line numbers and "jump to bottom", with tail options (100/300/1000/all) and download.
+- **Logs** — open the log dialog (kept inline as a high-frequency action).
+- **More menu → View**: container details.
+- **More menu → Edit config**: rename, edit image.
+- **More menu → Manage**: clone, migrate (requires at least one other engine), delete (red; optionally remove associated volumes).
+- **Details** — open the detail page; the log dialog supports **fullscreen**, **follow refresh** (3s polling auto-scroll, wheel exits follow), **inline search** (keyword highlight + hit count), **copy all**, **wrap toggle**, line numbers and "jump to bottom", with tail options (100/300/1000/all) and download.
 - **Container terminal (optimized in 1.32.2)**: automatically prefers bash inside the container (Tab completion works), falls back to sh when bash is unavailable; fixes garbled multibyte characters caused by chunk-boundary splits.
 - **Restart policy** — `no` / `always` / `on-failure` / `unless-stopped`.
 
@@ -485,6 +486,7 @@ Menu: **Images** (`/images`)
 
 ### 6.3 Image Actions
 
+- Since 1.68.0 the row actions are consolidated into "Details + More ▾" (export / migrate / tag / push / delete live in the More menu).
 - **Delete** the image (remove containers first if in use).
 - **Push / Import / Export**.
 - **Tag** — add a new tag.
@@ -752,6 +754,7 @@ Menu: **Event Stream** (`/events`)
 - Watch the Docker engine event stream in real time (create / start / stop / die, etc.).
 - Events are **persisted to SQLite**; query **historical events**.
 - Support **Export CSV** and **Clear** history.
+- **Source filter (1.68.0)**: a "Source" dropdown in the toolbar filters by local engine / specific Edge node, for both the live stream and history; the source column shows the node name.
 
 ![Events](../images/events.png)
 
@@ -765,7 +768,7 @@ Subscribe to the live Docker event stream and run user-defined "event → action
 2. **Match filters**: filter by container-name / image-name substring; leave empty to match all.
 3. **Actions**: restart / stop / start the container, or deliver a **Webhook** (POST with event detail JSON; optional `X-Automation-Secret` header).
 4. **Cooldown**: the same rule is not re-triggered within its cooldown window (default 300s, adjustable) to prevent event storms.
-5. **Trigger log**: every execution (with success/failure and detail) is recorded in the trigger history, keeping the latest 500 entries.
+5. **Trigger log**: every execution (with success/failure and detail) is recorded in the trigger history, keeping the latest 500 entries. **Node flow (1.68.0)**: each record is split into three nodes — Event match → Cooldown check → Run action (with source annotation and timing); click "Node flow" in the result column to inspect per-node output; Edge events are annotated with the source node in the "Event match" node.
 6. Difference from "Container Self-Healing": self-healing is a curated guard for exit/unhealthy states; event automations are general-purpose — any event can be combined with any action, including notify-only webhooks.
 
 ---
@@ -1685,6 +1688,8 @@ node agent.js
 ```
 
 4. Once connected the node turns "Online"; use "Ping" to verify (returns the remote Docker version) and browse the remote container list.
+
+> Row actions (1.68.0): "Ping" and "Containers" stay inline; deploy / delete live in the "More ▾" menu (deploy requires the node to be online).
 
 ### 46.2 Capabilities & Security
 

@@ -349,7 +349,7 @@
   color: var(--text-muted);
 }
 
-/* 步骤化输出（Coze 风格节点流，1.66.0） */
+/* 步骤化输出弹窗样式已抽至组件 stepflow.less（1.68.0，与自动化页共用） */
 .tasks__steps-btn {
   padding: 2px 10px;
   border-radius: 10px;
@@ -362,83 +362,6 @@
   &:hover {
     color: var(--primary, #2f6fed);
     border-color: var(--primary, #2f6fed);
-  }
-}
-
-.tasks__steps-flow {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: 60vh;
-  overflow: auto;
-  padding: 4px 2px;
-}
-
-.tasks__step {
-  border: 1px solid var(--border-color, #e5e5e5);
-  border-radius: 8px;
-  padding: 10px 12px;
-
-  &--fail {
-    border-color: rgba(231, 76, 60, 0.5);
-  }
-
-  &-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  &-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #27ae60;
-
-    .tasks__step--skip & {
-      background: #bbb;
-    }
-
-    .tasks__step--fail & {
-      background: #e74c3c;
-    }
-  }
-
-  &-name {
-    font-weight: 600;
-    font-size: 13px;
-  }
-
-  &-status {
-    font-size: 12px;
-    color: #27ae60;
-
-    &--fail {
-      color: #e74c3c;
-    }
-
-    &--skip {
-      color: #999;
-    }
-  }
-
-  &-dur {
-    margin-left: auto;
-    color: var(--text-muted, #999);
-    font-size: 12px;
-  }
-
-  &-output {
-    margin: 8px 0 0;
-    padding: 8px 10px;
-    background: var(--bg-tertiary, #f5f6f7);
-    border-radius: 6px;
-    font-size: 12px;
-    font-family: var(--font-mono, Consolas, monospace);
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 220px;
-    overflow: auto;
   }
 }
 
