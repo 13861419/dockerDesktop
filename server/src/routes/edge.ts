@@ -45,13 +45,15 @@ const READONLY_PATHS = [
   '/volumes',
 ];
 
-/** 允许的写操作（1.64.0）：容器生命周期 + 镜像拉取 */
+/** 允许的写操作（1.64.0）：容器生命周期 + 镜像拉取；（1.65.0）容器创建 / 日志 */
 const WRITE_PATHS: Array<{ method: string; re: RegExp }> = [
   { method: 'POST', re: /^\/containers\/[^/]+\/(start|stop|restart)$/ },
   { method: 'DELETE', re: /^\/containers\/[^/]+$/ },
   { method: 'POST', re: /^\/containers\/prune$/ },
   { method: 'POST', re: /^\/images\/create$/ },
   { method: 'DELETE', re: /^\/images\/[^/]+$/ },
+  { method: 'POST', re: /^\/containers\/create$/ },
+  { method: 'GET', re: /^\/containers\/[^/]+\/logs$/ },
 ];
 
 /** 校验透传路径（method 为大写 HTTP 方法；path 不含 query） */

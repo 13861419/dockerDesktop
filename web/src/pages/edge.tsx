@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
-import { Field, Input } from '../components/Form';
+import { Field, Input, TextArea } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
@@ -52,6 +52,12 @@ export default function EdgePage() {
   const [containers, setContainers] = useState<Record<string, EdgeContainer[]>>({});
   const { showToast } = useToast();
   const admin = isAdmin();
+  const [deployNode, setDeployNode] = useState<EdgeNode | null>(null);
+  const [dImage, setDImage] = useState('');
+  const [dName, setDName] = useState('');
+  const [dPorts, setDPorts] = useState('');
+  const [dEnv, setDEnv] = useState('');
+  const [logsView, setLogsView] = useState<{ node: EdgeNode; cid: string; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const r = await get<{ items: EdgeNode[] }>('/api/edge/nodes');
@@ -120,6 +126,67 @@ export default function EdgePage() {
     ? `curl -fsSL ${location.origin}/api/edge/agent.sh | PANEL_URL=${location.origin} EDGE_TOKEN=${created.token} sh`
     : '';
 
+  /** 端口/环境变量文本解析：host:container[/proto] 与 K=V */
+  const parseSpecs = () => {
+    const exposed: Record<string, Record<string, never>> = {};
+    const bindings: Record<string, Array<{ HostPort: string }>> = {};
+    for (const line of dPorts.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      const m = line.match(/^(\d+):(\d+)(\/(tcp|udp))?$/);
+      if (!m) continue;
+      const proto = m[4] || 'tcp';
+      exposed[`${m[2]}/${proto}`] = {};
+      bindings[`${m[2]}/${proto}`] = [{ HostPort: m[1] }];
+    }
+    const env = dEnv
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.includes('='));
+    return { exposed, bindings, env };
+  };
+
+  const deployContainer = async () => {
+    if (!deployNode || !dImage.trim()) {
+      showToast(t('请填写镜像名'), 'error');
+      return;
+    }
+    try {
+      const { exposed, bindings, env } = parseSpecs();
+      const qs = dName.trim() ? `?name=${encodeURIComponent(dName.trim())}` : '';
+      const r = await post<{ Id: string; error?: string; echo?: string; fake?: boolean }>(
+        `/api/edge/nodes/${deployNode.id}/docker/containers/create${qs}`,
+        { Image: dImage.trim(), Env: env, ExposedPorts: exposed, HostConfig: { PortBindings: bindings } },
+      );
+      const cid = (r as any).Id || '';
+      if (cid) {
+        await post(`/api/edge/nodes/${deployNode.id}/docker/containers/${cid.slice(0, 12)}/start`, {});
+      }
+      showToast(t('部署成功'), 'success');
+      setDeployNode(null);
+      setDImage('');
+      setDName('');
+      setDPorts('');
+      setDEnv('');
+      const list = await get<EdgeContainer[]>(
+        `/api/edge/nodes/${deployNode.id}/docker/containers/json?all=true`,
+      );
+      setContainers((prev) => ({ ...prev, [deployNode.id]: list || [] }));
+    } catch (e: any) {
+      showToast(e?.message || t('操作失败'), 'error');
+    }
+  };
+
+  const viewLogs = async (n: EdgeNode, cid: string) => {
+    try {
+      const r = await get<{ type: string; lines: Array<{ s: string; t: string }> }>(
+        `/api/edge/nodes/${n.id}/docker/containers/${cid}/logs?stdout=1&stderr=1&tail=200&timestamps=1`,
+      );
+      const text = (r?.lines || []).map((l) => l.t).join('');
+      setLogsView({ node: n, cid, text: text || t('暂无日志') });
+    } catch {
+      showToast(t('节点离线或隧道未连接'), 'error');
+    }
+  };
+
   return (
     <div className="edge-page">
       <Card
@@ -169,6 +236,11 @@ export default function EdgePage() {
                     <Button size="sm" onClick={() => loadContainers(n)}>
                       {t('查看容器')}
                     </Button>
+                    {admin && n.online && (
+                      <Button size="sm" onClick={() => setDeployNode(n)}>
+                        {t('部署容器')}
+                      </Button>
+                    )}
                     {admin && (
                       <Button size="sm" variant="danger" onClick={() => removeNode(n.id)}>
                         {t('删除')}
@@ -188,6 +260,7 @@ export default function EdgePage() {
             <EdgeContainersTable
               rows={containers[n.id]}
               nodeId={n.id}
+              onViewLogs={(nodeId, cid) => viewLogs(nodes.find((x) => x.id === nodeId)!, cid)}
               onAction={async (nodeId, cid, action) => {
                 await post(`/api/edge/nodes/${nodeId}/docker/containers/${cid}/${action}`, {});
                 showToast(t('操作成功'), 'success');
@@ -236,6 +309,36 @@ export default function EdgePage() {
           </Button>
         </div>
       </Modal>
+
+      <Modal open={!!deployNode} title={`${t('部署容器')} — ${deployNode?.name || ''}`} onClose={() => setDeployNode(null)}>
+        <Field label={t('镜像')}>
+          <Input value={dImage} onChange={(e) => setDImage(e.target.value)} placeholder={t('例如：nginx:alpine')} />
+        </Field>
+        <Field label={t('容器名称')}>
+          <Input value={dName} onChange={(e) => setDName(e.target.value)} placeholder={t('留空自动生成')} />
+        </Field>
+        <Field label={t('端口映射（每行一条 host:container）')}>
+          <TextArea value={dPorts} onChange={(e) => setDPorts(e.target.value)} rows={3} placeholder={'8080:80\n5353:53/udp'} />
+        </Field>
+        <Field label={t('环境变量（每行一条 K=V）')}>
+          <TextArea value={dEnv} onChange={(e) => setDEnv(e.target.value)} rows={3} placeholder={'TZ=Asia/Shanghai'} />
+        </Field>
+        <div className="edge-modal__actions">
+          <Button onClick={() => setDeployNode(null)}>{t('取消')}</Button>
+          <Button variant="primary" onClick={deployContainer}>
+            {t('部署')}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!logsView}
+        title={`${logsView?.node.name || ''} — ${logsView?.cid || ''} ${t('日志')}`}
+        onClose={() => setLogsView(null)}
+        width={860}
+      >
+        <pre className="edge-command edge-logs">{logsView?.text || ''}</pre>
+      </Modal>
     </div>
   );
 
@@ -244,11 +347,13 @@ export default function EdgePage() {
     nodeId,
     onAction,
     onDeleteRow,
+    onViewLogs,
   }: {
     rows: EdgeContainer[];
     nodeId: string;
     onAction: (nodeId: string, cid: string, action: 'start' | 'stop' | 'restart') => Promise<void>;
     onDeleteRow: (nodeId: string, cid: string) => Promise<void>;
+    onViewLogs: (nodeId: string, cid: string) => void;
   }) {
     if (!rows.length) return <Empty title={t('远端暂无容器')} />;
     return (
@@ -282,6 +387,9 @@ export default function EdgePage() {
                   )}
                   <Button size="sm" onClick={() => onAction(nodeId, cid, 'restart')}>
                     {t('重启')}
+                  </Button>
+                  <Button size="sm" onClick={() => onViewLogs(nodeId, cid)}>
+                    {t('日志')}
                   </Button>
                   <Button
                     size="sm"

@@ -16,7 +16,7 @@
 
 const PANEL_URL = (process.env.PANEL_URL || '').replace(/\/+$/, '');
 const EDGE_TOKEN = process.env.EDGE_TOKEN || '';
-const AGENT_VERSION = '1.63.0';
+const AGENT_VERSION = '1.65.0';
 
 if (!PANEL_URL || !EDGE_TOKEN) {
   console.error('[edge-agent] 缺少环境变量：PANEL_URL / EDGE_TOKEN');
@@ -44,12 +44,12 @@ function dockerRequest(method, path, body, timeoutMs) {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
+          const buf = Buffer.concat(chunks);
           let json = null;
           try {
-            json = text ? JSON.parse(text) : null;
+            json = buf.length ? JSON.parse(buf.toString('utf8')) : null;
           } catch {
-            json = text;
+            json = buf.toString('utf8');
           }
           resolve({ status: res.statusCode, json });
         });
@@ -60,6 +60,100 @@ function dockerRequest(method, path, body, timeoutMs) {
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
+}
+
+/**
+ * 解析 Docker 多路复用流（/logs）为行数组
+ * 帧格式：8 字节头 [streamType, 0, 0, 0, size(uint32 BE)] + payload
+ */
+function parseMuxStream(buf) {
+  const lines = [];
+  let off = 0;
+  let plain = '';
+  while (off + 8 <= buf.length) {
+    const streamType = buf[off];
+    const size = buf.readUInt32BE(off + 4);
+    if (buf[off + 1] !== 0 || buf[off + 2] !== 0 || buf[off + 3] !== 0 || size > buf.length - off) {
+      // 非 mux 帧（Tty 模式），退化为纯文本
+      lines.push({ s: 'out', t: buf.slice(0).toString('utf8') });
+      return lines;
+    }
+    const payload = buf.slice(off + 8, off + 8 + size);
+    lines.push({ s: streamType === 2 ? 'err' : 'out', t: payload.toString('utf8') });
+    off += 8 + size;
+    plain = '';
+  }
+  if (lines.length === 0 && buf.length) {
+    plain = buf.toString('utf8');
+    lines.push({ s: 'out', t: plain });
+  }
+  return lines;
+}
+
+/** 容器日志：经 mux 解析后按行返回 */
+function dockerLogs(path) {
+  return new Promise((resolve, reject) => {
+    const http = require('http');
+    const req = http.request(
+      { socketPath: DOCKER_SOCKET, method: 'GET', path, timeout: 30_000 },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const status = res.statusCode;
+          if (status >= 400) {
+            resolve({ status, lines: [Buffer.concat(chunks).toString('utf8')] });
+          } else {
+            resolve({ status, lines: parseMuxStream(Buffer.concat(chunks)) });
+          }
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error('Docker socket 请求超时')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/** 订阅本机 Docker 事件流并经隧道转发给面板（断流自动重订） */
+let eventReq = null;
+
+function watchEvents(ws) {
+  if (eventReq) {
+    try { eventReq.destroy(); } catch {}
+    eventReq = null;
+  }
+  const http = require('http');
+  const req = http.request(
+    { socketPath: DOCKER_SOCKET, method: 'GET', path: '/events', timeout: 0 },
+    (res) => {
+      let buf = '';
+      res.on('data', (c) => {
+        buf += c.toString('utf8');
+        let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line) continue;
+          try {
+            const ev = JSON.parse(line);
+            // 仅转发容器 / 镜像事件，控制隧道流量
+            if (ev.Type === 'container' || ev.Type === 'image') {
+              ws.send(JSON.stringify({ type: 'event', event: ev }));
+            }
+          } catch {
+            // 忽略无法解析的行
+          }
+        }
+      });
+      res.on('end', () => {
+        if (ws.readyState === ws.OPEN) setTimeout(() => watchEvents(ws), 1000);
+      });
+    },
+  );
+  req.on('error', () => {});
+  req.end();
+  eventReq = req;
 }
 
 /** 连接面板（带指数退避重连） */
@@ -73,6 +167,7 @@ function connect() {
     backoff = 1000;
     console.log(`[edge-agent] 已连接面板 ${PANEL_URL}（v${AGENT_VERSION}）`);
     ws.send(JSON.stringify({ type: 'hello', version: AGENT_VERSION }));
+    watchEvents(ws);
   };
 
   ws.onmessage = async (ev) => {
@@ -86,6 +181,11 @@ function connect() {
     // 镜像拉取等长耗时操作放宽本机 socket 超时
     const timeout = msg.path.startsWith('/images/create') ? 300_000 : 30_000;
     try {
+      if (msg.method === 'GET' && /\/logs(\?|$)/.test(msg.path)) {
+        const { status, lines } = await dockerLogs(msg.path);
+        ws.send(JSON.stringify({ id: msg.id, ok: status < 400, status, data: { type: 'logs', lines } }));
+        return;
+      }
       const { status, json } = await dockerRequest(msg.method, msg.path, msg.body, timeout);
       ws.send(JSON.stringify({ id: msg.id, ok: status < 400, status, data: json }));
     } catch (err) {
@@ -94,6 +194,10 @@ function connect() {
   };
 
   ws.onclose = () => {
+    if (eventReq) {
+      try { eventReq.destroy(); } catch {}
+      eventReq = null;
+    }
     console.error(`[edge-agent] 连接断开，${backoff / 1000}s 后重连`);
     setTimeout(connect, backoff);
     backoff = Math.min(backoff * 2, 60_000);

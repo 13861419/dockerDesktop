@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.65.0] - 2026-09-14
+
+### Added（新增）
+
+- **多节点事件聚合（Edge 三期）**：agent 订阅远端 Docker `/events` 并经隧道转发（仅 container / image 类型），并入面板统一事件管线（环形缓冲 + 落库 + 实时广播），scope 标记为 `edge:<nodeId>`
+- **跨节点自愈**：事件自动化器对 Edge 事件自动路由——restart / stop / start 动作经隧道在对应远端节点执行，webhook 动作不变；执行留档标注 Edge
+- **远端部署**：新增容器创建 / 日志白名单（`POST /containers/create`、`GET /containers/:id/logs`）；Edge 节点页「部署容器」弹窗（镜像 / 名称 / 端口映射 / 环境变量），创建后自动启动
+- **远端容器日志**：agent 解析 Docker 多路复用流（mux）为纯文本行，Edge 页单容器日志查看（最近 200 行带时间戳）
+- **agent 安全项**：事件断流自动重订、隧道断开清理事件订阅、长耗时操作独立超时
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-165.test.ts`（3 条：创建 / 日志白名单透传、远端事件并入统一流、自动化规则跨节点执行 restart 留档）
+
 ## [1.64.0] - 2026-09-14
 
 ### Added（新增）

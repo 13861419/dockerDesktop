@@ -373,6 +373,23 @@ export function countEventsTimeline(
 }
 
 /**
+ * 接入一条 Edge 节点转发的原始 Docker 事件（1.65.0）
+ *
+ * 与本机事件走同一条管线：环形缓冲 + 落库 + 广播（自动化器据此实现跨节点自愈）。
+ * scope 记为 `edge:<nodeId>`，供自动化动作路由回对应节点的隧道。
+ *
+ * @param nodeId Edge 节点 id
+ * @param raw agent 转发的原始事件（docker /events JSON 行）
+ */
+export function ingestEdgeEvent(nodeId: string, raw: any): void {
+  const ev = normalize(raw || {});
+  ev.scope = `edge:${nodeId}`;
+  pushRecent(ev);
+  queuePersist(ev);
+  broadcast(ev);
+}
+
+/**
  * 启动 Docker 事件监听器（幂等）。
  * 持续监听事件流，断线自动重连。
  */

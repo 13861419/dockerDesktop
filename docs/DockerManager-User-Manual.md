@@ -1693,6 +1693,12 @@ node agent.js
 - **One-line install**: the create-node dialog offers a single command (`curl -fsSL <panel>/api/edge/agent.sh | PANEL_URL=... EDGE_TOKEN=... sh`) that downloads the agent and registers a systemd service (dm-edge-agent, auto-start on boot);
 - **Image pull**: pull images on the remote host through the tunnel (long operations use a 300s timeout);
 - **Whitelist**: write operations are limited to container lifecycle and image management; all other Docker APIs are rejected.
+### 46.4 Event Aggregation · Remote Deploy · Container Logs (added in 1.65.0)
+
+- **Event aggregation**: the agent forwards remote Docker events (container / image) into the unified panel event stream (scope marked `edge:<nodeId>`);
+- **Cross-node self-healing**: automation rules apply to Edge events too — restart / stop / start actions are tunneled to the originating node;
+- **Remote deploy**: a "Deploy Container" dialog (image / name / port mappings / env vars) creates and starts a container on the remote host;
+- **Container logs**: view the last 200 lines of any remote container (agent parses the Docker mux stream into plain text).
 
 Appendix: Modules & Routes
 

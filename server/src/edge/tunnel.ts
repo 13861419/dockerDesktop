@@ -14,6 +14,7 @@ import type { Server as HttpServer, IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import { WebSocketServer, WebSocket } from 'ws';
 import { registerWsHandler, rejectWsUpgrade } from '../docker/wsRouter';
+import { ingestEdgeEvent } from '../docker/events';
 import {
   findNodeByTokenHash,
   hashEdgeToken,
@@ -99,6 +100,15 @@ export function setupEdgeWsServer(httpServer: HttpServer): void {
       }
       if (msg && msg.type === 'hello') {
         touchEdgeNode(nodeId, String(msg.version || ''));
+        return;
+      }
+      // agent 转发的远端 Docker 事件（1.65.0）：并入统一事件管线
+      if (msg && msg.type === 'event' && msg.event) {
+        try {
+          ingestEdgeEvent(nodeId, msg.event);
+        } catch {
+          // 单条事件解析失败不影响隧道
+        }
         return;
       }
       // 请求回执

@@ -11,6 +11,7 @@
  */
 import { getDockerClient } from './docker/client';
 import { onNewEvent, DockerEvent } from './docker/events';
+import { callEdgeNode } from './edge/tunnel';
 import { getDb } from './storage';
 
 export type AutomationAction = 'restart' | 'stop' | 'start' | 'webhook';
@@ -234,6 +235,12 @@ function ruleMatches(rule: AutomationRuleRow, ev: DockerEvent): boolean {
 /** 执行动作 */
 async function executeAction(action: string, actionParams: Record<string, unknown>, ev: DockerEvent, ruleName: string): Promise<string> {
   if (action === 'restart' || action === 'stop' || action === 'start') {
+    // Edge 节点事件：动作经隧道路由回对应节点（1.65.0 跨节点自愈）
+    if (ev.scope?.startsWith('edge:')) {
+      const nodeId = ev.scope.slice(5);
+      await callEdgeNode(nodeId, 'POST', `/containers/${ev.id}/${action}`, {}, 30_000);
+      return `已对 Edge 节点容器执行 ${action}`;
+    }
     const docker = await getDockerClient();
     const container = docker.getContainer(ev.id);
     if (action === 'restart') await container.restart();
