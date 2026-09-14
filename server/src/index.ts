@@ -25,6 +25,7 @@ import { ensureBuiltinRoles } from './rbac';
 import { startChallengeServer } from './acme/challengeServer';
 import { startCertRenewal } from './acme/renewal';
 import { startAutomation } from './automation';
+import { startSiteStatsCollector } from './siteStats';
 
 const PORT = Number(process.env.PORT) || 9528;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -129,6 +130,16 @@ const server = app.listen(PORT, HOST, () => {
       console.error('自动化引擎启动失败:', err);
     }
   }, 1000);
+
+  // 启动站点访问统计采集（1.62.0：增量解析反代访问日志）
+  setTimeout(() => {
+    try {
+      startSiteStatsCollector();
+      console.log('站点访问统计采集已启动');
+    } catch (err) {
+      console.error('站点统计启动失败:', err);
+    }
+  }, 1100);
 
   // 启动资源告警服务（异步，依赖监控采集器就绪，稍晚启动）
   setTimeout(() => {

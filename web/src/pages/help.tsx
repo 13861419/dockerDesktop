@@ -156,6 +156,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
   { path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01 / 通配符 DNS-01）；证书文件可直接用于站点反代') },
   { path: '/automations', name: t('事件自动化'), desc: t('订阅 Docker 事件（容器退出 / OOM / 健康检查异常等）自动执行重启、停止、启动或 Webhook 动作，带冷却期与触发留档（1.61.0）') },
+  { path: '/sites', name: t('站点 / 反向代理'), desc: t('域名反代与 SSL 管理；1.62.0 起自动采集反代访问日志，展示每域名请求量与 4xx / 5xx 统计') },
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份；支持云端上传与从云端拉回恢复（1.43.0）；备份覆盖率体检（哪些对象没备份一目了然，1.48.0）') },
   { path: '/databases', name: t('数据库'), desc: t('MySQL / PostgreSQL / Redis 可视化，表数据一键导出 CSV（1.46.0）；SQL 查询历史与收藏（1.48.0）') },

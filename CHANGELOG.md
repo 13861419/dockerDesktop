@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.62.0] - 2026-09-12
+
+### Added（新增）
+
+- **站点访问统计**：内置反代（dm-reverse-proxy）自动注入统计友好的 nginx log_format（记录 `$host $status`），后台每分钟**增量解析访问日志**，按域名按天聚合成 `site_stats` 表（保留 90 天）
+- 站点页新增「访问统计」卡片：每域名今日 / 7 日请求量、4xx / 5xx 分布，附每日请求趋势条形图
+- 新增 `GET /api/sites/stats?days=N`（1-90 天）
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-162.test.ts`（统计结构、days 边界）
+
 ## [1.61.0] - 2026-09-12
 
 ### Added（新增）

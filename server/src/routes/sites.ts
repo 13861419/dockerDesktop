@@ -18,6 +18,7 @@ import { getDb } from '../storage';
 import { getDockerClient } from '../docker/client';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
+import { getSiteStats } from '../siteStats';
 
 const router = Router();
 
@@ -253,6 +254,11 @@ function generateConfigs(sites: SiteRow[]): Record<string, string> {
     files['_limits.conf'] = zones + '\n';
   }
 
+  // 访问统计日志格式（1.62.0）：始终注入，$host 记录请求域名，输出到 stdout 供面板采集
+  files['_logging.conf'] =
+    `log_format dm_stats '$host $status $time_iso8601 "$request"';\naccess_log /dev/stdout dm_stats;\n`;
+
+
   // Basic Auth 凭据文件（宿主机路径，供 auth_basic_user_file 引用）
   const authDir = path.join(nginxDir(), 'auth');
   const authFiles: Record<string, string> = {};
@@ -408,6 +414,18 @@ router.get(
         extraConfig: r.extra_config || '',
       })),
     });
+  }),
+);
+
+/**
+ * GET /api/sites/stats
+ * 访问统计（1.62.0）：近 N 天按域名的请求量与状态码分布（数据来自反代访问日志采集）
+ */
+router.get(
+  '/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 90);
+    res.json(getSiteStats(days));
   }),
 );
 

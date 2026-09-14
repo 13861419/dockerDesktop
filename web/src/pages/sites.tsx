@@ -142,6 +142,28 @@ export default function SitesPage() {
     load();
   }, [load]);
 
+  /** 访问统计（1.62.0）：近 7 天按域名聚合 */
+  const [stats, setStats] = useState<{
+    daily: Array<{ day: string; requests: number; e4xx: number; e5xx: number }>;
+    domains: Array<{ domain: string; requests: number; e4xx: number; e5xx: number; today: number }>;
+  } | null>(null);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const data = await get<{
+        daily: Array<{ day: string; requests: number; e4xx: number; e5xx: number }>;
+        domains: Array<{ domain: string; requests: number; e4xx: number; e5xx: number; today: number }>;
+      }>('/api/sites/stats?days=7');
+      setStats(data);
+    } catch {
+      setStats(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
   /**
    * 应用（reload）反代配置
    */
@@ -479,6 +501,49 @@ export default function SitesPage() {
           {t('启用 HTTPS 需在「证书」中提供证书与私钥路径。')}
         </div>
       </Card>
+
+      {/* 访问统计（1.62.0） */}
+      {stats && (stats.domains.length > 0 || stats.daily.length > 0) && (
+        <Card title={t('访问统计（近 7 天）')} extra={<Button variant="ghost" size="sm" onClick={loadStats}>{t('刷新')}</Button>}>
+          <div className="site-stats">
+            <div className="site-stats__bars">
+              {stats.daily.map((d) => {
+                const max = Math.max(...stats.daily.map((x) => x.requests), 1);
+                return (
+                  <div key={d.day} className="site-stats__bar-col" title={`${d.day}: ${d.requests} / ${t('4xx')} ${d.e4xx} / ${t('5xx')} ${d.e5xx}`}>
+                    <div className="site-stats__bar-track">
+                      <div className="site-stats__bar" style={{ height: `${Math.max(4, Math.round((d.requests / max) * 100))}%` }} />
+                    </div>
+                    <span className="site-stats__bar-label">{d.day.slice(5)}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('域名')}</th>
+                  <th>{t('今日请求')}</th>
+                  <th>{t('7 日请求')}</th>
+                  <th>4xx</th>
+                  <th>5xx</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.domains.map((d) => (
+                  <tr key={d.domain}>
+                    <td><span className="site-domain">{d.domain}</span></td>
+                    <td>{d.today}</td>
+                    <td>{d.requests}</td>
+                    <td className={d.e4xx > 0 ? 'site-stats__err' : ''}>{d.e4xx}</td>
+                    <td className={d.e5xx > 0 ? 'site-stats__err' : ''}>{d.e5xx}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* 新增/编辑站点弹窗 */}
       <Modal

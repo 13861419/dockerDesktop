@@ -870,6 +870,16 @@ function createTables(): void {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_automation_events_created ON automation_events(created_at DESC);
+
+    -- 站点访问统计（1.62.0）：反代访问日志按域名按天聚合（保留 90 天）
+    CREATE TABLE IF NOT EXISTS site_stats (
+      domain   TEXT NOT NULL,
+      day      TEXT NOT NULL,
+      requests INTEGER NOT NULL DEFAULT 0,
+      e4xx     INTEGER NOT NULL DEFAULT 0,
+      e5xx     INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (domain, day)
+    );
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）

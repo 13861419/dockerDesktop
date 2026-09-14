@@ -817,6 +817,14 @@ Issue and auto-renew certificates via **Let's Encrypt** (ACME http-01 validation
 8. **Wildcard certificates (new in 1.59.0)**: wildcard domains like `*.example.com` are supported via **DNS-01 validation** — first configure the **DNS provider** (`cloudflare` or `aliyun`) and **DNS API credentials** under Settings → System Parameters → Security (Cloudflare: API Token; Aliyun: `AccessKey ID:AccessKey Secret` joined by a colon). During issuance the panel automatically creates/removes the `_acme-challenge` TXT record and waits for propagation (up to 90s). DNS-01 does not require port 80; wildcard-only orders skip the HTTP challenge server entirely.
 9. **Centralized settings (1.59.0)**: the ACME account email and directory URL (production/staging switch) are configurable in System Parameters, no env vars needed.
 
+### 22.2 Visit Stats (1.62.0)
+
+The sites page automatically shows **visit stats for the last 7 days**:
+
+- The reverse-proxy container gets a stats-friendly nginx log_format injected automatically (recording request domain and status code); a background loop **incrementally parses** the access log every minute and aggregates it per domain per day (`site_stats` table, kept for 90 days);
+- The card shows per-domain **requests today / 7 days**, **4xx / 5xx** distribution (anomalies highlighted red), plus a daily request trend bar chart;
+- Zero configuration — collection starts as soon as sites exist; the card hides itself when there is no data.
+
 ---
 
 ## 23. Firewall 🔒
