@@ -880,6 +880,16 @@ function createTables(): void {
       e5xx     INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (domain, day)
     );
+
+    -- Edge 节点（1.63.0）：agent 反向连接注册表（token 仅存哈希）
+    CREATE TABLE IF NOT EXISTS edge_nodes (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      token_hash    TEXT NOT NULL UNIQUE,
+      agent_version TEXT,
+      created_at    INTEGER NOT NULL,
+      last_seen_at  INTEGER
+    );
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）

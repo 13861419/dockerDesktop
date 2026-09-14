@@ -95,3 +95,9 @@ test('事件流页：实时事件区可见', async ({ page }) => {
   await page.goto('/events');
   await expect(page.getByText(/事件/).first()).toBeVisible({ timeout: 15_000 });
 });
+
+test('Edge 节点页：节点区与添加按钮可见', async ({ page }) => {
+  await login(page);
+  await page.goto('/edge');
+  await expect(page.getByRole('button', { name: '添加节点' })).toBeVisible({ timeout: 15_000 });
+});

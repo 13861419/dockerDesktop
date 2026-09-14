@@ -36,6 +36,10 @@ const FAQ_ITEMS: FaqItem[] = [
     a: t('「Docker 引擎」页（管理员）新增端点（npipe://、unix://、tcp:// 均可），切换当前引擎后容器、镜像、监控、事件流等全部能力自动切到新引擎；「聚合」「端口地图」「网络拓扑」支持跨引擎汇总。'),
   },
   {
+    q: t('远程主机在 NAT / 防火墙后无法暴露 Docker 端口怎么办？'),
+    a: t('使用「Edge 节点」：面板创建节点拿到一次性 token，在远程主机上运行零依赖 agent（PANEL_URL / EDGE_TOKEN 两个环境变量），agent 主动反向连接面板，即可在面板中直接查看远端容器、镜像、网络与卷（1.63.0）。'),
+  },
+  {
     q: t('Webhook 自动部署如何使用？'),
     a: t('「计划任务」中创建 git-pull-build 或 compose-update-release 类型任务，复制生成的 Webhook 地址填入 Gitea / GitHub 等平台，代码 push 后自动完成 拉取 → 构建 → 部署。'),
   },
@@ -156,6 +160,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
   { path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01 / 通配符 DNS-01）；证书文件可直接用于站点反代') },
   { path: '/automations', name: t('事件自动化'), desc: t('订阅 Docker 事件（容器退出 / OOM / 健康检查异常等）自动执行重启、停止、启动或 Webhook 动作，带冷却期与触发留档（1.61.0）') },
+  { path: '/edge', name: t('Edge 节点'), desc: t('在远程主机运行轻量 agent 反向连接本面板（适合 NAT / 防火墙后主机），面板内直接管理远端 Docker（1.63.0）') },
   { path: '/sites', name: t('站点 / 反向代理'), desc: t('域名反代与 SSL 管理；1.62.0 起自动采集反代访问日志，展示每域名请求量与 4xx / 5xx 统计') },
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份；支持云端上传与从云端拉回恢复（1.43.0）；备份覆盖率体检（哪些对象没备份一目了然，1.48.0）') },

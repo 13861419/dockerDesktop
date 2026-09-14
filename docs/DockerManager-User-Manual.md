@@ -1656,7 +1656,39 @@ Entry: **Settings → About → Check for updates** (admin)
 > deb/rpm upgrades overwrite `/opt/docker-manager/server/.env` (back up custom settings such as the port first). A config export from the Backup section is recommended first.
 >
 > When GitHub is unreachable: download the update package on an internet-connected computer and copy it to the server (`dpkg -i` / `dnf install` over it), or prefix the download URL with a mirror. See "When GitHub Is Unreachable" in section 0.4.
-## Appendix: Modules & Routes
+## ## 46. Edge Nodes (Multi-node Management)
+
+Menu entry: **System Tools → Edge Nodes** (admin only)
+
+When a remote host is behind NAT/firewall and cannot expose port 2375, Edge Nodes bring its Docker into the panel: a zero-dependency agent runs on the remote host and dials back to the panel over an outbound WebSocket, so the panel can manage the remote Docker directly.
+
+### 46.1 Onboarding Steps
+
+1. On the Edge Nodes page, click "Add Node" and enter a name (e.g. `office-nas`);
+2. After creation a dialog shows the one-time token (displayed only once) and the agent launch command, ready to copy;
+3. Run the agent on the remote host (Node.js >= 22 required):
+
+```bash
+PANEL_URL=http://<panel-host>:9528 \
+EDGE_TOKEN=<one-time-token> \
+node agent.js
+```
+
+4. Once connected the node turns "Online"; use "Ping" to verify (returns the remote Docker version) and browse the remote container list.
+
+### 46.2 Capabilities & Security
+
+| Item | Description |
+| --- | --- |
+| Online status | Real-time online/offline, agent version and last heartbeat |
+| Read-only passthrough | Browse remote containers / images / networks / volumes (Docker API read-only whitelist) |
+| Timeout protection | Tunnel requests time out after 10 seconds; offline nodes return a clear error |
+| Credential security | Token is shown only once at creation; the panel database stores only its sha256 hash |
+| Agent version | Shipped with the panel at `server/agent/agent.js` — a single zero-dependency file |
+
+> Agent-to-panel communication is an outbound WebSocket connection — no inbound ports needed on the remote host. 1.63.0 is phase one (registration + read-only passthrough); write operations and multi-node event aggregation come later.
+
+Appendix: Modules & Routes
 
 | Menu | Route | Access |
 | --- | --- | --- |

@@ -43,6 +43,7 @@ const CloudBackupPage = lazy(() => import('./pages/cloudBackup'));
 const SitesPage = lazy(() => import('./pages/sites'));
 const CertsPage = lazy(() => import('./pages/certs'));
 const AutomationsPage = lazy(() => import('./pages/automations'));
+const EdgePage = lazy(() => import('./pages/edge'));
 const DatabasesPage = lazy(() => import('./pages/databases'));
 const BackupsPage = lazy(() => import('./pages/backups'));
 const FirewallPage = lazy(() => import('./pages/firewall'));
@@ -261,6 +262,16 @@ export default function App() {
                   <PageSuspense>
                     <RequireAdmin>
                       <AutomationsPage />
+                    </RequireAdmin>
+                  </PageSuspense>
+                }
+              />
+              <Route
+                path="/edge"
+                element={
+                  <PageSuspense>
+                    <RequireAdmin>
+                      <EdgePage />
                     </RequireAdmin>
                   </PageSuspense>
                 }

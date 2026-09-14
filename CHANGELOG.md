@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.63.0] - 2026-09-14
+
+### Added（新增）
+
+- **Edge 节点（多节点管理第一阶段）**：新增「Edge 节点」页（`/edge`，管理员）——在远程主机上运行零依赖 agent（`server/agent/agent.js`，Node 22+ 内置 WebSocket），agent **主动反向连接**面板（适合 NAT / 防火墙后无法暴露 2375 端口的主机）
+- **节点注册表**：创建节点返回一次性 `edge_` token（库中仅存 sha256 哈希），节点列表实时显示在线状态 / agent 版本 / 最后心跳
+- **隧道透传**：面板经 WebSocket 隧道把 Docker Engine HTTP 请求透传给远端 agent 执行（只读白名单：/version /info /containers /images /networks /volumes），10 秒超时保护
+- 新增 API：`GET/POST /api/edge/nodes`、`DELETE /api/edge/nodes/:id`、`POST /api/edge/nodes/:id/ping`、`GET /api/edge/nodes/:id/docker/*`；agent 反向连接端点 `GET /api/edge/ws?token=...`（复用统一 WS 分发器）
+- 节点页支持连通性测试（ping 取远端 Docker 版本）与远端容器列表预览（在线节点）
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-163.test.ts`（6 条：一次性 token、离线 502、模拟 agent 隧道 ping / 透传、白名单 400、非法 token 拒绝、删除）
+
 ## [1.62.0] - 2026-09-12
 
 ### Added（新增）

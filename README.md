@@ -17,6 +17,7 @@
 - **日志全文检索（1.58.0）**：持久化日志索引升级 **SQLite FTS5 trigram 全文索引**，中文子串可查、百万行秒出；命中分布 chips 一键筛容器，快速定位"哪个容器在刷 error"
 - **事件自动化（1.61.0）**：订阅 Docker 实时事件（容器退出 / OOM / 健康检查异常等），自动执行重启 / 停止 / 启动 / Webhook 动作，带冷却期与触发留档，把面板从"看得见"升级到"自动处理"
 - **站点访问统计（1.62.0）**：反代访问日志按域名按天聚合，站点页展示今日 / 7 日请求量与 4xx / 5xx 分布趋势
+- **Edge 节点（1.63.0）**：远程主机运行零依赖 agent 反向连接面板（NAT / 防火墙友好），面板内直接管理远端 Docker 容器 / 镜像 / 网络与卷（只读白名单透传）
 - **计划任务**：定时任务（周期 / 依存的容器操作、定时安全基线扫描并推送违规变更告警等）管理；执行历史失败记录**一键重跑**（1.49.0）
 - **文件管理**：容器内文件浏览 / 上传 / 下载 / 编辑
 - **宿主机文件 / 终端**：宿主机文件浏览与远程终端（xterm）
@@ -138,6 +139,7 @@ brew install docker-manager
 | `selfheal_events`    | 自愈执行留档（触发原因/动作/成败/详情，保留最近 200 条） | `server/src/selfheal.ts`         |
 | `automation_rules` / `automation_events` | 事件自动化规则与触发留档（1.61.0） | `server/src/automation.ts`      |
 | `site_stats`         | 站点访问统计（反代日志按域名按天聚合，1.62.0） | `server/src/siteStats.ts`        |
+| `edge_nodes`         | Edge 节点注册表（agent 反向连接，token 仅存哈希，1.63.0） | `server/src/edge/registry.ts`  |
 | `container_log_index` / `container_log_fts` | 容器日志持久化索引与 FTS5 trigram 全文索引（1.58.0） | `server/src/docker/logIndexer.ts` |
 | `appstore_git_sources` / `appstore_source_apps` | Git 应用源与其同步的应用清单（1.55.0） | `server/src/routes/appstore.ts` |
 | `ssl_certs`          | ACME 签发的 SSL 证书（Let's Encrypt，1.56.0） | `server/src/routes/certs.ts`     |

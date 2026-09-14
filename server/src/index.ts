@@ -12,6 +12,7 @@ import { setupK8sTerminalServer } from './k8s/terminal';
 import { setupK8sEventWatcher } from './k8s/eventWatcher';
 import { startK8sMetricsCollector } from './k8s/metrics';
 import { setupEventWsServer } from './docker/eventWs';
+import { setupEdgeWsServer } from './edge/tunnel';
 import { setupHostTerminalServer } from './docker/hostTerminalWs';
 import { startEventMonitor } from './docker/events';
 import { startScheduler, stopScheduler } from './scheduler';
@@ -175,6 +176,13 @@ try {
   setupEventWsServer(server);
 } catch (err) {
   console.error('事件流 WebSocket 挂载失败:', err);
+}
+
+// 挂载 Edge 节点反向连接 WebSocket（1.63.0）
+try {
+  setupEdgeWsServer(server);
+} catch (err) {
+  console.error('Edge 隧道 WebSocket 挂载失败:', err);
 }
 
 // 挂载宿主机会话式终端 WebSocket
