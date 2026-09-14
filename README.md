@@ -15,6 +15,7 @@
 - **SSL 证书自动签发（1.56.0 / 1.59.0）**：Let's Encrypt **ACME http-01** 一键签发与**到期自动续期**（内置零依赖 ACME 客户端），**通配符证书走 DNS-01**（Cloudflare / 阿里云 DNS API，自动管理 TXT 记录）；证书文件与**站点反代**打通，站点编辑弹窗下拉即选
 - **应用一键绑域名（1.57.0）**：已安装应用卡片一键创建站点反代（自动预填端口），已签发同名证书时自动启用 HTTPS，「部署 → 绑域名 → HTTPS」三步闭环
 - **日志全文检索（1.58.0）**：持久化日志索引升级 **SQLite FTS5 trigram 全文索引**，中文子串可查、百万行秒出；命中分布 chips 一键筛容器，快速定位"哪个容器在刷 error"
+- **事件自动化（1.61.0）**：订阅 Docker 实时事件（容器退出 / OOM / 健康检查异常等），自动执行重启 / 停止 / 启动 / Webhook 动作，带冷却期与触发留档，把面板从"看得见"升级到"自动处理"
 - **计划任务**：定时任务（周期 / 依存的容器操作、定时安全基线扫描并推送违规变更告警等）管理；执行历史失败记录**一键重跑**（1.49.0）
 - **文件管理**：容器内文件浏览 / 上传 / 下载 / 编辑
 - **宿主机文件 / 终端**：宿主机文件浏览与远程终端（xterm）
@@ -134,6 +135,7 @@ brew install docker-manager
 | `roles`              | 自定义角色与操作白名单（RBAC）              | `server/src/rbac.ts`             |
 | `selfheal_rules`     | 容器自愈规则（unhealthy/退出自动恢复，冷却期） | `server/src/selfheal.ts`         |
 | `selfheal_events`    | 自愈执行留档（触发原因/动作/成败/详情，保留最近 200 条） | `server/src/selfheal.ts`         |
+| `automation_rules` / `automation_events` | 事件自动化规则与触发留档（1.61.0） | `server/src/automation.ts`      |
 | `container_log_index` / `container_log_fts` | 容器日志持久化索引与 FTS5 trigram 全文索引（1.58.0） | `server/src/docker/logIndexer.ts` |
 | `appstore_git_sources` / `appstore_source_apps` | Git 应用源与其同步的应用清单（1.55.0） | `server/src/routes/appstore.ts` |
 | `ssl_certs`          | ACME 签发的 SSL 证书（Let's Encrypt，1.56.0） | `server/src/routes/certs.ts`     |

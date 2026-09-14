@@ -390,6 +390,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: '/automations',
+    label: '事件自动化',
+    adminOnly: true,
+    icon: (
+      <svg {...iconProps}>
+        <path d="M13 2L4.5 12.5H11L10 22l8.5-10.5H13L13 2z" />
+      </svg>
+    ),
+  },
+  {
     to: '/firewall',
     label: '防火墙',
     adminOnly: true,
@@ -531,7 +541,7 @@ const NAV_LAYOUT: Array<{ label?: string; paths: string[] }> = [
   { label: '镜像构建', paths: ['/images', '/build', '/gc', '/hub'] },
   { label: '存储网络', paths: ['/volumes', '/storage', '/networks', '/topology', '/ports'] },
   { label: '可观测', paths: ['/logs', '/events', '/operation-logs', '/notifications'] },
-  { label: '系统工具', paths: ['/files', '/hostfiles', '/hostterminal', '/tools', '/engines', '/swarm', '/backups', '/cloudbackup', '/databases', '/sites', '/certs', '/firewall', '/api-docs'] },
+  { label: '系统工具', paths: ['/files', '/hostfiles', '/hostterminal', '/tools', '/engines', '/swarm', '/backups', '/cloudbackup', '/databases', '/sites', '/certs', '/automations', '/firewall', '/api-docs'] },
   { label: 'K8s 集群', paths: ['/k8s', '/k8s/workloads', '/k8s/events'] },
   { label: '安全治理', paths: ['/policy', '/bench', '/approvals'] },
   { paths: ['/assistant'] },

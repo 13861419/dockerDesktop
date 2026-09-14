@@ -24,6 +24,7 @@ import { ensureInitialUser } from './users';
 import { ensureBuiltinRoles } from './rbac';
 import { startChallengeServer } from './acme/challengeServer';
 import { startCertRenewal } from './acme/renewal';
+import { startAutomation } from './automation';
 
 const PORT = Number(process.env.PORT) || 9528;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -118,6 +119,16 @@ const server = app.listen(PORT, HOST, () => {
       console.error('ACME 服务启动失败:', err);
     }
   }, 900);
+
+  // 启动事件自动化引擎（1.61.0：订阅 Docker 实时事件执行规则动作）
+  setTimeout(() => {
+    try {
+      startAutomation();
+      console.log('事件自动化引擎已启动');
+    } catch (err) {
+      console.error('自动化引擎启动失败:', err);
+    }
+  }, 1000);
 
   // 启动资源告警服务（异步，依赖监控采集器就绪，稍晚启动）
   setTimeout(() => {

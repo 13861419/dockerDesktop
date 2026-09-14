@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.61.0] - 2026-09-12
+
+### Added（新增）
+
+- **事件自动化器**：新增「事件自动化」页（`/automations`，管理员）——订阅 Docker 实时事件流，按「事件 → 动作」规则自动执行：容器退出 / OOM / 健康检查异常 / 容器删除 / 镜像拉取等事件，可触发重启、停止、启动或 **Webhook**（带 `X-Automation-Secret` 校验头）
+- **匹配过滤与冷却**：按容器名 / 镜像名子串过滤；同一规则冷却窗口内不重复触发（默认 300 秒），防事件风暴
+- **触发留档**：automation_events 记录每次执行的成败与详情（保留最近 500 条），规则页直接查看执行历史
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-161.test.ts`（规则 CRUD、启停、webhook 缺参 400、非法事件类型 400、触发历史）
+
 ## [1.60.0] - 2026-09-12
 
 ### Added（新增）

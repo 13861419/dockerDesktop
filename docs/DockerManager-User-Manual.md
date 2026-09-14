@@ -745,6 +745,19 @@ Menu: **Event Stream** (`/events`)
 
 ![Events](../images/events.png)
 
+### 19.1 Event Automations (`/automations`, 1.61.0)
+
+Menu: **Event Automations** (`/automations`, admins only)
+
+Subscribe to the live Docker event stream and run user-defined "event → action" rules automatically, upgrading the panel from "watch it" to "handle it":
+
+1. **Event types**: container exit (container.die), out of memory (container.oom), health check failure (health_status), container removed (container.destroy), image pull completed (image.pull).
+2. **Match filters**: filter by container-name / image-name substring; leave empty to match all.
+3. **Actions**: restart / stop / start the container, or deliver a **Webhook** (POST with event detail JSON; optional `X-Automation-Secret` header).
+4. **Cooldown**: the same rule is not re-triggered within its cooldown window (default 300s, adjustable) to prevent event storms.
+5. **Trigger log**: every execution (with success/failure and detail) is recorded in the trigger history, keeping the latest 500 entries.
+6. Difference from "Container Self-Healing": self-healing is a curated guard for exit/unhealthy states; event automations are general-purpose — any event can be combined with any action, including notify-only webhooks.
+
 ---
 
 ## 20. Operation Logs

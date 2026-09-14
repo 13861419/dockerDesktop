@@ -838,6 +838,38 @@ function createTables(): void {
       created_at     INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_selfheal_events_created ON selfheal_events(created_at DESC);
+
+    -- 事件触发自动化规则（1.61.0）：Docker 事件 → 动作（restart/stop/start/webhook）
+    CREATE TABLE IF NOT EXISTS automation_rules (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      name              TEXT NOT NULL,
+      enabled           INTEGER NOT NULL DEFAULT 1,
+      event_type        TEXT NOT NULL,
+      match_container   TEXT,
+      match_image       TEXT,
+      action            TEXT NOT NULL,
+      action_params     TEXT,
+      cooldown_sec      INTEGER NOT NULL DEFAULT 300,
+      last_triggered_at INTEGER,
+      trigger_count     INTEGER NOT NULL DEFAULT 0,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL
+    );
+
+    -- 自动化触发留档（保留最近 500 条）
+    CREATE TABLE IF NOT EXISTS automation_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id    INTEGER,
+      rule_name  TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      container  TEXT,
+      image      TEXT,
+      action     TEXT NOT NULL,
+      detail     TEXT,
+      ok         INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_events_created ON automation_events(created_at DESC);
   `);
 
   // 迁移：为 ai_knowledge 表补充 embedding 列（BLOB 存储向量）

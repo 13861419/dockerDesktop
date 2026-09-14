@@ -1,0 +1,86 @@
+/* 事件自动化页 */
+.automations-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.automations-table-wrap {
+  overflow-x: auto;
+}
+
+.automations-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.automations-table th,
+.automations-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.automations-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.automations-row--disabled {
+  opacity: 0.5;
+}
+
+.automations-table__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.automations-ok {
+  color: var(--success, #22c55e);
+}
+
+.automations-fail {
+  color: var(--danger, #ef4444);
+}
+
+.automations-switch {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.automations-switch input {
+  display: none;
+}
+
+.automations-switch span {
+  width: 34px;
+  height: 18px;
+  border-radius: 10px;
+  background: var(--border-color);
+  position: relative;
+  transition: background 0.2s;
+}
+
+.automations-switch span::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.automations-switch input:checked + span {
+  background: var(--primary);
+}
+
+.automations-switch input:checked + span::after {
+  transform: translateX(16px);
+}
