@@ -3334,6 +3334,8 @@ export const en: Record<string, string> = {
   '锁定': 'Pin',
   '信任锁定': 'Trust Pinning',
   '更多': 'More',
+  '查看': 'View',
+  '镜像操作': 'Image Actions',
   '高危': 'High Risk',
   '通过': 'Pass',
   '分发后在远端启动（代理部署）': 'Start on remote after distribution (proxy deploy)',

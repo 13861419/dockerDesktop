@@ -1,0 +1,96 @@
+/**
+ * 行内"更多操作"下拉菜单样式（1.67.0）
+ * 交互与 StateActions 一致：fixed 定位 / 外点关闭 / ESC / 滚动关闭。
+ */
+.more-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.more-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-color, #fff);
+  color: var(--text-secondary, #6b7280);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.1s;
+
+  &:hover:not(:disabled) {
+    filter: brightness(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.more-menu__caret {
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  opacity: 0.85;
+}
+
+.more-menu__trigger.is-open {
+  filter: brightness(0.95);
+}
+
+.more-menu__panel {
+  position: fixed;
+  z-index: 1000;
+  min-width: 128px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.more-menu__group {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #9ca3af);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.more-menu__item {
+  text-align: left;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-primary, #1f2937);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.08);
+  }
+}
+
+.more-menu__item--danger {
+  color: #ef4444;
+}
+
+.more-menu__item--disabled {
+  color: var(--text-muted, #9ca3af);
+  cursor: not-allowed;
+}

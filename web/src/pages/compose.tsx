@@ -16,6 +16,7 @@ import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import StateActions from '../components/StateActions';
+import MoreMenu, { MoreMenuItem } from '../components/MoreMenu';
 import { useCanManage } from '../hooks/useCanManage';
 import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
 import { translateNow as t } from '../i18n';
@@ -1143,67 +1144,36 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                       <Button
                         variant="ghost"
                         size="sm"
-                        loading={opName === proj.name}
-                        disabled={!canManage}
-                        onClick={() => runAction(proj, 'pull', t('镜像拉取成功'))}
-                      >
-                        {t('拉取镜像')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={opName === proj.name}
-                        disabled={!canManage}
-                        onClick={() => runAction(proj, 'build', t('镜像构建成功'))}
-                      >
-                        {t('构建镜像')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(proj)} disabled={!canManage}>
-                        {t('编辑')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewConfig(proj)}
-                      >
-                        {t('配置')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openStructure(proj)}
-                      >
-                        {t('结构')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => void openStats(proj.name)}>
-                        {t('看板')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEnv(proj)}>
-                        {t('环境变量')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title={proj.path}
-                        onClick={() => navigate(`/files?path=${encodeURIComponent(proj.path)}`)}
-                      >
-                        {t('目录')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
                         onClick={() => openLog(proj.name)}
                       >
                         {t('日志')}
                       </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => setDeleteTarget(proj)}
-                        disabled={!canDelete}
-                      >
-                        {t('删除')}
-                      </Button>
+                      {/* 次要操作按语义分组收入"更多"菜单（1.67.0） */}
+                      <MoreMenu
+                        disabled={!canManage}
+                        items={[
+                          { label: t('查看'), group: true, onClick: () => {} },
+                          { label: t('配置'), onClick: () => handleViewConfig(proj) },
+                          { label: t('结构'), onClick: () => openStructure(proj) },
+                          { label: t('看板'), onClick: () => void openStats(proj.name) },
+                          { label: t('编辑配置'), group: true, onClick: () => {} },
+                          { label: t('编辑'), onClick: () => openEdit(proj) },
+                          { label: t('环境变量'), onClick: () => openEnv(proj) },
+                          { label: t('目录'), title: proj.path, onClick: () => navigate(`/files?path=${encodeURIComponent(proj.path)}`) },
+                          { label: t('镜像操作'), group: true, onClick: () => {} },
+                          {
+                            label: t('拉取镜像'),
+                            disabled: !canManage || opName === proj.name,
+                            onClick: () => runAction(proj, 'pull', t('镜像拉取成功')),
+                          },
+                          {
+                            label: t('构建镜像'),
+                            disabled: !canManage,
+                            onClick: () => runAction(proj, 'build', t('镜像构建成功')),
+                          },
+                          { label: t('删除'), danger: true, disabled: !canDelete, onClick: () => setDeleteTarget(proj) },
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

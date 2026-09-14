@@ -561,6 +561,7 @@ Menu: **Compose** (`/compose`)
 ![Compose](../images/compose.png)
 
 ---
+> Actions column (1.67.0): only state pill / Logs / More▾ stay inline; the rest are grouped into the More menu (View: Config / Structure / Dashboard; Edit: Edit / Env / Folder; Image: Pull / Build; red Delete at bottom).
 
 ## 10. App Store
 
