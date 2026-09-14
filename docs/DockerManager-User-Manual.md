@@ -1604,6 +1604,7 @@ scrape_configs:
 - **Export**: search results can be exported for archiving and issue reporting.
 - **History Search (new in 1.31.0)**: after enabling "Container log index" (`logs.indexEnabled`) under Settings → System Parameters, a background loop incrementally collects new log lines from all running containers every minute, so history remains searchable after container restart or removal; the "History Search" mode on the page queries the persisted index by time range / containers / keyword (result limit 500-5000);
 - **Retention policy**: `logs.retentionDays` (default 7, adjustable 1-90) plus a 1,000,000-row cap; expired and oldest overflow rows are pruned automatically. Index status (rows / containers / oldest timestamp) is shown at the top of History Search mode, with a manual prune action.
+- **Full-text Search (new in 1.58.0)**: keywords of 3+ characters automatically use a **SQLite FTS5 trigram full-text index** (CJK substring capable, case-insensitive), fast at million-row scale; **hit distribution** chips show per-container match counts (Top 10) — click one to filter to that container and quickly find "which container keeps spamming errors". Keywords under 3 characters fall back to LIKE matching. After upgrading, the first startup rebuilds the full-text index for existing rows in the background.
 
 ## 45. System Update
 

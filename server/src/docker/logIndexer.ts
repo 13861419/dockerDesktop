@@ -117,7 +117,13 @@ export function queryLogHistory(opts: {
   since?: number;
   until?: number;
   limit?: number;
-}): { lines: Array<{ ts: number; container: string; stream: string; text: string }>; total: number; truncated: boolean } {
+}): {
+  lines: Array<{ ts: number; container: string; stream: string; text: string }>;
+  total: number;
+  truncated: boolean;
+  distribution: Array<{ container: string; count: number }>;
+  fts: boolean;
+} {
   const db = getDb();
   const limit = Math.min(Math.max(Number(opts.limit) || 500, 1), 5000);
   const conds: string[] = [];
@@ -135,9 +141,17 @@ export function queryLogHistory(opts: {
     conds.push('ts <= ?');
     params.push(opts.until);
   }
-  if (opts.keyword) {
+
+  // 关键词：>=3 字符走 FTS5 trigram（中文子串可查），否则回退 LIKE
+  const keyword = (opts.keyword || '').trim();
+  let fts = false;
+  if (keyword.length >= 3) {
+    conds.push('rowid IN (SELECT rowid FROM container_log_fts WHERE container_log_fts MATCH ?)');
+    params.push(`"${keyword.replace(/"/g, '""')}"`);
+    fts = true;
+  } else if (keyword) {
     conds.push('text LIKE ?');
-    params.push(`%${opts.keyword}%`);
+    params.push(`%${keyword}%`);
   }
   const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
@@ -146,10 +160,24 @@ export function queryLogHistory(opts: {
     .prepare(`SELECT ts, container_name, stream, text FROM container_log_index ${where} ORDER BY ts ASC, id ASC LIMIT ?`)
     .all(...params, limit);
 
+  // 各容器命中分布（Top 10），便于定位“哪个容器在刷错”
+  let distribution: Array<{ container: string; count: number }> = [];
+  if (keyword) {
+    distribution = (
+      db
+        .prepare(
+          `SELECT container_name AS container, COUNT(*) AS hits FROM container_log_index ${where} GROUP BY container_name ORDER BY hits DESC LIMIT 10`,
+        )
+        .all(...params) as any[]
+    ).map((r) => ({ container: r.container, count: Number(r.hits) }));
+  }
+
   return {
     lines: rows.map((r: any) => ({ ts: r.ts, container: r.container_name, stream: r.stream, text: r.text })),
     total,
     truncated: total > rows.length,
+    distribution,
+    fts,
   };
 }
 
@@ -171,12 +199,39 @@ export function getLogIndexStatus(): { enabled: boolean; rows: number; container
 /** 启动采集循环（每轮实时判断开关；含每小时清理） */
 export function startLogIndexer(): void {
   if (sweepTimer) return;
+  // 存量数据一次性重建 FTS 索引（1.58.0 升级场景；后台执行避免阻塞启动）
+  setTimeout(() => {
+    ensureFtsRebuilt();
+  }, 3000);
   sweepTimer = setInterval(() => {
     runLogIndexSweep().catch(() => {});
   }, 60_000);
   pruneTimer = setInterval(() => {
     pruneLogIndex();
   }, 3600_000);
+}
+
+/**
+ * 为升级前已存在的日志行重建 FTS 索引（幂等，按 setting 表标记只执行一次）
+ */
+export function ensureFtsRebuilt(): void {
+  const db = getDb();
+  try {
+    const flag = db.prepare("SELECT value FROM setting WHERE key = 'logs.ftsRebuildDone'").get() as any;
+    if (flag && flag.value === 'true') return;
+    const n = Number((db.prepare('SELECT COUNT(*) AS n FROM container_log_index').get() as any).n);
+    if (n > 0) {
+      db.exec("INSERT INTO container_log_fts(container_log_fts) VALUES('rebuild')");
+      console.log(`日志全文索引重建完成：${n} 行`);
+    }
+    db
+      .prepare(
+        "INSERT INTO setting (key, value) VALUES ('logs.ftsRebuildDone', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'",
+      )
+      .run();
+  } catch (err) {
+    console.error('FTS 索引重建失败（下轮启动重试）:', err);
+  }
 }
 
 /** 停止采集循环（测试用） */

@@ -12,7 +12,7 @@
 import { Router, Request, Response } from 'express';
 import { getDockerClient } from '../docker/client';
 import { fetchContainerLogLines, stripAnsi } from '../docker/logUtil';
-import { queryLogHistory, getLogIndexStatus, pruneLogIndex } from '../docker/logIndexer';
+import { queryLogHistory, getLogIndexStatus, pruneLogIndex, runLogIndexSweep } from '../docker/logIndexer';
 import { logOperation } from '../operationLog';
 import { allowlistFilterFor } from '../containerAuth';
 
@@ -213,6 +213,16 @@ router.get(
     const until = num(req.query.until, 0, 0);
     const limit = num(req.query.limit, 500, 1, 5000);
     res.json(queryLogHistory({ containerIds, keyword, since, until, limit }));
+  }),
+);
+
+/** 历史检索：立即执行一轮增量采集（管理员；正常由后台每分钟自动执行） */
+router.post(
+  '/history/sweep',
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await runLogIndexSweep();
+    logOperation(res.locals.username, '手动采集日志索引', 'logs', '', `scanned=${result.scanned} inserted=${result.inserted}`, true);
+    res.json({ ok: true, ...result });
   }),
 );
 

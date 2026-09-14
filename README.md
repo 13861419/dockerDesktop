@@ -14,6 +14,7 @@
 - **应用商店（AppStore）**：内置应用目录，一键安装部署；Compose 套件升级前显示**当前版本 → 最新版本**对比（可升级徽标，1.46.0）；安装前**端口冲突预检**（冲突直接拦截并列明占用来源，1.49.0）；支持 **Git 应用源**——任意 git 仓库放置 `apps.json` 清单即可批量引入应用（1.55.0）
 - **SSL 证书自动签发（1.56.0）**：Let's Encrypt **ACME http-01** 一键签发与**到期自动续期**（内置零依赖 ACME 客户端），证书文件与**站点反代**打通，站点编辑弹窗下拉即选
 - **应用一键绑域名（1.57.0）**：已安装应用卡片一键创建站点反代（自动预填端口），已签发同名证书时自动启用 HTTPS，「部署 → 绑域名 → HTTPS」三步闭环
+- **日志全文检索（1.58.0）**：持久化日志索引升级 **SQLite FTS5 trigram 全文索引**，中文子串可查、百万行秒出；命中分布 chips 一键筛容器，快速定位"哪个容器在刷 error"
 - **计划任务**：定时任务（周期 / 依存的容器操作、定时安全基线扫描并推送违规变更告警等）管理；执行历史失败记录**一键重跑**（1.49.0）
 - **文件管理**：容器内文件浏览 / 上传 / 下载 / 编辑
 - **宿主机文件 / 终端**：宿主机文件浏览与远程终端（xterm）
@@ -133,6 +134,9 @@ brew install docker-manager
 | `roles`              | 自定义角色与操作白名单（RBAC）              | `server/src/rbac.ts`             |
 | `selfheal_rules`     | 容器自愈规则（unhealthy/退出自动恢复，冷却期） | `server/src/selfheal.ts`         |
 | `selfheal_events`    | 自愈执行留档（触发原因/动作/成败/详情，保留最近 200 条） | `server/src/selfheal.ts`         |
+| `container_log_index` / `container_log_fts` | 容器日志持久化索引与 FTS5 trigram 全文索引（1.58.0） | `server/src/docker/logIndexer.ts` |
+| `appstore_git_sources` / `appstore_source_apps` | Git 应用源与其同步的应用清单（1.55.0） | `server/src/routes/appstore.ts` |
+| `ssl_certs`          | ACME 签发的 SSL 证书（Let's Encrypt，1.56.0） | `server/src/routes/certs.ts`     |
 
 > **旧版兼容**：早期版本使用 JSON/文本文件存储（`data/users.json`、`data/hub-sources.json`、`data/hub-search-source.txt`、`data/image-pull-history.json`）。服务启动时会自动将旧文件数据迁移进 SQLite，并把旧文件重命名为 `.bak` 备份，实现平滑升级、不丢失任何现有配置。
 

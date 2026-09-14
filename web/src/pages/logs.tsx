@@ -47,6 +47,10 @@ export default function LogsPage() {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [total, setTotal] = useState(0);
+  // 全文检索：各容器命中分布（Top 10，点击即筛该容器）
+  const [distribution, setDistribution] = useState<Array<{ container: string; count: number }>>([]);
+  // 全文检索标记（keyword ≥3 字符时走 FTS 索引）
+  const [fts, setFts] = useState(false);
 
   const loadContainers = useCallback(async () => {
     try {
@@ -122,18 +126,23 @@ export default function LogsPage() {
     setLoading(true);
     try {
       const since = rangeMinutes ? Math.floor(Date.now() / 1000) - rangeMinutes * 60 : 0;
-      const data = await get<{ lines: Array<{ ts: number; container: string; stream: string; text: string }>; total: number; truncated: boolean }>(
-        '/api/logs/history',
-        {
-          containerIds: selected.join(','),
-          keyword: keyword || undefined,
-          since: since || undefined,
-          limit,
-        },
-      );
+      const data = await get<{
+        lines: Array<{ ts: number; container: string; stream: string; text: string }>;
+        total: number;
+        truncated: boolean;
+        distribution?: Array<{ container: string; count: number }>;
+        fts?: boolean;
+      }>('/api/logs/history', {
+        containerIds: selected.join(','),
+        keyword: keyword || undefined,
+        since: since || undefined,
+        limit,
+      });
       setLines((data.lines || []) as LogLine[]);
       setTotal(data.total || 0);
       setLoaded(true);
+      setDistribution(data.distribution || []);
+      setFts(data.fts === true);
       if (data.truncated) showToast(t('结果超出单页上限，已展示最早的 {{n}} 行', { n: limit }), undefined);
     } catch (e: any) {
       showToast(e?.message || t('查询日志失败'), 'error');
@@ -313,6 +322,32 @@ export default function LogsPage() {
         title={t('日志结果')}
         extra={loaded ? <span className="logs-page__count">共 {total} 行{keyword ? t('，命中过滤') : ''}</span> : undefined}
       >
+        {mode === 'history' && keyword && distribution.length > 0 && (
+          <div className="logs-page__dist">
+            <span className="logs-page__dist-label">
+              {fts ? t('全文索引命中分布：') : t('命中分布：')}
+            </span>
+            {distribution.map((d) => {
+              const target = containers.find((c) => c.name === d.container);
+              return (
+                <span
+                  key={d.container}
+                  className="logs-page__dist-chip"
+                  title={t('点击仅查看该容器')}
+                  onClick={() => {
+                    const id = containers.find((c) => c.name === d.container)?.id;
+                    if (id) {
+                      setSelected([id]);
+                      setTimeout(() => queryHistory(), 0);
+                    }
+                  }}
+                >
+                  {d.container} <b>{d.count}</b>
+                </span>
+              );
+            })}
+          </div>
+        )}
         {loading ? (
           <SkeletonRows rows={10} />
         ) : !loaded ? (

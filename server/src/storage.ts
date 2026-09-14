@@ -256,6 +256,18 @@ function createTables(): void {
       last_ts      INTEGER NOT NULL
     );
 
+    -- 日志全文检索（1.58.0）：FTS5 trigram 外部内容索引（支持中文子串，随行删同步）
+    CREATE VIRTUAL TABLE IF NOT EXISTS container_log_fts USING fts5(
+      text, container_name, content='container_log_index', content_rowid='id', tokenize='trigram'
+    );
+    CREATE TRIGGER IF NOT EXISTS container_log_fts_ai AFTER INSERT ON container_log_index BEGIN
+      INSERT INTO container_log_fts(rowid, text, container_name) VALUES (new.id, new.text, new.container_name);
+    END;
+    CREATE TRIGGER IF NOT EXISTS container_log_fts_ad AFTER DELETE ON container_log_index BEGIN
+      INSERT INTO container_log_fts(container_log_fts, rowid, text, container_name)
+      VALUES ('delete', old.id, old.text, old.container_name);
+    END;
+
     -- Docker Bench 安全基线扫描历史（结果明细存 results_json）
     CREATE TABLE IF NOT EXISTS bench_runs (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
