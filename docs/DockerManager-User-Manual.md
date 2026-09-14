@@ -1687,6 +1687,12 @@ node agent.js
 | Agent version | Shipped with the panel at `server/agent/agent.js` — a single zero-dependency file |
 
 > Agent-to-panel communication is an outbound WebSocket connection — no inbound ports needed on the remote host. 1.63.0 is phase one (registration + read-only passthrough); write operations and multi-node event aggregation come later.
+### 46.3 Container Actions & One-line Install (added in 1.64.0)
+
+- **Remote container actions**: start / stop / restart / delete from the remote container list; actions are tunneled to the remote Docker and the list refreshes automatically;
+- **One-line install**: the create-node dialog offers a single command (`curl -fsSL <panel>/api/edge/agent.sh | PANEL_URL=... EDGE_TOKEN=... sh`) that downloads the agent and registers a systemd service (dm-edge-agent, auto-start on boot);
+- **Image pull**: pull images on the remote host through the tunnel (long operations use a 300s timeout);
+- **Whitelist**: write operations are limited to container lifecycle and image management; all other Docker APIs are rejected.
 
 Appendix: Modules & Routes
 

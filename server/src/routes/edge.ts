@@ -5,6 +5,8 @@
  * 后续版本：写操作透传、每节点容器页、事件聚合。
  */
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { requireAuth } from '../auth';
 import {
   createEdgeNode,
@@ -43,14 +45,31 @@ const READONLY_PATHS = [
   '/volumes',
 ];
 
-function assertReadonlyPath(path: string): void {
-  const clean = String(path || '');
-  if (!READONLY_PATHS.some((p) => clean === p || clean.startsWith(p + '?'))) {
-    const err: any = new Error('该路径不允许透传（仅只读白名单）');
-    err.statusCode = 400;
-    throw err;
+/** 允许的写操作（1.64.0）：容器生命周期 + 镜像拉取 */
+const WRITE_PATHS: Array<{ method: string; re: RegExp }> = [
+  { method: 'POST', re: /^\/containers\/[^/]+\/(start|stop|restart)$/ },
+  { method: 'DELETE', re: /^\/containers\/[^/]+$/ },
+  { method: 'POST', re: /^\/containers\/prune$/ },
+  { method: 'POST', re: /^\/images\/create$/ },
+  { method: 'DELETE', re: /^\/images\/[^/]+$/ },
+];
+
+/** 校验透传路径（method 为大写 HTTP 方法；path 不含 query） */
+function assertPassthroughPath(method: string, path: string): void {
+  const clean = String(path || '').split('?')[0];
+  if (READONLY_PATHS.some((p) => clean === p || clean.startsWith(p + '?')) && method === 'GET') {
+    return;
   }
+  if (WRITE_PATHS.some((w) => w.method === method && w.re.test(clean))) {
+    return;
+  }
+  const err: any = new Error('该路径不允许透传（仅只读白名单与受控写操作）');
+  err.statusCode = 400;
+  throw err;
 }
+
+/** 长耗时操作（镜像拉取等）放宽超时 */
+const LONG_PATHS = ['/images/create'];
 
 /** 节点列表（含在线状态） */
 router.get(
@@ -108,8 +127,7 @@ router.get(
   asyncHandler(async (req, res: Response) => {
     // Express 通配符参数不含 query string，从 originalUrl 还原完整透传路径
     const rest = String(req.originalUrl || '').split('/docker/')[1] || '';
-    const path = decodeURIComponent(rest.split('?')[0]);
-    assertReadonlyPath('/' + path);
+    assertPassthroughPath('GET', '/' + rest);
     try {
       const { status, data } = await callEdgeNode(req.params.id, 'GET', '/' + rest);
       res.status(status).json(data);
@@ -119,4 +137,44 @@ router.get(
   }),
 );
 
+/** 受控写透传（容器 start/stop/restart/删除、镜像拉取/删除，1.64.0） */
+router.post('/nodes/:id/docker/*', requireAuth, asyncHandler(edgeWrite));
+router.delete('/nodes/:id/docker/*', requireAuth, asyncHandler(edgeWrite));
+
+async function edgeWrite(req: Request, res: Response) {
+  const parts = String(req.originalUrl || '').split('/docker/');
+  const rest = parts[1] || '';
+  const method = req.method.toUpperCase();
+  assertPassthroughPath(method, '/' + rest.split('?')[0]);
+  const isLong = LONG_PATHS.some((p) => ('/' + rest).startsWith(p));
+  try {
+    const { status, data } = await callEdgeNode(
+      req.params.id,
+      method,
+      '/' + rest,
+      req.body,
+      isLong ? 300_000 : 30_000,
+    );
+    res.status(status).json(data);
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
 export default router;
+
+/**
+ * 公开路由（无需登录，1.64.0）：agent 安装文件下发
+ * 挂载于 /api/edge（须先于需登录的 edgeRouter）。
+ */
+export const edgePublicRouter = Router();
+
+const AGENT_DIR = path.resolve(__dirname, '../../agent');
+
+edgePublicRouter.get('/agent.js', (_req: Request, res: Response) => {
+  res.type('application/javascript').send(fs.readFileSync(path.join(AGENT_DIR, 'agent.js'), 'utf8'));
+});
+
+edgePublicRouter.get('/agent.sh', (_req: Request, res: Response) => {
+  res.type('text/x-sh').send(fs.readFileSync(path.join(AGENT_DIR, 'install.sh'), 'utf8'));
+});

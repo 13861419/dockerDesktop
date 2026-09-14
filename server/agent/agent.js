@@ -29,7 +29,7 @@ const DOCKER_SOCKET =
   (process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock');
 
 /** 通过 Docker socket 执行 HTTP 请求并返回 { status, json } */
-function dockerRequest(method, path, body) {
+function dockerRequest(method, path, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const http = require('http');
     const req = http.request(
@@ -37,7 +37,7 @@ function dockerRequest(method, path, body) {
         socketPath: DOCKER_SOCKET,
         method: method || 'GET',
         path: path || '/',
-        timeout: 30_000,
+        timeout: timeoutMs || 30_000,
         headers: body ? { 'Content-Type': 'application/json' } : {},
       },
       (res) => {
@@ -83,8 +83,10 @@ function connect() {
       return;
     }
     if (typeof msg?.id !== 'string' || typeof msg?.method !== 'string' || typeof msg?.path !== 'string') return;
+    // 镜像拉取等长耗时操作放宽本机 socket 超时
+    const timeout = msg.path.startsWith('/images/create') ? 300_000 : 30_000;
     try {
-      const { status, json } = await dockerRequest(msg.method, msg.path, msg.body);
+      const { status, json } = await dockerRequest(msg.method, msg.path, msg.body, timeout);
       ws.send(JSON.stringify({ id: msg.id, ok: status < 400, status, data: json }));
     } catch (err) {
       ws.send(JSON.stringify({ id: msg.id, ok: false, status: 502, error: String((err && err.message) || err) }));

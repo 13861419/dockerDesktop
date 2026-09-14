@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.64.0] - 2026-09-14
+
+### Added（新增）
+
+- **Edge 写操作透传**：远端容器生命周期管理——启动 / 停止 / 重启 / 删除（`POST /containers/:id/(start|stop|restart)`、`DELETE /containers/:id`）与镜像拉取 / 删除、容器 prune（长耗时操作自动放宽至 300 秒超时）；白名单外写操作一律 400
+- **远端容器操作 UI**：Edge 节点页远端容器列表增加启动 / 停止 / 重启 / 删除操作，执行后自动刷新
+- **Agent 一键安装**：面板公开下发 `GET /api/edge/agent.sh`（Linux systemd 安装）与 `GET /api/edge/agent.js`；创建节点弹窗给出单行安装命令（curl | sh），token 依旧仅显示一次
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-164.test.ts`（4 条：写白名单透传、镜像拉取、白名单外 400、安装文件公开下发）
+
 ## [1.63.0] - 2026-09-14
 
 ### Added（新增）

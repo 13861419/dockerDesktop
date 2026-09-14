@@ -52,7 +52,7 @@ import aiRouter from './routes/ai';
 import logsRouter from './routes/logs';
 import certsRouter from './routes/certs';
 import automationsRouter from './routes/automations';
-import edgeRouter from './routes/edge';
+import edgeRouter, { edgePublicRouter } from './routes/edge';
 import gcRouter from './routes/gc';
 import topologyRouter from './routes/topology';
 import labelsRouter from './routes/labels';
@@ -149,6 +149,8 @@ app.use('/api/cloud', requireAuth, cloudRouter);
 app.use('/api/sites', requireAuth, sitesRouter);
 app.use('/api/certs', requireAuth, certsRouter);
 app.use('/api/automations', requireAuth, automationsRouter);
+// agent 安装文件公开下发（须先于需登录的 edge 路由）
+app.use('/api/edge', edgePublicRouter);
 app.use('/api/edge', requireAuth, edgeRouter);
 app.use('/api/backups', requireAuth, backupsRouter);
 app.use('/api/firewall', requireAuth, firewallRouter);

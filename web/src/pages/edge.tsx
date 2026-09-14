@@ -117,7 +117,7 @@ export default function EdgePage() {
   };
 
   const agentCommand = created
-    ? `PANEL_URL=${location.origin}\nEDGE_TOKEN=${created.token}\nnode agent.js`
+    ? `curl -fsSL ${location.origin}/api/edge/agent.sh | PANEL_URL=${location.origin} EDGE_TOKEN=${created.token} sh`
     : '';
 
   return (
@@ -185,7 +185,26 @@ export default function EdgePage() {
       {nodes.map((n) =>
         containers[n.id] ? (
           <Card key={`c-${n.id}`} title={`${n.name} — ${t('远端容器')}`}>
-            <EdgeContainersTable rows={containers[n.id]} />
+            <EdgeContainersTable
+              rows={containers[n.id]}
+              nodeId={n.id}
+              onAction={async (nodeId, cid, action) => {
+                await post(`/api/edge/nodes/${nodeId}/docker/containers/${cid}/${action}`, {});
+                showToast(t('操作成功'), 'success');
+                const r = await get<EdgeContainer[]>(
+                  `/api/edge/nodes/${nodeId}/docker/containers/json?all=true`,
+                );
+                setContainers((prev) => ({ ...prev, [nodeId]: r || [] }));
+              }}
+              onDeleteRow={async (nodeId, cid) => {
+                await del(`/api/edge/nodes/${nodeId}/docker/containers/${cid}`);
+                showToast(t('操作成功'), 'success');
+                const r = await get<EdgeContainer[]>(
+                  `/api/edge/nodes/${nodeId}/docker/containers/json?all=true`,
+                );
+                setContainers((prev) => ({ ...prev, [nodeId]: r || [] }));
+              }}
+            />
           </Card>
         ) : null,
       )}
@@ -220,7 +239,17 @@ export default function EdgePage() {
     </div>
   );
 
-  function EdgeContainersTable({ rows }: { rows: EdgeContainer[] }) {
+  function EdgeContainersTable({
+    rows,
+    nodeId,
+    onAction,
+    onDeleteRow,
+  }: {
+    rows: EdgeContainer[];
+    nodeId: string;
+    onAction: (nodeId: string, cid: string, action: 'start' | 'stop' | 'restart') => Promise<void>;
+    onDeleteRow: (nodeId: string, cid: string) => Promise<void>;
+  }) {
     if (!rows.length) return <Empty title={t('远端暂无容器')} />;
     return (
       <table className="edge-table">
@@ -229,16 +258,44 @@ export default function EdgePage() {
             <th>{t('名称')}</th>
             <th>{t('镜像')}</th>
             <th>{t('运行状态')}</th>
+            <th>{t('操作')}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((c) => (
-            <tr key={c.Id}>
-              <td>{c.Names?.[0]?.replace(/^\//, '') || c.Id.slice(0, 12)}</td>
-              <td>{c.Image}</td>
-              <td>{c.Status || c.State}</td>
-            </tr>
-          ))}
+          {rows.map((c) => {
+            const cid = c.Id.slice(0, 12);
+            const running = c.State === 'running';
+            return (
+              <tr key={c.Id}>
+                <td>{c.Names?.[0]?.replace(/^\//, '') || cid}</td>
+                <td>{c.Image}</td>
+                <td>{c.Status || c.State}</td>
+                <td className="edge-table__actions">
+                  {running ? (
+                    <Button size="sm" onClick={() => onAction(nodeId, cid, 'stop')}>
+                      {t('停止')}
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => onAction(nodeId, cid, 'start')}>
+                      {t('启动')}
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={() => onAction(nodeId, cid, 'restart')}>
+                    {t('重启')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => {
+                      if (confirm(t('确定删除该容器？'))) onDeleteRow(nodeId, cid);
+                    }}
+                  >
+                    {t('删除')}
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     );
