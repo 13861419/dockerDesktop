@@ -598,6 +598,14 @@ Menu: **Scheduled Tasks** (`/tasks`)
 
 ---
 
+### 11.5 Step-wise Execution Output (added in 1.66.0)
+
+Run history now shows **per-node output** (like Coze workflows):
+
+- The Git deploy pipeline is split into Environment Check → Pull Code → Build Image / Deploy Service nodes;
+- Each node records its own output and duration; command tasks emit an "Execute Command" node;
+- Click "Node Output" in run history to open a vertical node flow: status dot (green ok / red fail / grey skip) + duration + output panel;
+- Legacy runs without step data fall back to plain text.
 ## 12. Files / Host Files / Host Terminal
 
 ### 12.1 Container Files (`/files`)

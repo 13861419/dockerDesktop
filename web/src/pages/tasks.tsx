@@ -240,6 +240,8 @@ export default function TasksPage() {
   const [logsPageSize] = useState(10);
   const [logsTotalPages, setLogsTotalPages] = useState(1);
   const [logsLoading, setLogsLoading] = useState(false);
+  // 步骤化输出弹窗（Coze 风格节点流，1.66.0）
+  const [stepsView, setStepsView] = useState<CronTaskLogItem | null>(null);
 
   /**
    * 拉取任务列表（同时取得 Compose 项目名）
@@ -1055,7 +1057,13 @@ export default function TasksPage() {
                         )}
                       </td>
                       <td className="tasks__logs-detail" title={item.detail || ''}>
-                        {item.detail || '-'}
+                        {item.steps && item.steps.length > 0 ? (
+                          <button className="tasks__steps-btn" onClick={() => setStepsView(item)}>
+                            {t('节点输出')} · {item.steps.length}
+                          </button>
+                        ) : (
+                          (item.detail || '-')
+                        )}
                       </td>
                       <td>
                         {item.status !== 0 && canManage && (
@@ -1109,6 +1117,34 @@ export default function TasksPage() {
               </div>
             </div>
           </>
+        )}
+      </Modal>
+
+      {/* 步骤化输出节点流（Coze 风格，1.66.0） */}
+      <Modal
+        open={!!stepsView}
+        title={`${stepsView?.name || ''} — ${t('节点输出')}`}
+        onClose={() => setStepsView(null)}
+        width={760}
+      >
+        {stepsView?.steps?.length ? (
+          <div className="tasks__steps-flow">
+            {stepsView.steps.map((st, idx) => (
+              <div key={idx} className={`tasks__step tasks__step--${st.status}`}>
+                <div className="tasks__step-head">
+                  <span className="tasks__step-dot" />
+                  <span className="tasks__step-name">{st.name}</span>
+                  <span className={`tasks__step-status tasks__step-status--${st.status}`}>
+                    {st.status === 'ok' ? t('成功') : st.status === 'fail' ? t('失败') : t('跳过')}
+                  </span>
+                  <span className="tasks__step-dur">{st.durationMs} ms</span>
+                </div>
+                {st.output && <pre className="tasks__step-output">{st.output}</pre>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty title={t('暂无步骤数据')} />
         )}
       </Modal>
 

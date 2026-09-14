@@ -899,6 +899,13 @@ function createTables(): void {
     // 列已存在则忽略
   }
 
+  // 迁移：任务执行历史步骤化输出（1.66.0，JSON 数组：每节点名称/状态/耗时/输出）
+  try {
+    d.exec('ALTER TABLE cron_task_logs ADD COLUMN steps TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
+
   // 迁移：为 ai_knowledge 表补充 owner 和 shared 列（多用户知识库）
   try {
     d.exec("ALTER TABLE ai_knowledge ADD COLUMN owner TEXT NOT NULL DEFAULT ''");

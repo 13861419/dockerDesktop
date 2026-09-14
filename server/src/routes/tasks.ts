@@ -31,6 +31,7 @@ import {
   nextRunTime,
   tryAcquireTaskRun,
   releaseTaskRun,
+  StepCollector,
   CronTaskRow,
   TaskRunResult,
 } from '../scheduler';
@@ -465,12 +466,13 @@ async function runCommandHandler(task: CronTaskRow, config: Record<string, any>)
   if (!command || typeof command !== 'string' || !command.trim()) {
     return { ok: false, detail: '缺少要执行的命令(command)' };
   }
+  const sc = new StepCollector();
   const cwd = typeof config.cwd === 'string' && config.cwd ? config.cwd : os.tmpdir();
   try {
-    const output = await runCmd(command, cwd);
-    return { ok: true, detail: output || '命令执行完成（无输出）' };
+    const output = await sc.run('执行命令', () => runCmd(command, cwd));
+    return { ok: true, detail: output || '命令执行完成（无输出）', steps: sc.steps };
   } catch (e: any) {
-    return { ok: false, detail: String(e?.message || e) };
+    return { ok: false, detail: String(e?.message || e), steps: sc.steps };
   }
 }
 
@@ -526,9 +528,10 @@ async function runHealthcheckHandler(task: CronTaskRow, config: Record<string, a
  * @returns 执行结果与日志
  */
 async function runGitPullBuildHandler(task: CronTaskRow, config: Record<string, any>): Promise<TaskRunResult> {
+  const sc = new StepCollector();
   const repoUrl = config.repoUrl;
   if (!repoUrl || typeof repoUrl !== 'string') {
-    return { ok: false, detail: '缺少 Git 仓库地址(repoUrl)' };
+    return { ok: false, detail: '缺少 Git 仓库地址(repoUrl)', steps: sc.steps };
   }
   let cred: GitCred | null = null;
   const encCred = (task as any).git_cred_encrypted;
@@ -540,66 +543,68 @@ async function runGitPullBuildHandler(task: CronTaskRow, config: Record<string, 
       cred = null;
     }
   }
-  const isGitAvailable = await gitAvailable();
-  if (!isGitAvailable) {
-    return { ok: false, detail: '本机未检测到 git 命令，无法执行 Git 部署' };
-  }
   const mode = config.mode === 'compose' ? 'compose' : 'image';
   const lines: string[] = [];
-  const repoDir =
-    mode === 'compose' && config.composeProject
-      ? path.join(COMPOSE_ROOT, config.composeProject)
-      : config.destDir || path.join(os.tmpdir(), 'docker-git-pipeline', task.id);
-
   try {
-    const gitOut = await gitCloneOrPull({ repoUrl, dir: repoDir, branch: config.branch, cred });
-    lines.push(gitOut);
-  } catch (e: any) {
-    return { ok: false, detail: String(e?.message || e) };
-  }
+    await sc.run('环境检查', async () => {
+      const isGitAvailable = await gitAvailable();
+      if (!isGitAvailable) throw new Error('本机未检测到 git 命令，无法执行 Git 部署');
+      return 'git 可用';
+    });
+    const repoDir =
+      mode === 'compose' && config.composeProject
+        ? path.join(COMPOSE_ROOT, config.composeProject)
+        : config.destDir || path.join(os.tmpdir(), 'docker-git-pipeline', task.id);
 
-  if (mode === 'image') {
-    const imageName = config.imageName;
-    if (!imageName || typeof imageName !== 'string') {
-      return { ok: false, detail: 'image 模式缺少镜像名(imageName)' };
-    }
-    try {
-      const docker = await getDockerClient();
-      const dockerfile = config.dockerfile || 'Dockerfile';
-      const buildArgs = config.buildArgs && typeof config.buildArgs === 'object' ? config.buildArgs : {};
-      const stream = await docker.buildImage(
-        { context: repoDir, src: ['.'] },
-        { t: imageName, dockerfile, buildargs: buildArgs, pull: true },
-      );
-      const logTail = await new Promise<string>((resolve, reject) => {
-        let acc = '';
-        stream.on('data', (d: Buffer) => { acc = (acc + d.toString()) || ''; if (acc.length > 200000) acc = acc.slice(-200000); });
-        stream.on('end', () => resolve(acc));
-        stream.on('error', reject);
-      });
-      if (/error|failed/i.test(logTail)) {
-        return { ok: false, detail: `镜像构建可能失败:\n${logTail.slice(-4000)}` };
+    await sc.run('拉取代码', async () => {
+      const gitOut = await gitCloneOrPull({ repoUrl, dir: repoDir, branch: config.branch, cred });
+      lines.push(gitOut);
+      return gitOut;
+    });
+
+    if (mode === 'image') {
+      const imageName = config.imageName;
+      if (!imageName || typeof imageName !== 'string') {
+        sc.skip('构建镜像', 'image 模式缺少镜像名(imageName)');
+        return { ok: false, detail: 'image 模式缺少镜像名(imageName)', steps: sc.steps };
       }
-      lines.push(`镜像构建完成: ${imageName}`);
-      lines.push(logTail.slice(-1500));
-    } catch (e: any) {
-      return { ok: false, detail: `镜像构建失败: ${e?.message || e}` };
+      await sc.run('构建镜像', async () => {
+        const docker = await getDockerClient();
+        const dockerfile = config.dockerfile || 'Dockerfile';
+        const buildArgs = config.buildArgs && typeof config.buildArgs === 'object' ? config.buildArgs : {};
+        const stream = await docker.buildImage(
+          { context: repoDir, src: ['.'] },
+          { t: imageName, dockerfile, buildargs: buildArgs, pull: true },
+        );
+        const logTail = await new Promise<string>((resolve, reject) => {
+          let acc = '';
+          stream.on('data', (d: Buffer) => { acc = (acc + d.toString()) || ''; if (acc.length > 200000) acc = acc.slice(-200000); });
+          stream.on('end', () => resolve(acc));
+          stream.on('error', reject);
+        });
+        if (/error|failed/i.test(logTail)) {
+          throw new Error('镜像构建可能失败:\n' + String(logTail.slice(-4000)));
+        }
+        const out = '镜像构建完成: ' + imageName + '\n' + logTail.slice(-1500);
+        lines.push(out);
+        return out;
+      });
+      return { ok: true, detail: lines.join('\n'), steps: sc.steps };
     }
-    return { ok: true, detail: lines.join('\n') };
-  }
 
-  const dir = path.join(COMPOSE_ROOT, config.composeProject || '');
-  const composeFile = findComposeFile(dir);
-  if (!composeFile) {
-    return { ok: false, detail: `compose 项目 ${config.composeProject} 不存在或缺少 compose 文件` };
-  }
-  try {
-    const buildFlag = config.alsoBuild ? ' --build' : '';
-    const output = await runCmd(`docker compose -f "${composeFile}" up -d${buildFlag}`, dir);
-    lines.push(output || 'compose up 完成');
-    return { ok: true, detail: lines.join('\n') };
+    const dir = path.join(COMPOSE_ROOT, config.composeProject || '');
+    const composeFile = findComposeFile(dir);
+    if (!composeFile) throw new Error('compose 项目 ' + config.composeProject + ' 不存在或缺少 compose 文件');
+    await sc.run('部署服务', async () => {
+      const buildFlag = config.alsoBuild ? ' --build' : '';
+      const output = await runCmd('docker compose -f "' + composeFile + '" up -d' + buildFlag, dir);
+      const out = output || 'compose up 完成';
+      lines.push(out);
+      return out;
+    });
+    return { ok: true, detail: lines.join('\n'), steps: sc.steps };
   } catch (e: any) {
-    return { ok: false, detail: String(e?.message || e) };
+    return { ok: false, detail: String(e?.message || e), steps: sc.steps };
   }
 }
 
@@ -735,9 +740,17 @@ const taskHandlers: Record<string, (task: CronTaskRow, config: Record<string, an
 function recordTaskRun(task: CronTaskRow, result: TaskRunResult): void {
   getDb()
     .prepare(
-      'INSERT INTO cron_task_logs (task_id, name, type, run_at, status, detail) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO cron_task_logs (task_id, name, type, run_at, status, detail, steps) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(task.id, task.name, task.type, Date.now(), result.ok ? 0 : 1, result.detail || null);
+    .run(
+      task.id,
+      task.name,
+      task.type,
+      Date.now(),
+      result.ok ? 0 : 1,
+      result.detail || null,
+      result.steps ? JSON.stringify(result.steps) : null,
+    );
 }
 
 // 模块加载时：注册全部 handler 与执行历史回调
@@ -1066,7 +1079,7 @@ router.get(
     const offset = (page - 1) * pageSize;
     const rows = d
       .prepare(
-        `SELECT id, task_id, name, type, run_at, status, detail
+        `SELECT id, task_id, name, type, run_at, status, detail, steps
          FROM cron_task_logs ${whereSql}
          ORDER BY id DESC
          LIMIT ? OFFSET ?`,
@@ -1079,6 +1092,7 @@ router.get(
       run_at: number;
       status: number;
       detail: string | null;
+      steps: string | null;
     }>;
     res.json({
       items: rows.map((r) => ({
@@ -1089,6 +1103,7 @@ router.get(
         runAt: r.run_at,
         status: r.status,
         detail: r.detail,
+        steps: r.steps ? (() => { try { return JSON.parse(r.steps); } catch { return null; } })() : null,
       })),
       total,
       page,

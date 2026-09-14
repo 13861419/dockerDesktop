@@ -31,6 +31,51 @@ export interface CronTaskRow {
 export interface TaskRunResult {
   ok: boolean;
   detail?: string;
+  /** 步骤化输出（1.66.0）：每个节点的名称 / 状态 / 耗时 / 输出，Coze 风格节点流 */
+  steps?: TaskStep[];
+}
+
+/** 单个执行节点（1.66.0） */
+export interface TaskStep {
+  name: string;
+  status: 'ok' | 'fail' | 'skip';
+  startedAt: number;
+  durationMs: number;
+  output: string;
+}
+
+/**
+ * 步骤采集器：把一次任务执行拆成具名节点，逐步计时并记录输出（1.66.0）
+ *
+ * 用法：const sc = new StepCollector();
+ *       await sc.run('拉取代码', () => gitPull(...));  // 抛错自动记失败并向上抛
+ */
+export class StepCollector {
+  readonly steps: TaskStep[] = [];
+
+  /** 执行一个节点：fn 返回输出文本；抛错记 fail 后向上抛出 */
+  async run(name: string, fn: () => Promise<string>): Promise<string> {
+    const startedAt = Date.now();
+    try {
+      const output = (await fn()) || '';
+      this.steps.push({ name, status: 'ok', startedAt, durationMs: Date.now() - startedAt, output: String(output) });
+      return output;
+    } catch (e: any) {
+      this.steps.push({
+        name,
+        status: 'fail',
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        output: String(e?.message || e),
+      });
+      throw e;
+    }
+  }
+
+  /** 记录一个跳过节点 */
+  skip(name: string, output: string): void {
+    this.steps.push({ name, status: 'skip', startedAt: Date.now(), durationMs: 0, output });
+  }
 }
 
 /** 任务类型执行函数签名 */

@@ -3,6 +3,19 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.66.0] - 2026-09-14
+
+### Added（新增）
+
+- **任务执行节点化（Coze 风格步骤输出）**：计划任务执行历史支持**每节点独立输出**——执行器新增 `StepCollector` 步骤采集器（自动计时 / 成败判定），`cron_task_logs` 新增 `steps` 列（JSON）
+- **Git 部署管线拆节点**：`git-pull-build` 拆为 环境检查 → 拉取代码 → 构建镜像 / 部署服务 四个节点，每个节点记录独立输出与耗时；命令任务输出「执行命令」节点
+- **节点流查看 UI**：执行历史「节点输出」弹窗——纵向节点流，状态圆点（成功绿 / 失败红 / 跳过灰）+ 节点名 + 耗时 + 可滚动输出面板
+- 执行历史接口 `GET /api/tasks/logs` 每行新增 `steps` 字段（旧记录无 steps 时 UI 退化为纯文本）
+
+### Test（测试）
+
+- 新增 API 契约测试 `api-features-166.test.ts`（2 条：成功命令产生 ok 节点并携带输出、失败命令产生 fail 节点）
+
 ## [1.65.0] - 2026-09-14
 
 ### Added（新增）

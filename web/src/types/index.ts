@@ -418,6 +418,8 @@ export interface CronTaskLogItem {
   runAt: number;
   status: number;
   detail: string | null;
+  /** 步骤化输出（1.66.0）：每节点名称/状态/耗时/输出 */
+  steps?: Array<{ name: string; status: 'ok' | 'fail' | 'skip'; startedAt: number; durationMs: number; output: string }> | null;
 }
 
 /** 任务执行历史分页响应 */
