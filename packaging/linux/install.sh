@@ -300,7 +300,8 @@ install_systemd() {
 Description=Docker Manager - Container Management Panel
 After=docker.service network-online.target
 Wants=network-online.target
-Requires=docker.service
+Wants=docker.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

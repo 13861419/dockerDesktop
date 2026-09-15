@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.74.2] - 2026-09-15
+
+### Fixed（修复）
+
+- **Linux 升级后服务不再需要手动重启**：systemd unit 中 `Requires=docker.service` 降级为 `Wants`（Docker 守护进程未运行时面板也能启动，由面板自身提示 Docker 不可达），并新增 `StartLimitIntervalSec=0` 避免升级期间频繁 stop/start 触发默认 5 次/10 秒限速后服务留在 failed 状态；deb postinst / rpm %post 重启前先 `systemctl reset-failed` 清理失败态，面板一键升级生成的脚本同样加入该清理
+
 ## [1.74.1] - 2026-09-15
 
 ### Fixed（修复）

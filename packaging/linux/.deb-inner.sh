@@ -39,7 +39,8 @@ cat > "$DEB_DIR/etc/systemd/system/docker-manager.service" <<'UNITEOF'
 Description=Docker Manager - Container Management Panel
 After=docker.service network-online.target
 Wants=network-online.target
-Requires=docker.service
+Wants=docker.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -75,6 +76,7 @@ chown -R dockerman:docker /opt/docker-manager
 chown -R dockerman:docker /var/lib/docker-manager
 systemctl daemon-reload
 systemctl enable docker-manager || true
+systemctl reset-failed docker-manager 2>/dev/null || true
 systemctl restart docker-manager || true
 POSTINST
 chmod 755 "$DEB_DIR/DEBIAN/postinst"

@@ -45,7 +45,8 @@ cat > "$STAGE_DIR/etc/systemd/system/docker-manager.service" <<'UNITEOF'
 Description=Docker Manager - Container Management Panel
 After=docker.service network-online.target
 Wants=network-online.target
-Requires=docker.service
+Wants=docker.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -107,6 +108,7 @@ usermod -aG docker dockerman || true
 %post
 systemctl daemon-reload
 systemctl enable docker-manager || true
+systemctl reset-failed docker-manager 2>/dev/null || true
 systemctl restart docker-manager || true
 
 %preun

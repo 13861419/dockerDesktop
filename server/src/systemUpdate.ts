@@ -291,6 +291,7 @@ function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath: string
     'sleep 2',
     'systemctl stop docker-manager 2>/dev/null || true',
     install,
+    'systemctl reset-failed docker-manager 2>/dev/null || true',
     'systemctl start docker-manager',
     '# 健康检查：30 秒内未就绪则提示手动回滚（记录结果供面板展示）',
     'if systemctl is-active --quiet docker-manager && curl -fsS -m 5 "http://127.0.0.1:${PORT:-9528}/api/health" >/dev/null 2>&1; then',
