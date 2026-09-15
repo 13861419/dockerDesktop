@@ -1067,6 +1067,47 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：CI 状态门禁（1.75.0）——webhook 触发部署前先检查 commit 的 CI 状态
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN ci_gate_enabled INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN ci_provider TEXT'); // github | gitea | gitlab（空=按仓库地址自动识别）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN ci_api_url TEXT'); // API 根地址（自建实例；空=官方云）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN ci_token_enc TEXT'); // CI API Token（加密，最小只读权限）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN ci_policy TEXT'); // fail-open（默认）| fail-closed
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN last_green_commit TEXT'); // 最后一次 CI 绿 + 部署成功的 commit
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_logs ADD COLUMN commit_sha TEXT'); // 绿快照：本次部署对应的 commit
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_logs ADD COLUMN ci_state TEXT'); // 绿快照：部署时 CI 汇总状态
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：数据库查询历史与收藏（1.48.0）
   try {
     d.exec(

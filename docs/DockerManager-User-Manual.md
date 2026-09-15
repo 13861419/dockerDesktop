@@ -1380,6 +1380,13 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 
 **HMAC signature verification (1.46.0)**: use the "Secret" button on a card to set a shared secret (matching the Secret in the Git repo's webhook settings). Once configured, webhook requests must carry a valid `X-Hub-Signature-256` (GitHub / Gitea compatible, HMAC-SHA256 with constant-time comparison) or the deploy is rejected with 401 and logged. Clearing the secret restores signature-free triggering.
 
+**CI status gate (1.75.0)**: enable the "CI status gate" when editing a deploy app — before a webhook deploy runs, the panel asynchronously checks the commit's aggregated CI status and **only ships when it's green; red builds are blocked with an alert**, making "tests pass before release" the default flow:
+
+- **Platforms**: GitHub Actions (check-runs aggregation with automatic fallback to commit status), Gitea / Forgejo (commit status API), GitLab (commit statuses aggregation, subgroups supported). Auto-detected from the repo URL; self-hosted instances can set a dedicated API base URL.
+- **Credentials**: private repos need a CI API token (encrypted at rest); use least-privilege read-only access (GitHub fine-grained PAT with Commit statuses / Check runs read).
+- **Failure policy**: when CI is unreachable or times out (~10 minutes), choose `fail-open` (deploy and push an alert, default) or `fail-closed` (block the deploy). Gate waiting does not occupy the deploy lock; manual "Deploy" always works (treated as an explicit admin override).
+- **Green snapshot & one-click rollback**: successful deploys record the commit SHA and CI state; the card shows "Last green build" with a one-click "Deploy this commit" rollback to the last commit that passed CI and deployed successfully. Deploy history keeps the full trail.
+
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 
 ---

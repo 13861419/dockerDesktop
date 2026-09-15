@@ -98,7 +98,7 @@ router.post('/:token', (req: Request, res: Response) => {
         return res.status(401).json({ error: 'Webhook 签名校验失败' });
       }
     }
-    const started = triggerDeployByToken(app.id, 'webhook');
+    const started = triggerDeployByToken(app.id, 'webhook', extractCommitSha(req.body));
     if (!started) {
       return res.status(409).json({ error: '该应用正在部署中' });
     }
@@ -107,5 +107,16 @@ router.post('/:token', (req: Request, res: Response) => {
 
   return res.status(404).json({ error: 'Webhook token 无效或已失效' });
 });
+
+/**
+ * 从 Git push Webhook 请求体提取 commit SHA（跨平台兼容）：
+ *  - GitHub / Gitea push: body.after（新 commit）
+ *  - GitLab push: body.checkout_sha
+ *  - 其他/无法识别：空串（CI 门禁跳过，按原逻辑直接部署）
+ */
+function extractCommitSha(body: any): string {
+  const sha = String(body?.after || body?.checkout_sha || '').trim();
+  return /^[0-9a-fA-F]{7,40}$/.test(sha) ? sha : '';
+}
 
 export default router;

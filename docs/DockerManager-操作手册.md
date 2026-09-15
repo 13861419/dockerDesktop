@@ -1400,6 +1400,13 @@ Git 应用源（1.55.0，仅管理员）：
 
 **HMAC 签名校验（1.46.0）**：卡片「签名密钥」按钮可为该应用配置共享密钥（与 Git 仓库 Webhook 设置中的 Secret 保持一致）。配置后，Webhook 请求必须携带有效的 `X-Hub-Signature-256` 签名（HMAC-SHA256，GitHub / Gitea 兼容）才会触发部署，防止 token 泄露后被伪造触发；校验失败返回 401 并写入操作日志。清除密钥即恢复免签模式。
 
+**CI 状态门禁（1.75.0）**：编辑应用可启用「CI 状态门禁」——Webhook 触发部署前，面板先异步查询该 commit 在外部 CI 的汇总状态，**绿灯才真正部署，红灯即拦截并推送告警**，把「测试通过才上线」变成默认流程：
+
+- **平台支持**：GitHub Actions（check-runs 聚合，无权限时自动回退 commit status）、Gitea / Forgejo（commit status API）、GitLab（commit statuses 聚合，支持子组）；按仓库地址自动识别，自建实例可单独填写 API 根地址
+- **凭据**：私有仓库需填写 CI API Token（加密落库）；建议最小只读权限（GitHub fine-grained PAT 勾选 Commit statuses / Check runs 读）
+- **失败策略**：CI 不可达或超时（约 10 分钟）时可选 `fail-open`（放行部署并推送告警，默认）或 `fail-closed`（拦截部署）；门禁等待期间不占用部署锁，手动「立即部署」始终可用（视为管理员显式放行）
+- **绿快照与一键回滚**：部署成功自动记录 commit SHA 与 CI 状态；卡片显示「最后绿构建」，点「部署此版本」即回滚到最后一次 CI 通过且部署成功的版本，部署历史同步留痕
+
 > 与 35.2 的区别：35.2 是「计划任务」里的通用 Git 部署任务（可配 Cron 与目标路径）；35.4 是面向单应用的工作台（状态面板 + 历史回看 + 独立 Webhook），二者共用同一套 clone/pull 与 compose 执行逻辑。
 
 ---

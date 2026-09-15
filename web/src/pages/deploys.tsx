@@ -35,6 +35,13 @@ interface DeployApp {
   webhook_token: string;
   /** 是否已配置 HMAC 签名密钥（1/0） */
   webhook_secret_set?: number;
+  /** CI 状态门禁（1.75.0） */
+  ci_gate_enabled?: number;
+  ci_provider?: string | null;
+  ci_api_url?: string | null;
+  ci_policy?: string | null;
+  ci_token_set?: number;
+  last_green_commit?: string | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -47,6 +54,8 @@ interface DeployLogItem {
   status: number;
   source: string;
   detail: string | null;
+  commit_sha?: string | null;
+  ci_state?: string | null;
 }
 
 /** 表单态 */
@@ -59,9 +68,29 @@ interface AppForm {
   credUser: string;
   credPass: string;
   alsoBuild: boolean;
+  ciGateEnabled: boolean;
+  ciProvider: string;
+  ciApiUrl: string;
+  ciToken: string;
+  ciTokenSet: boolean;
+  ciPolicy: string;
 }
 
-const EMPTY_FORM: AppForm = { name: '', repoUrl: '', branch: '', composePath: '', credUser: '', credPass: '', alsoBuild: true };
+const EMPTY_FORM: AppForm = {
+  name: '',
+  repoUrl: '',
+  branch: '',
+  composePath: '',
+  credUser: '',
+  credPass: '',
+  alsoBuild: true,
+  ciGateEnabled: false,
+  ciProvider: '',
+  ciApiUrl: '',
+  ciToken: '',
+  ciTokenSet: false,
+  ciPolicy: 'fail-open',
+};
 
 function App() {
   const { showToast } = useToast();
@@ -121,6 +150,12 @@ function App() {
       credUser: '',
       credPass: '',
       alsoBuild: app.also_build === 1,
+      ciGateEnabled: app.ci_gate_enabled === 1,
+      ciProvider: app.ci_provider || '',
+      ciApiUrl: app.ci_api_url || '',
+      ciToken: '',
+      ciTokenSet: app.ci_token_set === 1,
+      ciPolicy: app.ci_policy || 'fail-open',
     });
     setFormOpen(true);
   }
@@ -142,6 +177,11 @@ function App() {
           composePath: form.composePath,
           cred,
           alsoBuild: form.alsoBuild,
+          ciGateEnabled: form.ciGateEnabled,
+          ciProvider: form.ciProvider,
+          ciApiUrl: form.ciApiUrl,
+          ciPolicy: form.ciPolicy,
+          ...(form.ciToken.trim() ? { ciToken: form.ciToken.trim() } : {}),
         });
         showToast(t('应用已更新'));
       } else {
@@ -175,7 +215,7 @@ function App() {
         await new Promise((r) => setTimeout(r, 2000));
         const res = await get<{ items: DeployApp[] }>('/api/deploys');
         const fresh = res.items?.find((it) => it.id === app.id);
-        if (fresh && fresh.last_status !== 'deploying') {
+        if (fresh && fresh.last_status !== 'deploying' && fresh.last_status !== 'ci-checking') {
           showToast(
             fresh.last_status === 'ok' ? t('部署成功') : `${t('部署失败')}：${fresh.last_detail || ''}`.slice(0, 200),
             fresh.last_status === 'ok' ? undefined : 'error',
@@ -184,6 +224,20 @@ function App() {
         }
         if (i === 44) showToast(t('部署仍在进行中，可稍后刷新查看'), undefined);
       }
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('部署触发失败'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 部署最后一次绿构建（绿快照回滚） */
+  async function handleDeployGreen(app: DeployApp) {
+    setBusy(true);
+    try {
+      await post(`/api/deploys/${app.id}/deploy-green`, {});
+      showToast(t('绿快照部署已开始'));
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
       showToast(e?.message || t('部署触发失败'), 'error');
@@ -248,6 +302,8 @@ function App() {
 
   function statusBadge(app: DeployApp) {
     if (app.last_status === 'deploying') return <DeployBadge label={t('部署中')} tone="blue" />;
+    if (app.last_status === 'ci-checking') return <DeployBadge label={t('CI 检查中')} tone="blue" />;
+    if (app.last_status === 'ci-blocked') return <DeployBadge label={t('CI 拦截')} tone="red" />;
     if (app.last_status === 'ok') return <DeployBadge label={t('部署成功')} tone="green" />;
     if (app.last_status === 'fail') return <DeployBadge label={t('部署失败')} tone="red" />;
     return <DeployBadge label={t('未部署')} tone="slate" />;
@@ -293,7 +349,26 @@ function App() {
                 </div>
                 <div className="deploy-card__row deploy-card__row--muted">
                   {app.last_deploy_at ? new Date(app.last_deploy_at).toLocaleString() : t('尚未部署')}
+                  {app.ci_gate_enabled === 1 && (
+                    <span style={{ marginLeft: 8 }} title={t('Webhook 部署前先检查 commit 的 CI 状态，绿了才上线')}>
+                      🔒 CI
+                    </span>
+                  )}
                 </div>
+                {app.ci_gate_enabled === 1 && app.last_green_commit && (
+                  <div className="deploy-card__row deploy-card__row--muted">
+                    {t('最后绿构建')} <code>{app.last_green_commit.slice(0, 7)}</code>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!canManage || busy}
+                      onClick={() => handleDeployGreen(app)}
+                      title={t('回滚到最后一次 CI 通过并部署成功的版本')}
+                    >
+                      {t('部署此版本')}
+                    </Button>
+                  </div>
+                )}
                 <div className="deploy-card__actions">
                   <Button
                     variant="primary"
@@ -381,6 +456,48 @@ function App() {
           <input type="checkbox" checked={form.alsoBuild} onChange={(e) => setForm({ ...form, alsoBuild: e.target.checked })} />
           {t('部署时执行 docker compose up -d --build（需要构建时勾选）')}
         </label>
+
+        {form.id && (
+          <>
+            <div style={{ fontWeight: 600, margin: '16px 0 4px' }}>{t('CI 状态门禁')}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={form.ciGateEnabled} onChange={(e) => setForm({ ...form, ciGateEnabled: e.target.checked })} />
+              {t('Webhook 部署前先检查 commit 的 CI 状态，绿了才上线（手动部署不受限）')}
+            </label>
+            {form.ciGateEnabled && (
+              <>
+                <Field label={t('CI 平台')} hint={t('自动识别按仓库地址判断（github.com → GitHub，含 gitlab → GitLab，其余按 Gitea）')}>
+                  <select value={form.ciProvider} onChange={(e) => setForm({ ...form, ciProvider: e.target.value })} style={{ width: '100%' }}>
+                    <option value="">{t('自动识别')}</option>
+                    <option value="github">GitHub Actions</option>
+                    <option value="gitea">Gitea</option>
+                    <option value="gitlab">GitLab</option>
+                  </select>
+                </Field>
+                <Field label={t('API 根地址（可选）')} hint={t('自建 Gitea/GitLab 填写，如 https://git.example.com；留空用官方云')}>
+                  <Input value={form.ciApiUrl} onChange={(e) => setForm({ ...form, ciApiUrl: e.target.value })} placeholder="https://git.example.com" />
+                </Field>
+                <Field
+                  label={t('CI API Token（可选）')}
+                  hint={t('私有仓库需要；建议最小只读权限（GitHub fine-grained PAT 勾选 Commit statuses / Check runs 读）')}
+                >
+                  <Input
+                    type="password"
+                    value={form.ciToken}
+                    onChange={(e) => setForm({ ...form, ciToken: e.target.value })}
+                    placeholder={form.ciTokenSet ? t('已配置（输入新值可覆盖）') : t('留空保持不变')}
+                  />
+                </Field>
+                <Field label={t('查询失败策略')} hint={t('CI 不可达或超时（约 10 分钟）时的处置：放行并告警，或拦截部署')}>
+                  <select value={form.ciPolicy} onChange={(e) => setForm({ ...form, ciPolicy: e.target.value })} style={{ width: '100%' }}>
+                    <option value="fail-open">{t('fail-open：放行部署并推送告警')}</option>
+                    <option value="fail-closed">{t('fail-closed：拦截部署并告警')}</option>
+                  </select>
+                </Field>
+              </>
+            )}
+          </>
+        )}
       </Modal>
 
       {/* 部署历史弹窗 */}
@@ -399,7 +516,13 @@ function App() {
                     <td className="kv-val">
                       <div>
                         <DeployBadge label={h.status === 0 ? t('成功') : t('失败')} tone={h.status === 0 ? 'green' : 'red'} />
-                        <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{h.source === 'webhook' ? 'Webhook' : t('手动')}</span>
+                        <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{h.source === 'webhook' ? 'Webhook' : h.source === 'ci-gate' ? t('CI 门禁') : t('手动')}</span>
+                        {h.commit_sha && (
+                          <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>
+                            {h.commit_sha.slice(0, 7)}
+                            {h.ci_state === 'success' ? ' · CI ✓' : h.ci_state === 'blocked' ? ' · CI 拦截' : ''}
+                          </span>
+                        )}
                       </div>
                       <pre style={{ marginTop: 4, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120, overflow: 'auto' }}>
                         {h.detail || '-'}

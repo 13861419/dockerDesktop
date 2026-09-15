@@ -3,6 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.0] - 2026-09-15
+
+### Added（新增）
+
+- **CI 状态门禁（绿了才部署）**：Git 部署的 Webhook 触发路径上可启用 CI 门禁——收到 push 后先异步查询该 commit 的 CI 汇总状态（GitHub Actions check-runs / Gitea / GitLab），绿灯才真正部署，红灯即拦截并推送告警；查询不可达或超时（约 10 分钟）按策略 fail-open（放行+告警，默认）或 fail-closed（拦截）处置，绝不阻塞部署主路径；支持 GitHub / Gitea / GitLab 与自建实例（可配 API 根地址与最小只读 Token，凭据加密落库）
+- **绿快照与一键回滚**：部署成功自动记录 commit SHA 与 CI 状态，应用卡片显示「最后绿构建」并可一键回滚到最后一次 CI 通过且部署成功的版本；部署历史同步记录 commit 与 CI 状态
+
+### Fixed（修复）
+
+- Git 部署应用编辑接口 `PUT /api/deploys/:id` 此前仅有文档声明未实现，前端「编辑部署应用」静默失败——现已生效，并支持保存 CI 门禁配置
+
 ## [1.74.5] - 2026-09-15
 
 ### Changed（变更）

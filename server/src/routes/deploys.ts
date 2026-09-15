@@ -22,37 +22,136 @@ import { logOperation } from '../operationLog';
 import { gitCloneOrPull, gitAvailable, randomHex, type GitCred } from '../gitCli';
 import { reportTaskFailure } from '../alerting';
 import { COMPOSE_ROOT, findComposeFile, runCmd } from './composePaths';
+import { isCommitSha, parseCiTarget, pollCiGate } from '../ciGate';
 
 const router = Router();
 
 /** 单应用并发部署锁 */
 const deploying = new Set<number>();
 
+/** CI 门禁检查中的应用（不占部署锁；期间手动部署仍可执行） */
+const ciChecking = new Set<number>();
+
 /**
  * 触发一次部署（异步执行，立即返回）
+ * @param commitSha Webhook push 携带的 commit SHA（手动部署为空）；启用 CI 门禁时用于查询检查状态
  * @returns false = 应用不存在或已在部署中（拒绝重复触发）
  */
-export function triggerDeployByToken(appId: number, source: string): boolean {
-  if (deploying.has(appId)) {
+export function triggerDeployByToken(appId: number, source: string, commitSha = ''): boolean {
+  if (deploying.has(appId) || ciChecking.has(appId)) {
     return false;
   }
   const app = getDb().prepare('SELECT * FROM deploy_apps WHERE id = ?').get(appId) as any;
   if (!app) {
     return false;
   }
+  // CI 状态门禁（1.75.0）：仅作用于 webhook 触发且携带 commit 的部署；手动部署视为管理员显式放行
+  if (app.ci_gate_enabled && source === 'webhook' && commitSha && isCommitSha(commitSha)) {
+    if (ciChecking.has(app.id)) {
+      return false;
+    }
+    ciChecking.add(app.id);
+    getDb().prepare("UPDATE deploy_apps SET last_status = 'ci-checking', updated_at = ? WHERE id = ?").run(Date.now(), appId);
+    runCiGate(app, commitSha);
+    return true;
+  }
   deploying.add(appId);
   getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), appId);
   deployApp(app, source)
     .then((result) => {
-      recordDeploy(appId, app.name, result.ok, source, result.detail);
+      recordDeploy(appId, app.name, result.ok, source, result.detail, commitSha);
       if (!result.ok) {
         reportTaskFailure(`Git 部署【${app.name}】`, result.detail.slice(0, 500), source);
+      } else if (commitSha && isCommitSha(commitSha)) {
+        // 绿快照：部署成功即记录当前 commit（若启用门禁，实际是 CI 绿灯的 commit）
+        getDb().prepare('UPDATE deploy_apps SET last_green_commit = ? WHERE id = ?').run(commitSha, appId);
       }
     })
     .finally(() => {
       deploying.delete(appId);
     });
   return true;
+}
+
+/**
+ * CI 门禁异步等待：轮询外部 CI 直到出结论/超时，再按策略放行或拦截部署
+ */
+function runCiGate(app: any, commitSha: string): void {
+  const target = parseCiTarget(app.repo_url, app.ci_provider, app.ci_api_url);
+  const policy: 'fail-open' | 'fail-closed' = app.ci_policy === 'fail-closed' ? 'fail-closed' : 'fail-open';
+  const short = commitSha.slice(0, 7);
+  const proceed = (note: string) => {
+    getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), app.id);
+    deployApp(app, 'webhook', commitSha)
+      .then((result) => {
+        recordDeploy(app.id, app.name, result.ok, 'webhook', `${note}\n${result.detail}`, commitSha);
+        if (!result.ok) {
+          reportTaskFailure(`Git 部署【${app.name}】`, result.detail.slice(0, 500), 'webhook');
+        } else {
+          getDb().prepare('UPDATE deploy_apps SET last_green_commit = ? WHERE id = ?').run(commitSha, app.id);
+        }
+      })
+      .finally(() => {
+        ciChecking.delete(app.id);
+      });
+  };
+  const block = (detail: string) => {
+    recordGateBlocked(app.id, app.name, short, detail);
+    reportTaskFailure(`CI 门禁【${app.name}】`, detail.slice(0, 500), 'ci-gate');
+    ciChecking.delete(app.id);
+  };
+  if (!target) {
+    // 仓库地址无法解析为可查询的 CI —— 按策略降级，避免部署永久卡死
+    if (policy === 'fail-open') {
+      proceed(`[CI 门禁] 无法识别 CI 仓库（${app.repo_url}），fail-open 放行`);
+      return;
+    }
+    block(`[CI 门禁] 无法识别 CI 仓库（${app.repo_url}），fail-closed 拦截部署`);
+    return;
+  }
+  const token = app.ci_token_enc ? safeDecrypt(app.ci_token_enc) : '';
+  pollCiGate(target, commitSha, token)
+    .then(({ state }) => {
+      if (state === 'success') {
+        proceed(`[CI 门禁] commit ${short} CI 绿灯，放行部署`);
+      } else if (state === 'failure') {
+        block(`[CI 门禁] commit ${short} CI 检查未通过，已拦截部署`);
+      } else {
+        // timeout：按策略处置
+        if (policy === 'fail-open') {
+          proceed(`[CI 门禁] commit ${short} CI 检查超时（约 10 分钟），fail-open 放行部署`);
+        } else {
+          block(`[CI 门禁] commit ${short} CI 检查超时（约 10 分钟），fail-closed 拦截部署`);
+        }
+      }
+    })
+    .catch((err) => {
+      if (policy === 'fail-open') {
+        proceed(`[CI 门禁] CI 状态查询异常（${String(err?.message || err).slice(0, 200)}），fail-open 放行部署`);
+      } else {
+        block(`[CI 门禁] commit ${short} CI 状态查询异常，fail-closed 拦截部署`);
+      }
+      ciChecking.delete(app.id);
+    });
+}
+
+/** 解密 CI Token（容错） */
+function safeDecrypt(enc: string): string {
+  try {
+    return decryptSecret(enc) || '';
+  } catch {
+    return '';
+  }
+}
+
+/** 记录一次被门禁拦截的部署（写历史 + 置状态，不执行部署） */
+function recordGateBlocked(appId: number, appName: string, shortSha: string, detail: string): void {
+  getDb()
+    .prepare('INSERT INTO deploy_logs (app_id, app_name, run_at, status, source, detail, commit_sha, ci_state) VALUES (?, ?, ?, 1, ?, ?, ?, ?)')
+    .run(appId, appName, Date.now(), 'ci-gate', detail.slice(0, 100000), shortSha, 'blocked');
+  getDb()
+    .prepare("UPDATE deploy_apps SET last_status = 'ci-blocked', last_deploy_at = ?, last_detail = ?, updated_at = ? WHERE id = ?")
+    .run(Date.now(), detail.slice(0, 2000), Date.now(), appId);
 }
 
 interface DeployApp {
@@ -64,6 +163,11 @@ interface DeployApp {
   also_build: number;
   cred_encrypted: string | null;
   webhook_token: string;
+  ci_gate_enabled?: number;
+  ci_provider?: string | null;
+  ci_api_url?: string | null;
+  ci_policy?: string | null;
+  last_green_commit?: string | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -72,17 +176,18 @@ interface DeployApp {
 }
 
 /** 写部署历史 + 更新应用状态 */
-function recordDeploy(appId: number, appName: string, ok: boolean, source: string, detail: string): void {
+function recordDeploy(appId: number, appName: string, ok: boolean, source: string, detail: string, commitSha = ''): void {
+  const sha = commitSha && isCommitSha(commitSha) ? commitSha : null;
   getDb()
-    .prepare('INSERT INTO deploy_logs (app_id, app_name, run_at, status, source, detail) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(appId, appName, Date.now(), ok ? 0 : 1, source, detail.slice(0, 100000));
+    .prepare('INSERT INTO deploy_logs (app_id, app_name, run_at, status, source, detail, commit_sha, ci_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(appId, appName, Date.now(), ok ? 0 : 1, source, detail.slice(0, 100000), sha, ok ? 'success' : null);
   getDb()
     .prepare('UPDATE deploy_apps SET last_deploy_at = ?, last_status = ?, last_detail = ?, updated_at = ? WHERE id = ?')
     .run(Date.now(), ok ? 'ok' : 'fail', detail.slice(0, 2000), Date.now(), appId);
 }
 
-/** 执行一次部署（git 同步 + compose up） */
-async function deployApp(app: DeployApp, source: string): Promise<{ ok: boolean; detail: string }> {
+/** 执行一次部署（git 同步 + compose up；greenRef 非空时先 checkout 到该 commit——绿快照回滚） */
+async function deployApp(app: DeployApp, source: string, greenRef = ''): Promise<{ ok: boolean; detail: string }> {
   const lines: string[] = [];
   try {
     if (!(await gitAvailable())) {
@@ -101,6 +206,13 @@ async function deployApp(app: DeployApp, source: string): Promise<{ ok: boolean;
     }
     const gitOut = await gitCloneOrPull({ repoUrl: app.repo_url, dir: repoDir, branch: app.branch, cred });
     lines.push(gitOut);
+
+    // 1.5 绿快照回滚：检出指定 commit（hex 已严格校验）
+    if (greenRef) {
+      await runCmd(`git fetch --all`, repoDir);
+      const checkoutOut = await runCmd(`git checkout -f ${greenRef}`, repoDir);
+      lines.push(`[绿快照] 已检出 ${greenRef.slice(0, 7)}\n${checkoutOut || ''}`);
+    }
 
     // 2. 定位 compose 文件（显式指定优先，否则自动探测）
     const composeFile = app.compose_path ? path.join(repoDir, app.compose_path) : findComposeFile(repoDir);
@@ -123,7 +235,9 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
   const apps = getDb()
     .prepare(
       `SELECT id, name, repo_url, branch, compose_path, also_build, webhook_token, last_deploy_at, last_status, last_detail, created_at, updated_at,
-              CASE WHEN webhook_secret IS NOT NULL AND webhook_secret != '' THEN 1 ELSE 0 END AS webhook_secret_set
+              CASE WHEN webhook_secret IS NOT NULL AND webhook_secret != '' THEN 1 ELSE 0 END AS webhook_secret_set,
+              ci_gate_enabled, ci_provider, ci_api_url, ci_policy, last_green_commit,
+              CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set
        FROM deploy_apps ORDER BY id DESC`,
     )
     .all();
@@ -160,6 +274,80 @@ router.post('/', requireAuth, requireAdmin, (req: Request, res: Response) => {
   }
   logOperation(res.locals.username, '新建部署应用', 'compose', name, repoUrl, true);
   res.json({ ok: true });
+});
+
+/** PUT /:id — 更新部署应用（cred/ciToken 缺省保持原值；1.75.0 起含 CI 门禁配置） */
+router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const app = getDb().prepare('SELECT * FROM deploy_apps WHERE id = ?').get(id) as any;
+  if (!app) {
+    return res.status(404).json({ error: '应用不存在' });
+  }
+  const name = String(req.body?.name || app.name).trim();
+  const repoUrl = String(req.body?.repoUrl || app.repo_url).trim();
+  if (!name || !repoUrl) {
+    return res.status(400).json({ error: '缺少应用名或仓库地址' });
+  }
+  const branch = String(req.body?.branch ?? app.branch).trim();
+  const composePath = String(req.body?.composePath ?? app.compose_path).trim();
+  const alsoBuild = req.body?.alsoBuild === undefined ? app.also_build : req.body.alsoBuild ? 1 : 0;
+  let credEnc = app.cred_encrypted;
+  if (req.body?.cred && typeof req.body.cred === 'object') {
+    credEnc = encryptSecret(JSON.stringify(req.body.cred));
+  }
+  // CI 门禁配置：显式传布尔才变更；token 传非空覆盖、空串清除、缺省保持
+  const ciGateEnabled = req.body?.ciGateEnabled === undefined ? (app.ci_gate_enabled ? 1 : 0) : req.body.ciGateEnabled ? 1 : 0;
+  const ciProvider = String(req.body?.ciProvider ?? app.ci_provider ?? '').trim();
+  const ciApiUrl = String(req.body?.ciApiUrl ?? app.ci_api_url ?? '').trim();
+  const ciPolicy = req.body?.ciPolicy === 'fail-closed' ? 'fail-closed' : 'fail-open';
+  let ciTokenEnc = app.ci_token_enc;
+  if (req.body?.ciToken !== undefined) {
+    const t = String(req.body.ciToken).trim();
+    ciTokenEnc = t ? encryptSecret(t) : null;
+  }
+  try {
+    getDb()
+      .prepare(
+        `UPDATE deploy_apps SET name = ?, repo_url = ?, branch = ?, compose_path = ?, also_build = ?, cred_encrypted = ?,
+           ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, Date.now(), id);
+  } catch (e: any) {
+    return res.status(400).json({ error: String(e?.message || e) });
+  }
+  logOperation(res.locals.username, '更新部署应用', 'compose', name, repoUrl, true);
+  res.json({ ok: true });
+});
+
+/** POST /:id/deploy-green — 部署最后一次 CI 绿 + 部署成功的 commit（绿快照回滚，1.75.0） */
+router.post('/:id/deploy-green', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const app = getDb().prepare('SELECT * FROM deploy_apps WHERE id = ?').get(id) as any;
+  if (!app) {
+    return res.status(404).json({ error: '应用不存在' });
+  }
+  const sha = String(app.last_green_commit || '');
+  if (!isCommitSha(sha)) {
+    return res.status(400).json({ error: '尚无绿构建记录（需要启用 CI 门禁并成功部署过一次）' });
+  }
+  if (deploying.has(id)) {
+    return res.status(409).json({ error: '该应用正在部署中' });
+  }
+  deploying.add(id);
+  getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), id);
+  deployApp(app, 'manual', sha)
+    .then((result) => {
+      recordDeploy(id, app.name, result.ok, 'manual', result.detail, sha);
+      if (!result.ok) {
+        reportTaskFailure(`Git 部署【${app.name}】`, result.detail.slice(0, 500), 'manual');
+      }
+    })
+    .finally(() => {
+      deploying.delete(id);
+    });
+  logOperation(res.locals.username, '部署最后绿构建', 'compose', app.name, sha.slice(0, 7), true);
+  res.json({ ok: true, message: '绿快照部署已开始，结果见部署历史' });
 });
 
 /** DELETE /:id — 删除应用 */
