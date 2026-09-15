@@ -1,0 +1,36 @@
+Package: docker-manager
+Architecture: amd64
+Version: 1.75.0
+Priority: optional
+Section: admin
+Maintainer: Docker Manager Team
+Installed-Size: 100588
+Filename: pool/main/docker-manager_1.75.0_amd64.deb
+Size: 5107780
+MD5sum: ac6aef502ef5296251288f3131e06402
+SHA1: e93c54f76fd1449dd988d769b5e2ebcc897cb0b0
+SHA256: aaca2d0d9231f745808e671a801c20ac6af18d8c44ef76f8e1ae4eb3d50b0b37
+SHA512: 05bd0e1b020b12310a3e5d6ca4cd6db432185375a8040e4cd0338e9a0104d1c013833bf0d060df0eb5857397a5f38be0217a1a4618b96f1285594fd7e6c1d92f
+Description: Docker Manager - Container Management Panel
+ A web-based Docker management interface similar to 1Panel.
+ Supports container, image, volume, network, compose, and host file management.
+ Depends: docker-ce, nodejs (>= 22) | nodejs-22, adduser
+
+Package: docker-manager
+Architecture: arm64
+Version: 1.75.0
+Priority: optional
+Section: admin
+Maintainer: Docker Manager Team
+Installed-Size: 100584
+Filename: pool/main/docker-manager_1.75.0_arm64.deb
+Size: 5106896
+MD5sum: a7a1ca43fae713ef08c19e90934db4b9
+SHA1: ed5dd4c63dbd143860826569b74fbe260264bc05
+SHA256: c722c61a43bf1a74fa1b805f7096c844a751e985031c0b20ede2de13a22ef302
+SHA512: c9676a4794a8938648751ad6a2fdb4616acbc83b987132382f85f0a88c575794bd8d66f513b0d9715d6a59f90fd2ca8271445607b8e65ed79b8684d127e4717a
+Description: Docker Manager - Container Management Panel
+ A web-based Docker management interface similar to 1Panel.
+ Supports container, image, volume, network, compose, and host file management.
+ Depends: docker-ce, nodejs (>= 22) | nodejs-22, adduser
+
