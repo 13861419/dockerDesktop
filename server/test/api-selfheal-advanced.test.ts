@@ -15,6 +15,11 @@ import { execSync } from 'child_process';
 const BASE = process.env.API_BASE || 'http://localhost:9528';
 let adminToken = '';
 const sh = (cmd: string) => execSync(cmd, { shell: true });
+const isWin = process.platform === 'win32';
+/** 顺序执行 docker 命令：Windows cmd 的 & 为顺序执行，POSIX sh 的 & 为后台执行、须用 ; */
+const shSeq = (parts: string[]) => execSync(parts.join(isWin ? ' & ' : ' ; '), { shell: true }).toString();
+/** 容错清理：容器不存在等失败忽略 */
+const shTry = (cmd: string) => { try { execSync(cmd, { shell: true, stdio: 'pipe' }); } catch { /* ignore */ } };
 
 function req(method: string, path: string, body?: any): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
@@ -55,7 +60,7 @@ before(async () => {
 });
 
 test('selfheal：exited 规则触发 + 执行记录留档', async () => {
-  sh('docker rm -f e2e-ev 2>nul & docker run -d --name e2e-ev alpine sleep 60 & docker stop e2e-ev');
+  shSeq(['docker rm -f e2e-ev', 'docker run -d --name e2e-ev alpine sleep 60', 'docker stop e2e-ev']);
   const rule = await req('POST', '/api/selfheal/rules', {
     containerName: 'e2e-ev', watchType: 'exited', action: 'start', cooldownSec: 10, enabled: true,
   });
@@ -69,11 +74,11 @@ test('selfheal：exited 规则触发 + 执行记录留档', async () => {
   assert.equal(hit.success, true);
   assert.ok(hit.createdAt > Date.now() - 60000, 'createdAt 为刚刚');
   await req('DELETE', '/api/selfheal/rules/' + rule.data.rule.id);
-  sh('docker rm -f e2e-ev');
+  shTry('docker rm -f e2e-ev');
 });
 
 test('selfheal：标签匹配 + 触发次数上限', async () => {
-  sh('docker rm -f e2e-lbl 2>nul & docker run -d --name e2e-lbl --label e2e-selfheal=true alpine sleep 60 & docker stop e2e-lbl');
+  shSeq(['docker rm -f e2e-lbl', 'docker run -d --name e2e-lbl --label e2e-selfheal=true alpine sleep 60', 'docker stop e2e-lbl']);
   const rule = await req('POST', '/api/selfheal/rules', {
     containerName: '', matchLabel: 'e2e-selfheal=true', watchType: 'exited', action: 'start', cooldownSec: 10, maxTriggers: 1, triggerWindowSec: 60, enabled: true,
   });
@@ -85,11 +90,11 @@ test('selfheal：标签匹配 + 触发次数上限', async () => {
   const run2 = await req('POST', '/api/selfheal/run');
   assert.equal(run2.data.triggered, 0, '达到上限不再触发');
   await req('DELETE', '/api/selfheal/rules/' + ruleId);
-  sh('docker rm -f e2e-lbl');
+  shTry('docker rm -f e2e-lbl');
 });
 
 test('selfheal：监控范围 engineScope 全部引擎（1.42.0）', async () => {
-  sh('docker rm -f e2e-scope 2>nul & docker run -d --name e2e-scope alpine sleep 60 & docker stop e2e-scope');
+  shSeq(['docker rm -f e2e-scope', 'docker run -d --name e2e-scope alpine sleep 60', 'docker stop e2e-scope']);
   const bad = await req('POST', '/api/selfheal/rules', {
     containerName: 'e2e-scope', watchType: 'exited', action: 'start', cooldownSec: 10, engineScope: 'invalid', enabled: true,
   });
@@ -103,12 +108,12 @@ test('selfheal：监控范围 engineScope 全部引擎（1.42.0）', async () =>
   assert.equal(upd.status, 200);
   assert.equal(upd.data.rule.engineScope, 'local', 'engineScope 可更新为 local');
   await req('DELETE', '/api/selfheal/rules/' + rule.data.rule.id);
-  sh('docker rm -f e2e-scope');
+  shTry('docker rm -f e2e-scope');
 });
 
 test('selfheal：执行记录筛选 + CSV 导出（1.42.0）', async () => {
   // 先制造一条记录
-  sh('docker rm -f e2e-ev2 2>nul & docker run -d --name e2e-ev2 alpine sleep 60 & docker stop e2e-ev2');
+  shSeq(['docker rm -f e2e-ev2', 'docker run -d --name e2e-ev2 alpine sleep 60', 'docker stop e2e-ev2']);
   const rule = await req('POST', '/api/selfheal/rules', {
     containerName: 'e2e-ev2', watchType: 'exited', action: 'start', cooldownSec: 10, enabled: true,
   });
@@ -128,5 +133,5 @@ test('selfheal：执行记录筛选 + CSV 导出（1.42.0）', async () => {
   assert.ok(csv.includes('e2e-ev2'), 'CSV 含目标容器');
   assert.ok(csv.includes('ID,容器,监控类型'), 'CSV 表头存在');
   await req('DELETE', '/api/selfheal/rules/' + rule.data.rule.id);
-  sh('docker rm -f e2e-ev2');
+  shTry('docker rm -f e2e-ev2');
 });

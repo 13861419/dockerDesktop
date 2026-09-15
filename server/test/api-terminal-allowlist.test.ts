@@ -123,5 +123,9 @@ test('日志聚合：按 id 拉取名单外容器日志 → 403', async () => {
 
 test('清理测试用户与临时容器', async () => {
   await req('DELETE', '/api/system/users/e2ews');
-  sh('docker rm -f e2e-ws-denied jackos-e2e-ws 2>nul');
+  try {
+    execSync('docker rm -f e2e-ws-denied jackos-e2e-ws', { shell: true, stdio: 'pipe' });
+  } catch {
+    /* 容器可能已被并发用例清理，忽略 */
+  }
 });
