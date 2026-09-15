@@ -597,6 +597,35 @@ export default function Layout() {
 
   // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
   const admin = isAdmin();
+
+  // 更新提醒（1.74.0）：管理员每 10 分钟轮询一次，有新版本时显示顶部横幅（同一版本关闭后不再打扰）
+  const [latestVersion, setLatestVersion] = useState('');
+  const [bannerDismissed, setBannerDismissed] = useState('');
+  useEffect(() => {
+    setBannerDismissed(localStorage.getItem('dm-update-banner') || '');
+  }, []);
+  useEffect(() => {
+    if (!admin) return;
+    let stop = false;
+    const pull = () => {
+      get<{ hasUpdate?: boolean; latest?: string | null }>('/api/system/update/status')
+        .then((r) => {
+          if (stop) return;
+          setLatestVersion(r?.hasUpdate && r.latest ? r.latest : '');
+        })
+        .catch(() => {});
+    };
+    pull();
+    const timer = setInterval(pull, 10 * 60_000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
+  }, [admin]);
+  const dismissUpdateBanner = () => {
+    if (latestVersion) localStorage.setItem('dm-update-banner', latestVersion);
+    setBannerDismissed(latestVersion);
+  };
   const visibleNav = NAV_ITEMS.filter((item) => !item.adminOnly || admin);
 
   // 侧栏分组折叠状态：手风琴模式——同一时间只展开一个分组，展开新组时自动收起上一组
@@ -753,6 +782,25 @@ export default function Layout() {
           </button>
         </div>
       </aside>
+
+      {/* 更新提醒横幅（1.74.0）：管理员可见，同版本关闭后不再打扰 */}
+      {admin && latestVersion && latestVersion !== bannerDismissed && (
+        <div className="update-banner">
+          <span className="update-banner__text">
+            {t('有新版本可用')}：v{latestVersion}
+          </span>
+          <button className="update-banner__btn" onClick={() => navigate('/settings')}>
+            {t('前往更新')}
+          </button>
+          <button
+            className="update-banner__close"
+            title={t('关闭')}
+            onClick={dismissUpdateBanner}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 主内容区 */}
       <main className="main">

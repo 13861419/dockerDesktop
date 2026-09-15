@@ -447,12 +447,24 @@ router.get(
     const { label, hint } = installTypeLabel(type);
     // 最近一次一键更新结果（1.73.0：升级脚本写结果文件，面板读取展示）
     const lastResult = readLastUpdateResult();
+    // 最新版本信息（走 checkUpdate 的 10 分钟缓存，失败不阻塞状态返回）
+    let hasUpdate = false;
+    let latest: string | null = null;
+    try {
+      const info = await checkUpdate(current);
+      hasUpdate = info.hasUpdate;
+      latest = info.latest ?? null;
+    } catch {
+      // 检查失败时保持 hasUpdate=false
+    }
     res.json({
       current,
       installType: type,
       installLabel: label,
       hint,
       autoUpdate: type === 'windows-service' || type === 'deb' || type === 'rpm',
+      hasUpdate,
+      latest,
       lastResult,
     });
   }),

@@ -3531,4 +3531,7 @@ export const en: Record<string, string> = {
   "采样中，请稍候...": "Sampling, please wait...",
   "应用商店升级应用会丢数据吗？": "Will upgrading an app lose my data?",
   "不会（1.72.0）：Compose 套件升级前面板自动记录各服务镜像与配置快照，升级后健康检查窗口确认全部服务正常运行；若新版本起不来，自动回滚到升级前版本（旧镜像重新标记 + 配置还原 + 重建），数据卷全程不受影响。": "No (1.72.0): before upgrading a Compose suite the panel snapshots each service image and config; a health-check window confirms all services are running afterwards. If the new version fails to start, it automatically rolls back to the pre-upgrade version (retag old image + restore config + recreate). Data volumes are untouched throughout.",
+  "前往更新": "Update now",
+  "自动检查新版本": "Check for new versions automatically",
+  "开启后每 6 小时自动检查 GitHub Releases，发现新版本时通过通知渠道推送提醒（每版本仅提醒一次），设置 → 关于也会出现一键更新入口": "When enabled, GitHub Releases are checked every 6 hours; when a new version is found, a reminder is pushed via notification channels (once per version). A one-click update entry also appears in Settings → About.",
 };

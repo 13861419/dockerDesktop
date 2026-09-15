@@ -18,6 +18,7 @@ import { startEventMonitor } from './docker/events';
 import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
 import { startSelfHeal, stopSelfHeal } from './selfheal';
+import { startUpdateChecker, stopUpdateChecker } from './systemUpdate';
 import { startMetricsHistory } from './metricsHistory';
 import { startApprovalReminder } from './approvals';
 import { initStorage, closeDb } from './storage';
@@ -159,6 +160,15 @@ const server = app.listen(PORT, HOST, () => {
       console.error('容器自愈服务启动失败:', err);
     }
   }, 1600);
+
+  // 启动定期更新检查（每 6 小时，发现新版本经通知渠道提醒，1.74.0）
+  setTimeout(() => {
+    try {
+      startUpdateChecker();
+    } catch (err) {
+      console.error('更新检查服务启动失败:', err);
+    }
+  }, 1700);
 });
 
 // 挂载容器 WebSocket 终端
@@ -198,6 +208,7 @@ try {
       stopScheduler();
       stopAlerting();
       stopSelfHeal();
+      stopUpdateChecker();
       closeDb();
       process.exit(0);
     });

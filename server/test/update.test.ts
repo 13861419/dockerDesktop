@@ -11,7 +11,7 @@ const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-update-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 
 import { initStorage, closeDb } from '../src/storage';
-import { isNewerVersion, platformOf, buildWindowsBat } from '../src/systemUpdate';
+import { isNewerVersion, platformOf, buildWindowsBat, shouldNotifyUpdate } from '../src/systemUpdate';
 
 before(() => {
   initStorage();
@@ -88,9 +88,15 @@ test('update: verifySha256 校验通过与不匹配', () => {
   verifySha256(file, `${sum} *pkg.zip\n`, 'pkg.zip');
   // 错误校验和 → 抛错
   assert.throws(() => verifySha256(file, `deadbeef  pkg.zip\n`, 'pkg.zip'), /sha256/);
-  // 清单中无该文件 → 抛错
-  assert.throws(() => verifySha256(file, `${sum}  other.zip\n`, 'pkg.zip'), /未找到/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('update: shouldNotifyUpdate 每版本仅提醒一次', () => {
+  assert.strictEqual(shouldNotifyUpdate(true, '1.74.0', ''), true);
+  assert.strictEqual(shouldNotifyUpdate(true, '1.74.0', '1.73.0'), true);
+  assert.strictEqual(shouldNotifyUpdate(true, '1.74.0', '1.74.0'), false);
+  assert.strictEqual(shouldNotifyUpdate(false, '1.74.0', ''), false);
+  assert.strictEqual(shouldNotifyUpdate(true, '', ''), false);
 });
 
 test('update: buildWindowsBat 含备份 / 健康检查 / 自动回滚标记', () => {

@@ -57,6 +57,18 @@ describe('1.69.0 面板一键更新', () => {
     assert.ok(r.data.installLabel.length > 0);
   });
 
+  it('update/status 携带最新版本信息（hasUpdate / latest，1.74.0 更新提醒）', async () => {
+    const r = await req('GET', '/api/system/update/status');
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(typeof r.data.hasUpdate, 'boolean');
+    // 最新版较老面板非空；已是最新时为 null
+    if (r.data.hasUpdate) {
+      assert.match(r.data.latest, /^\d+\.\d+\.\d+$/);
+    } else {
+      assert.ok(r.data.latest === null || /^\d+\.\d+\.\d+$/.test(r.data.latest));
+    }
+  });
+
   it('update/apply 在手动安装下拒绝执行并给出指引', async () => {
     const s = await req('GET', '/api/system/update/status');
     if (s.data.autoUpdate) return; // 服务版环境下跳过拒绝路径

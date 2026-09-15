@@ -235,6 +235,14 @@ registerSettings([
     group: 'runtime',
   },
   {
+    key: 'update.checkEnabled',
+    label: '自动检查新版本',
+    hint: '开启后每 6 小时自动检查 GitHub Releases，发现新版本时通过通知渠道推送提醒（每版本仅提醒一次），设置 → 关于也会出现一键更新入口',
+    type: 'bool',
+    def: true,
+    group: 'runtime',
+  },
+  {
     key: 'logs.indexEnabled',
     label: '容器日志持久化索引',
     hint: '开启后后台每分钟增量采集各运行中容器的新日志行入库，容器重启或删除后仍可检索历史；默认关闭',

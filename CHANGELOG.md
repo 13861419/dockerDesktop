@@ -3,6 +3,21 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.74.0] - 2026-09-15
+
+### Added（新增）
+
+- **更新提醒**：每 6 小时自动检查 GitHub Releases（启动 30 秒后先查一次，走 10 分钟结果缓存），发现新版本时经通知渠道推送提醒（跟随告警渠道路由，每版本仅提醒一次）；管理员界面顶部出现可关闭的更新横幅（同版本不再打扰），点击直达设置 → 关于的一键更新
+- 新增系统参数 `update.checkEnabled`（默认开启）控制自动检查
+
+### Changed（变更）
+
+- `GET /api/system/update/status` 新增 `hasUpdate` / `latest` 字段（走缓存，检查失败不阻塞状态返回）
+
+### Test（测试）
+
+- 新增 `shouldNotifyUpdate` 单测与 status 最新版本字段契约
+
 ## [1.73.0] - 2026-09-15
 
 ### Added（新增）

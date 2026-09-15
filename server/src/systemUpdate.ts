@@ -15,7 +15,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { getSetting } from './settings';
+import { getSetting, setSetting } from './settings';
+import { pushToTargets } from './alerting';
 
 const REPO_API = 'https://api.github.com/repos/13861419/dockerDesktop/releases/latest';
 const CACHE_MS = 10 * 60 * 1000;
@@ -310,6 +311,67 @@ export interface ApplyResult {
   asset: string;
   script: string;
   message: string;
+}
+
+// ========== 定期更新检查与提醒（1.74.0） ==========
+
+/** 当前面板版本（安装目录 server/package.json） */
+export function currentPanelVersion(): string {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+    return pkg.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+/** 是否需要推送提醒：有新版本且该版本尚未提醒过 */
+export function shouldNotifyUpdate(hasUpdate: boolean, latest: string, notifiedVersion: string | null): boolean {
+  if (!hasUpdate || !latest) return false;
+  return notifiedVersion !== latest;
+}
+
+/** 执行一次更新检查；发现新版本且未提醒过时经通知渠道推送（推送成功才记版本，失败下轮重试） */
+export async function runUpdateCheckOnce(): Promise<{ notified: boolean; latest: string | null }> {
+  if (String(getSetting<boolean>('update.checkEnabled') ?? true) === 'false') {
+    return { notified: false, latest: null };
+  }
+  const current = currentPanelVersion();
+  const info = await checkUpdate(current);
+  if (!info.hasUpdate || !info.latest) return { notified: false, latest: info.latest ?? null };
+  const notifiedVersion = getSetting<string>('update.notifiedVersion') || '';
+  if (!shouldNotifyUpdate(true, info.latest, notifiedVersion)) return { notified: false, latest: info.latest };
+  const r = await pushToTargets(
+    'warn',
+    `DockerManager 有新版本可用：v${info.latest}（当前 v${current}），可在「设置 → 关于」一键更新，更新失败会自动回滚`,
+  );
+  if (r.ok) setSetting('update.notifiedVersion', info.latest);
+  return { notified: r.ok, latest: info.latest };
+}
+
+let checkTimer: NodeJS.Timeout | null = null;
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/** 启动定期更新检查（启动 30 秒后先查一次，之后每 6 小时） */
+export function startUpdateChecker(): void {
+  if (checkTimer) return;
+  const tick = async () => {
+    try {
+      await runUpdateCheckOnce();
+    } catch {
+      // 网络不通等失败忽略，等下一轮
+    }
+  };
+  setTimeout(tick, 30_000).unref();
+  checkTimer = setInterval(tick, UPDATE_CHECK_INTERVAL_MS);
+  checkTimer.unref();
+}
+
+export function stopUpdateChecker(): void {
+  if (checkTimer) {
+    clearInterval(checkTimer);
+    checkTimer = null;
+  }
 }
 
 /** 最近一次一键更新结果（由升级脚本写入，面板启动/状态查询时读取） */
