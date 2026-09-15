@@ -30,6 +30,8 @@ export interface UpdateCheckResult {
   releaseUrl: string;
   notes: string;
   publishedAt: number | null;
+  /** 本次检查使用的源（'' = 直连，否则为镜像前缀） */
+  source?: string;
   assets: Array<{ name: string; url: string; size: number; platform: string }>;
 }
 
@@ -62,44 +64,71 @@ export function platformOf(assetName: string): string {
 }
 
 /** 检查更新（带 10 分钟缓存） */
+/** 内置公共镜像池（用户配置的 update.githubMirror 优先，直连兜底） */
+const BUILTIN_MIRRORS = ['https://ghfast.top', 'https://gh-proxy.com'];
+
+/** 候选源列表：用户配置镜像 > 内置镜像池 > 直连（'' 表示直连） */
+export function mirrorCandidates(): string[] {
+  const list: string[] = [];
+  const configured = String(getSetting('update.githubMirror') || '').trim().replace(/\/+$/, '');
+  if (configured) list.push(configured);
+  list.push(...BUILTIN_MIRRORS);
+  list.push('');
+  return list;
+}
+
+/** 按候选源改写 GitHub URL（直连返回原始地址；镜像去掉协议前缀，与主流代理约定一致） */
+export function withSource(base: string, githubUrl: string): string {
+  if (!base) return githubUrl;
+  return githubUrl.replace(/^https:\/\//, base.replace(/\/+$/, '') + '/');
+}
+
 export async function checkUpdate(currentVersion: string): Promise<UpdateCheckResult> {
   if (cache && Date.now() - cache.ts < CACHE_MS) {
     return { ...cache.data, current: currentVersion, hasUpdate: isNewerVersion(currentVersion, cache.data.latest) };
   }
-  const mirror = String(getSetting('update.githubMirror') || '').trim();
-  const base = mirror ? `${mirror.replace(/\/+$/, '')}/api.github.com/repos/13861419/dockerDesktop/releases/latest` : REPO_API;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 10_000);
-  try {
-    const resp = await fetch(base, {
-      headers: { 'User-Agent': 'dockermanager', Accept: 'application/vnd.github+json' },
-      signal: ctrl.signal,
-    });
-    if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
-    const data = (await resp.json()) as any;
-    const latest = String(data.tag_name || '').replace(/^v/i, '');
-    const result: UpdateCheckResult = {
-      current: currentVersion,
-      latest,
-      hasUpdate: isNewerVersion(currentVersion, latest),
-      releaseUrl: String(data.html_url || ''),
-      notes: String(data.body || '').slice(0, 2000),
-      publishedAt: data.published_at ? new Date(data.published_at).getTime() : null,
-      assets: (data.assets || []).map((a: any) => {
-        const url = String(a.browser_download_url || '');
-        return {
-          name: String(a.name || ''),
-          url: mirror ? url.replace('https://github.com', mirror.replace(/\/+$/, '')) : url,
-          size: Number(a.size || 0),
-          platform: platformOf(a.name || ''),
-        };
-      }),
-    };
-    cache = { ts: Date.now(), data: result };
-    return result;
-  } finally {
-    clearTimeout(timer);
+  // 多源探测：按候选顺序尝试 API（每个源 6 秒超时），第一个成功者生效
+  let data: any = null;
+  let usedBase = '';
+  for (const base of mirrorCandidates()) {
+    const url = withSource(base, REPO_API);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'dockermanager', Accept: 'application/vnd.github+json' },
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (!resp.ok) continue;
+      data = await resp.json();
+      usedBase = base;
+      break;
+    } catch {
+      clearTimeout(timer);
+      continue;
+    }
   }
+  if (!data) throw new Error('无法连接 GitHub（已尝试直连与全部镜像源），请在系统参数中配置 update.githubMirror 镜像，或手动下载更新包');
+  const latest = String(data.tag_name || '').replace(/^v/i, '');
+  const result: UpdateCheckResult = {
+    current: currentVersion,
+    latest,
+    hasUpdate: isNewerVersion(currentVersion, latest),
+    releaseUrl: String(data.html_url || ''),
+    notes: String(data.body || '').slice(0, 2000),
+    publishedAt: data.published_at ? new Date(data.published_at).getTime() : null,
+    // assets 存原始 GitHub 地址，下载时按候选源依次改写（支持失败自动换源）
+    source: usedBase,
+    assets: (data.assets || []).map((a: any) => ({
+      name: String(a.name || ''),
+      url: String(a.browser_download_url || ''),
+      size: Number(a.size || 0),
+      platform: platformOf(a.name || ''),
+    })),
+  };
+  cache = { ts: Date.now(), data: result };
+  return result;
 }
 
 export function clearUpdateCache(): void {
@@ -163,7 +192,7 @@ export function pickAssetName(type: InstallType, latest: string): string | null 
   }
 }
 
-/** 下载文件（自动跟随重定向，最长 10 分钟，产物约 5-15MB） */
+/** 下载文件（自动跟随重定向，单源最长 10 分钟，产物约 5-15MB） */
 export async function downloadFile(url: string, dest: string): Promise<void> {
   const resp = await fetch(url, {
     headers: { 'User-Agent': 'dockermanager' },
@@ -175,6 +204,22 @@ export async function downloadFile(url: string, dest: string): Promise<void> {
   const buf = Buffer.from(await resp.arrayBuffer());
   fs.writeFileSync(tmp, buf);
   fs.renameSync(tmp, dest);
+}
+
+/** 下载失败自动换源：按候选源依次改写 GitHub URL 重试，全部失败才抛错 */
+export async function downloadWithFallback(rawGithubUrl: string, dest: string): Promise<string> {
+  const errors: string[] = [];
+  for (const base of mirrorCandidates()) {
+    try {
+      await downloadFile(withSource(base, rawGithubUrl), dest);
+      if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return base;
+      throw new Error('空文件');
+    } catch (e: any) {
+      errors.push(`${base || '直连'}: ${String(e?.message || e)}`);
+      try { fs.rmSync(dest + '.part', { force: true }); } catch { /* ignore */ }
+    }
+  }
+  throw new Error(`全部下载源均失败（直连与镜像），请手动下载后重试。详情：${errors.join('；')}`);
 }
 
 /** 用 sha256sums.txt 校验已下载的产物 */
@@ -263,11 +308,11 @@ export async function applyUpdate(currentVersion: string): Promise<ApplyResult> 
   const pkgPath = path.join(staging, asset.name);
   const sumsPath = path.join(staging, 'sha256sums.txt');
 
-  // 下载产物与校验文件（在进程退出前完成全部网络与校验工作）
-  await downloadFile(asset.url, pkgPath);
+  // 下载产物与校验文件（在进程退出前完成全部网络与校验工作；失败自动换源）
+  await downloadWithFallback(asset.url, pkgPath);
   const sumsAsset = info.assets.find((a) => a.platform === 'checksums');
   if (!sumsAsset) throw new Error('最新版本缺少 sha256sums.txt，无法校验完整性');
-  await downloadFile(sumsAsset.url, sumsPath);
+  await downloadWithFallback(sumsAsset.url, sumsPath);
   verifySha256(pkgPath, fs.readFileSync(sumsPath, 'utf8'), asset.name);
 
   // 生成并拉起升级脚本（detached，面板退出后仍继续执行）

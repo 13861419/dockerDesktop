@@ -1659,14 +1659,15 @@ Settings → "About" **auto-detects the install type** (Windows service / deb / 
 
 > - User data (database, certificates, backups) lives outside the install directory and is not touched by the upgrade;
 > - Docker images and manual installs still follow the command-line steps below;
-> - The upgrade uses the same mirror prefix as the update check (`update.githubMirror`).
+> - The upgrade uses the same mirror prefix as the update check (`update.githubMirror`);
+> - Multi-source failover: if the direct connection fails, built-in public mirrors are probed automatically, and downloads retry across all candidate sources before falling back to manual instructions.
 
 | Item | Description |
 | --- | --- |
 | Check | Compares the current version with the latest GitHub Releases version |
 | Packages | When a new version exists, lists all update package download links (labeled per platform: windows / macos / linux, with size) |
 | Release notes | Shows a summary of the latest release notes |
-| Mirror | The `update.githubMirror` system parameter sets a GitHub mirror prefix for both check and download (useful behind restricted networks) |
+| Mirror | The `update.githubMirror` system parameter sets a GitHub mirror prefix (used with priority when configured). When unset, the panel automatically probes direct connection / built-in public mirrors (6s timeout each) and the first responding source wins; one-click update downloads also fail over across sources automatically |
 | Cache | Check results are cached for 10 minutes |
 
 > How to update (pick by install method; the database is never touched):

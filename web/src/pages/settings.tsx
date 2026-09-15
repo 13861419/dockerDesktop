@@ -84,6 +84,8 @@ interface UpdateInfo {
   error?: string;
   notes?: string;
   releaseUrl?: string;
+  /** 本次检查使用的源（'' = 直连，否则为镜像域名） */
+  source?: string;
   assets?: Array<{ name: string; url: string; size: number; platform: string }>;
 }
 
@@ -1630,6 +1632,11 @@ export default function SettingsPage() {
               {updateInfo?.error && (
                 <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af' }}>
                   {updateInfo.error}
+                </span>
+              )}
+              {updateInfo && !updateInfo.error && (
+                <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af' }}>
+                  {t('源')}: {updateInfo.source ? updateInfo.source.replace(/^https?:\/\//, '') : t('直连')}
                 </span>
               )}
             </span>

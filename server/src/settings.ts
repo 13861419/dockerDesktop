@@ -229,7 +229,7 @@ registerSettings([
   {
     key: 'update.githubMirror',
     label: 'GitHub 镜像前缀',
-    hint: '系统更新检查与下载走该镜像（如 https://ghfast.top），留空直连 GitHub',
+    hint: '配置后更新检查与下载优先走该镜像；未配置时自动在 直连 / 内置公共镜像池 间探测，下载失败自动换源',
     type: 'string',
     def: '',
     group: 'runtime',

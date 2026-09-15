@@ -56,6 +56,25 @@ test('update: pickAssetName 按安装类型与架构选包', () => {
   assert.strictEqual(installTypeLabel('docker').hint.length > 0, true);
 });
 
+test('update: 多源候选与 URL 改写', () => {
+  const { mirrorCandidates, withSource } = require('../src/systemUpdate') as typeof import('../src/systemUpdate');
+  const { setSetting: setKv } = require('../src/settings') as typeof import('../src/settings');
+  // 未配置镜像：内置池 + 直连兜底
+  const bases = mirrorCandidates();
+  assert.strictEqual(bases[bases.length - 1], '', '直连应作为最后一个候选');
+  assert.ok(bases.length >= 2);
+  // 配置了镜像则排最前
+  setKv('update.githubMirror', 'https://my-mirror.example/');
+  const withCfg = mirrorCandidates();
+  assert.strictEqual(withCfg[0], 'https://my-mirror.example');
+  setKv('update.githubMirror', '');
+  // URL 改写：直连原样返回，镜像去协议加前缀
+  const raw = 'https://github.com/13861419/dockerDesktop/releases/download/v1.69.0/pkg.zip';
+  assert.strictEqual(withSource('', raw), raw);
+  assert.strictEqual(withSource('https://ghfast.top', raw), 'https://ghfast.top/github.com/13861419/dockerDesktop/releases/download/v1.69.0/pkg.zip');
+  assert.strictEqual(withSource('https://ghfast.top', 'https://api.github.com/repos/x/y'), 'https://ghfast.top/api.github.com/repos/x/y');
+});
+
 test('update: verifySha256 校验通过与不匹配', () => {
   const { verifySha256 } = require('../src/systemUpdate') as typeof import('../src/systemUpdate');
   const crypto = require('crypto');

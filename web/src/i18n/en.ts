@@ -5,6 +5,8 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  "直连": "Direct",
+  "源": "Source",
   "请参考文档手动下载并替换程序": "Download and replace the files manually following the docs",
   "请在宿主机执行 docker pull 新镜像并重建容器": "Run docker pull on the host and recreate the container",
   "支持一键更新：自动 rpm 安装并重启服务": "One-click update supported: installs via rpm and restarts the service",
