@@ -598,7 +598,7 @@ export default function Layout() {
   // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
   const admin = isAdmin();
 
-  // 更新提醒（1.74.0）：管理员每 10 分钟轮询一次，有新版本时显示顶部横幅（同一版本关闭后不再打扰）
+  // 更新提醒（1.74.0）：管理员每 10 分钟轮询一次，有新版本时在右下角浮层提示（同一版本关闭后不再打扰）
   const [latestVersion, setLatestVersion] = useState('');
   const [bannerDismissed, setBannerDismissed] = useState('');
   useEffect(() => {
@@ -783,22 +783,24 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* 更新提醒横幅（1.74.0）：管理员可见，同版本关闭后不再打扰 */}
+      {/* 更新提醒浮层（1.74.3）：管理员可见，悬浮于右下角，同版本关闭后不再打扰 */}
       {admin && latestVersion && latestVersion !== bannerDismissed && (
-        <div className="update-banner">
-          <span className="update-banner__text">
+        <div className="update-toast" role="status">
+          <span className="update-toast__text">
             {t('有新版本可用')}：v{latestVersion}
           </span>
-          <button className="update-banner__btn" onClick={() => navigate('/settings')}>
-            {t('前往更新')}
-          </button>
-          <button
-            className="update-banner__close"
-            title={t('关闭')}
-            onClick={dismissUpdateBanner}
-          >
-            ✕
-          </button>
+          <span className="update-toast__actions">
+            <button className="update-toast__btn" onClick={() => navigate('/settings')}>
+              {t('前往更新')}
+            </button>
+            <button
+              className="update-toast__close"
+              title={t('关闭')}
+              onClick={dismissUpdateBanner}
+            >
+              ✕
+            </button>
+          </span>
         </div>
       )}
 
