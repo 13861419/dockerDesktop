@@ -790,7 +790,7 @@ export default function Layout() {
             {t('有新版本可用')}：v{latestVersion}
           </span>
           <span className="update-toast__actions">
-            <button className="update-toast__btn" onClick={() => navigate('/settings')}>
+            <button className="update-toast__btn" onClick={() => navigate('/settings', { state: { anchor: 'update-check' } })}>
               {t('前往更新')}
             </button>
             <button

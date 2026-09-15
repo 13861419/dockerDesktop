@@ -173,6 +173,19 @@ export default function SettingsPage() {
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const [updateConfirm, setUpdateConfirm] = useState(false);
 
+  // 更新提醒浮层跳转（1.74.3）：定位「更新检查」行并高亮闪烁
+  useEffect(() => {
+    if ((location.state as { anchor?: string } | null)?.anchor !== 'update-check') return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById('update-check-row');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('settings-info__row--flash');
+      setTimeout(() => el.classList.remove('settings-info__row--flash'), 2600);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [location.state]);
+
   // 新增用户表单
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1617,7 +1630,7 @@ export default function SettingsPage() {
             <span>{t('服务端口')}</span>
             <span>{settings?.port ?? '-'}</span>
           </div>
-          <div className="settings-info__row">
+          <div className="settings-info__row" id="update-check-row">
             <span>{t('更新检查')}</span>
             <span>
               <Button

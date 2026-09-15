@@ -160,6 +160,17 @@
   font-family: var(--font-mono, Consolas, monospace);
 }
 
+/* 更新提醒浮层跳转定位（1.74.3）：高亮闪烁「更新检查」行 */
+.settings-info__row--flash {
+  animation: settings-row-flash 2.4s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes settings-row-flash {
+  0% { background: #fef3c7; box-shadow: 0 0 0 6px #fef3c7; }
+  100% { background: transparent; box-shadow: none; }
+}
+
 /* 外观 / 主题切换 */
 .settings-theme {
   display: flex;
