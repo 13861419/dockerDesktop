@@ -108,4 +108,6 @@ test('update: buildWindowsBat 含备份 / 健康检查 / 自动回滚标记', ()
   assert.ok(bat.includes('[FAIL]'), '含失败回滚标记');
   assert.ok(bat.includes('update-result.txt'), '写入结果留痕文件');
   assert.ok(bat.includes('9528'), '健康检查地址应包含面板端口');
+  assert.ok(!bat.includes('""'), 'nssm 路径不得双重引号（1.74.1 回归）');
+  assert.ok(bat.includes('/XD'), '备份应排除 data/logs');
 });

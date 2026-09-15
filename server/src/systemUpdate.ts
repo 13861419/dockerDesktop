@@ -242,9 +242,9 @@ function stagingDir(): string {
   return dir;
 }
 
-/** 生成 Windows 服务版升级脚本内容（1.73.0 A/B 备份 + 健康检查 + 失败自动回滚） */
+/** 生成 Windows 服务版升级脚本内容（1.73.0 A/B 备份 + 健康检查 + 失败自动回滚；1.74.1 修复引号与锁定文件问题） */
 export function buildWindowsBat(installDir: string, zipPath: string, staging: string, port: number): string {
-  const nssm = `"${path.join(installDir, 'nssm.exe')}"`;
+  const nssm = path.join(installDir, 'nssm.exe');
   const prev = `${installDir}_prev`;
   const extract = path.join(staging, 'extract', 'DockerManager');
   const resultFile = path.join(stagingDir(), 'update-result.txt');
@@ -255,16 +255,16 @@ export function buildWindowsBat(installDir: string, zipPath: string, staging: st
     'timeout /t 2 /nobreak >nul',
     `"${nssm}" stop DockerManager`,
     'timeout /t 3 /nobreak >nul',
-    // A/B 备份：旧版本完整复制到 <install>_prev（数据目录与安装目录分离，仅备份程序文件）
-    `robocopy "${installDir}" "${prev}" /E /NFL /NDL /NJH /NJS /NP`,
+    // A/B 备份：程序文件复制到 <install>_prev（data / logs 为运行期数据，升级不动、无需备份）
+    `robocopy "${installDir}" "${prev}" /E /XD "${path.join(installDir, 'data')}" "${path.join(installDir, 'logs')}" /R:2 /W:3 /NFL /NDL /NJH /NJS /NP`,
     `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${path.join(staging, 'extract')}' -Force"`,
     // /MIR 使安装目录与新版 zip 完全一致（含删除被新版移除的文件）；旧版本已在 _prev 备份
-    `robocopy "${extract}" "${installDir}" /MIR /NFL /NDL /NJH /NJS /NP`,
+    `robocopy "${extract}" "${installDir}" /MIR /XD "${path.join(installDir, 'data')}" "${path.join(installDir, 'logs')}" /R:2 /W:3 /NFL /NDL /NJH /NJS /NP`,
     `"${nssm}" start DockerManager`,
     // 健康检查：20 秒内 /api/health 未就绪则回滚到备份版本
-    `powershell -NoProfile -Command "$ok=$false; for($i=0;$i -lt 20;$i++){Start-Sleep -Seconds 1; try{Invoke-WebRequest -UseBasicParsing '${healthUrl}' | Out-Null; $ok=$true; break}catch{}}; if(-not $ok){ & '${path.join(installDir, 'nssm.exe')}' stop DockerManager; Start-Sleep 2; robocopy '${prev}' '${installDir}' /MIR /NFL /NDL /NJH /NJS /NP; & '${path.join(installDir, 'nssm.exe')}' start DockerManager; exit 2 } else { exit 0 }"`,
-    `if %errorlevel% neq 0 (echo [FAIL] %date% %time% 升级失败，已自动回滚到上一版本 >> "${path.join(stagingDir(), 'update-result.txt')}" & exit 1)`,
-    `echo [SUCCESS] %date% %time% 升级成功 >> "${path.join(stagingDir(), 'update-result.txt')}"`,
+    `powershell -NoProfile -Command "$ok=$false; for($i=0;$i -lt 20;$i++){Start-Sleep -Seconds 1; try{Invoke-WebRequest -UseBasicParsing '${healthUrl}' | Out-Null; $ok=$true; break}catch{}}; if(-not $ok){ & '${nssm}' stop DockerManager; Start-Sleep 2; robocopy '${prev}' '${installDir}' /MIR /XD '${path.join(installDir, 'data')}' '${path.join(installDir, 'logs')}' /R:2 /W:3 /NFL /NDL /NJH /NJS /NP; & '${nssm}' start DockerManager; exit 2 } else { exit 0 }"`,
+    `if %errorlevel% neq 0 (echo [FAIL] %date% %time% 升级失败，已自动回滚到上一版本 >> "${resultFile}" & exit 1)`,
+    `echo [SUCCESS] %date% %time% 升级成功 >> "${resultFile}"`,
     '',
   ].join('\r\n');
 }
