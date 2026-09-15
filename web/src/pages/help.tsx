@@ -135,6 +135,10 @@ const FAQ_ITEMS: FaqItem[] = [
     q: t('如何用 Git 仓库自动部署 compose 应用？'),
     a: t('在侧栏「Git 部署」页新建部署应用：填入仓库地址与分支（私有仓库可按应用保存加密凭据），保存后点「立即部署」即自动 clone/pull 并执行 docker compose up -d --build。把仓库 push 事件指向卡片上的 Webhook 地址即可实现推送后自动部署；Token 泄露可一键重置，部署历史保留完整 git 与 compose 输出便于排障。'),
   },
+  {
+    q: t('宿主机终端是 root 吗？sudo 提示 no new privileges 怎么办？'),
+    a: t('Linux 上面板服务默认以低权限 dockerman 用户运行（systemd 禁止 sudo 提权为安全设计）。宿主机终端会自动经 Docker 助手容器提权进入宿主机 root shell；本地没有助手镜像时，面板会自动后台拉取 alpine（1.74.5，约数秒到数十秒）并自动进入 root；离线或拉取失败时回退为普通用户并给出提示，也可手动 docker pull alpine 后重连，或将服务改为 root 运行。'),
+  },
 ];
 
 /** 功能速查表：页面路径 -> 用途 */
@@ -159,7 +163,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/tasks', name: t('计划任务'), desc: t('定时备份/清理/跨引擎清理/构建/Webhook 触发，执行历史按保留天数自动清理（1.43.0）；失败记录一键重跑（1.49.0）；备份成功自动上传云端目标（1.50.0）') },
   { path: '/files', name: t('文件管理'), desc: t('容器文件浏览与传输') },
   { path: '/hostfiles', name: t('宿主机文件'), desc: t('宿主机文件管理') },
-  { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell') },
+  { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell；Linux 低权限服务下自动经 Docker 助手容器提权到 root，缺助手镜像时自动拉取 alpine（1.74.5）') },
   { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；跨引擎批量清理（容器/镜像/卷/网络，按年龄过滤，支持预览，1.41.0），可建跨引擎清理计划任务（1.42.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
   { path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01 / 通配符 DNS-01）；证书文件可直接用于站点反代') },

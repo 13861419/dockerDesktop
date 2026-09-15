@@ -108,7 +108,7 @@ export function resolveHostRootChannelCached(): HostRootChannel {
 }
 
 /**
- * 助手镜像缺失时自动拉取首选镜像（1.74.4，默认 alpine，约数 MB）。
+ * 助手镜像缺失时自动拉取首选镜像（1.74.5，默认 alpine，约数 MB）。
  * 成功返回镜像名并清空通道缓存（下次解析即可用 docker 通道）；失败/超时（120s）返回 null。
  */
 export function ensureHelperImage(dockerBin: string): Promise<string | null> {
