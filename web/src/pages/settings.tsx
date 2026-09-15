@@ -96,6 +96,8 @@ interface UpdateStatusInfo {
   installLabel: string;
   hint: string;
   autoUpdate: boolean;
+  /** 最近一次一键更新结果（1.73.0） */
+  lastResult?: { status: 'success' | 'rollback' | 'rollback-hint' | 'unknown'; at: string; detail: string } | null;
 }
 
 interface CurrentUserInfo {
@@ -1591,6 +1593,23 @@ export default function SettingsPage() {
               <span>
                 {t(updateStatus.installLabel)}
                 <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af' }}>{t(updateStatus.hint)}</span>
+              </span>
+            </div>
+          )}
+          {updateStatus?.lastResult && (
+            <div className="settings-info__row">
+              <span>{t('上次更新结果')}</span>
+              <span>
+                {updateStatus.lastResult.status === 'success' ? (
+                  <span style={{ color: '#16a34a' }}>{t('升级成功')}</span>
+                ) : updateStatus.lastResult.status === 'rollback' ? (
+                  <span style={{ color: '#dc2626' }}>{t('升级失败已自动回滚')}</span>
+                ) : (
+                  <span style={{ color: '#f59e0b' }}>{t('服务未就绪，需手动回滚')}</span>
+                )}
+                <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af' }}>
+                  {updateStatus.lastResult.at} · {t(updateStatus.lastResult.detail)}
+                </span>
               </span>
             </div>
           )}

@@ -1658,6 +1658,8 @@ Settings → "About" **auto-detects the install type** (Windows service / deb / 
 2. It then runs the upgrade script automatically: stop the service → replace files (Windows) / install the new package (deb, rpm) → start the service;
 3. The panel goes offline briefly (~1 minute); the page polls every 5 seconds and shows the new version once the service is back.
 
+**Automatic rollback on failure (1.73.0, Windows service)**: before touching anything, the upgrade script fully backs up the current install directory to a `_prev` folder; the new version is applied with a `/MIR` mirror sync, followed by a 20-second health-check window (polling `/api/health`). If the service does not come up, the script automatically stops the service → restores the install directory from `_prev` → restarts the old version, so a failed update self-heals. The script also writes its outcome to `update-result.txt`; Settings → "About" shows the **last update result** (success / rolled back / manual rollback required). deb and rpm upgrades get a 30-second health check too, with rollback guidance recorded in the result file when the service does not come up.
+
 > - User data (database, certificates, backups) lives outside the install directory and is not touched by the upgrade;
 > - Docker images and manual installs still follow the command-line steps below;
 > - The upgrade uses the same mirror prefix as the update check (`update.githubMirror`);

@@ -241,37 +241,63 @@ function stagingDir(): string {
   return dir;
 }
 
-/** 生成 Windows 服务版升级脚本：停服务 → 解压覆盖 → 起服务 */
-function writeWindowsUpdater(staging: string, zipPath: string, installDir: string): string {
-  const bat = [
+/** 生成 Windows 服务版升级脚本内容（1.73.0 A/B 备份 + 健康检查 + 失败自动回滚） */
+export function buildWindowsBat(installDir: string, zipPath: string, staging: string, port: number): string {
+  const nssm = `"${path.join(installDir, 'nssm.exe')}"`;
+  const prev = `${installDir}_prev`;
+  const extract = path.join(staging, 'extract', 'DockerManager');
+  const resultFile = path.join(stagingDir(), 'update-result.txt');
+  const healthUrl = `http://127.0.0.1:${port}/api/health`;
+  return [
     '@echo off',
-    'rem DockerManager 一键升级脚本（由面板生成）',
+    'rem DockerManager 一键升级脚本（由面板生成，1.73.0 起带自动回滚）',
     'timeout /t 2 /nobreak >nul',
-    `"${path.join(installDir, 'nssm.exe')}" stop DockerManager`,
+    `"${nssm}" stop DockerManager`,
     'timeout /t 3 /nobreak >nul',
+    // A/B 备份：旧版本完整复制到 <install>_prev（数据目录与安装目录分离，仅备份程序文件）
+    `robocopy "${installDir}" "${prev}" /E /NFL /NDL /NJH /NJS /NP`,
     `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${path.join(staging, 'extract')}' -Force"`,
-    `robocopy "${path.join(staging, 'extract', 'DockerManager')}" "${installDir}" /E /NFL /NDL /NJH /NJS /NP`,
-    `"${path.join(installDir, 'nssm.exe')}" start DockerManager`,
+    // /MIR 使安装目录与新版 zip 完全一致（含删除被新版移除的文件）；旧版本已在 _prev 备份
+    `robocopy "${extract}" "${installDir}" /MIR /NFL /NDL /NJH /NJS /NP`,
+    `"${nssm}" start DockerManager`,
+    // 健康检查：20 秒内 /api/health 未就绪则回滚到备份版本
+    `powershell -NoProfile -Command "$ok=$false; for($i=0;$i -lt 20;$i++){Start-Sleep -Seconds 1; try{Invoke-WebRequest -UseBasicParsing '${healthUrl}' | Out-Null; $ok=$true; break}catch{}}; if(-not $ok){ & '${path.join(installDir, 'nssm.exe')}' stop DockerManager; Start-Sleep 2; robocopy '${prev}' '${installDir}' /MIR /NFL /NDL /NJH /NJS /NP; & '${path.join(installDir, 'nssm.exe')}' start DockerManager; exit 2 } else { exit 0 }"`,
+    `if %errorlevel% neq 0 (echo [FAIL] %date% %time% 升级失败，已自动回滚到上一版本 >> "${path.join(stagingDir(), 'update-result.txt')}" & exit 1)`,
+    `echo [SUCCESS] %date% %time% 升级成功 >> "${path.join(stagingDir(), 'update-result.txt')}"`,
     '',
   ].join('\r\n');
+}
+
+/** 生成 Windows 服务版升级脚本：停服务 → 备份旧版 → 覆盖 → 起服务 → 健康检查 → 失败自动回滚 */
+function writeWindowsUpdater(staging: string, zipPath: string, installDir: string): string {
+  const port = Number(process.env.PORT) || 9528;
+  const bat = buildWindowsBat(installDir, zipPath, staging, port);
   const file = path.join(staging, 'update.bat');
   fs.writeFileSync(file, bat, 'utf8');
   return file;
 }
 
-/** 生成 deb/rpm 升级脚本：停服务 → 安装包 → 起服务 */
+/** 生成 deb/rpm 升级脚本：停服务 → 安装包 → 起服务 → 健康检查（失败给出回滚指引） */
 function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath: string): string {
   const install =
     type === 'deb'
       ? `dpkg -i "${pkgPath}" || (apt-get install -y -f && dpkg -i "${pkgPath}")`
       : `rpm -Uvh --replacepkgs "${pkgPath}"`;
+  const resultFile = path.join(stagingDir(), 'update-result.txt');
   const sh = [
     '#!/bin/bash',
-    '# DockerManager 一键升级脚本（由面板生成）',
+    '# DockerManager 一键升级脚本（由面板生成，1.73.0 起带健康检查）',
     'sleep 2',
     'systemctl stop docker-manager 2>/dev/null || true',
     install,
     'systemctl start docker-manager',
+    '# 健康检查：30 秒内未就绪则提示手动回滚（记录结果供面板展示）',
+    'if systemctl is-active --quiet docker-manager && curl -fsS -m 5 "http://127.0.0.1:${PORT:-9528}/api/health" >/dev/null 2>&1; then',
+    `  echo "[SUCCESS] \$(date '+%F %T') 升级成功" >> "${path.join(stagingDir(), 'update-result.txt')}"`,
+    'else',
+    '  echo "[ROLLBACK-HINT] $(date \'+%F %T\') 升级后服务未就绪，请查看 journalctl -u docker-manager 并用上一版本安装包手动回滚" >> ' + `"${path.join(stagingDir(), 'update-result.txt')}"`,
+    '  exit 1',
+    'fi',
     '',
   ].join('\n');
   const file = path.join(staging, 'update.sh');
@@ -284,6 +310,35 @@ export interface ApplyResult {
   asset: string;
   script: string;
   message: string;
+}
+
+/** 最近一次一键更新结果（由升级脚本写入，面板启动/状态查询时读取） */
+export interface LastUpdateResult {
+  /** success / rollback / rollback-hint */
+  status: 'success' | 'rollback' | 'rollback-hint' | 'unknown';
+  at: string;
+  detail: string;
+}
+
+/** 读取最近一次一键更新结果（无记录返回 null） */
+export function readLastUpdateResult(): LastUpdateResult | null {
+  try {
+    const file = path.join(stagingDir(), 'update-result.txt');
+    if (!fs.existsSync(file)) return null;
+    const lines = fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const last = lines[lines.length - 1];
+    if (!last) return null;
+    const m = last.match(/^\[(SUCCESS|FAIL|ROLLBACK-HINT)\]\s*(.+?)\s+(.*)$/);
+    if (!m) return { status: 'unknown', at: '', detail: last };
+    const status = m[1] === 'SUCCESS' ? 'success' : m[1] === 'FAIL' ? 'rollback' : 'rollback-hint';
+    return { status, at: m[2], detail: m[3] };
+  } catch {
+    return null;
+  }
 }
 
 /**

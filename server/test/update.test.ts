@@ -11,7 +11,7 @@ const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-update-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 
 import { initStorage, closeDb } from '../src/storage';
-import { isNewerVersion, platformOf } from '../src/systemUpdate';
+import { isNewerVersion, platformOf, buildWindowsBat } from '../src/systemUpdate';
 
 before(() => {
   initStorage();
@@ -91,4 +91,15 @@ test('update: verifySha256 校验通过与不匹配', () => {
   // 清单中无该文件 → 抛错
   assert.throws(() => verifySha256(file, `${sum}  other.zip\n`, 'pkg.zip'), /未找到/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('update: buildWindowsBat 含备份 / 健康检查 / 自动回滚标记', () => {
+  const bat = buildWindowsBat('C:\\opt\\docker-manager', 'C:\\staging\\pkg.zip', 'C:\\staging', 9528);
+  assert.ok(bat.includes('_prev'), '_prev 备份目录应存在');
+  assert.ok(bat.includes('/MIR'), '新版覆盖应为镜像同步');
+  assert.ok(bat.includes('api/health'), '健康检查应访问 /api/health');
+  assert.ok(bat.includes('-lt 20'), '健康检查窗口应为 20 秒');
+  assert.ok(bat.includes('[FAIL]'), '含失败回滚标记');
+  assert.ok(bat.includes('update-result.txt'), '写入结果留痕文件');
+  assert.ok(bat.includes('9528'), '健康检查地址应包含面板端口');
 });

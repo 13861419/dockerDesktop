@@ -21,7 +21,7 @@ import { requireAdmin, requireAuth } from '../auth';
 import { listRoles } from '../rbac';
 import { getUserSecurity, setTotpSecret, setIpAllowlist, setContainerAllowlist } from '../users';
 import { generateSecret, otpauthUri, verifyTotp } from '../totp';
-import { checkUpdate, detectInstallType, installTypeLabel, applyUpdate } from '../systemUpdate';
+import { checkUpdate, detectInstallType, installTypeLabel, applyUpdate, readLastUpdateResult } from '../systemUpdate';
 
 const router = Router();
 
@@ -445,7 +445,16 @@ router.get(
     } catch { /* ignore */ }
     const type = detectInstallType();
     const { label, hint } = installTypeLabel(type);
-    res.json({ current, installType: type, installLabel: label, hint, autoUpdate: type === 'windows-service' || type === 'deb' || type === 'rpm' });
+    // 最近一次一键更新结果（1.73.0：升级脚本写结果文件，面板读取展示）
+    const lastResult = readLastUpdateResult();
+    res.json({
+      current,
+      installType: type,
+      installLabel: label,
+      hint,
+      autoUpdate: type === 'windows-service' || type === 'deb' || type === 'rpm',
+      lastResult,
+    });
   }),
 );
 
