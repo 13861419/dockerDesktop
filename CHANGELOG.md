@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.74.5] - 2026-09-15
+
+### Changed（变更）
+
+- **宿主机终端 root 提权自动拉取助手镜像**：Linux 低权限服务下（默认 dockerman 用户，systemd 禁 sudo 为设计行为），原先本地无助手镜像时直接回退普通用户；现在检测到 docker CLI 可用但缺镜像时自动后台拉取 alpine（120 秒超时），完成后自动经 Docker 助手容器进入宿主机 root shell，无需再手动 docker pull 后重连；拉取失败（离线/网络受限）时回退普通用户并给出明确提示
+
 ## [1.74.4] - 2026-09-15
 
 ### Changed（变更）

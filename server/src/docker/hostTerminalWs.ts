@@ -25,7 +25,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { registerWsHandler, authenticateWs, rejectWsUpgrade } from './wsRouter';
 import { logOperation } from '../operationLog';
 import { isWindows, getDefaultShells, getDefaultShell, type ShellName } from '../platform/detect';
-import { resolveHostRootChannel, dockerHelperArgs, serviceUserName } from '../platform/hostRoot';
+import { resolveHostRootChannel, dockerHelperArgs, serviceUserName, ensureHelperImage } from '../platform/hostRoot';
 
 /** 支持的 shell（按平台） */
 type Shell = ShellName;
@@ -126,6 +126,36 @@ function handleSession(ws: WebSocket): void {
         : getDefaultShell();
       try {
         activeShell = shell;
+        const attachChild = () => {
+          if (!child) return;
+          child.stdout.on('data', (d: Buffer) => send(d));
+          child.stderr.on('data', (d: Buffer) => send(d));
+          child.on('error', (err: any) => {
+            // script 命令缺失（极简镜像等）时回退到 bash -i（非 PTY，交互体验降级但可用）
+            if (err?.code === 'ENOENT' && !isWindows() && String(child?.spawnfile) === 'script') {
+              const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
+              const env = { ...process.env, TERM: 'xterm' };
+              const fallback = spawn(bin, ['-i'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
+              child = fallback as ChildProcessWithoutNullStreams;
+              fallback.stdout.on('data', (d: Buffer) => send(d));
+              fallback.stderr.on('data', (d: Buffer) => send(d));
+              fallback.on('close', () => {
+                send('\r\n[DockerManager] 宿主终端会话已结束。\r\n');
+                try { ws.close(); } catch { /* ignore */ }
+              });
+              send('\r\n[提示] 系统缺少 script 命令，已降级为基础模式（无 Tab 补全）。\r\n');
+              return;
+            }
+            send('\r\n[错误] 宿主终端进程错误: ' + String(err?.message || err) + '\r\n');
+            close();
+          });
+          child.on('close', () => {
+            send('\r\n[DockerManager] 宿主终端会话已结束。\r\n');
+            try { ws.close(); } catch { /* ignore */ }
+          });
+          // 启动后推送一个空提示，让前端知道已就绪
+          send('\r\n[DockerManager] 已连接宿主机会话终端。\r\n');
+        };
         if (isWindows()) {
           child = spawn(
             shell === 'powershell' ? 'powershell.exe' : 'cmd.exe',
@@ -141,60 +171,57 @@ function handleSession(ws: WebSocket): void {
           // 提权到宿主机 root（--privileged --pid=host + nsenter），见 platform/hostRoot.ts。
           const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
           const env = { ...process.env, TERM: 'xterm-256color' };
-          const channel = resolveHostRootChannel();
-          if (channel.mode === 'docker') {
+          const spawnHelper = (dockerBin: string, image: string) => {
             const inner = 'command -v bash >/dev/null 2>&1 && exec bash || exec sh';
-            child = spawn(channel.dockerBin, dockerHelperArgs(channel, inner, true), { cwd: '/', env, stdio: ['pipe', 'pipe', 'pipe'] });
-            send('\r\n[DockerManager] 已通过 Docker 助手容器进入宿主机 root shell（助手镜像 ' + channel.image + '）。\r\n');
-          } else {
+            child = spawn(dockerBin, dockerHelperArgs({ mode: 'docker', dockerBin, image }, inner, true), { cwd: '/', env, stdio: ['pipe', 'pipe', 'pipe'] });
+            send('\r\n[DockerManager] 已通过 Docker 助手容器进入宿主机 root shell（助手镜像 ' + image + '）。\r\n');
+          };
+          const spawnPlain = () => {
             if (process.platform === 'darwin') {
               child = spawn('script', ['-q', '/dev/null', bin], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
             } else {
               child = spawn('script', ['-qfc', bin, '/dev/null'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
             }
+          };
+          const channel = resolveHostRootChannel();
+          if (channel.mode === 'docker') {
+            spawnHelper(channel.dockerBin, channel.image);
+          } else if (channel.mode === 'unavailable' && channel.dockerBin) {
+            // docker CLI 可用但本地无助手镜像：自动拉取首选镜像后重试提权（1.74.5）
+            send('\r\n[提示] 助手镜像缺失，正在自动拉取 alpine（首次约需数十秒，取决于网络），完成后自动进入 root shell...\r\n');
+            ensureHelperImage(channel.dockerBin)
+              .then((image) => {
+                if (image) {
+                  const ch2 = resolveHostRootChannel();
+                  if (ch2.mode === 'docker') {
+                    spawnHelper(ch2.dockerBin, ch2.image);
+                    attachChild();
+                    return;
+                  }
+                }
+                send('\r\n[提示] 助手镜像自动拉取失败（离线或网络受限），本终端为普通用户权限。如需 root：在本机 docker pull alpine 后重连，或将服务改为 root 运行。\r\n');
+                spawnPlain();
+                attachChild();
+              })
+              .catch(() => {
+                spawnPlain();
+                attachChild();
+              });
+            return;
+          } else {
+            spawnPlain();
             if (channel.mode === 'unavailable') {
-              send(
-                '\r\n[提示] 当前面板服务以 ' + serviceUserName() + ' 用户运行，且没有可用的 Docker 提权通道（未安装 docker CLI 或本地无助手镜像），' +
-                '本终端为普通用户权限。如需 root：在本机 docker pull alpine 后重连，或将服务改为 root 运行。\r\n',
-              );
+              send('\r\n[提示] 当前面板服务以 ' + serviceUserName() + ' 用户运行，且未安装 docker CLI，本终端为普通用户权限。如需 root：安装 docker 后重连，或将服务改为 root 运行。\r\n');
             }
           }
         }
+        attachChild();
+        return;
       } catch (err: any) {
         send('\r\n[错误] 无法启动宿主终端进程: ' + String(err?.message || err) + '\r\n');
         try { ws.close(); } catch { /* ignore */ }
         return;
       }
-
-      child.stdout.on('data', (d: Buffer) => send(d));
-      child.stderr.on('data', (d: Buffer) => send(d));
-      child.on('error', (err: any) => {
-        // script 命令缺失（极简镜像等）时回退到 bash -i（非 PTY，交互体验降级但可用）
-        if (err?.code === 'ENOENT' && !isWindows() && String(child?.spawnfile) === 'script') {
-          const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
-          const env = { ...process.env, TERM: 'xterm' };
-          const fallback = spawn(bin, ['-i'], { cwd: DEFAULT_CWD, env, stdio: ['pipe', 'pipe', 'pipe'] });
-          child = fallback as ChildProcessWithoutNullStreams;
-          fallback.stdout.on('data', (d: Buffer) => send(d));
-          fallback.stderr.on('data', (d: Buffer) => send(d));
-          fallback.on('close', () => {
-            send('\r\n[DockerManager] 宿主终端会话已结束。\r\n');
-            try { ws.close(); } catch { /* ignore */ }
-          });
-          send('\r\n[提示] 系统缺少 script 命令，已降级为基础模式（无 Tab 补全）。\r\n');
-          return;
-        }
-        send('\r\n[错误] 宿主终端进程错误: ' + String(err?.message || err) + '\r\n');
-        close();
-      });
-      child.on('close', () => {
-        send('\r\n[DockerManager] 宿主终端会话已结束。\r\n');
-        try { ws.close(); } catch { /* ignore */ }
-      });
-
-      // 启动后推送一个空提示，让前端知道已就绪
-      send('\r\n[DockerManager] 已连接宿主机会话终端。\r\n');
-      return;
     }
 
     // 普通输入转发给子进程

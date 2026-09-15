@@ -12,7 +12,7 @@
  * 宿主机 root shell。离线且本地无可用的助手镜像时自动回退为当前用户。
  */
 import { existsSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { isWindows } from './detect';
 
 /** 本机是否为 root（Windows 恒为 null） */
@@ -82,16 +82,16 @@ function pickHelperImage(dockerBin: string): string | null {
 export type HostRootChannel =
   | { mode: 'direct' }
   | { mode: 'docker'; dockerBin: string; image: string }
-  | { mode: 'unavailable' };
+  | { mode: 'unavailable'; dockerBin: string | null };
 
 /** 解析可用的 root 通道 */
 export function resolveHostRootChannel(): HostRootChannel {
   if (isWindows()) return { mode: 'direct' };
   if (!needsHostEscalation()) return { mode: 'direct' };
   const dockerBin = findDockerBin();
-  if (!dockerBin) return { mode: 'unavailable' };
+  if (!dockerBin) return { mode: 'unavailable', dockerBin: null };
   const image = pickHelperImage(dockerBin);
-  if (!image) return { mode: 'unavailable' };
+  if (!image) return { mode: 'unavailable', dockerBin };
   return { mode: 'docker', dockerBin, image };
 }
 
@@ -105,6 +105,37 @@ export function resolveHostRootChannelCached(): HostRootChannel {
   const channel = resolveHostRootChannel();
   _cached = { at: Date.now(), channel };
   return channel;
+}
+
+/**
+ * 助手镜像缺失时自动拉取首选镜像（1.74.4，默认 alpine，约数 MB）。
+ * 成功返回镜像名并清空通道缓存（下次解析即可用 docker 通道）；失败/超时（120s）返回 null。
+ */
+export function ensureHelperImage(dockerBin: string): Promise<string | null> {
+  const candidate = HELPER_IMAGE_CANDIDATES[0];
+  return new Promise((resolve) => {
+    const child = spawn(dockerBin, ['pull', candidate], { stdio: 'ignore' });
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // 忽略
+      }
+    }, 120000);
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        _cached = null;
+        resolve(candidate);
+      } else {
+        resolve(null);
+      }
+    });
+  });
 }
 
 /**
