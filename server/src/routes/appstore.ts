@@ -33,6 +33,13 @@ import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
 import { getDb, DATA_DIR } from '../storage';
 import { gitCloneOrPull } from '../gitCli';
+import {
+  captureSnapshot,
+  saveUpgradeSnapshot,
+  clearUpgradeSnapshot,
+  checkComposeHealth,
+  rollbackUpgrade,
+} from '../appstore/upgrade';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -1220,7 +1227,9 @@ router.post(
 
 /**
  * POST /api/appstore/:id/upgrade
- * 升级 Compose 套件应用：拉取新镜像（compose pull）并用现有配置强制重建
+ * 保留数据升级 Compose 套件应用（1.72.0）：
+ * 升级前快照（镜像 ID + compose 内容）→ pull + 强制重建 → 健康检查窗口 → 失败自动回滚。
+ * 数据卷不受容器重建影响；回滚仅恢复镜像引用与配置文件。
  */
 router.post(
   '/:id/upgrade',
@@ -1233,14 +1242,45 @@ router.post(
     }
     const dir = getComposeProjectDir(app.id, app);
     const composeFile = findComposeFile(dir) as string;
-    // 拉取新镜像
+    const steps: string[] = [];
+    // 1. 升级前快照（镜像 ID + compose 内容，落盘保留）
+    const snapshot = await captureSnapshot(app.id, app.compose.defaultVersion || 'latest', dir, composeFile);
+    saveUpgradeSnapshot(snapshot);
+    steps.push('已记录升级前快照（镜像与配置）');
+    // 2. 拉取新镜像（失败时旧容器不受影响，无需回滚）
     const pullOut = await runCmd(`docker compose -f "${composeFile}" pull`, dir);
-    // 强制重建容器（--force-recreate 使新镜像生效；--remove-orphans 清理孤立容器）
-    const upOut = await runCmd(`docker compose -f "${composeFile}" up -d --remove-orphans --force-recreate`, dir);
+    steps.push('已拉取新镜像');
+    // 3. 强制重建（失败立即回滚）
+    let upOut = '';
+    try {
+      upOut = await runCmd(`docker compose -f "${composeFile}" up -d --remove-orphans --force-recreate`, dir);
+      steps.push('已按新镜像重建容器');
+    } catch (e: any) {
+      const rb = await rollbackUpgrade(app.id, dir);
+      return void res.status(400).json({
+        error: `${e?.message || '重建失败'}；已自动回滚到升级前版本（数据卷未受影响）`,
+        steps: [...steps, '重建失败，触发自动回滚', ...rb.steps],
+      });
+    }
+    // 4. 健康检查窗口（两轮 × 8 秒，全部服务 running 才算通过）
+    let health = await checkComposeHealth(dir, composeFile);
+    if (!health.healthy) {
+      await new Promise((r) => setTimeout(r, 8000));
+      health = await checkComposeHealth(dir, composeFile);
+    }
+    if (!health.healthy) {
+      const rb = await rollbackUpgrade(app.id, dir);
+      return void res.status(400).json({
+        error: `升级后健康检查未通过（${health.detail}），已自动回滚到升级前版本（数据卷未受影响）`,
+        steps: [...steps, `健康检查未通过：${health.detail}`, '触发自动回滚', ...rb.steps],
+      });
+    }
+    steps.push(`健康检查通过（${health.detail}）`);
+    clearUpgradeSnapshot(app.id);
     // 更新版本记录
     upsertInstance(app.id, `dm-${app.id}`, app.compose.defaultVersion, req.body?.params || {});
     logOperation(res.locals.username, '升级应用', 'app', app.id, `Compose 套件 版本: ${app.compose.defaultVersion || 'latest'}`);
-    res.json({ ok: true, version: app.compose.defaultVersion || 'latest', pullOut: pullOut.slice(0, 500), upOut: upOut.slice(0, 500) });
+    res.json({ ok: true, version: app.compose.defaultVersion || 'latest', steps, pullOut: pullOut.slice(0, 500), upOut: upOut.slice(0, 500) });
   }),
 );
 

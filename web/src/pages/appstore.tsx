@@ -632,12 +632,12 @@ export default function AppStorePage() {
       }
       setActionId(app.id);
       try {
-        const res = await post<{ version?: string; pullOut?: string; upOut?: string }>(
+        const res = await post<{ version?: string; pullOut?: string; upOut?: string; steps?: string[] }>(
           `/api/appstore/${app.id}/upgrade`
         );
-        // 优先展示返回的版本号，否则展示拉取/重建的输出摘要
-        const detail = res?.version || res?.pullOut || res?.upOut;
-        showToast(t('{{v1}} 升级成功{{v2}}', { v1: app.name, v2: detail ? '：' + detail : '' }));
+        // 优先展示返回的版本号；1.72.0 起升级带快照 + 健康检查 + 失败自动回滚
+        const detail = res?.version || res?.steps?.[0] || res?.pullOut || res?.upOut;
+        showToast(t('{{v1}} 升级成功，数据保留完好{{v2}}', { v1: app.name, v2: detail ? '：' + detail : '' }));
         setRefreshKey((k) => k + 1);
       } catch (e: any) {
         showToast(e?.message || t('{{v1}} 升级失败', { v1: app.name }), 'error');

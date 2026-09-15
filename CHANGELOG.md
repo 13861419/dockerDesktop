@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.72.0] - 2026-09-15
+
+### Added（新增）
+
+- **应用保留数据升级**：应用商店 Compose 套件升级前自动快照（各服务镜像 ID + compose 配置，落盘 `appstore-snapshots`），升级后健康检查窗口（两轮 × 8 秒，全部服务 running 才算通过）；重建失败或健康检查未通过时**自动回滚**——旧镜像重新打回原 tag → 还原配置文件 → 按升级前版本重建，数据卷全程不受影响，对齐 1Panel 的应用升级体验
+
+### Test（测试）
+
+- 新增 `appstore-upgrade.test.ts`（快照存取往返、compose images 输出解析）与 `api-features-172.test.ts`（升级接口 404 / 非 Compose 套件 400 契约）
+
 ## [1.71.0] - 2026-09-15
 
 ### Added（新增）

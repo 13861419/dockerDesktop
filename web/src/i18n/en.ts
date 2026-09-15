@@ -3529,4 +3529,6 @@ export const en: Record<string, string> = {
   "内存使用率（%）": "Memory usage (%)",
   "每 10 秒采样，保留最近 15 分钟": "Sampled every 10 s; the last 15 minutes are kept",
   "采样中，请稍候...": "Sampling, please wait...",
+  "应用商店升级应用会丢数据吗？": "Will upgrading an app lose my data?",
+  "不会（1.72.0）：Compose 套件升级前面板自动记录各服务镜像与配置快照，升级后健康检查窗口确认全部服务正常运行；若新版本起不来，自动回滚到升级前版本（旧镜像重新标记 + 配置还原 + 重建），数据卷全程不受影响。": "No (1.72.0): before upgrading a Compose suite the panel snapshots each service image and config; a health-check window confirms all services are running afterwards. If the new version fails to start, it automatically rolls back to the pre-upgrade version (retag old image + restore config + recreate). Data volumes are untouched throughout.",
 };
