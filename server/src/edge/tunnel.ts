@@ -39,6 +39,23 @@ export function onlineEdgeNodeIds(): string[] {
   return Array.from(online.keys());
 }
 
+/** 资源采样环形缓冲（每节点 90 点 × 10s ≈ 15 分钟，内存态不落库） */
+const STATS_CAP = 90;
+const statsStore = new Map<string, Array<{ t: number; cpu: number; memUsed: number; memTotal: number }>>();
+
+/** 记录一次节点资源采样（隧道连接消息驱动） */
+function recordEdgeStats(nodeId: string, point: { t: number; cpu: number; memUsed: number; memTotal: number }): void {
+  const arr = statsStore.get(nodeId) || [];
+  arr.push(point);
+  if (arr.length > STATS_CAP) arr.shift();
+  statsStore.set(nodeId, arr);
+}
+
+/** 读取节点资源采样序列（无数据返回空数组） */
+export function getEdgeStats(nodeId: string): Array<{ t: number; cpu: number; memUsed: number; memTotal: number }> {
+  return statsStore.get(nodeId) || [];
+}
+
 /**
  * 通过隧道调用远端 agent（透传 Docker Engine HTTP API）
  *
@@ -109,6 +126,16 @@ export function setupEdgeWsServer(httpServer: HttpServer): void {
         } catch {
           // 单条事件解析失败不影响隧道
         }
+        return;
+      }
+      // agent 周期上报的主机资源采样（1.71.0）：内存环形缓冲，每节点保留 90 个点
+      if (msg && msg.type === 'stats') {
+        recordEdgeStats(nodeId, {
+          t: Date.now(),
+          cpu: Number(msg.cpu) || 0,
+          memUsed: Number(msg.memUsed) || 0,
+          memTotal: Number(msg.memTotal) || 0,
+        });
         return;
       }
       // 请求回执

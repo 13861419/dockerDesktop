@@ -3,6 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.71.0] - 2026-09-15
+
+### Added（新增）
+
+- **Edge agent 一键升级**：面板读取内置 agent 版本，节点上报版本与之不一致时在 Edge 页「管理」菜单出现「升级 agent」入口——面板经隧道下发指令，agent 从面板下载最新 agent.js 覆盖自身（保留 .bak）后退出，由 systemd 等服务管理器自动拉起新版本；节点离线时给出明确提示
+- **Edge 节点资源监控**：agent 每 10 秒上报主机 CPU / 内存采样（隧道在线时），Edge 页「资源」按钮弹出 CPU 与内存使用率迷你曲线（保留最近 15 分钟，内存态不落库）
+
+### Test（测试）
+
+- 新增 `api-features-171.test.ts`：latestAgentVersion 一致性、离线节点升级拒绝、空采样序列契约
+
 ## [1.70.0] - 2026-09-15
 
 ### Added（新增）

@@ -16,7 +16,7 @@
 
 const PANEL_URL = (process.env.PANEL_URL || '').replace(/\/+$/, '');
 const EDGE_TOKEN = process.env.EDGE_TOKEN || '';
-const AGENT_VERSION = '1.65.0';
+const AGENT_VERSION = '1.71.0';
 
 if (!PANEL_URL || !EDGE_TOKEN) {
   console.error('[edge-agent] 缺少环境变量：PANEL_URL / EDGE_TOKEN');
@@ -118,6 +118,76 @@ function dockerLogs(path) {
 /** 订阅本机 Docker 事件流并经隧道转发给面板（断流自动重订） */
 let eventReq = null;
 
+/** 主机资源采样：CPU 占比（相邻两次 cpus 时刻差计算）与内存使用 */
+const os = require('os');
+const fs = require('fs');
+let lastCpuSample = os.cpus();
+
+function sampleStats() {
+  const cpus = os.cpus();
+  let idle = 0;
+  let total = 0;
+  for (let i = 0; i < cpus.length; i++) {
+    idle += cpus[i].times.idle - lastCpuSample[i].times.idle;
+    total +=
+      cpus[i].times.user +
+      cpus[i].times.nice +
+      cpus[i].times.sys +
+      cpus[i].times.idle +
+      cpus[i].times.irq -
+      (lastCpuSample[i].times.user +
+        lastCpuSample[i].times.nice +
+        lastCpuSample[i].times.sys +
+        lastCpuSample[i].times.idle +
+        lastCpuSample[i].times.irq);
+  }
+  lastCpuSample = cpus;
+  const cpu = total > 0 ? Math.min(100, Math.max(0, (1 - idle / total) * 100)) : 0;
+  return {
+    cpu: Math.round(cpu * 10) / 10,
+    memUsed: os.totalmem() - os.freemem(),
+    memTotal: os.totalmem(),
+  };
+}
+
+/** 每 10 秒向面板上报一次主机资源（隧道在线时） */
+function startStats(ws) {
+  setInterval(() => {
+    if (ws.readyState !== ws.OPEN) return;
+    try {
+      const s = sampleStats();
+      ws.send(JSON.stringify({ type: 'stats', cpu: s.cpu, memUsed: s.memUsed, memTotal: s.memTotal }));
+    } catch {
+      // 采样失败忽略下一轮
+    }
+  }, 10_000).unref();
+}
+
+/**
+ * 自升级（1.71.0）：从面板下载最新 agent.js 覆盖自身后退出。
+ * systemd（Restart=always）等守护进程会用新文件重新拉起。
+ */
+async function selfUpgrade(msg, ws) {
+  try {
+    const resp = await fetch(`${PANEL_URL}/api/edge/agent.js?_=${Date.now()}`, {
+      headers: { 'User-Agent': 'edge-agent' },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const code = await resp.text();
+    if (!code.startsWith('#!') || code.length < 1000) throw new Error('下载内容异常，已放弃覆盖');
+    const self = process.argv[1];
+    const tmp = self + '.new';
+    fs.writeFileSync(tmp, code);
+    fs.copyFileSync(self, self + '.bak');
+    fs.renameSync(tmp, self);
+    ws.send(JSON.stringify({ id: msg.id, ok: true, status: 200, data: { restarting: true, version: 'latest' } }));
+    console.log('[edge-agent] 新版本已写入，1 秒后退出（由服务管理器拉起新版本）');
+    setTimeout(() => process.exit(0), 1000);
+  } catch (e) {
+    ws.send(JSON.stringify({ id: msg.id, ok: false, status: 500, error: '升级失败: ' + String((e && e.message) || e) }));
+  }
+}
+
 function watchEvents(ws) {
   if (eventReq) {
     try { eventReq.destroy(); } catch {}
@@ -168,6 +238,7 @@ function connect() {
     console.log(`[edge-agent] 已连接面板 ${PANEL_URL}（v${AGENT_VERSION}）`);
     ws.send(JSON.stringify({ type: 'hello', version: AGENT_VERSION }));
     watchEvents(ws);
+    startStats(ws);
   };
 
   ws.onmessage = async (ev) => {
@@ -175,6 +246,11 @@ function connect() {
     try {
       msg = JSON.parse(String(ev.data));
     } catch {
+      return;
+    }
+    // 面板下发的自升级指令（1.71.0）
+    if (msg.method === 'POST' && msg.path === '/agent/upgrade') {
+      await selfUpgrade(msg, ws);
       return;
     }
     if (typeof msg?.id !== 'string' || typeof msg?.method !== 'string' || typeof msg?.path !== 'string') return;

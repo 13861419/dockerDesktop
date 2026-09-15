@@ -41,6 +41,46 @@ interface EdgeVersion {
   Arch?: string;
 }
 
+/** 节点资源采样点（agent 每 10 秒上报，1.71.0） */
+interface EdgeStatPoint {
+  t: number;
+  cpu: number;
+  memUsed: number;
+  memTotal: number;
+}
+
+/** 迷你曲线（SVG 折线，零依赖）：values 取 0-100 百分比序列 */
+function Spark({ values, color, title }: { values: number[]; color: string; title: string }) {
+  const w = 320;
+  const h = 70;
+  if (values.length < 2) {
+    return <Empty title={t('采样中，请稍候...')} />;
+  }
+  const step = w / (values.length - 1);
+  const pts = values
+    .map((v, i) => {
+      const clamped = Math.max(0, Math.min(100, v));
+      const y = h - 4 - (clamped / 100) * (h - 8);
+      return `${(i * step).toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary, #666)', marginBottom: 4 }}>{title}</div>
+      <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', background: 'var(--bg-tertiary, #f5f6f7)', borderRadius: 6 }}>
+        <polyline points={`0,${h} ${pts} ${w},${h}`} fill={`${color}22`} stroke="none" />
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
+
+interface EdgeVersion {
+  Version?: string;
+  Os?: string;
+  Arch?: string;
+}
+
 const PAGE_TITLE = 'Edge 节点';
 
 export default function EdgePage() {
@@ -49,6 +89,12 @@ export default function EdgePage() {
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState('');
+  // 面板内置 agent 版本（与节点上报版本不一致时提示升级，1.71.0）
+  const [agentLatest, setAgentLatest] = useState('');
+  const [upgradingId, setUpgradingId] = useState('');
+  // 资源监控弹窗（1.71.0）
+  const [statsView, setStatsView] = useState<EdgeNode | null>(null);
+  const [statsSeries, setStatsSeries] = useState<EdgeStatPoint[]>([]);
   const [created, setCreated] = useState<{ node: EdgeNode; token: string } | null>(null);
   const [containers, setContainers] = useState<Record<string, EdgeContainer[]>>({});
   const { showToast } = useToast();
@@ -61,8 +107,9 @@ export default function EdgePage() {
   const [logsView, setLogsView] = useState<{ node: EdgeNode; cid: string; text: string } | null>(null);
 
   const load = useCallback(async () => {
-    const r = await get<{ items: EdgeNode[] }>('/api/edge/nodes');
+    const r = await get<{ items: EdgeNode[]; latestAgentVersion?: string }>('/api/edge/nodes');
     setNodes(r.items || []);
+    setAgentLatest(r.latestAgentVersion || '');
   }, []);
 
   useEffect(() => {
@@ -70,6 +117,33 @@ export default function EdgePage() {
     const timer = setInterval(load, 15_000);
     return () => clearInterval(timer);
   }, [load]);
+
+  // 资源监控轮询：弹窗打开期间每 5 秒刷新
+  useEffect(() => {
+    if (!statsView) return;
+    const pull = () => {
+      get<{ series: EdgeStatPoint[] }>(`/api/edge/nodes/${statsView.id}/stats`)
+        .then((r) => setStatsSeries(r.series || []))
+        .catch(() => {});
+    };
+    pull();
+    const timer = setInterval(pull, 5000);
+    return () => clearInterval(timer);
+  }, [statsView]);
+
+  /** 下发 agent 自升级指令（agent 覆盖自身后由服务管理器拉起） */
+  const upgradeAgent = async (n: EdgeNode) => {
+    setUpgradingId(n.id);
+    try {
+      await post(`/api/edge/nodes/${n.id}/upgrade`, {});
+      showToast(t('升级指令已下发，agent 将自动重启并重连'), 'success');
+      setTimeout(load, 10_000);
+    } catch (e: any) {
+      showToast(e?.message || t('升级失败'), 'error');
+    } finally {
+      setUpgradingId('');
+    }
+  };
 
   const createNode = async () => {
     if (!name.trim()) {
@@ -237,6 +311,9 @@ export default function EdgePage() {
                     <Button size="sm" onClick={() => loadContainers(n)}>
                       {t('查看容器')}
                     </Button>
+                    <Button size="sm" onClick={() => setStatsView(n)} disabled={!n.online} title={n.online ? '' : t('节点离线')}>
+                      {t('资源')}
+                    </Button>
                     {admin && (
                       <MoreMenu
                         items={[
@@ -247,6 +324,16 @@ export default function EdgePage() {
                             title: !n.online ? t('节点离线，无法部署') : '',
                             onClick: () => setDeployNode(n),
                           },
+                          ...(agentLatest && n.agentVersion !== agentLatest
+                            ? [
+                                {
+                                  label: t('升级 agent') + (n.agentVersion ? `（${n.agentVersion} → ${agentLatest}）` : ''),
+                                  disabled: !n.online || upgradingId === n.id,
+                                  title: !n.online ? t('节点离线，无法部署') : '',
+                                  onClick: () => upgradeAgent(n),
+                                },
+                              ]
+                            : []),
                           { label: t('删除'), danger: true, onClick: () => removeNode(n.id) },
                         ]}
                       />
@@ -343,6 +430,32 @@ export default function EdgePage() {
         width={860}
       >
         <pre className="edge-command edge-logs">{logsView?.text || ''}</pre>
+      </Modal>
+
+      <Modal
+        open={!!statsView}
+        title={`${statsView?.name || ''} — ${t('资源监控')}`}
+        onClose={() => {
+          setStatsView(null);
+          setStatsSeries([]);
+        }}
+        width={420}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Spark values={statsSeries.map((s) => s.cpu)} color="#2f6fed" title={t('CPU 使用率（%）')} />
+          <Spark
+            values={statsSeries.map((s) => (s.memTotal ? (s.memUsed / s.memTotal) * 100 : 0))}
+            color="#27ae60"
+            title={t('内存使用率（%）')}
+          />
+          {statsSeries.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted, #999)' }}>
+              {t('内存')}{' '}
+              {(statsSeries[statsSeries.length - 1].memUsed / 1024 / 1024 / 1024).toFixed(2)} GB /{' '}
+              {(statsSeries[statsSeries.length - 1].memTotal / 1024 / 1024 / 1024).toFixed(2)} GB · {t('每 10 秒采样，保留最近 15 分钟')}
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

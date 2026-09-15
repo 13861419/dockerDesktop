@@ -1730,6 +1730,11 @@ node agent.js
 - **Remote deploy**: a "Deploy Container" dialog (image / name / port mappings / env vars) creates and starts a container on the remote host;
 - **Container logs**: view the last 200 lines of any remote container (agent parses the Docker mux stream into plain text).
 
+### 46.5 Agent One-Click Upgrade & Resource Monitor (added in 1.71.0)
+
+- **Agent one-click upgrade**: when the agent version reported by a node differs from the panel's built-in version, an "Upgrade agent" entry appears in the row's More▾ menu. The panel sends the upgrade command through the tunnel; the agent downloads the latest agent.js from the panel, replaces its own file (the old one is kept as `agent.bak`) and exits, then systemd (`Restart=always`) restarts it with the new version automatically;
+- **Node resource monitor**: the agent reports host CPU / memory samples every 10 s. The "Resources" button on each node row opens a dialog with CPU and memory usage sparklines (last 15 minutes kept in memory only; auto-refresh every 5 s while open).
+
 Appendix: Modules & Routes
 
 | Menu | Route | Access |

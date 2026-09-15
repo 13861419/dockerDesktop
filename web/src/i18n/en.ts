@@ -3522,4 +3522,11 @@ export const en: Record<string, string> = {
   // ---- 1.42.0 自愈范围/记录筛选/漂移删除/跨引擎清理 ----
   '本机 Docker,测试机': 'Local Docker,Test box',
   '连接失败或超时': 'Connection failed or timed out',
+  "升级 agent": "Upgrade agent",
+  "升级指令已下发，agent 将自动重启并重连": "Upgrade command sent. The agent will restart and reconnect automatically.",
+  "升级失败": "Upgrade failed",
+  "CPU 使用率（%）": "CPU usage (%)",
+  "内存使用率（%）": "Memory usage (%)",
+  "每 10 秒采样，保留最近 15 分钟": "Sampled every 10 s; the last 15 minutes are kept",
+  "采样中，请稍候...": "Sampling, please wait...",
 };

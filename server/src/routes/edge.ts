@@ -15,9 +15,11 @@ import {
 } from '../edge/registry';
 import {
   callEdgeNode,
+  getEdgeStats,
   isEdgeNodeOnline,
   onlineEdgeNodeIds,
 } from '../edge/tunnel';
+import { logOperation } from '../operationLog';
 
 const router = Router();
 
@@ -73,13 +75,57 @@ function assertPassthroughPath(method: string, path: string): void {
 /** 长耗时操作（镜像拉取等）放宽超时 */
 const LONG_PATHS = ['/images/create'];
 
+/** 面板内置 agent 版本（读 agent.js 头部常量，缓存） */
+let agentVersionCache = '';
+function latestAgentVersion(): string {
+  if (!agentVersionCache) {
+    try {
+      const code = fs.readFileSync(path.join(AGENT_DIR, 'agent.js'), 'utf8');
+      const m = code.match(/AGENT_VERSION\s*=\s*'([\d.]+)'/);
+      agentVersionCache = m ? m[1] : '';
+    } catch {
+      // 文件缺失时返回空
+    }
+  }
+  return agentVersionCache;
+}
+
 /** 节点列表（含在线状态） */
 router.get(
   '/nodes',
   requireAuth,
   asyncHandler(async (_req: Request, res: Response) => {
     const nodes = listEdgeNodes(isEdgeNodeOnline);
-    res.json({ items: nodes, onlineIds: onlineEdgeNodeIds() });
+    res.json({ items: nodes, onlineIds: onlineEdgeNodeIds(), latestAgentVersion: latestAgentVersion() });
+  }),
+);
+
+/** 节点资源采样序列（1.71.0，最近 15 分钟，内存态） */
+router.get(
+  '/nodes/:id/stats',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    res.json({ series: getEdgeStats(req.params.id) });
+  }),
+);
+
+/** 一键升级 agent（1.71.0）：下发自升级指令，agent 覆盖自身文件后退出由守护进程拉起 */
+router.post(
+  '/nodes/:id/upgrade',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!isEdgeNodeOnline(req.params.id)) {
+      res.status(400).json({ error: '节点离线，无法升级（上线后 agent 会自动连回）' });
+      return;
+    }
+    const target = latestAgentVersion();
+    if (!target) {
+      res.status(500).json({ error: '无法读取面板内置 agent 版本' });
+      return;
+    }
+    await callEdgeNode(req.params.id, 'POST', '/agent/upgrade', { version: target }, 30_000);
+    logOperation(res.locals.username, '下发 Edge agent 升级', 'edge_node', req.params.id);
+    res.json({ ok: true, message: '升级指令已下发，agent 覆盖自身后将自动重启' });
   }),
 );
 
