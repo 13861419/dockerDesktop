@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.69.0] - 2026-09-14
+
+### Added（新增）
+
+- **面板一键更新（1.69.0）**：设置 → 关于自动检测安装类型（Windows 服务版 / deb / rpm / Docker / 手动），检查到新版本后可一键升级——下载对平台产物 → sha256 完整性校验 → 自动停服务、覆盖程序（Windows）或安装新包（deb / rpm）、重启服务，页面每 5 秒轮询自动重连并提示新版本
+- 升级脚本在用户数据目录外生成（detached 进程），面板退出后自动接手，数据不受影响；下载走 `update.githubMirror` 镜像前缀，国内网络可用
+- 新增接口 `GET /api/system/update/status`（安装类型检测）与 `POST /api/system/update/apply`（一键更新）
+
 ## [1.68.0] - 2026-09-14
 
 ### Added（新增）

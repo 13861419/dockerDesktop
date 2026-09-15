@@ -21,7 +21,7 @@ import { requireAdmin, requireAuth } from '../auth';
 import { listRoles } from '../rbac';
 import { getUserSecurity, setTotpSecret, setIpAllowlist, setContainerAllowlist } from '../users';
 import { generateSecret, otpauthUri, verifyTotp } from '../totp';
-import { checkUpdate } from '../systemUpdate';
+import { checkUpdate, detectInstallType, installTypeLabel, applyUpdate } from '../systemUpdate';
 
 const router = Router();
 
@@ -426,6 +426,51 @@ router.get(
       res.json({ ...result, available: result.hasUpdate });
     } catch (e: any) {
       res.status(502).json({ error: e?.message || '检查更新失败' });
+    }
+  }),
+);
+
+/**
+ * GET /api/system/update/status
+ * 当前版本 + 安装类型（一键更新可行性判断，1.69.0）
+ */
+router.get(
+  '/update/status',
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    let current = '0.1.0';
+    try {
+      const pkg = require(path.join(__dirname, '..', '..', 'package.json'));
+      current = pkg.version || current;
+    } catch { /* ignore */ }
+    const type = detectInstallType();
+    const { label, hint } = installTypeLabel(type);
+    res.json({ current, installType: type, installLabel: label, hint, autoUpdate: type === 'windows-service' || type === 'deb' || type === 'rpm' });
+  }),
+);
+
+/**
+ * POST /api/system/update/apply
+ * 一键更新（1.69.0）：下载产物 → sha256 校验 → 拉起升级脚本 → 自退出。
+ * 服务重启期间前端轮询版本号直至变为新版本。
+ */
+router.post(
+  '/update/apply',
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    let current = '0.1.0';
+    try {
+      const pkg = require(path.join(__dirname, '..', '..', 'package.json'));
+      current = pkg.version || current;
+    } catch { /* ignore */ }
+    try {
+      const result = await applyUpdate(current);
+      logOperation(res.locals.username, '执行面板一键更新', 'system', 'update/apply');
+      res.json({ ok: true, ...result });
+      // 给响应留出回传时间后自退出，升级脚本接手（停服务 → 覆盖 → 起服务）
+      setTimeout(() => process.exit(0), 800);
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message || '更新失败' });
     }
   }),
 );

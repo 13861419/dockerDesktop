@@ -5,6 +5,22 @@
  * 按页面分组维护，新增翻译时在对应区块追加。
  */
 export const en: Record<string, string> = {
+  "请参考文档手动下载并替换程序": "Download and replace the files manually following the docs",
+  "请在宿主机执行 docker pull 新镜像并重建容器": "Run docker pull on the host and recreate the container",
+  "支持一键更新：自动 rpm 安装并重启服务": "One-click update supported: installs via rpm and restarts the service",
+  "支持一键更新：自动 dpkg 安装并重启服务": "One-click update supported: installs via dpkg and restarts the service",
+  "支持一键更新：自动停服务 → 覆盖程序 → 重启服务": "One-click update supported: stops the service, replaces files, restarts",
+  "手动安装 / 开发模式": "Manual install / development",
+  "Docker 镜像": "Docker image",
+  "rpm 包（systemd）": "rpm package (systemd)",
+  "deb 包（systemd）": "deb package (systemd)",
+  "Windows 服务版": "Windows service",
+  "安装类型": "Install type",
+  "等待超时，请刷新页面确认面板状态": "Timed out waiting — refresh the page to check the panel status",
+  "升级完成，当前版本 v{{v1}}": "Upgrade complete — now running v{{v1}}",
+  "更新包已就绪，服务正在重启，页面将自动重连": "Package ready — restarting the service, the page will reconnect automatically",
+  "开始更新": "Start update",
+  "一键更新面板": "One-click update",
   "执行动作": "Run action",
   "冷却检查": "Cooldown check",
   "事件匹配": "Event match",

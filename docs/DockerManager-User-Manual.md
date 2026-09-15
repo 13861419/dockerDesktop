@@ -1647,6 +1647,20 @@ scrape_configs:
 
 Entry: **Settings → About → Check for updates** (admin)
 
+
+
+### 45.1 One-Click Update (1.69.0)
+
+Settings → "About" **auto-detects the install type** (Windows service / deb / rpm / Docker / manual). When a new version is detected, supported types (Windows service, deb, rpm) can click **"One-click update"**:
+
+1. The panel downloads the update package matching the current platform and architecture and verifies it against `sha256sums.txt`;
+2. It then runs the upgrade script automatically: stop the service → replace files (Windows) / install the new package (deb, rpm) → start the service;
+3. The panel goes offline briefly (~1 minute); the page polls every 5 seconds and shows the new version once the service is back.
+
+> - User data (database, certificates, backups) lives outside the install directory and is not touched by the upgrade;
+> - Docker images and manual installs still follow the command-line steps below;
+> - The upgrade uses the same mirror prefix as the update check (`update.githubMirror`).
+
 | Item | Description |
 | --- | --- |
 | Check | Compares the current version with the latest GitHub Releases version |
@@ -1669,7 +1683,7 @@ Entry: **Settings → About → Check for updates** (admin)
 > deb/rpm upgrades overwrite `/opt/docker-manager/server/.env` (back up custom settings such as the port first). A config export from the Backup section is recommended first.
 >
 > When GitHub is unreachable: download the update package on an internet-connected computer and copy it to the server (`dpkg -i` / `dnf install` over it), or prefix the download URL with a mirror. See "When GitHub Is Unreachable" in section 0.4.
-## ## 46. Edge Nodes (Multi-node Management)
+## 46. Edge Nodes (Multi-node Management)
 
 Menu entry: **System Tools → Edge Nodes** (admin only)
 

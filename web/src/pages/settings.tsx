@@ -8,6 +8,7 @@ import { useLocation } from 'react-router-dom';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Field, Input, TextArea, Select } from '../components/Form';
 import { useToast } from '../components/Toast';
 import { useTheme } from '../hooks/useTheme';
@@ -86,6 +87,15 @@ interface UpdateInfo {
   assets?: Array<{ name: string; url: string; size: number; platform: string }>;
 }
 
+/** 安装类型状态（GET /api/system/update/status，1.69.0） */
+interface UpdateStatusInfo {
+  current: string;
+  installType: 'windows-service' | 'deb' | 'rpm' | 'docker' | 'manual';
+  installLabel: string;
+  hint: string;
+  autoUpdate: boolean;
+}
+
 interface CurrentUserInfo {
   username: string;
   role?: UserRole;
@@ -154,6 +164,10 @@ export default function SettingsPage() {
   // 版本更新检测
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  // 一键更新（1.69.0）：安装类型 + 升级确认 + 重启轮询
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatusInfo | null>(null);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
+  const [updateConfirm, setUpdateConfirm] = useState(false);
 
   // 新增用户表单
   const [newUsername, setNewUsername] = useState('');
@@ -502,6 +516,52 @@ export default function SettingsPage() {
     } finally {
       setCheckingUpdate(false);
     }
+  }
+
+  // 拉取安装类型（一键更新可行性判断，仅管理员）
+  useEffect(() => {
+    if (currentRole !== 'admin') return;
+    get<UpdateStatusInfo>('/api/system/update/status')
+      .then(setUpdateStatus)
+      .catch(() => setUpdateStatus(null));
+  }, [currentRole]);
+
+  /**
+   * 执行一键更新：确认后调用 apply，随后轮询版本号直至服务带新版本回归（最长 3 分钟）
+   */
+  async function handleApplyUpdate() {
+    setUpdateConfirm(false);
+    setApplyingUpdate(true);
+    try {
+      await post('/api/system/update/apply', {});
+      showToast(t('更新包已就绪，服务正在重启，页面将自动重连'), 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('更新失败'), 'error');
+      setApplyingUpdate(false);
+      return;
+    }
+    const base = updateStatus?.current || '';
+    const started = Date.now();
+    const timer = window.setInterval(async () => {
+      if (Date.now() - started > 180_000) {
+        window.clearInterval(timer);
+        setApplyingUpdate(false);
+        showToast(t('等待超时，请刷新页面确认面板状态'), 'error');
+        return;
+      }
+      try {
+        const s = await get<SettingsInfo>('/api/system');
+        if (s?.version && s.version !== base) {
+          window.clearInterval(timer);
+          setApplyingUpdate(false);
+          showToast(t('升级完成，当前版本 v{{v1}}', { v1: s.version }), 'success');
+          setUpdateInfo(null);
+          load();
+        }
+      } catch {
+        // 服务重启中，继续轮询
+      }
+    }, 5000);
   }
 
   /**
@@ -1523,6 +1583,15 @@ export default function SettingsPage() {
               )}
             </span>
           </div>
+          {updateStatus && (
+            <div className="settings-info__row">
+              <span>{t('安装类型')}</span>
+              <span>
+                {t(updateStatus.installLabel)}
+                <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af' }}>{t(updateStatus.hint)}</span>
+              </span>
+            </div>
+          )}
           <div className="settings-info__row">
             <span>{t('服务端口')}</span>
             <span>{settings?.port ?? '-'}</span>
@@ -1538,6 +1607,16 @@ export default function SettingsPage() {
               >
                 {updateInfo?.available ? t('有新版本可用') : updateInfo ? t('已是最新版') : t('检查更新')}
               </Button>
+              {updateInfo?.available && updateStatus?.autoUpdate && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={applyingUpdate}
+                  onClick={() => setUpdateConfirm(true)}
+                >
+                  {t('一键更新')}
+                </Button>
+              )}
               {updateInfo?.available && updateInfo.releaseUrl && (
                 <a
                   href={updateInfo.releaseUrl}
@@ -1751,6 +1830,16 @@ export default function SettingsPage() {
           </div>
         )}
       </Modal>
+
+      {/* 一键更新确认（1.69.0） */}
+      <ConfirmDialog
+        open={updateConfirm}
+        title={t('一键更新面板')}
+        message={t('将自动下载 v{{v1}} 并重启服务，期间面板会短暂离线（约 1 分钟），浏览器会自动重连。数据不受影响。确定继续？', { v1: updateInfo?.latest || '' })}
+        confirmText={t('开始更新')}
+        onConfirm={handleApplyUpdate}
+        onCancel={() => setUpdateConfirm(false)}
+      />
     </div>
   );
 }
