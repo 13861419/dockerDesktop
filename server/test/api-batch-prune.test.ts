@@ -51,6 +51,11 @@ before(async () => {
     body: JSON.stringify({ username: 'admin', password: 'admin888' }),
   });
   adminToken = ((await login.json()) as any).token;
+  // CI 环境引擎表为空：注册一个本机引擎（仅列表为空时，避免影响本地既有引擎）
+  const eng = await req('GET', '/api/engines');
+  if ((eng.data.engines || []).length === 0) {
+    await req('POST', '/api/engines', { name: 'ci-local', endpoint: 'unix:///var/run/docker.sock' });
+  }
 });
 
 test('batch-prune：缺省 types 回退 containers+images', async () => {

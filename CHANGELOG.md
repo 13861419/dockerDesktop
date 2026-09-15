@@ -9,6 +9,10 @@
 
 - **Linux 升级后服务不再需要手动重启**：systemd unit 中 `Requires=docker.service` 降级为 `Wants`（Docker 守护进程未运行时面板也能启动，由面板自身提示 Docker 不可达），并新增 `StartLimitIntervalSec=0` 避免升级期间频繁 stop/start 触发默认 5 次/10 秒限速后服务留在 failed 状态；deb postinst / rpm %post 重启前先 `systemctl reset-failed` 清理失败态，面板一键升级生成的脚本同样加入该清理
 
+### Test（测试）
+
+- API 集成测试修复 Linux CI 兼容：3 个用例文件写死 `cmd.exe` shell 改为跨平台 `shell: true`；batch-prune 用例在引擎表为空时自注册本机引擎（unix socket）；容器文件变更用例优先挑运行中容器并容忍并发清理导致的 404 竞争
+
 ## [1.74.1] - 2026-09-15
 
 ### Fixed（修复）

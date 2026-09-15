@@ -12,7 +12,7 @@ import { execSync } from 'child_process';
 
 const BASE = process.env.API_BASE || 'http://localhost:9528';
 let adminToken = '';
-const sh = (cmd: string) => execSync(cmd, { shell: 'cmd.exe' });
+const sh = (cmd: string) => execSync(cmd, { shell: true });
 
 function req(method: string, path: string, body?: any): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
