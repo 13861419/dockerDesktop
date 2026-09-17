@@ -55,6 +55,15 @@ test('升级脚本：安装失败时先拉回旧版服务再退出（1.75.3）',
   assert.ok(/已恢复旧版服务/.test(sh));
 });
 
+test('升级脚本：安装前清理中断的 dpkg 状态且 systemd-run 单元名唯一（1.75.5）', () => {
+  const sh = gen('deb');
+  assert.ok(/dpkg --configure -a/.test(sh), '安装前恢复中断的 dpkg 状态');
+  const iConf = sh.indexOf('dpkg --configure -a');
+  const iInstall = sh.indexOf('dpkg -i "/var/lib/docker-manager/updates');
+  assert.ok(iConf >= 0 && iConf < iInstall, 'configure -a 必须先于安装');
+  assert.ok(/dm-updater-\$\$-\$\(date \+%s\)/.test(sh), 'systemd-run 单元名带时间戳防碰撞');
+});
+
 test('升级脚本：启动带重试且健康检查不通过时二次复活（1.75.3）', () => {
   const sh = gen('deb');
   assert.ok(/for attempt in 1 2 3/.test(sh), 'start 失败重试 3 次');

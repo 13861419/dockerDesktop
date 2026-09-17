@@ -17,6 +17,7 @@ import os from 'os';
 import path from 'path';
 import { getSetting, setSetting } from './settings';
 import { pushToTargets } from './alerting';
+import { isWindows } from './platform/detect';
 
 const REPO_API = 'https://api.github.com/repos/13861419/dockerDesktop/releases/latest';
 const CACHE_MS = 10 * 60 * 1000;
@@ -306,12 +307,14 @@ export function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath:
     '',
     '# 2) 脱离面板服务的 cgroup：systemctl stop / prerm 会按 cgroup 杀进程，不逃逸则本脚本会被连坐杀死',
     'if [ "$DM_ESCAPED" != "1" ] && command -v systemd-run >/dev/null 2>&1; then',
-    '  DM_ESCAPED=1 systemd-run --collect --unit="dm-updater-$$" bash "$0"',
+    '  DM_ESCAPED=1 systemd-run --collect --unit="dm-updater-$$-$(date +%s)" bash "$0"',
     '  if [ $? -eq 0 ]; then exit 0; fi',
     'fi',
     '',
     'sleep 2',
     '# 3) 安装（deb 的 prerm 负责停服务、postinst 负责重启；勿在脚本内先 stop——见上）',
+    '#    安装前先清理历史中断的 dpkg 状态（dpkg was interrupted），否则本次安装必然失败（1.75.5）',
+    'dpkg --configure -a >/dev/null 2>&1 || true',
     'INSTALL_LOG=$(mktemp)',
     `if ${install} >"$INSTALL_LOG" 2>&1; then`,
     '  :',
@@ -507,7 +510,22 @@ export async function applyUpdate(currentVersion: string): Promise<ApplyResult> 
   if (type === 'windows-service') {
     spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } else {
-    spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+    // 关键（1.75.5）：root 面板直接经 systemd-run 拉起升级脚本——
+    // 脚本脱离服务 cgroup，prerm 的 systemctl stop 杀不死它。
+    // 该逻辑在面板进程内实现，与脚本内容由哪个版本生成无关：
+    // 即使面板还在跑旧版脚本（无自愈能力），升级也不会再中断在半路。
+    // 非 root 时交给脚本自身的提权/诚实失败逻辑处理。
+    const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+    const unit = `dm-updater-${process.pid}-${Date.now().toString(36)}`;
+    if (isRoot && !isWindows()) {
+      spawn(
+        'systemd-run',
+        ['--collect', `--unit=${unit}`, 'bash', script],
+        { detached: true, stdio: 'ignore' },
+      ).unref();
+    } else {
+      spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+    }
   }
   return {
     asset: asset.name,

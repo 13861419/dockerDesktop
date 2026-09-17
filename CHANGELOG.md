@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.5] - 2026-09-17
+
+### Fixed（修复）
+
+- **一键升级自愈与旧版本彻底解耦**：root 面板改为在面板进程内直接经 `systemd-run` 拉起升级脚本（单元名带时间戳防碰撞）——脚本天生脱离服务 cgroup，不再依赖升级脚本自身的逃逸逻辑。这意味着即使面板还在运行旧版本（脚本由旧版生成），下一次一键升级也不会再中断在半路
+- **安装前自动恢复中断的 dpkg 状态**（`dpkg --configure -a`）：历史失败升级留下的 `dpkg was interrupted` 状态不再阻塞后续升级
+
 ## [1.75.4] - 2026-09-17
 
 ### Fixed（修复）
