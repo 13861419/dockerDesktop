@@ -278,8 +278,11 @@ function writeWindowsUpdater(staging: string, zipPath: string, installDir: strin
   return file;
 }
 
-/** 生成 deb/rpm 升级脚本：停服务 → 安装包 → 起服务 → 健康检查（失败给出回滚指引） */
-function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath: string): string {
+/** 生成 deb/rpm 升级脚本（1.75.1 重写）：
+ *  root 检查（免密 sudo 兜底）→ systemd-run 脱离面板服务 cgroup（避免 prerm/stop 连坐自杀）→
+ *  直接包管理器安装（prerm 停服务 + postinst 起服务）→ 60 秒健康轮询 → 结果写 update-result.txt
+ *  非 root 且无免密 sudo 时诚实失败并给出手动命令——绝不再假装升级成功。 */
+export function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath: string): string {
   const install =
     type === 'deb'
       ? `dpkg -i "${pkgPath}" || (apt-get install -y -f && dpkg -i "${pkgPath}")`
@@ -287,17 +290,50 @@ function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath: string
   const resultFile = path.join(stagingDir(), 'update-result.txt');
   const sh = [
     '#!/bin/bash',
-    '# DockerManager 一键升级脚本（由面板生成，1.73.0 起带健康检查）',
+    '# DockerManager 一键升级脚本（由面板生成；1.75.1 起自带提权检查与 cgroup 逃逸）',
+    `RESULT=${JSON.stringify(resultFile)}`,
+    'say() { echo "[$1] $(date \'+%F %T\') $2" >> "$RESULT"; }',
+    '',
+    '# 1) root 检查：面板以 dockerman 等低权限用户运行时，dpkg/systemctl 均不可用，诚实失败并给出手动命令',
+    'if [ "$(id -u)" != "0" ]; then',
+    '  if sudo -n true 2>/dev/null; then',
+    '    exec sudo bash "$0"   # 有免密 sudo 则提权重跑',
+    '  fi',
+    '  MSG="面板以非 root 运行且无免密 sudo，无法自动安装系统包。请 SSH 登录后手动执行: sudo bash \\"$0\\"（或 sudo dpkg -i <安装包>），之后 sudo systemctl restart docker-manager"',
+    '  say FAIL "$MSG"',
+    '  exit 1',
+    'fi',
+    '',
+    '# 2) 脱离面板服务的 cgroup：systemctl stop / prerm 会按 cgroup 杀进程，不逃逸则本脚本会被连坐杀死',
+    'if [ "$DM_ESCAPED" != "1" ] && command -v systemd-run >/dev/null 2>&1; then',
+    '  DM_ESCAPED=1 systemd-run --collect --unit="dm-updater-$$" bash "$0"',
+    '  if [ $? -eq 0 ]; then exit 0; fi',
+    'fi',
+    '',
     'sleep 2',
-    'systemctl stop docker-manager 2>/dev/null || true',
-    install,
-    'systemctl reset-failed docker-manager 2>/dev/null || true',
-    'systemctl start docker-manager',
-    '# 健康检查：30 秒内未就绪则提示手动回滚（记录结果供面板展示）',
-    'if systemctl is-active --quiet docker-manager && curl -fsS -m 5 "http://127.0.0.1:${PORT:-9528}/api/health" >/dev/null 2>&1; then',
-    `  echo "[SUCCESS] \$(date '+%F %T') 升级成功" >> "${path.join(stagingDir(), 'update-result.txt')}"`,
+    '# 3) 安装（deb 的 prerm 负责停服务、postinst 负责重启；勿在脚本内先 stop——见上）',
+    'INSTALL_LOG=$(mktemp)',
+    `if ${install} >"$INSTALL_LOG" 2>&1; then`,
+    '  :',
     'else',
-    '  echo "[ROLLBACK-HINT] $(date \'+%F %T\') 升级后服务未就绪，请查看 journalctl -u docker-manager 并用上一版本安装包手动回滚" >> ' + `"${path.join(stagingDir(), 'update-result.txt')}"`,
+    '  say FAIL "安装包安装失败: $(tail -c 400 "$INSTALL_LOG" | tr "\\n" " ")"',
+    '  exit 1',
+    'fi',
+    'systemctl reset-failed docker-manager 2>/dev/null || true',
+    'systemctl start docker-manager 2>/dev/null || true',
+    '',
+    '# 4) 健康检查：60 秒轮询，未就绪则记录 journalctl 尾部便于面板内排障',
+    'OK=0',
+    'for i in $(seq 1 30); do',
+    '  if systemctl is-active --quiet docker-manager && curl -fsS -m 5 "http://127.0.0.1:${PORT:-9528}/api/health" >/dev/null 2>&1; then',
+    '    OK=1; break',
+    '  fi',
+    '  sleep 2',
+    'done',
+    'if [ "$OK" = "1" ]; then',
+    '  say SUCCESS "升级成功"',
+    'else',
+    '  say FAIL "升级后服务未就绪。最近日志: $(journalctl -u docker-manager -n 30 --no-pager 2>/dev/null | tail -c 600 | tr "\\n" " ")"',
     '  exit 1',
     'fi',
     '',

@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.1] - 2026-09-15
+
+### Fixed（修复）
+
+- **Linux 一键更新后服务死亡（根因修复）**：升级脚本自身运行在面板服务的 systemd cgroup 内，脚本里的 `systemctl stop` 会按 cgroup 把脚本连坐杀死——服务被停、dpkg 未执行，更新后服务无法自启，需手动 `systemctl start`。现改为 `systemd-run` 生成独立瞬态单元逃逸 cgroup 后再安装，并移除脚本内联 stop（由 deb prerm/postinst 原子处理停启）
+- **一键更新假成功**：面板以低权限用户（dockerman）运行且无免密 sudo 时，stop/dpkg/start 全部静默失败但仍上报「升级成功」；现升级前先做 root 检查，有免密 sudo 则提权重跑，否则诚实失败并在结果中给出手动升级命令（`sudo bash update.sh` / `sudo dpkg -i`）
+- 健康检查升级为 60 秒轮询，失败时自动记录 `journalctl` 尾部日志到更新结果，面板内可直接排障
+
 ## [1.75.0] - 2026-09-15
 
 ### Added（新增）
