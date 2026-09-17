@@ -85,8 +85,8 @@ chmod 755 "$DEB_DIR/DEBIAN/postinst"
 cat > "$DEB_DIR/DEBIAN/prerm" <<'PRERM'
 #!/bin/bash
 set -e
+# 仅停服务，勿 disable——升级失败时保持开机自启与 enable 状态（1.75.3）
 systemctl stop docker-manager || true
-systemctl disable docker-manager || true
 PRERM
 chmod 755 "$DEB_DIR/DEBIAN/prerm"
 

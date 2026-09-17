@@ -46,6 +46,27 @@ test('升级脚本：健康轮询与失败留痕（journalctl 尾部写入结果
   assert.ok(/api\/health/.test(sh));
 });
 
+test('升级脚本：安装失败时先拉回旧版服务再退出（1.75.3）', () => {
+  const sh = gen('deb');
+  const iFail = sh.indexOf('安装包安装失败');
+  const iRescue = sh.indexOf('systemctl start docker-manager 2>/dev/null || true');
+  assert.ok(iFail >= 0);
+  assert.ok(iRescue >= 0 && iRescue < iFail, 'FAIL 之前必须先 start 恢复旧版服务');
+  assert.ok(/已恢复旧版服务/.test(sh));
+});
+
+test('升级脚本：启动带重试且健康检查不通过时二次复活（1.75.3）', () => {
+  const sh = gen('deb');
+  assert.ok(/for attempt in 1 2 3/.test(sh), 'start 失败重试 3 次');
+  assert.ok(/systemctl enable docker-manager/.test(sh), '显式 enable（prerm 不再 disable）');
+  assert.ok(sh.includes('systemctl restart docker-manager 2>/dev/null || true'), '不健康时强制 restart 二次复活');
+});
+
+test('升级脚本：健康不通过时的提示包含手动恢复命令（1.75.3）', () => {
+  const sh = gen('deb');
+  assert.ok(/sudo systemctl restart docker-manager/.test(sh));
+});
+
 test('升级脚本：rpm 分支使用 rpm -Uvh --replacepkgs', () => {
   const sh = gen('rpm');
   assert.ok(sh.includes('rpm -Uvh --replacepkgs'));

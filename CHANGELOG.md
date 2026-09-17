@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.3] - 2026-09-17
+
+### Fixed（修复）
+
+- **一键升级后服务未拉起的彻底修复**：升级脚本安装失败时不再留下一台死服务——先自动拉回旧版服务再报失败；安装成功后等旧进程完全退出并显式 enable + start（失败重试 3 次）；健康检查 60 秒不通过时强制重启再给 30 秒自愈窗口，仍失败才报错并附手动恢复命令
+- **deb prerm 不再 disable 服务**（`.deb-inner.sh` / `build-deb.sh` 同步）：此前安装失败或 postinst enable 失败时服务被禁用，重启机器后也不会自启
+
 ## [1.75.2] - 2026-09-15
 
 ### Added（新增）
