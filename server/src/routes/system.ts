@@ -13,11 +13,12 @@ import {
   addUser,
   deleteUser,
   changePassword,
+  resetPassword,
   userExists,
 } from '../users';
 import { exportDatabase, importDatabaseBuffer, getDataDir } from '../storage';
 import { logOperation } from '../operationLog';
-import { requireAdmin, requireAuth } from '../auth';
+import { requireAdmin, requireAuth, revokeSessions } from '../auth';
 import { listRoles } from '../rbac';
 import { getUserSecurity, setTotpSecret, setIpAllowlist, setContainerAllowlist } from '../users';
 import { generateSecret, otpauthUri, verifyTotp } from '../totp';
@@ -535,6 +536,32 @@ router.post(
       res.json({ ok: true });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || '新增用户失败' });
+    }
+  }),
+);
+
+/**
+ * POST /api/system/users/:name/password
+ * 管理员重置指定用户密码（1.75.2）：无需原密码，重置后该用户下次登录强制改密
+ * body: { newPassword }
+ */
+router.post(
+  '/users/:name/password',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = req.params.name;
+    const { newPassword } = req.body || {};
+    if (!newPassword || String(newPassword).length < 6) {
+      return res.status(400).json({ error: '密码至少 6 位' });
+    }
+    try {
+      resetPassword(name, String(newPassword));
+      // 安全：重置后吊销该用户全部在线会话，旧登录态立即失效
+      revokeSessions({ username: name });
+      logOperation(res.locals.username, '重置用户密码', 'user', name, '', true);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || '重置密码失败' });
     }
   }),
 );

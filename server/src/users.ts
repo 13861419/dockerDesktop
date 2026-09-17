@@ -204,6 +204,23 @@ export function changePassword(username: string, oldPassword: string, newPasswor
 }
 
 /**
+ * 管理员重置指定用户密码（1.75.2）：无需原密码，重置后强制该用户下次登录改密
+ * @param username 目标用户名
+ * @param newPassword 新密码
+ * @throws 用户不存在或密码不满足策略时抛错
+ */
+export function resetPassword(username: string, newPassword: string): void {
+  const d = getDb();
+  const row = d.prepare('SELECT username FROM users WHERE username = ?').get(username);
+  if (!row) throw new Error('用户不存在');
+  validatePasswordPolicy(newPassword);
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  d.prepare(
+    'UPDATE users SET salt = ?, password_hash = ?, must_change_password = 1, pwd_changed_at = ? WHERE username = ?',
+  ).run(newSalt, hashPassword(newPassword, newSalt), Date.now(), username);
+}
+
+/**
  * 读取用户安全信息（2FA 启停、按用户 IP 白名单）
  */
 export function getUserSecurity(username: string): {

@@ -115,6 +115,22 @@
   max-width: 420px;
 }
 
+/* 单行紧凑布局（1.75.2）：字段横向排布，按钮靠右 */
+.settings-form--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  max-width: none;
+  .field {
+    flex: 1 1 200px;
+    min-width: 160px;
+  }
+  .settings-form__actions {
+    margin-left: auto;
+    padding-bottom: 1px;
+  }
+}
+
 .settings-form__actions {
   display: flex;
   justify-content: flex-end;

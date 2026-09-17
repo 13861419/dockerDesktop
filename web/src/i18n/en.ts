@@ -2659,6 +2659,12 @@ export const en: Record<string, string> = {
   "回滚到最后一次 CI 通过并部署成功的版本": "Roll back to the last commit that passed CI and deployed successfully",
   "部署此版本": "Deploy this commit",
   "CI 状态门禁": "CI status gate",
+  "重置密码": "Reset password",
+  "密码已重置，该用户下次登录将使用新密码": "Password reset — the user will sign in with the new password next time",
+  "重置密码失败": "Failed to reset password",
+  "为该用户设置新密码，重置后该用户下次登录将使用新密码": "Set a new password for this user; they'll sign in with it next time",
+  "至少 6 位；重置后该用户全部在线会话将被吊销，下次登录使用新密码": "At least 6 characters; all active sessions of the user are revoked on reset and they sign in with the new password",
+
   "Webhook 部署前先检查 commit 的 CI 状态，绿了才上线（手动部署不受限）": "Webhook deploys check the commit's CI status first — only green ships (manual deploys are not restricted)",
   "CI 平台": "CI platform",
   "自动识别": "Auto-detect",

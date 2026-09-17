@@ -192,6 +192,11 @@ export default function SettingsPage() {
   const [newRole, setNewRole] = useState('user');
   const [creating, setCreating] = useState(false);
 
+  // 管理员重置用户密码（1.75.2）
+  const [resetTarget, setResetTarget] = useState<string | null>(null);
+  const [resetPwd, setResetPwd] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+
   // 角色管理（RBAC）
   const [roles, setRoles] = useState<RoleInfo[]>([]);
   const [permCatalog, setPermCatalog] = useState<PermissionItem[]>([]);
@@ -633,6 +638,26 @@ export default function SettingsPage() {
     }
   }
 
+  /** 管理员重置指定用户密码（1.75.2）：无需原密码，重置后目标下次登录强制改密 */
+  async function handleResetPassword() {
+    if (!resetTarget) return;
+    if (resetPwd.length < 6) {
+      showToast(t('密码至少 6 位'), 'error');
+      return;
+    }
+    setResetBusy(true);
+    try {
+      await post(`/api/system/users/${encodeURIComponent(resetTarget)}/password`, { newPassword: resetPwd });
+      showToast(t('密码已重置，该用户下次登录将使用新密码'));
+      setResetTarget(null);
+      setResetPwd('');
+    } catch (e: any) {
+      showToast(e?.message || t('重置密码失败'), 'error');
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   /** 新建/编辑角色：切换编辑器（name 为空串表示新建） */
   function beginCreateRole() {
     setRoleEditing({ name: '', permissions: [] });
@@ -1008,7 +1033,7 @@ export default function SettingsPage() {
               <th>{t('IP 白名单')}</th>
               <th>{t('容器白名单')}</th>
               <th>{t('创建时间')}</th>
-              <th style={{ width: 100 }}>{t('操作')}</th>
+              <th style={{ width: 170 }}>{t('操作')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1070,16 +1095,30 @@ export default function SettingsPage() {
                   >
                     {t('删除')}
                   </Button>
+                  {currentRole === 'admin' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={u.username === currentUser}
+                      onClick={() => {
+                        setResetTarget(u.username);
+                        setResetPwd('');
+                      }}
+                      title={t('为该用户设置新密码，重置后该用户下次登录将使用新密码')}
+                    >
+                      {t('重置密码')}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        {/* 新增用户 */}
+        {/* 新增用户：单行紧凑布局（1.75.2） */}
         <div className="settings-section">
           <div className="settings-section__title">{t('新增用户')}</div>
-          <div className="settings-form">
+          <div className="settings-form settings-form--inline">
             <Field label={t('用户名')} required>
               <Input
                 value={newUsername}
@@ -1119,7 +1158,7 @@ export default function SettingsPage() {
         )}
         <div className="settings-section">
           <div className="settings-section__title">{t('修改当前用户密码')}</div>
-          <div className="settings-form">
+          <div className="settings-form settings-form--inline">
             <Field label={t('原密码')}>
               <Input
                 type="password"
@@ -1143,6 +1182,32 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        {/* 管理员重置用户密码（1.75.2） */}
+        <Modal
+          open={!!resetTarget}
+          title={`${t('重置密码')} · ${resetTarget || ''}`}
+          onClose={() => setResetTarget(null)}
+          width={420}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setResetTarget(null)}>
+                {t('取消')}
+              </Button>
+              <Button variant="primary" loading={resetBusy} onClick={handleResetPassword}>
+                {t('重置密码')}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t('新密码')} required hint={t('至少 6 位；重置后该用户全部在线会话将被吊销，下次登录使用新密码')}>
+            <Input
+              type="password"
+              value={resetPwd}
+              onChange={(e) => setResetPwd(e.target.value)}
+              placeholder={t('至少 6 位')}
+            />
+          </Field>
+        </Modal>
         {/* 安全加固：2FA + 会话管理 */}
         <div className="settings-section">
           <div className="settings-section__title">{t('两步验证（2FA）')}</div>
