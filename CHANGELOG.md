@@ -3,6 +3,12 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.4] - 2026-09-17
+
+### Fixed（修复）
+
+- **宿主机终端助手容器启动即断开**：docker CLI 会拒绝把管道 stdin 挂到 `-t` 容器（报 "cannot attach stdin to a TTY-enabled container because stdin is not a terminal"）——助手容器交互模式改为只用 `-i`，PTY 改由宿主机 `script` 分配（`nsenter -m` 后使用宿主机 util-linux，systemd 发行版必备），提示符 / 回显 / Tab 补全正常，TERM 经 `-e` 传入容器（1.74.5 引入的自动拉取助手镜像流程保持不变）
+
 ## [1.75.3] - 2026-09-17
 
 ### Fixed（修复）

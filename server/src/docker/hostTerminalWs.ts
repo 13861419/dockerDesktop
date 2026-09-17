@@ -172,7 +172,11 @@ function handleSession(ws: WebSocket): void {
           const bin = shell === 'sh' ? '/bin/sh' : shell === 'zsh' ? 'zsh' : '/bin/bash';
           const env = { ...process.env, TERM: 'xterm-256color' };
           const spawnHelper = (dockerBin: string, image: string) => {
-            const inner = 'command -v bash >/dev/null 2>&1 && exec bash || exec sh';
+            // docker CLI 拒绝把管道 stdin 挂到 -t 容器（1.75.4 前的致命报错），
+            // 故 docker 只用 -i；PTY 由宿主机 util-linux `script` 分配
+            // （nsenter -m 后解析的是宿主机文件系统，systemd 发行版必备）。
+            const innerShell = 'command -v bash >/dev/null 2>&1 && exec bash || exec sh';
+            const inner = `script -qfc "${innerShell}" /dev/null`;
             child = spawn(dockerBin, dockerHelperArgs({ mode: 'docker', dockerBin, image }, inner, true), { cwd: '/', env, stdio: ['pipe', 'pipe', 'pipe'] });
             send('\r\n[DockerManager] 已通过 Docker 助手容器进入宿主机 root shell（助手镜像 ' + image + '）。\r\n');
           };

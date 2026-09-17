@@ -140,9 +140,13 @@ export function ensureHelperImage(dockerBin: string): Promise<string | null> {
 
 /**
  * 构造 Docker 助手容器提权命令（交互与非交互通用）
+ *
+ * 交互模式下不加 `-t`：面板经管道桥接 stdin，docker CLI 会以
+ * "cannot attach stdin to a TTY-enabled container because stdin is not a terminal"
+ * 拒绝启动（1.75.4）。PTY 由调用方在 innerCmd 内用宿主机 `script` 分配。
  * @param channel docker 通道（含 dockerBin 与 image）
  * @param innerCmd 宿主机命名空间内执行的 shell 片段
- * @param interactive 是否分配 TTY（交互终端为 true，单命令执行为 false）
+ * @param interactive 是否交互（交互终端为 true，单命令执行为 false）
  */
 export function dockerHelperArgs(
   channel: Extract<HostRootChannel, { mode: 'docker' }>,
@@ -151,7 +155,7 @@ export function dockerHelperArgs(
 ): string[] {
   return [
     'run', '--rm',
-    ...(interactive ? ['-i', '-t'] : []),
+    ...(interactive ? ['-i', '-e', 'TERM=xterm-256color'] : []),
     '--privileged', '--pid=host', '--userns=host', '--network=none',
     '--name', `dm-hostroot-${process.pid}-${Date.now().toString(36)}`,
     channel.image,

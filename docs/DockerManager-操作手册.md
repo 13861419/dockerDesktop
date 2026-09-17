@@ -640,7 +640,7 @@ journalctl -u docker-manager -f
 
 - 打开宿主机远程终端（基于 xterm），直接执行宿主机命令。
 - **仅建议管理员使用**，操作需谨慎。
-- **root 提权（1.34.1，1.74.5 增强自动拉取）**：Linux 上若面板服务以低权限用户运行（默认 systemd `User=dockerman`），终端会自动检测并改经 **Docker 助手容器**进入宿主机 root shell（`--privileged --pid=host` + `nsenter` 进入 PID 1 命名空间，连接横幅会注明助手镜像）；本地无助手镜像但 docker CLI 可用时自动后台拉取 alpine（120 秒超时）后重连即可，无需手动操作；本地无 docker CLI 或拉取失败时回退为普通用户并在终端内给出提示。面板以 root 运行时直接获得 root shell。`sudo` 在服务账号下不可用（系统账号无密码且 systemd `NoNewPrivileges` 禁止 setuid），如需原生 root 也可将服务改为 `User=root` 运行。
+- **root 提权（1.34.1，1.74.5 增强自动拉取）**：Linux 上若面板服务以低权限用户运行（默认 systemd `User=dockerman`），终端会自动检测并改经 **Docker 助手容器**进入宿主机 root shell（`--privileged --pid=host` + `nsenter` 进入 PID 1 命名空间，连接横幅会注明助手镜像）；本地无助手镜像但 docker CLI 可用时自动后台拉取 alpine（120 秒超时）后重连即可，无需手动操作；本地无 docker CLI 或拉取失败时回退为普通用户并在终端内给出提示。面板以 root 运行时直接获得 root shell。`sudo` 在服务账号下不可用（系统账号无密码且 systemd `NoNewPrivileges` 禁止 setuid），如需原生 root 也可将服务改为 `User=root` 运行。1.75.4 起助手容器内由宿主机 `script` 分配 PTY（docker 只保留 `-i`），修复了此前因 docker CLI 拒绝管道 stdin 挂载 `-t` 容器导致的「连接即断开」。
 
 ![文件与终端截图](../images/files-terminal.png)
 
