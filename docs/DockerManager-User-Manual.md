@@ -1398,7 +1398,7 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 
 Menu: **Tools** (`/tools`, all users)
 
-- Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, etc.
+- Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, YAML / Compose validation & formatting (with line-precise error locating), and cron expression parsing with the next 5 run times (1.75.8).
 - Zero backend calls; handy for day-to-day ops.
 
 ![Ops Toolbox](../images/tools.png)

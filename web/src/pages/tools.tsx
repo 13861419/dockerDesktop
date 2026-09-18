@@ -1,17 +1,21 @@
 /**
  * 运维工具箱页面
  *
- * 纯前端实现常用运维小工具，全部在浏览器内完成、零后端请求、零第三方依赖：
+ * 常用运维小工具，全部在浏览器内完成、零后端请求：
  * - JSON 校验/格式化/压缩
  * - 正则表达式测试
  * - Base64 编解码
  * - 时间戳 ↔ 日期互转
  * - 进制转换（2/8/10/16）
  * - 端口范围解析 + IPv4 网段计算
+ * - YAML / Compose 校验格式化（1.75.8，js-yaml）
+ * - Cron 表达式解析 + 未来执行时间预览（1.75.8，语义与调度器一致）
  */
 import { useMemo, useState } from 'react';
+import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 import Card from '../components/Card';
 import Button from '../components/Button';
+import { parseCron } from '../utils/cron';
 import { translateNow as t } from '../i18n';
 import './tools.less';
 
@@ -307,6 +311,102 @@ function PortSubnetTool() {
   );
 }
 
+// ---------- YAML 工具（1.75.8） ----------
+
+function YamlTool() {
+  const [input, setInput] = useState('');
+  const [output, setOutput] = useState('');
+  const [error, setError] = useState('');
+
+  function loadYaml(text: string): any | null {
+    return yamlLoad(text);
+  }
+
+  /** 校验：错误带行号定位 */
+  function validate() {
+    if (!input.trim()) return;
+    try {
+      loadYaml(input);
+      setError('');
+      setOutput(t('YAML 语法正确'));
+    } catch (e: any) {
+      const mark = e?.mark ? `（第 ${e.mark.line + 1} 行，第 ${e.mark.column + 1} 列）` : '';
+      setError(`${mark} ${e?.reason || e?.message || String(e)}`.trim());
+      setOutput('');
+    }
+  }
+
+  function run(mode: 'format' | 'json') {
+    if (!input.trim()) return;
+    try {
+      const obj = loadYaml(input);
+      if (mode === 'format') {
+        setOutput(yamlDump(obj, { indent: 2, lineWidth: -1, noRefs: true }));
+      } else {
+        setOutput(JSON.stringify(obj, null, 2));
+      }
+    } catch (e: any) {
+      const mark = e?.mark ? `（第 ${e.mark.line + 1} 行，第 ${e.mark.column + 1} 列）` : '';
+      setError(`${mark} ${e?.message || String(e)}`);
+      setOutput('');
+    }
+  }
+
+  return (
+    <Card title={t('YAML / Compose 校验格式化')}>
+      <TextArea value={input} onChange={setInput} placeholder={t('粘贴 YAML 或 docker compose 配置')} rows={6} mono />
+      <div className="tools-row">
+        <Button size="sm" onClick={() => validate()}>{t('校验')}</Button>
+        <Button size="sm" onClick={() => run('format')}>{t('格式化')}</Button>
+        <Button size="sm" onClick={() => run('json')}>{t('转为 JSON')}</Button>
+      </div>
+      <Out text={output || error} ok={error ? false : undefined} placeholder={t('校验或格式化结果')} />
+    </Card>
+  );
+}
+
+// ---------- Cron 工具（1.75.7） ----------
+
+function CronTool() {
+  const [expr, setExpr] = useState('');
+  const [result, setResult] = useState('');
+
+  function parse() {
+    const r = parseCron(expr);
+    if (!r.valid) {
+      setResult(r.error);
+      return;
+    }
+    const lines: string[] = r.fields.map((f) => `${f.label}（${f.value}）：${f.desc}`);
+    lines.push('');
+    lines.push(t('未来 5 次执行时间：'));
+    for (const t of r.next) {
+      const d = new Date(t);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      lines.push(
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      );
+    }
+    setResult(lines.join('\n'));
+  }
+
+  return (
+    <Card title={t('Cron 表达式解析')}>
+      <div className="tools-inline">
+        <input
+          className="tools-input tools-input--grow tools-mono"
+          value={expr}
+          onChange={(e) => setExpr(e.target.value)}
+          placeholder={t('分 时 日 月 周，如 0 3 * * *')}
+          onKeyDown={(e) => e.key === 'Enter' && parse()}
+        />
+        <Button size="sm" onClick={parse}>{t('解析')}</Button>
+      </div>
+      <Out text={result} placeholder={t('输入 5 段 cron 表达式开始解析')} />
+    </Card>
+  );
+}
+
 /** 工具箱页面入口 */
 export default function Tools() {
   return (
@@ -318,6 +418,8 @@ export default function Tools() {
         <TimestampTool />
         <RadixTool />
         <PortSubnetTool />
+        <YamlTool />
+        <CronTool />
       </div>
     </div>
   );

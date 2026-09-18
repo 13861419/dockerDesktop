@@ -212,3 +212,25 @@ test('nextRunTime: consecutive calls produce increasing results', () => {
   assert.ok(second !== null);
   assert.ok(second! > first!, 'second call should be after first');
 });
+
+test('nextRunTime: range 20-30 hits minute 20 next hour（1.75.7 区间支持）', () => {
+  const next = nextRunTime('20-30 * * * *', BASE);
+  assert.ok(next !== null);
+  const t = getLocal(next);
+  assert.strictEqual(t.d, 15); // 当天 10:31 起扫描，首个命中：11:20
+  assert.strictEqual(t.h, 11);
+  assert.strictEqual(t.min, 20);
+});
+
+test('nextRunTime: range with step 9-17/2 hours', () => {
+  const next = nextRunTime('0 9-17/2 * * *', BASE);
+  assert.ok(next !== null);
+  const t = getLocal(next);
+  assert.strictEqual(t.d, 15);
+  assert.strictEqual(t.h, 11); // 当天 10:30 之后的首个命中：11 点
+  assert.strictEqual(t.min, 0);
+});
+
+test('nextRunTime: invalid range a>b returns null', () => {
+  assert.strictEqual(nextRunTime('30-20 * * * *', BASE), null);
+});

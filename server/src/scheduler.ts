@@ -176,35 +176,48 @@ export function nextRunTime(cron: string, from: number = Date.now()): number | n
 
 /**
  * 校验 cron 字段是否合法
+ *
+ * 支持五种写法（1.75.7 起新增区间 a-b 及带步进 a-b/n，步进跟在区间后）：
+ * 星号、星号加步进、数字、区间、区间加步进，均可逗号组合。
  * @param field 字段文本
  */
 function isValidField(field: string): boolean {
   return field.split(',').every((f) => {
     if (f === '*') return true;
-    const m = f.match(/^(\d+|\*)(\/(\d+))?$/);
+    const m = f.match(/^(\*|(\d{1,4})(?:-(\d{1,4}))?)(\/(\d{1,4}))?$/);
     if (!m) return false;
-    if (m[3] && Number(m[3]) <= 0) return false;
-    if (m[1] !== '*') {
-      const v = Number(m[1]);
-      if (Number.isNaN(v)) return false;
+    if (m[4] && Number(m[4]) <= 0) return false;
+    if (m[2] !== undefined) {
+      const a = Number(m[2]);
+      const b = m[3] !== undefined ? Number(m[3]) : a;
+      if (a > b) return false;
     }
     return true;
   });
 }
 
 /**
- * 判断给定值是否命中 cron 字段（支持通配符星号、星号加步进、数字、数字逗号数字）
+ * 判断给定值是否命中 cron 字段
+ *
+ * 支持星号、星号加步进、数字、区间、区间加步进（含逗号组合）；步进基于区间起点取余。
  * @param field 字段文本
  * @param value 当前值
  */
 function matches(field: string, value: number): boolean {
   return field.split(',').some((f) => {
     if (f === '*') return true;
-    if (f.startsWith('*/')) {
-      const step = Number(f.slice(2));
-      return step > 0 && value % step === 0;
+    const m = f.match(/^(\*|(\d{1,4})(?:-(\d{1,4}))?)(\/(\d+))?$/);
+    if (!m) return false;
+    const step = m[5] ? Number(m[5]) : 1;
+    if (step <= 0) return false;
+    let a = 0;
+    let b = Number.MAX_SAFE_INTEGER;
+    if (m[1] !== '*') {
+      a = Number(m[2]);
+      b = m[3] !== undefined ? Number(m[3]) : a;
+      if (a > b) return false;
     }
-    return Number(f) === value;
+    return value >= a && value <= b && (value - a) % step === 0;
   });
 }
 
