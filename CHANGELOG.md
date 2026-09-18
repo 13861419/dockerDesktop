@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.7] - 2026-09-18
+
+### Fixed（修复）
+
+- **一键升级脚本与结果文件被写入 `/tmp`（真根因）**：升级暂存目录此前读取了从未设置的 `DOCKERMANAGER_DATA` 环境变量，导致脚本落入系统 `/tmp`——而 systemd 服务开启 `PrivateTmp=true`，面板与 root 脚本各看到一个私有 /tmp，脚本路径互相不可见、`/tmp` 清理还可能在升级中途删掉脚本。现统一改用数据目录（`/var/lib/docker-manager`）：脚本与 `update-result.txt` 持久可见
+- **升级脚本第一行写入 `[START]` 记录**：脚本若再被中断，结果文件可精确暴露中断位置，不再"静默死亡无痕"
+- **systemd-run 拉起失败自动回退**为直接执行（极端系统环境下的兜底）
+
 ## [1.75.6] - 2026-09-17
 
 ### Added（新增）

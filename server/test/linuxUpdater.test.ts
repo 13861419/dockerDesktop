@@ -76,6 +76,14 @@ test('升级脚本：健康不通过时的提示包含手动恢复命令（1.75.
   assert.ok(/sudo systemctl restart docker-manager/.test(sh));
 });
 
+test('升级脚本：启动即写 START �痕（定位脚本是否被中途杀死，1.75.7）', () => {
+  const sh = gen('deb');
+  const iStart = sh.indexOf('say START');
+  const iRoot = sh.indexOf('id -u');
+  assert.ok(iStart >= 0, '脚本开头必须先写 START 记录');
+  assert.ok(iRoot > iStart, 'START 必须先于 root 检查');
+});
+
 test('升级脚本：rpm 分支使用 rpm -Uvh --replacepkgs', () => {
   const sh = gen('rpm');
   assert.ok(sh.includes('rpm -Uvh --replacepkgs'));

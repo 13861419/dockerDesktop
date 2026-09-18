@@ -18,6 +18,12 @@ import path from 'path';
 import { getSetting, setSetting } from './settings';
 import { pushToTargets } from './alerting';
 import { isWindows } from './platform/detect';
+import { getDataDir } from './storage';
+
+/** 升级结果文件：放数据目录根（旧版写在 update-staging 下，会被重试清空且跨 PrivateTmp 不可见，1.75.7 修复） */
+function resultFilePath(): string {
+  return path.join(getDataDir(), 'update-result.txt');
+}
 
 const REPO_API = 'https://api.github.com/repos/13861419/dockerDesktop/releases/latest';
 const CACHE_MS = 10 * 60 * 1000;
@@ -237,8 +243,7 @@ export function verifySha256(file: string, sumsContent: string, assetName: strin
 
 /** 升级暂存目录（放在数据目录下，与安装目录分离） */
 function stagingDir(): string {
-  const base = process.env.DOCKERMANAGER_DATA || path.join(os.tmpdir(), 'docker-manager-update');
-  const dir = path.join(base, 'update-staging');
+  const dir = path.join(getDataDir(), 'update-staging');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -248,7 +253,7 @@ export function buildWindowsBat(installDir: string, zipPath: string, staging: st
   const nssm = path.join(installDir, 'nssm.exe');
   const prev = `${installDir}_prev`;
   const extract = path.join(staging, 'extract', 'DockerManager');
-  const resultFile = path.join(stagingDir(), 'update-result.txt');
+  const resultFile = resultFilePath();
   const healthUrl = `http://127.0.0.1:${port}/api/health`;
   return [
     '@echo off',
@@ -288,12 +293,13 @@ export function writeLinuxUpdater(staging: string, type: 'deb' | 'rpm', pkgPath:
     type === 'deb'
       ? `dpkg -i "${pkgPath}" || (apt-get install -y -f && dpkg -i "${pkgPath}")`
       : `rpm -Uvh --replacepkgs "${pkgPath}"`;
-  const resultFile = path.join(stagingDir(), 'update-result.txt');
+  const resultFile = resultFilePath();
   const sh = [
     '#!/bin/bash',
     '# DockerManager 一键升级脚本（由面板生成；1.75.1 起自带提权检查与 cgroup 逃逸，1.75.3 起失败自动恢复服务）',
     `RESULT=${JSON.stringify(resultFile)}`,
     'say() { echo "[$1] $(date \'+%F %T\') $2" >> "$RESULT"; }',
+    'say START "升级脚本已启动"',
     '',
     '# 1) root 检查：面板以 dockerman 等低权限用户运行时，dpkg/systemctl 均不可用，诚实失败并给出手动命令',
     'if [ "$(id -u)" != "0" ]; then',
@@ -449,25 +455,28 @@ export interface LastUpdateResult {
   detail: string;
 }
 
-/** 读取最近一次一键更新结果（无记录返回 null） */
+/** 读取最近一次一键更新结果（无记录返回 null；兼容旧版写在 update-staging 下的结果文件） */
 export function readLastUpdateResult(): LastUpdateResult | null {
-  try {
-    const file = path.join(stagingDir(), 'update-result.txt');
-    if (!fs.existsSync(file)) return null;
-    const lines = fs
-      .readFileSync(file, 'utf8')
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const last = lines[lines.length - 1];
-    if (!last) return null;
-    const m = last.match(/^\[(SUCCESS|FAIL|ROLLBACK-HINT)\]\s*(.+?)\s+(.*)$/);
-    if (!m) return { status: 'unknown', at: '', detail: last };
-    const status = m[1] === 'SUCCESS' ? 'success' : m[1] === 'FAIL' ? 'rollback' : 'rollback-hint';
-    return { status, at: m[2], detail: m[3] };
-  } catch {
-    return null;
+  const candidates = [resultFilePath(), path.join(stagingDir(), 'update-result.txt')];
+  for (const file of candidates) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const lines = fs
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const last = lines[lines.length - 1];
+      if (!last) continue;
+      const m = last.match(/^\[(SUCCESS|FAIL|ROLLBACK-HINT)\]\s*(.+?)\s+(.*)$/);
+      if (!m) return { status: 'unknown', at: '', detail: last };
+      const status = m[1] === 'SUCCESS' ? 'success' : m[1] === 'FAIL' ? 'rollback' : 'rollback-hint';
+      return { status, at: m[2], detail: m[3] };
+    } catch {
+      // 尝试下一个候选路径
+    }
   }
+  return null;
 }
 
 /**
@@ -518,11 +527,16 @@ export async function applyUpdate(currentVersion: string): Promise<ApplyResult> 
     const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
     const unit = `dm-updater-${process.pid}-${Date.now().toString(36)}`;
     if (isRoot && !isWindows()) {
-      spawn(
+      const viaSystemd = spawn(
         'systemd-run',
         ['--collect', `--unit=${unit}`, 'bash', script],
         { detached: true, stdio: 'ignore' },
-      ).unref();
+      );
+      // systemd-run 不可用（极简系统 / PATH 缺失）时回退为直接拉起，脚本内部仍有逃逸逻辑
+      viaSystemd.on('error', () => {
+        spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+      });
+      viaSystemd.unref();
     } else {
       spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
     }
