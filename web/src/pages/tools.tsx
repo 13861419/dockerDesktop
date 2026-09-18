@@ -12,7 +12,7 @@
  * - Cron 表达式解析 + 未来执行时间预览（1.75.8，语义与调度器一致）
  * - Hash 校验（1.76.0，Web Crypto SHA-1/256/512，支持文件）
  * - 强密码 / UUID 生成（1.76.0，crypto.getRandomValues）
- * - 文本 Diff 对比（1.76.0，LCS 行级算法）
+ * - 文本 Diff 对比（1.76.0，LCS 行级算法 + 行内字符级差异高亮）
  */
 import { useMemo, useRef, useState } from 'react';
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
@@ -648,7 +648,8 @@ function KeyGenTool() {
 
 // ---------- 文本 Diff 对比（1.76.0，LCS 行级算法） ----------
 
-interface DiffLine { type: 'same' | 'add' | 'del'; line: string }
+interface DiffLine { type: 'same' | 'add' | 'del'; line: string; segs?: DiffSeg[] }
+interface DiffSeg { text: string; changed: boolean }
 
 function diffLines(a: string[], b: string[]): DiffLine[] {
   const n = a.length;
@@ -673,6 +674,63 @@ function diffLines(a: string[], b: string[]): DiffLine[] {
   return out;
 }
 
+/** 字符级 LCS：返回两行各自的分段（changed = 该字符属于行内差异） */
+function diffSegments(a: string, b: string): [DiffSeg[], DiffSeg[]] {
+  const n = a.length;
+  const m = b.length;
+  const dp: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const aChanged = new Array<boolean>(n).fill(false);
+  const bChanged = new Array<boolean>(m).fill(false);
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { aChanged[i++] = true; }
+    else { bChanged[j++] = true; }
+  }
+  while (i < n) aChanged[i++] = true;
+  while (j < m) bChanged[j++] = true;
+  const group = (s: string, changed: boolean[]): DiffSeg[] => {
+    const segs: DiffSeg[] = [];
+    for (let k = 0; k < s.length; k++) {
+      const last = segs[segs.length - 1];
+      if (last && last.changed === changed[k]) last.text += s[k];
+      else segs.push({ text: s[k], changed: changed[k] });
+    }
+    return segs;
+  };
+  return [group(a, aChanged), group(b, bChanged)];
+}
+
+/** 相邻的 -/+ 行两两配对，计算行内字符级差异并挂到 segs */
+function attachCharDiff(lines: DiffLine[]): void {
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].type !== 'del') { i++; continue; }
+    let d = i;
+    while (d < lines.length && lines[d].type === 'del') d++;
+    let a = d;
+    while (a < lines.length && lines[a].type === 'add') a++;
+    const pairs = Math.min(d - i, a - d);
+    for (let k = 0; k < pairs; k++) {
+      const delLine = lines[i + k];
+      const addLine = lines[d + k];
+      // 超长行跳过字符级对比（O(n*m) 内存控制）
+      if (delLine.line.length <= 400 && addLine.line.length <= 400) {
+        const [da, db] = diffSegments(delLine.line, addLine.line);
+        delLine.segs = da;
+        addLine.segs = db;
+      }
+    }
+    i = a;
+  }
+}
+
 function DiffTool() {
   const [textA, setTextA] = useState('');
   const [textB, setTextB] = useState('');
@@ -688,7 +746,9 @@ function DiffTool() {
       return;
     }
     setError('');
-    setLines(diffLines(a, b));
+    const result = diffLines(a, b);
+    attachCharDiff(result);
+    setLines(result);
   }
 
   return (
@@ -705,7 +765,10 @@ function DiffTool() {
           {lines.length === 0 && <span className="tools-out__ph">{t('无差异')}</span>}
           {lines.map((l, idx) => (
             <div key={idx} className={`tools-diff__line ${l.type === 'add' ? 'tools-diff__line--add' : l.type === 'del' ? 'tools-diff__line--del' : ''}`}>
-              {l.type === 'add' ? '+ ' : l.type === 'del' ? '- ' : '  '}{l.line}
+              {l.type === 'add' ? '+ ' : l.type === 'del' ? '- ' : '  '}
+              {l.segs
+                ? l.segs.map((s, si) => (s.changed ? <span key={si} className="tools-diff__seg">{s.text}</span> : <span key={si}>{s.text}</span>))
+                : l.line}
             </div>
           ))}
         </div>
