@@ -51,6 +51,15 @@ const TYPE_LABEL: Record<CloudType, string> = {
   webdav: 'WebDAV',
 };
 
+/** 服务商模板（1.75.6）：选择后自动填充类型与端点，用户只需按地域微调 */
+const PROVIDER_TEMPLATES: { key: string; label: string; type: CloudType; endpoint: string; region?: string }[] = [
+  { key: 'aliyun', label: '阿里云 OSS', type: 'oss', endpoint: 'https://oss-cn-hangzhou.aliyuncs.com' },
+  { key: 'tencent', label: '腾讯云 COS', type: 's3', endpoint: 'https://cos.ap-guangzhou.myqcloud.com', region: 'ap-guangzhou' },
+  { key: 'aws', label: 'AWS S3', type: 's3', endpoint: 'https://s3.amazonaws.com', region: 'us-east-1' },
+  { key: 'minio', label: 'MinIO', type: 's3', endpoint: 'http://127.0.0.1:9000' },
+  { key: 'jianguoyun', label: '坚果云 WebDAV', type: 'webdav', endpoint: 'https://dav.jianguoyun.com/dav/' },
+];
+
 /**
  * 云端备份页面组件
  */
@@ -79,6 +88,8 @@ export default function CloudBackupPage() {
   });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FormError>({});
+  // 服务商模板选择（仅用于快速填充，不随目标保存）
+  const [tpl, setTpl] = useState('');
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<CloudTarget | null>(null);
@@ -128,6 +139,7 @@ export default function CloudBackupPage() {
     setEditing(null);
     setForm({ type: 'webdav', name: '', endpoint: '', bucket: '', path: '', accessKey: '', secret: '', region: '' });
     setErrors({});
+    setTpl('');
     setModalOpen(true);
   }, [canManage, showToast]);
 
@@ -152,8 +164,17 @@ export default function CloudBackupPage() {
       region: tg.region,
     });
     setErrors({});
+    setTpl('');
     setModalOpen(true);
   }, [canManage, showToast]);
+
+  /** 应用服务商模板：一键填充类型 / 端点 / 区域（1.75.6） */
+  const applyTemplate = (key: string) => {
+    setTpl(key);
+    const tp = PROVIDER_TEMPLATES.find((x) => x.key === key);
+    if (!tp) return;
+    setForm((f) => ({ ...f, type: tp.type, endpoint: tp.endpoint, region: tp.region || '' }));
+  };
 
   /**
    * 校验并提交
@@ -294,6 +315,20 @@ export default function CloudBackupPage() {
         ? t('OSS 端点，如 https://oss-cn-hangzhou.aliyuncs.com')
         : t('S3 端点，如 https://s3.region.amazonaws.com');
 
+  // 服务商模板提示（1.75.6）：按所选模板给出填空指引
+  const templateHint =
+    tpl === 'aliyun'
+      ? t('把端点中的 cn-hangzhou 替换为你的 Bucket 所在地域，如 oss-cn-beijing；AccessKey 在「AccessKey 管理」获取')
+      : tpl === 'tencent'
+        ? t('把端点中的 ap-guangzhou 替换为你的存储桶所在地域，如 ap-shanghai；密钥在「API 密钥管理」获取')
+        : tpl === 'aws'
+          ? t('使用 IAM 用户的 Access Key ID 与 Secret Access Key')
+          : tpl === 'minio'
+            ? t('端点填 MinIO 服务地址与端口，密钥为 MinIO 控制台凭据')
+            : tpl === 'jianguoyun'
+              ? t('AccessKey 填坚果云账号邮箱，Secret 填应用密码（网页端「安全选项」中生成）')
+              : undefined;
+
   return (
     <div className="page">
       <div className="page__header">
@@ -407,6 +442,14 @@ export default function CloudBackupPage() {
           </div>
         }
       >
+        <Field label={t('服务商模板')} hint={templateHint}>
+          <Select value={tpl} onChange={(e) => applyTemplate(e.target.value)}>
+            <option value="">{t('自定义（手动填写端点）')}</option>
+            {PROVIDER_TEMPLATES.map((tp) => (
+              <option key={tp.key} value={tp.key}>{t(tp.label)}</option>
+            ))}
+          </Select>
+        </Field>
         <Field label={t('类型')}>
           <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as CloudType }))}>
             <option value="webdav">WebDAV</option>

@@ -652,6 +652,8 @@ Menu: **Docker Engines** (`/engines`, admin only)
 Menu: **Cloud Backup** (`/cloudbackup`, admin only)
 
 - Configure cloud backup targets: **S3 / OSS / WebDAV**.
+- Configure cloud backup targets: **S3 / OSS / WebDAV**.
+- **Provider template (1.75.6)**: pick Alibaba Cloud OSS / Tencent COS / AWS S3 / MinIO / Jianguoyun WebDAV and the type, endpoint and region are auto-filled, with hints on which region token to replace and where to get the keys. Choose "Custom" to fill the endpoint manually.
 - **New target**: fill in type, name, endpoint, bucket, credentials.
 - **Connectivity test** — verify the target can be written.
 - **Upload** — push backup files to the cloud target.

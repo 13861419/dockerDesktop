@@ -919,9 +919,10 @@ journalctl -u docker-manager -f
 
 | 字段 | 说明 | 是否必填 |
 | --- | --- | --- |
+| 服务商模板 | **1.75.6 新增**：选择阿里云 OSS / 腾讯云 COS / AWS S3 / MinIO / 坚果云 WebDAV 后自动填充类型、端点与区域，并提示地域替换方法与密钥获取位置；选「自定义」则手动填写 | 否 |
 | 类型 | `WebDAV` / `S3` / `阿里 OSS` | 否 |
 | 名称 * | 如「我的 NAS / 腾讯云 COS」 | 必填 |
-| 端点地址 * | WebDAV 填服务器地址；OSS 填 `https://oss-cn-hangzhou.aliyuncs.com`；S3 填 `https://s3.region.amazonaws.com` | 必填 |
+| 端点地址 * | WebDAV 填服务器地址；OSS 填 `https://oss-cn-hangzhou.aliyuncs.com`；S3 填 `https://s3.region.amazonaws.com`（选模板后自动带出，改地域即可） | 必填 |
 | 桶名（Bucket） | 仅 S3 / OSS 显示，如 `my-bucket` | S3/OSS 必填 |
 | Region | 仅 S3 显示，如 `us-east-1` | 否 |
 | 基路径（可选） | 如 `backup/app1` | 否 |
