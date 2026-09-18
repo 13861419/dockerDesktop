@@ -123,3 +123,24 @@
   color: var(--text-muted, #94a3b8);
   font-size: 12px;
 }
+
+/* 文本 Diff 对比输出（1.76.0） */
+.tools-diff {
+  max-height: 320px;
+}
+
+.tools-diff__line {
+  white-space: pre-wrap;
+  padding: 0 6px;
+  border-radius: 3px;
+}
+
+.tools-diff__line--add {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+.tools-diff__line--del {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}

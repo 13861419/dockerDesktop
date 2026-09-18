@@ -10,8 +10,11 @@
  * - 端口范围解析 + IPv4 网段计算
  * - YAML / Compose 校验格式化（1.75.8，js-yaml）
  * - Cron 表达式解析 + 未来执行时间预览（1.75.8，语义与调度器一致）
+ * - Hash 校验（1.76.0，Web Crypto SHA-1/256/512，支持文件）
+ * - 强密码 / UUID 生成（1.76.0，crypto.getRandomValues）
+ * - 文本 Diff 对比（1.76.0，LCS 行级算法）
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -535,6 +538,183 @@ function SslTool() {
   );
 }
 
+// ---------- Hash 校验（1.76.0，Web Crypto） ----------
+
+function HashTool() {
+  const [text, setText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [algo, setAlgo] = useState<'SHA-1' | 'SHA-256' | 'SHA-512'>('SHA-256');
+  const [result, setResult] = useState('');
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function compute(buf: BufferSource, source: string) {
+    setBusy(true);
+    try {
+      const digest = await crypto.subtle.digest(algo, buf);
+      const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+      setResult(`${source}（${algo}）\n${hex}`);
+    } catch (e: any) {
+      setResult(e?.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title={t('Hash 校验')}>
+      <TextArea value={text} onChange={setText} placeholder={t('输入文本，或选择文件校验完整性')} rows={3} mono />
+      <div className="tools-row">
+        <select className="tools-select" value={algo} onChange={(e) => setAlgo(e.target.value as typeof algo)}>
+          <option value="SHA-1">SHA-1</option>
+          <option value="SHA-256">SHA-256</option>
+          <option value="SHA-512">SHA-512</option>
+        </select>
+        <Button size="sm" onClick={() => text.trim() && compute(new TextEncoder().encode(text), t('文本'))}>{t('计算文本哈希')}</Button>
+        <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>{t('选择文件')}</Button>
+        <input
+          ref={fileRef}
+          type="file"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            setFile(f || null);
+            e.target.value = '';
+          }}
+        />
+        {file && (
+          <Button size="sm" variant="secondary" loading={busy} onClick={() => file.arrayBuffer().then((b) => compute(b, file.name))}>
+            {t('计算文件哈希')}
+          </Button>
+        )}
+      </div>
+      {file && <div className="tools-hint">{t('已选文件')}: {file.name}（{file.size.toLocaleString()} bytes）</div>}
+      <Out text={result} placeholder={t('哈希结果（十六进制）')} />
+    </Card>
+  );
+}
+
+// ---------- 强密码 / UUID 生成（1.76.0，crypto.getRandomValues） ----------
+
+function KeyGenTool() {
+  const [len, setLen] = useState(16);
+  const [upper, setUpper] = useState(true);
+  const [lower, setLower] = useState(true);
+  const [digits, setDigits] = useState(true);
+  const [symbols, setSymbols] = useState(true);
+  const [result, setResult] = useState('');
+
+  function generate() {
+    let charset = '';
+    if (upper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (lower) charset += 'abcdefghijklmnopqrstuvwxyz';
+    if (digits) charset += '0123456789';
+    if (symbols) charset += '!@#$%^&*()-_=+[]{};:,.<>?';
+    if (!charset) { setResult(t('请至少选择一种字符集')); return; }
+    const bytes = crypto.getRandomValues(new Uint32Array(len));
+    const password = Array.from(bytes, (b) => charset[b % charset.length]).join('');
+    setResult(password);
+  }
+
+  function genUuid() {
+    setResult(crypto.randomUUID ? crypto.randomUUID() : String(crypto.getRandomValues(new Uint32Array(4))));
+  }
+
+  const cb = (checked: boolean, setter: (v: boolean) => void, label: string) => (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+      <input type="checkbox" checked={checked} onChange={(e) => setter(e.target.checked)} />
+      {label}
+    </label>
+  );
+
+  return (
+    <Card title={t('强密码 / UUID 生成')}>
+      <div className="tools-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <label style={{ fontSize: 13 }}>{t('长度')}: {len}</label>
+        <input type="range" min={8} max={64} value={len} onChange={(e) => setLen(Number(e.target.value))} style={{ width: 140 }} />
+        {cb(upper, setUpper, 'A-Z')}
+        {cb(lower, setLower, 'a-z')}
+        {cb(digits, setDigits, '0-9')}
+        {cb(symbols, setSymbols, '!@#')}
+      </div>
+      <div className="tools-row">
+        <Button size="sm" onClick={generate}>{t('生成密码')}</Button>
+        <Button size="sm" variant="secondary" onClick={genUuid}>{t('生成 UUID')}</Button>
+      </div>
+      <Out text={result} placeholder={t('生成结果（密码或 UUID）')} />
+    </Card>
+  );
+}
+
+// ---------- 文本 Diff 对比（1.76.0，LCS 行级算法） ----------
+
+interface DiffLine { type: 'same' | 'add' | 'del'; line: string }
+
+function diffLines(a: string[], b: string[]): DiffLine[] {
+  const n = a.length;
+  const m = b.length;
+  // LCS 动态规划表
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push({ type: 'same', line: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: 'del', line: a[i] }); i++; }
+    else { out.push({ type: 'add', line: b[j] }); j++; }
+  }
+  while (i < n) out.push({ type: 'del', line: a[i++] });
+  while (j < m) out.push({ type: 'add', line: b[j++] });
+  return out;
+}
+
+function DiffTool() {
+  const [textA, setTextA] = useState('');
+  const [textB, setTextB] = useState('');
+  const [lines, setLines] = useState<DiffLine[] | null>(null);
+  const [error, setError] = useState('');
+
+  function compare() {
+    const a = textA.split('\n');
+    const b = textB.split('\n');
+    if (a.length > 1000 || b.length > 1000) {
+      setError(t('行数过多（>1000 行），请拆分后对比'));
+      setLines(null);
+      return;
+    }
+    setError('');
+    setLines(diffLines(a, b));
+  }
+
+  return (
+    <Card title={t('文本 Diff 对比')}>
+      <div className="tools-row" style={{ alignItems: 'flex-start' }}>
+        <TextArea value={textA} onChange={setTextA} placeholder={t('文本 A')} rows={6} mono />
+        <TextArea value={textB} onChange={setTextB} placeholder={t('文本 B')} rows={6} mono />
+      </div>
+      <div className="tools-row">
+        <Button size="sm" onClick={compare}>{t('对比')}</Button>
+      </div>
+      {error ? <Out text={error} ok={false} /> : lines !== null && (
+        <div className="tools-out tools-diff">
+          {lines.length === 0 && <span className="tools-out__ph">{t('无差异')}</span>}
+          {lines.map((l, idx) => (
+            <div key={idx} className={`tools-diff__line ${l.type === 'add' ? 'tools-diff__line--add' : l.type === 'del' ? 'tools-diff__line--del' : ''}`}>
+              {l.type === 'add' ? '+ ' : l.type === 'del' ? '- ' : '  '}{l.line}
+            </div>
+          ))}
+        </div>
+      )}
+      {lines !== null && lines.every((l) => l.type === 'same') && <div className="tools-hint">{t('无差异')}</div>}
+    </Card>
+  );
+}
+
 /** 工具箱页面入口 */
 export default function Tools() {
   return (
@@ -550,6 +730,9 @@ export default function Tools() {
         <CronTool />
         <DnsTool />
         <SslTool />
+        <HashTool />
+        <KeyGenTool />
+        <DiffTool />
       </div>
     </div>
   );
