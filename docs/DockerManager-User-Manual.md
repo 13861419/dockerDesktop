@@ -1399,6 +1399,7 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 Menu: **Tools** (`/tools`, all users)
 
 - Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, YAML / Compose validation & formatting (with line-precise error locating), and cron expression parsing with the next 5 run times (1.75.8).
+- **Server-side network tools (1.75.9)**: DNS lookup (A / AAAA / CNAME / NS / MX / TXT in one call) and an SSL certificate viewer (subject / issuer / validity / days remaining / SANs, self-signed tolerated) — both probes are issued from the panel server, so they can also reach intranet targets a browser cannot.
 - Zero backend calls; handy for day-to-day ops.
 
 ![Ops Toolbox](../images/tools.png)

@@ -16,6 +16,7 @@ import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { parseCron } from '../utils/cron';
+import { post } from '../api/client';
 import { translateNow as t } from '../i18n';
 import './tools.less';
 
@@ -407,6 +408,133 @@ function CronTool() {
   );
 }
 
+// ---------- DNS 解析查询（1.75.9，后端代理） ----------
+
+interface DnsResult {
+  host: string;
+  a?: string[];
+  aaaa?: string[];
+  cname?: string[];
+  txt?: string[][];
+  mx?: { exchange: string; priority: number }[];
+  ns?: string[];
+}
+
+function DnsTool() {
+  const [host, setHost] = useState('');
+  const [result, setResult] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function query() {
+    if (!host.trim()) return;
+    setBusy(true);
+    try {
+      const r = await post<DnsResult>('/api/tools/dns', { host: host.trim() });
+      const lines: string[] = [];
+      if ((r.a || []).length) lines.push(`A：${r.a!.join(', ')}`);
+      if ((r.aaaa || []).length) lines.push(`AAAA：${r.aaaa!.join(', ')}`);
+      if ((r.cname || []).length) lines.push(`CNAME：${r.cname!.join(', ')}`);
+      if ((r.ns || []).length) lines.push(`NS：${r.ns!.join(', ')}`);
+      if ((r.mx || []).length) lines.push(r.mx!.map((m) => `MX：${m.priority} ${m.exchange}`).join('\n'));
+      if ((r.txt || []).length) {
+        const txts = r.txt!.map((arr) => arr.join(''));
+        lines.push(`TXT：${txts.join(' | ')}`);
+      }
+      if (lines.length === 0) lines.push(t('未查询到任何记录（域名可能未配置解析）'));
+      setResult(lines.join('\n'));
+    } catch (e: any) {
+      setResult(e?.message || t('查询失败'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title={t('DNS 解析查询')}>
+      <div className="tools-inline">
+        <input
+          className="tools-input tools-input--grow tools-mono"
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+          placeholder={t('域名，如 example.com')}
+          onKeyDown={(e) => e.key === 'Enter' && query()}
+        />
+        <Button size="sm" loading={busy} onClick={query}>{t('查询')}</Button>
+      </div>
+      <Out text={result} placeholder={t('从面板服务器发起真实 DNS 查询')} />
+    </Card>
+  );
+}
+
+// ---------- SSL 证书查看器（1.75.9，后端代理） ----------
+
+interface SslResult {
+  host: string;
+  port: number;
+  subject: string;
+  issuer: string;
+  validFrom: string;
+  validTo: string;
+  daysLeft: number;
+  sans: string[];
+  authorized: boolean;
+  authorizationError: string;
+}
+
+function SslTool() {
+  const [host, setHost] = useState('');
+  const [result, setResult] = useState('');
+  const [err, setErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function query() {
+    if (!host.trim()) return;
+    setBusy(true);
+    setErr(false);
+    try {
+      const m = host.trim().match(/^([^:]+)(?::(\d+))?$/);
+      const payload = { host: m ? m[1] : host.trim(), port: m && m[2] ? Number(m[2]) : 443 };
+      const r = await post<SslResult>('/api/tools/ssl', payload);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const fmt = (iso: string) => {
+        const d = new Date(iso);
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      };
+      const lines = [
+        `${t('主题')}: ${r.subject || '-'}`,
+        `${t('签发者')}: ${r.issuer || '-'}`,
+        `${t('生效时间')}: ${fmt(r.validFrom)}`,
+        `${t('到期时间')}: ${fmt(r.validTo)}`,
+        `${t('剩余天数')}: ${r.daysLeft}`,
+        `${t('自签/不受信')}: ${r.authorized ? t('否') : t('是')}${r.authorizationError ? `（${r.authorizationError}）` : ''}`,
+        r.sans.length ? `${t('SAN 域名')}: ${r.sans.join(', ')}` : '',
+      ];
+      setResult(lines.filter(Boolean).join('\n'));
+    } catch (e: any) {
+      setErr(true);
+      setResult(e?.message || t('查询失败'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title={t('SSL 证书查看器')}>
+      <div className="tools-inline">
+        <input
+          className="tools-input tools-input--grow tools-mono"
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+          placeholder={t('域名或 域名:端口，如 example.com')}
+          onKeyDown={(e) => e.key === 'Enter' && query()}
+        />
+        <Button size="sm" loading={busy} onClick={query}>{t('查询')}</Button>
+      </div>
+      <Out text={result} ok={err ? false : undefined} placeholder={t('从面板服务器发起 TLS 握手查看证书详情')} />
+    </Card>
+  );
+}
+
 /** 工具箱页面入口 */
 export default function Tools() {
   return (
@@ -420,6 +548,8 @@ export default function Tools() {
         <PortSubnetTool />
         <YamlTool />
         <CronTool />
+        <DnsTool />
+        <SslTool />
       </div>
     </div>
   );

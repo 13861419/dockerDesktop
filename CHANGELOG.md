@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.75.9] - 2026-09-18
+
+### Added（新增）
+
+- **工具箱新增「DNS 解析查询」**：从面板服务器发起真实 DNS 查询（Node 内置 dns 模块），一次返回 A / AAAA / CNAME / NS / MX / TXT 记录，排查解析生效问题不再需要登录服务器 dig
+- **工具箱新增「SSL 证书查看器」**：输入域名（或 域名:端口）发起 TLS 握手，展示主题 / 签发者 / 生效与到期时间 / 剩余天数 / SAN 域名，支持自签证书检查（Node 内置 tls 模块）
+- 新增后端路由 `POST /api/tools/dns`、`POST /api/tools/ssl`（登录用户可用，输入字符白名单校验 + 超时保护）
+
 ## [1.75.8] - 2026-09-18
 
 ### Added（新增）

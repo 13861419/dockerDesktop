@@ -178,7 +178,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/operation-logs', name: t('操作日志'), desc: t('全量操作审计') },
   { path: '/notifications', name: t('告警中心'), desc: t('告警规则（含连续周期防抖）、七类通知渠道、多渠道路由、送达率统计、磁盘写满与内存耗尽趋势预测、磁盘应急自动清理（1.49.0）、静默期值班渠道、容器自愈（标签匹配/触发上限/监控范围，执行记录筛选与导出，1.42.0）、未保存渠道直接测试连接（1.43.0）、站点证书到期提醒（1.44.0）、记录与 AI 诊断') },
   { path: '/events', name: t('事件流'), desc: t('Docker 事件实时流与持久化历史，支持按来源（本机 / Edge 节点）筛选') },
-  { path: '/tools', name: t('工具箱'), desc: t('JSON / 正则 / Base64 / 时间戳 / 进制 / 端口网段计算 / YAML 校验格式化 / Cron 表达式解析') },
+  { path: '/tools', name: t('工具箱'), desc: t('JSON / 正则 / Base64 / 时间戳 / 进制 / 端口网段计算 / YAML 校验格式化 / Cron 表达式解析 / DNS 解析查询 / SSL 证书查看器') },
   { path: '/approvals', name: t('审批中心'), desc: t('高危操作审批与记录（含编排停止/批量删镜像/清理类）、近 30 天审批统计、记录导出 CSV') },
   { path: '/policy', name: t('安全基线'), desc: t('6 项只读基线检查、违规报告与在线一键修复') },
   { path: '/bench', name: t('基线扫描'), desc: t('CIS 风格安全体检：守护进程 / 宿主机 / 镜像 / 容器运行时检查，等级化报告与历史比对、容器逃逸风险 Top 与扫描趋势（1.34.0）') },
