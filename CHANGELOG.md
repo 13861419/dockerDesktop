@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.76.2] - 2026-09-18
+
+### Added（新增）
+
+- **工具箱新增「JWT 解码」**：纯前端 base64url 解出 Header / Payload（明确提示不验证签名），exp / iat / nbf 自动附加可读时间并标注是否过期
+- **工具箱新增「URL 编解码」**：encodeURIComponent / decodeURIComponent 互转
+- **工具箱新增「HTTP 状态码速查」**：常见 1xx–5xx 状态码含义，支持按代码或关键字过滤（502 / 504 / 444 等运维高频码在列）
+- **工具箱新增「字节单位换算」**：B / KB / MB / GB / TB 互转，同时给出 1024 与 1000 两种进制结果
+- 四者均为纯前端实现，零新增依赖；工具箱达 17 个工具
+
 ## [1.76.1] - 2026-09-18
 
 ### Changed（改进）

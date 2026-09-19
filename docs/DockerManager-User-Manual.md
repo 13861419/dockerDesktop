@@ -1401,6 +1401,7 @@ Menu: **Tools** (`/tools`, all users)
 - Common utilities as a pure-frontend toolbox: JSON format / validation, regex testing, Base64, timestamp conversion, radix conversion, port & CIDR calculators, YAML / Compose validation & formatting (with line-precise error locating), and cron expression parsing with the next 5 run times (1.75.8).
 - **Server-side network tools (1.75.9)**: DNS lookup (A / AAAA / CNAME / NS / MX / TXT in one call) and an SSL certificate viewer (subject / issuer / validity / days remaining / SANs, self-signed tolerated) — both probes are issued from the panel server, so they can also reach intranet targets a browser cannot.
 - **New in 1.76.0**: Hash checksum (SHA-1/256/512 via Web Crypto, text or file), password & UUID generator (crypto.getRandomValues, 8–64 chars with selectable charsets), and line-level text diff (LCS, green/red highlighting) for comparing config changes. Since 1.76.1, the exact characters changed inside a modified line are highlighted too (char-level LCS).
+- **New in 1.76.2**: JWT decoder (pure frontend base64url, signature NOT verified, exp/iat shown as readable time), URL encode/decode, an HTTP status code reference with keyword filtering, and a byte unit converter (both 1024- and 1000-based).
 - Zero backend calls; handy for day-to-day ops.
 
 ![Ops Toolbox](../images/tools.png)

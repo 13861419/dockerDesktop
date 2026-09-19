@@ -13,6 +13,8 @@
  * - Hash 校验（1.76.0，Web Crypto SHA-1/256/512，支持文件）
  * - 强密码 / UUID 生成（1.76.0，crypto.getRandomValues）
  * - 文本 Diff 对比（1.76.0，LCS 行级算法 + 行内字符级差异高亮）
+ * - JWT 解码（1.76.2，纯前端 base64url，不验证签名）
+ * - URL 编解码 / HTTP 状态码速查 / 字节单位换算（1.76.2）
  */
 import { useMemo, useRef, useState } from 'react';
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
@@ -778,6 +780,191 @@ function DiffTool() {
   );
 }
 
+// ---------- JWT 解码（1.76.2，纯前端 base64url，不验证签名） ----------
+
+function b64urlDecode(s: string): string {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+  return atob(b64 + pad);
+}
+
+function JwtTool() {
+  const [token, setToken] = useState('');
+  const [result, setResult] = useState('');
+  const [error, setError] = useState('');
+
+  function decode() {
+    try {
+      const parts = token.trim().split('.');
+      if (parts.length < 2) throw new Error(t('不是有效的 JWT（至少两段，以 . 分隔）'));
+      const header = JSON.parse(b64urlDecode(parts[0]));
+      const payload = JSON.parse(b64urlDecode(parts[1]));
+      const fmt = (v: any) => {
+        if (typeof v !== 'number') return v;
+        const d = new Date(v * 1000);
+        return isNaN(d.getTime()) ? v : `${v}（${d.toLocaleString()}）`;
+      };
+      const shown: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(payload)) shown[k] = ['exp', 'iat', 'nbf'].includes(k) ? fmt(v) : v;
+      const expired = typeof payload.exp === 'number' ? payload.exp * 1000 < Date.now() : null;
+      setResult(
+        `Header:\n${JSON.stringify(header, null, 2)}\n\nPayload:\n${JSON.stringify(shown, null, 2)}` +
+          (expired === null ? '' : `\n\n${t('签名验证')}: ✗ ${t('仅解码未验证签名')}\n${t('有效期')}: ${expired ? t('已过期') : t('未过期')}`)
+      );
+      setError('');
+    } catch (e: any) {
+      setError(e?.message || String(e));
+      setResult('');
+    }
+  }
+
+  return (
+    <Card title={t('JWT 解码')}>
+      <TextArea value={token} onChange={setToken} placeholder={t('粘贴 JWT（三段式，以 . 分隔）')} rows={3} mono />
+      <div className="tools-row">
+        <Button size="sm" onClick={decode}>{t('解码')}</Button>
+        <Button size="sm" variant="ghost" onClick={() => { setToken(''); setResult(''); setError(''); }}>{t('清空')}</Button>
+      </div>
+      {error && <div className="tools-err">✗ {error}</div>}
+      <Out text={result} ok={!error} placeholder={t('Header / Payload 明文（exp / iat 自动转为可读时间）')} />
+    </Card>
+  );
+}
+
+// ---------- URL 编解码（1.76.2） ----------
+
+function UrlTool() {
+  const [input, setInput] = useState('');
+  const [output, setOutput] = useState('');
+  const [error, setError] = useState('');
+
+  function run(mode: 'encode' | 'decode') {
+    if (!input) return;
+    try {
+      setOutput(mode === 'encode' ? encodeURIComponent(input) : decodeURIComponent(input));
+      setError('');
+    } catch (e: any) {
+      setError(e?.message || String(e));
+      setOutput('');
+    }
+  }
+
+  return (
+    <Card title={t('URL 编解码')}>
+      <TextArea value={input} onChange={setInput} placeholder={t('输入待编码/解码的文本或 URL')} rows={3} mono />
+      <div className="tools-row">
+        <Button size="sm" onClick={() => run('encode')}>{t('编码')}</Button>
+        <Button size="sm" variant="secondary" onClick={() => run('decode')}>{t('解码')}</Button>
+      </div>
+      {error && <div className="tools-err">✗ {error}</div>}
+      <Out text={output} ok={!error} placeholder={t('结果')} />
+    </Card>
+  );
+}
+
+// ---------- HTTP 状态码速查（1.76.2） ----------
+
+const HTTP_CODES: Array<[number, string, string]> = [
+  [100, 'Continue', '继续，客户端应继续发送请求体'],
+  [101, 'Switching Protocols', '切换协议（如 WebSocket 升级）'],
+  [200, 'OK', '请求成功'],
+  [201, 'Created', '资源已创建'],
+  [204, 'No Content', '成功但无返回体'],
+  [206, 'Partial Content', '范围请求 / 断点续传'],
+  [301, 'Moved Permanently', '永久重定向'],
+  [302, 'Found', '临时重定向'],
+  [304, 'Not Modified', '缓存命中，内容未变化'],
+  [307, 'Temporary Redirect', '临时重定向（保持原方法）'],
+  [308, 'Permanent Redirect', '永久重定向（保持原方法）'],
+  [400, 'Bad Request', '请求语法或参数错误'],
+  [401, 'Unauthorized', '未认证（登录态缺失或失效）'],
+  [403, 'Forbidden', '已认证但无权限'],
+  [404, 'Not Found', '资源不存在'],
+  [405, 'Method Not Allowed', 'HTTP 方法不被允许'],
+  [408, 'Request Timeout', '请求超时'],
+  [409, 'Conflict', '资源状态冲突'],
+  [413, 'Payload Too Large', '请求体过大'],
+  [415, 'Unsupported Media Type', '不支持的媒体类型'],
+  [422, 'Unprocessable Entity', '语义错误（校验不通过）'],
+  [429, 'Too Many Requests', '请求过于频繁（触发限流）'],
+  [444, 'Nginx No Response', 'Nginx 静默断开连接'],
+  [500, 'Internal Server Error', '服务器内部错误'],
+  [501, 'Not Implemented', '功能未实现'],
+  [502, 'Bad Gateway', '网关收到无效上游响应（后端多半挂了）'],
+  [503, 'Service Unavailable', '服务不可用（过载或维护中）'],
+  [504, 'Gateway Timeout', '网关等待上游超时'],
+];
+
+function HttpStatusTool() {
+  const [kw, setKw] = useState('');
+  const list = HTTP_CODES.filter(([code, name, desc]) => {
+    if (!kw.trim()) return true;
+    const k = kw.trim().toLowerCase();
+    return String(code).includes(k) || name.toLowerCase().includes(k) || desc.includes(kw.trim());
+  });
+  return (
+    <Card title={t('HTTP 状态码速查')}>
+      <div className="tools-inline">
+        <input className="tools-input tools-input--grow" value={kw} onChange={(e) => setKw(e.target.value)} placeholder={t('输入状态码或关键字过滤，如 404 / redirect / 重定向')} />
+      </div>
+      <div className="tools-out tools-diff">
+        {list.length === 0 && <span className="tools-out__ph">{t('无匹配')}</span>}
+        {list.map(([code, name, desc]) => (
+          <div key={code} className="tools-out__line">
+            <span className="tools-mono">{code}</span> {name} — {t(desc)}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ---------- 字节单位换算（1.76.2） ----------
+
+function BytesTool() {
+  const [value, setValue] = useState('1');
+  const [unit, setUnit] = useState<'B' | 'KB' | 'MB' | 'GB' | 'TB'>('MB');
+  const num = Number(value);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+  const idx = units.indexOf(unit);
+  const bytes = isFinite(num) && num >= 0 ? num * Math.pow(1024, idx) : NaN;
+
+  const fmt = (n: number) => {
+    if (!isFinite(n)) return '—';
+    if (n !== 0 && Math.abs(n) < 0.01) return n.toExponential(3);
+    return n.toLocaleString(undefined, { maximumFractionDigits: n < 1 ? 6 : 4 });
+  };
+
+  return (
+    <Card title={t('字节单位换算')}>
+      <div className="tools-row">
+        <input
+          className="tools-input tools-input--grow tools-mono"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={t('数值')}
+          inputMode="decimal"
+        />
+        <select className="tools-select" value={unit} onChange={(e) => setUnit(e.target.value as typeof unit)}>
+          {units.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
+      <Out
+        text={
+          isNaN(bytes)
+            ? t('请输入有效数字')
+            : units.map((u, k) => {
+                const bin = bytes / Math.pow(1024, k);
+                const dec = bytes / Math.pow(1000, k);
+                return `${u}（1024）: ${fmt(bin)}    ${u}（1000）: ${fmt(dec)}`;
+              }).join('\n')
+        }
+        placeholder={t('换算结果（同时给出 1024 与 1000 两种进制）')}
+      />
+    </Card>
+  );
+}
+
 /** 工具箱页面入口 */
 export default function Tools() {
   return (
@@ -796,6 +983,10 @@ export default function Tools() {
         <HashTool />
         <KeyGenTool />
         <DiffTool />
+        <JwtTool />
+        <UrlTool />
+        <HttpStatusTool />
+        <BytesTool />
       </div>
     </div>
   );
