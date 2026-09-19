@@ -173,11 +173,39 @@ interface DeployApp {
   ci_api_url?: string | null;
   ci_policy?: string | null;
   last_green_commit?: string | null;
+  /** 部署钩子（1.78.0）：compose up 前后逐行执行的自定义命令 */
+  pre_hook?: string | null;
+  post_hook?: string | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
   created_at: number;
   updated_at: number;
+}
+
+/**
+ * 解析钩子脚本为命令列表：逐行切分，去空行与 # 注释行（1.78.0）
+ */
+export function parseHookLines(hook: string | null | undefined): string[] {
+  return String(hook || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+}
+
+/** 执行钩子脚本：命令逐行按序执行，任一失败立即中止并返回 false */
+async function runHookLines(hook: string | null | undefined, cwd: string): Promise<{ ok: boolean; output: string }> {
+  const lines = parseHookLines(hook);
+  const outputs: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    try {
+      const out = await runCmd(lines[i], cwd);
+      outputs.push(`$ ${lines[i]}\n${out || '(无输出)'}`.trim());
+    } catch (e: any) {
+      return { ok: false, output: `第 ${i + 1} 条命令失败（${lines[i].slice(0, 200)}）：${String(e?.message || e).slice(0, 2000)}` };
+    }
+  }
+  return { ok: true, output: outputs.join('\n') };
 }
 
 /** 写部署历史 + 更新应用状态 */
@@ -225,10 +253,25 @@ async function deployApp(app: DeployApp, source: string, greenRef = ''): Promise
       return { ok: false, detail: `${lines.join('\n')}\n仓库中未找到 compose 文件` };
     }
 
+    // 2.5 部署前钩子（1.78.0）：任一命令失败即中止本次部署
+    if (app.pre_hook) {
+      const pre = await runHookLines(app.pre_hook, repoDir);
+      lines.push(`[部署前钩子]\n${pre.output || '(无命令)'}`);
+      if (!pre.ok) {
+        return { ok: false, detail: `${lines.join('\n')}\n部署前钩子失败，已中止本次部署（容器未改动）` };
+      }
+    }
+
     // 3. compose up
     const buildFlag = app.also_build ? ' --build' : '';
     const output = await runCmd(`docker compose -f "${composeFile}" up -d${buildFlag}`, repoDir);
     lines.push(output || 'compose up 完成');
+
+    // 4. 后置钩子（1.78.0）：失败不影响已上线容器，仅在详情中记录警告
+    if (app.post_hook) {
+      const post = await runHookLines(app.post_hook, repoDir);
+      lines.push(post.ok ? `[后置钩子]\n${post.output || '(无命令)'}` : `[后置钩子失败（不影响已上线容器）]\n${post.output}`);
+    }
     return { ok: true, detail: lines.join('\n') };
   } catch (e: any) {
     return { ok: false, detail: String(e?.message || e) };
@@ -243,7 +286,8 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
               CASE WHEN webhook_secret IS NOT NULL AND webhook_secret != '' THEN 1 ELSE 0 END AS webhook_secret_set,
               ci_gate_enabled, ci_provider, ci_api_url, ci_policy, last_green_commit,
               CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set,
-              gitops_enabled, gitops_interval_min, gitops_auto, gitops_last_commit, gitops_last_check
+              gitops_enabled, gitops_interval_min, gitops_auto, gitops_last_commit, gitops_last_check,
+              pre_hook, post_hook
        FROM deploy_apps ORDER BY id DESC`,
     )
     .all();
@@ -315,15 +359,18 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
   const gitopsEnabled = req.body?.gitopsEnabled === undefined ? (app.gitops_enabled ? 1 : 0) : req.body.gitopsEnabled ? 1 : 0;
   const gitopsAuto = req.body?.gitopsAuto === undefined ? (app.gitops_auto ? 1 : 0) : req.body.gitopsAuto ? 1 : 0;
   const gitopsIntervalMin = Math.max(1, Math.min(1440, Number(req.body?.gitopsIntervalMin ?? app.gitops_interval_min ?? 5) || 5));
+  // 部署钩子（1.78.0）：显式传值才变更（空串=清除）
+  const preHook = req.body?.preHook !== undefined ? String(req.body.preHook).trim().slice(0, 10000) || null : app.pre_hook;
+  const postHook = req.body?.postHook !== undefined ? String(req.body.postHook).trim().slice(0, 10000) || null : app.post_hook;
   try {
     getDb()
       .prepare(
         `UPDATE deploy_apps SET name = ?, repo_url = ?, branch = ?, compose_path = ?, also_build = ?, cred_encrypted = ?,
            ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?,
-           gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, updated_at = ?
+           gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, pre_hook = ?, post_hook = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, Date.now(), id);
+      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, Date.now(), id);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message || e) });
   }

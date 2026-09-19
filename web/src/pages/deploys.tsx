@@ -48,6 +48,9 @@ interface DeployApp {
   gitops_auto?: number;
   gitops_last_commit?: string | null;
   gitops_last_check?: number | null;
+  /** 部署钩子（1.78.0） */
+  pre_hook?: string | null;
+  post_hook?: string | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -83,6 +86,8 @@ interface AppForm {
   gitopsEnabled: boolean;
   gitopsAuto: boolean;
   gitopsIntervalMin: number;
+  preHook: string;
+  postHook: string;
 }
 
 const EMPTY_FORM: AppForm = {
@@ -102,6 +107,8 @@ const EMPTY_FORM: AppForm = {
   gitopsEnabled: false,
   gitopsAuto: false,
   gitopsIntervalMin: 5,
+  preHook: '',
+  postHook: '',
 };
 
 function App() {
@@ -171,6 +178,8 @@ function App() {
       gitopsEnabled: app.gitops_enabled === 1,
       gitopsAuto: app.gitops_auto === 1,
       gitopsIntervalMin: app.gitops_interval_min || 5,
+      preHook: app.pre_hook || '',
+      postHook: app.post_hook || '',
     });
     setFormOpen(true);
   }
@@ -199,6 +208,8 @@ function App() {
           gitopsEnabled: form.gitopsEnabled,
           gitopsAuto: form.gitopsAuto,
           gitopsIntervalMin: form.gitopsIntervalMin,
+          preHook: form.preHook,
+          postHook: form.postHook,
           ...(form.ciToken.trim() ? { ciToken: form.ciToken.trim() } : {}),
         });
         showToast(t('应用已更新'));
@@ -550,6 +561,38 @@ function App() {
                 <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{t('自动部署同样经过 CI 状态门禁（若启用）；首次启用仅记录当前 commit 作为基线，不会触发部署')}</div>
               </>
             )}
+          </>
+        )}
+
+        {form.id && (
+          <>
+            <div style={{ fontWeight: 600, margin: '16px 0 4px' }}>{t('部署钩子')}</div>
+            <Field
+              label={t('部署前钩子（可选）')}
+              hint={t('compose up 之前在仓库目录逐行执行；任一命令失败即中止本次部署，# 开头为注释')}
+            >
+              <textarea
+                value={form.preHook}
+                onChange={(e) => setForm({ ...form, preHook: e.target.value })}
+                rows={3}
+                spellCheck={false}
+                placeholder={t('例如：./scripts/backup.sh 或 docker exec db pg_dump ...')}
+                style={{ width: '100%', minHeight: 64, fontFamily: 'monospace', fontSize: 12, padding: '6px 8px', border: '1px solid var(--border, #ddd)', borderRadius: 6, background: 'transparent', color: 'inherit', boxSizing: 'border-box' }}
+              />
+            </Field>
+            <Field
+              label={t('后置钩子（可选）')}
+              hint={t('compose up 成功后逐行执行；失败不影响已上线容器，仅在部署历史中记录警告')}
+            >
+              <textarea
+                value={form.postHook}
+                onChange={(e) => setForm({ ...form, postHook: e.target.value })}
+                rows={3}
+                spellCheck={false}
+                placeholder={t('例如：./scripts/migrate.sh 或 curl -fsSL https://hooks.example.com/notify')}
+                style={{ width: '100%', minHeight: 64, fontFamily: 'monospace', fontSize: 12, padding: '6px 8px', border: '1px solid var(--border, #ddd)', borderRadius: 6, background: 'transparent', color: 'inherit', boxSizing: 'border-box' }}
+              />
+            </Field>
           </>
         )}
       </Modal>

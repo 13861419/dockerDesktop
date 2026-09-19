@@ -1134,6 +1134,17 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：部署前后钩子（1.78.0）——compose up 前后逐行执行的自定义命令
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN pre_hook TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN post_hook TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：数据库查询历史与收藏（1.48.0）
   try {
     d.exec(

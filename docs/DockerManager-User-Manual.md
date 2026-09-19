@@ -1397,6 +1397,12 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 - **First run**: records the current commit as a baseline only — never deploys. The card shows "🔄 GitOps · interval · last commit · last check time".
 - Deploy history source labels distinguish Webhook / GitOps / CI gate / manual.
 
+**Deploy hooks (1.78.0)**: configure custom commands that run line-by-line (inside the repo dir, `#` lines are comments) before / after compose up:
+
+- **Pre-deploy hook**: back up the database, fetch secret files, run pre-flight scripts before deploying; any failing command **aborts the deploy** with no changes to containers.
+- **Post-deploy hook**: run DB migrations, cache warm-up, or notifications after a successful release; failures do not affect running containers and are only logged as warnings in deploy history.
+- Full command output is kept in the deploy history detail for troubleshooting.
+
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 
 ---
