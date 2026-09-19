@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.79.0] - 2026-09-19
+
+### Added（新增）
+
+- **Git 部署新增「CI 运行」只读看板**：卡片一键查看该仓库最近 10 条工作流运行记录（时间 / 名称 / commit / 状态 / 原链接），GitHub Actions / Gitea / GitLab 三平台适配
+- 状态归一为 成功 / 失败 / 进行中，复用 CI 门禁的平台识别与只读 Token，零新增依赖
+- 新增 `GET /api/deploys/:id/ci-runs`（登录用户可用）
+
 ## [1.78.0] - 2026-09-19
 
 ### Added（新增）

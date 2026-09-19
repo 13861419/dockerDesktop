@@ -170,6 +170,71 @@ const POLL_MAX_ATTEMPTS = 30;
 
 export type GateOutcome = { state: 'success' | 'failure' | 'timeout' };
 
+/** 单条 CI 运行记录（只读看板，1.79.0） */
+export interface CiRun {
+  id: string;
+  title: string;
+  sha: string;
+  status: CiState;
+  url: string;
+  startedAt: string;
+}
+
+/** 归一化工作流运行状态：conclusion 优先（GitHub 完成才 有 conclusion），其余一律视为进行中 */
+function mapRunStatus(conclusion: any, status: any): CiState {
+  const c = String(conclusion ?? status ?? '').toLowerCase();
+  if (c === 'success') return 'success';
+  if (['failure', 'failed', 'timed_out', 'cancelled', 'canceled', 'startup_failure', 'action_required'].includes(c)) return 'failure';
+  return 'pending';
+}
+
+/**
+ * 拉取仓库最近的工作流运行记录（只读看板，1.79.0）
+ *  - GitHub：GET /repos/{o}/{r}/actions/runs?per_page=N
+ *  - Gitea ：GET /api/v1/repos/{o}/{r}/actions/tasks（兼容 GitHub 形状）
+ *  - GitLab：GET /api/v4/projects/{path}/pipelines?per_page=N
+ */
+export async function fetchCiRuns(
+  target: { provider: CiProvider; apiBase: string; owner: string; repo: string; fullPath: string },
+  token: string,
+  limit = 10,
+): Promise<CiRun[]> {
+  const headers: Record<string, string> = { 'User-Agent': 'DockerManager-CiGate', Accept: 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let url: string;
+  if (target.provider === 'github') {
+    url = `${target.apiBase}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/actions/runs?per_page=${limit}`;
+    headers.Accept = 'application/vnd.github+json';
+  } else if (target.provider === 'gitlab') {
+    url = `${target.apiBase}/projects/${encodeURIComponent(target.fullPath)}/pipelines?per_page=${limit}`;
+  } else {
+    url = `${target.apiBase}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/actions/tasks?limit=${limit}`;
+  }
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(12000) });
+  if (!res.ok) throw new Error(`Git API ${res.status}`);
+  const data: any = await res.json();
+  if (target.provider === 'gitlab') {
+    const items: any[] = Array.isArray(data) ? data : [];
+    return items.map((p) => ({
+      id: String(p?.id ?? ''),
+      title: `#${p?.id ?? '?'} ${p?.ref ?? ''}`.trim(),
+      sha: String(p?.sha || ''),
+      status: mapRunStatus(null, p?.status),
+      url: String(p?.web_url || ''),
+      startedAt: String(p?.created_at || ''),
+    }));
+  }
+  const items: any[] = Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
+  return items.map((r) => ({
+    id: String(r?.id ?? ''),
+    title: String(r?.name || r?.head_branch || `#${r?.id ?? '?'}`),
+    sha: String(r?.head_sha || ''),
+    status: mapRunStatus(r?.conclusion, r?.status),
+    url: String(r?.html_url || ''),
+    startedAt: String(r?.run_started_at || r?.created_at || ''),
+  }));
+}
+
 /**
  * 轮询等待 CI 结论；success/failure 立即返回，超过时限返回 timeout（由调用方按 policy 处置）
  */

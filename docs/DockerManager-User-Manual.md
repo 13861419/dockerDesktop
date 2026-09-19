@@ -1403,6 +1403,8 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 - **Post-deploy hook**: run DB migrations, cache warm-up, or notifications after a successful release; failures do not affect running containers and are only logged as warnings in deploy history.
 - Full command output is kept in the deploy history detail for troubleshooting.
 
+**CI run history (1.79.0)**: the "CI runs" button on a deploy card shows the repo's 10 most recent workflow runs (time / name / commit / status / original link). Read-only, reusing the CI gate's platform detection and token; GitHub Actions / Gitea / GitLab supported.
+
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 
 ---

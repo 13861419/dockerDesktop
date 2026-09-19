@@ -22,7 +22,7 @@ import { logOperation } from '../operationLog';
 import { gitCloneOrPull, gitAvailable, randomHex, type GitCred } from '../gitCli';
 import { reportTaskFailure } from '../alerting';
 import { COMPOSE_ROOT, findComposeFile, runCmd } from './composePaths';
-import { isCommitSha, parseCiTarget, pollCiGate } from '../ciGate';
+import { isCommitSha, parseCiTarget, pollCiGate, fetchCiRuns } from '../ciGate';
 
 const router = Router();
 
@@ -442,6 +442,24 @@ router.get('/:id/logs', requireAuth, (req: Request, res: Response) => {
     .prepare('SELECT * FROM deploy_logs WHERE app_id = ? ORDER BY id DESC LIMIT 50')
     .all(Number(req.params.id));
   res.json({ items: logs });
+});
+
+/** GET /:id/ci-runs — CI 运行记录只读看板（1.79.0，最近 10 条工作流运行） */
+router.get('/:id/ci-runs', requireAuth, async (req: Request, res: Response) => {
+  const app = getDb().prepare('SELECT * FROM deploy_apps WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!app) {
+    return res.status(404).json({ error: '应用不存在' });
+  }
+  const target = parseCiTarget(app.repo_url, app.ci_provider, app.ci_api_url);
+  if (!target) {
+    return res.status(400).json({ error: '无法识别仓库对应的 CI 平台（仅支持 GitHub / Gitea / GitLab）' });
+  }
+  try {
+    const items = await fetchCiRuns(target, app.ci_token_enc ? safeDecrypt(app.ci_token_enc) : '');
+    res.json({ items });
+  } catch (e: any) {
+    res.status(502).json({ error: String(e?.message || e).slice(0, 300) });
+  }
 });
 
 /** POST /:id/webhook-token — 重置 webhook token */

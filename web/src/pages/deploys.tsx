@@ -67,6 +67,16 @@ interface DeployLogItem {
   ci_state?: string | null;
 }
 
+/** CI 运行记录（只读看板，1.79.0） */
+interface CiRunItem {
+  id: string;
+  title: string;
+  sha: string;
+  status: 'success' | 'failure' | 'pending' | 'error';
+  url: string;
+  startedAt: string;
+}
+
 /** 表单态 */
 interface AppForm {
   id?: number;
@@ -134,6 +144,12 @@ function App() {
   const [secretTarget, setSecretTarget] = useState<DeployApp | null>(null);
   const [secretValue, setSecretValue] = useState('');
   const [secretSaving, setSecretSaving] = useState(false);
+
+  // CI 运行记录看板弹窗（1.79.0，只读）
+  const [ciRunsApp, setCiRunsApp] = useState<DeployApp | null>(null);
+  const [ciRuns, setCiRuns] = useState<CiRunItem[]>([]);
+  const [ciRunsLoading, setCiRunsLoading] = useState(false);
+  const [ciRunsError, setCiRunsError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -272,6 +288,22 @@ function App() {
       showToast(e?.message || t('部署触发失败'), 'error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** 打开 CI 运行记录看板（1.79.0，只读） */
+  async function openCiRuns(app: DeployApp) {
+    setCiRunsApp(app);
+    setCiRunsLoading(true);
+    setCiRunsError('');
+    setCiRuns([]);
+    try {
+      const res = await get<{ items: CiRunItem[] }>(`/api/deploys/${app.id}/ci-runs`);
+      setCiRuns(res.items || []);
+    } catch (e: any) {
+      setCiRunsError(e?.message || t('加载失败'));
+    } finally {
+      setCiRunsLoading(false);
     }
   }
 
@@ -418,6 +450,9 @@ function App() {
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => openHistory(app)}>
                     {t('历史')}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => openCiRuns(app)} title={t('查看最近的工作流执行结果（只读）')}>
+                    {t('CI 运行')}
                   </Button>
                   <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEdit(app)}>
                     {t('编辑')}
@@ -624,6 +659,44 @@ function App() {
                       <pre style={{ marginTop: 4, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120, overflow: 'auto' }}>
                         {h.detail || '-'}
                       </pre>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      {/* CI 运行记录看板（1.79.0，只读） */}
+      <Modal open={!!ciRunsApp} title={`${t('CI 运行记录')} · ${ciRunsApp?.name || ''}`} onClose={() => setCiRunsApp(null)} width={640}>
+        {ciRunsLoading ? (
+          <SkeletonRows rows={5} />
+        ) : ciRunsError ? (
+          <Empty kind="error" title={t('拉取 CI 运行记录失败')} description={ciRunsError} />
+        ) : ciRuns.length === 0 ? (
+          <Empty title={t('暂无运行记录')} />
+        ) : (
+          <div className="kv-scroll" style={{ maxHeight: 420 }}>
+            <table className="kv-table">
+              <tbody>
+                {ciRuns.map((r) => (
+                  <tr key={r.id}>
+                    <td className="kv-key" style={{ whiteSpace: 'nowrap' }}>{r.startedAt ? new Date(r.startedAt).toLocaleString() : '-'}</td>
+                    <td className="kv-val">
+                      <div>
+                        <DeployBadge
+                          label={r.status === 'success' ? '✓' : r.status === 'failure' ? '✗' : '●'}
+                          tone={r.status === 'success' ? 'green' : r.status === 'failure' ? 'red' : 'blue'}
+                        />
+                        <span style={{ marginLeft: 8 }}>{r.title}</span>
+                        {r.sha && <code style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{r.sha.slice(0, 7)}</code>}
+                        {r.url && (
+                          <a href={r.url} target="_blank" rel="noreferrer" style={{ marginLeft: 8, fontSize: 12 }}>
+                            {t('打开')}
+                          </a>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
