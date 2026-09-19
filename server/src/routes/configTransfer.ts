@@ -148,13 +148,15 @@ function buildExport(includeSecrets: boolean): Record<string, unknown> {
   }));
 
   // 计划任务：剔除运行时字段（last_* / next_run_at），导入时重算
-  out.cronTasks = (d.prepare('SELECT id, name, type, cron, enabled, config FROM cron_tasks').all() as any[]).map((r) => ({
+  out.cronTasks = (d.prepare('SELECT id, name, type, cron, enabled, config, next_task_id, default_params FROM cron_tasks').all() as any[]).map((r) => ({
     id: r.id,
     name: r.name,
     type: r.type,
     cron: r.cron,
     enabled: !!r.enabled,
     config: r.config,
+    nextTaskId: r.next_task_id || null,
+    defaultParams: r.default_params ? JSON.parse(r.default_params) : null,
   }));
 
   // 反代站点：auth_password 已是 {SHA} 哈希（脱敏），可原样导出；cert_path 为宿主路径（仅字符串）
@@ -487,10 +489,17 @@ function performImport(payload: Record<string, any>, conflict: 'skip' | 'overwri
           count('cronTasks', 1);
           continue;
         }
-        d.prepare('INSERT INTO cron_tasks (id, name, type, cron, enabled, config, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-          t.id || `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, t.name, t.type, t.cron || '', t.enabled ? 1 : 0, t.config || '{}', nextRun, now, now,
+        d.prepare('INSERT INTO cron_tasks (id, name, type, cron, enabled, config, default_params, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+          t.id || `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, t.name, t.type, t.cron || '', t.enabled ? 1 : 0, t.config || '{}', t.defaultParams ? JSON.stringify(t.defaultParams) : null, nextRun, now, now,
         );
         count('cronTasks', 1);
+      }
+      // 链式引用需全部任务就位后恢复（1.84.0）；下游缺失时跳过
+      for (const t of payload.cronTasks) {
+        if (!t || !t.id || !t.nextTaskId) continue;
+        if (exists('SELECT id FROM cron_tasks WHERE id = ?', [t.nextTaskId])) {
+          d.prepare('UPDATE cron_tasks SET next_task_id = ? WHERE id = ?').run(t.nextTaskId, t.id);
+        }
       }
     }
 

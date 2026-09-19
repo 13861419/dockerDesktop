@@ -194,6 +194,21 @@ function isValidCron(cron: string): boolean {
 }
 
 /**
+ * 提取文本中出现的全部 {{占位符}} 键名（去重，1.84.0）
+ * @param text 任意文本（通常为 JSON.stringify 后的任务 config）
+ * @returns 去重后的键名数组
+ */
+function extractConfigPlaceholders(text: string): string[] {
+  const out: string[] = [];
+  const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (!out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+/**
  * 计划任务页组件
  */
 export default function TasksPage() {
@@ -237,6 +252,11 @@ export default function TasksPage() {
   const [formMaxRetries, setFormMaxRetries] = useState('0');
   const [formRetryIntervalSec, setFormRetryIntervalSec] = useState('300');
   const [formNotifyMode, setFormNotifyMode] = useState<'failure' | 'always' | 'never'>('failure');
+  // 链式编排与运行参数（1.84.0）
+  const [formNextTaskId, setFormNextTaskId] = useState('');
+  const [formDefaultParams, setFormDefaultParams] = useState('');
+  // 带参执行弹窗：占位符参数输入（null = 关闭）
+  const [runParams, setRunParams] = useState<{ task: CronTask; keys: string[]; values: Record<string, string> } | null>(null);
   const [formConfig, setFormConfig] = useState<Record<string, any>>({});
 
   // 执行历史分页状态
@@ -301,6 +321,9 @@ export default function TasksPage() {
     setFormMaxRetries('0');
     setFormRetryIntervalSec('300');
     setFormNotifyMode('failure');
+    // 链式编排 / 运行参数默认值
+    setFormNextTaskId('');
+    setFormDefaultParams('');
     // prune 默认全选
     setFormConfig({
       images: true,
@@ -331,6 +354,9 @@ export default function TasksPage() {
     setFormMaxRetries(String(task.maxRetries ?? 0));
     setFormRetryIntervalSec(String(task.retryIntervalSec ?? 300));
     setFormNotifyMode(task.notifyMode || 'failure');
+    // 链式编排 / 运行参数回填
+    setFormNextTaskId(task.nextTaskId || '');
+    setFormDefaultParams(task.defaultParams ? JSON.stringify(task.defaultParams, null, 2) : '');
     // 深拷贝 config，避免直接修改原任务对象
     setFormConfig(JSON.parse(JSON.stringify(task.config || {})));
     setFormOpen(true);
@@ -484,6 +510,21 @@ export default function TasksPage() {
     try {
       // 从表单 config 拆出 gitCred 凭证与剔除敏感字段后的干净 config
       const { gitCred: saveGitCred, cleanConfig } = buildGitCred(formConfig);
+      // 默认运行参数（1.84.0）：JSON 解析校验
+      let saveDefaultParams: Record<string, string> | null = null;
+      if (formDefaultParams.trim()) {
+        try {
+          const parsed = JSON.parse(formDefaultParams);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
+          for (const v of Object.values(parsed)) {
+            if (typeof v !== 'string') throw new Error('not string');
+          }
+          saveDefaultParams = parsed;
+        } catch {
+          showToast(t('默认运行参数必须是「字符串值」的 JSON 对象'), 'error');
+          return;
+        }
+      }
       // 仅当用户填写了凭证时才附带 gitCred：编辑时凭证留空不传（保留原凭证），
       // 新建时无凭证不传（本来就没有），有凭证才传，避免把 null 传给后端导致意外清空。
       const hasCred = !!(saveGitCred.token || saveGitCred.privateKey);
@@ -496,6 +537,8 @@ export default function TasksPage() {
         maxRetries: Math.max(0, Math.round(Number(formMaxRetries) || 0)),
         retryIntervalSec: Math.max(60, Math.round(Number(formRetryIntervalSec) || 300)),
         notifyMode: formNotifyMode,
+        nextTaskId: formNextTaskId || null,
+        defaultParams: saveDefaultParams,
       };
       if (hasCred) {
         payload.gitCred = saveGitCred;
@@ -516,7 +559,7 @@ export default function TasksPage() {
     } finally {
       setSaving(false);
     }
-  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, formTimeoutSec, formMaxRetries, formRetryIntervalSec, formNotifyMode, buildGitCred, showToast]);
+  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, formTimeoutSec, formMaxRetries, formRetryIntervalSec, formNotifyMode, formNextTaskId, formDefaultParams, buildGitCred, showToast]);
 
   /**
    * 切换任务的启用/停用状态
@@ -541,13 +584,19 @@ export default function TasksPage() {
   );
 
   /**
-   * 立即执行任务，成功后提示返回的 detail
+   * 立即执行任务（无占位符直接跑；含 {{占位符}} 时先弹参数输入）
    * @param task 目标任务
    */
   const handleRun = useCallback(
     async (task: CronTask) => {
       if (!canManage) {
         showToast(t('仅管理员可立即执行任务'), 'error');
+        return;
+      }
+      // 带参执行（1.84.0）：config 中存在 {{占位符}} 时先收集参数
+      const keys = extractConfigPlaceholders(JSON.stringify(task.config || {}));
+      if (keys.length > 0) {
+        setRunParams({ task, keys, values: { ...(task.defaultParams || {}) } });
         return;
       }
       setRunId(task.id);
@@ -567,6 +616,30 @@ export default function TasksPage() {
     },
     [canManage, showToast]
   );
+
+  /**
+   * 带参执行（1.84.0）：提交参数弹窗，把 {{占位符}} 参数随请求下发
+   */
+  const handleRunParamsSubmit = useCallback(async () => {
+    if (!runParams) return;
+    setRunId(runParams.task.id);
+    const targetId = runParams.task.id;
+    const args = { ...runParams.values };
+    setRunParams(null);
+    try {
+      const data = await post<{ ok: boolean; detail?: string }>(`/api/tasks/${targetId}/run`, { args });
+      if (data?.ok) {
+        showToast(data?.detail || t('任务执行成功'));
+      } else {
+        showToast(data?.detail || t('任务执行失败'), 'error');
+      }
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('立即执行失败'), 'error');
+    } finally {
+      setRunId(null);
+    }
+  }, [runParams, showToast]);
 
   /**
    * 删除任务（经确认框调用）
@@ -1081,7 +1154,66 @@ export default function TasksPage() {
               <option value="never">{t('静默（不通知）')}</option>
             </Select>
           </Field>
+
+          <Field label={t('链式触发（成功后执行）')}>
+            <Select value={formNextTaskId} onChange={(e: any) => setFormNextTaskId(e.target.value)}>
+              <option value="">{t('无（不链式）')}</option>
+              {tasks
+                .filter((tk) => !editing || tk.id !== editing.id)
+                .map((tk) => (
+                  <option key={tk.id} value={tk.id}>
+                    {tk.name}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+
+          <Field label={t('默认运行参数（JSON）')}>
+            <Input
+              value={formDefaultParams}
+              placeholder='{"TARGET":"web"}'
+              onChange={(e) => setFormDefaultParams(e.target.value)}
+            />
+          </Field>
         </div>
+      </Modal>
+
+      {/* 带参执行弹窗（1.84.0）：为 config 中检测到的 {{占位符}} 收集参数 */}
+      <Modal
+        open={!!runParams}
+        title={runParams ? t('带参执行：{{v1}}', { v1: runParams.task.name }) : t('带参执行')}
+        onClose={() => setRunParams(null)}
+        width={480}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRunParams(null)}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" onClick={handleRunParamsSubmit}>
+              {t('执行')}
+            </Button>
+          </>
+        }
+      >
+        {runParams && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              {t('检测到配置中的占位符，本次执行将用下面的值替换：')}
+            </div>
+            {runParams.keys.map((key) => (
+              <Field key={key} label={`{{${key}}}`}>
+                <Input
+                  value={runParams.values[key] ?? ''}
+                  onChange={(e) =>
+                    setRunParams((prev) =>
+                      prev ? { ...prev, values: { ...prev.values, [key]: e.target.value } } : prev
+                    )
+                  }
+                />
+              </Field>
+            ))}
+          </div>
+        )}
       </Modal>
 
       {/* 执行历史弹窗 */}

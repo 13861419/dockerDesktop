@@ -1203,6 +1203,17 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：任务链式编排与手动带参执行（1.84.0）
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN next_task_id TEXT'); // 成功后触发的下游任务 id（线性链）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN default_params TEXT'); // 默认运行参数 JSON（替换 config 中 {{占位符}}）
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：数据库查询历史与收藏（1.48.0）
   try {
     d.exec(

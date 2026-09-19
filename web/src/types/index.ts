@@ -409,6 +409,10 @@ export interface CronTask {
   retryIntervalSec?: number;
   /** 通知策略：failure=仅失败（默认）| always=成功也通知 | never=静默（1.81.0） */
   notifyMode?: 'failure' | 'always' | 'never';
+  /** 成功后触发的下游任务 id（线性链，null = 不链式，1.84.0） */
+  nextTaskId?: string | null;
+  /** 默认运行参数（替换 config 中 {{占位符}}，1.84.0） */
+  defaultParams?: Record<string, string> | null;
 }
 
 /** 任务列表响应（/api/tasks） */

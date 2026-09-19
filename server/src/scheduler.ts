@@ -33,6 +33,10 @@ export interface CronTaskRow {
   retry_interval_sec?: number | null;
   /** 通知策略（1.81.0）：failure=仅失败告警（默认）| always=成功也通知 | never=不通知 */
   notify_mode?: string | null;
+  /** 成功后触发的下游任务 id（1.84.0 线性链，null = 不链式） */
+  next_task_id?: string | null;
+  /** 默认运行参数 JSON（1.84.0，替换 config 字符串中的 {{占位符}}） */
+  default_params?: string | null;
 }
 
 /** 任务执行结果（handler 返回，用于落库与历史记录） */
@@ -252,9 +256,11 @@ export function withTimeout<T>(p: Promise<T>, sec: number): Promise<T> {
  *
  * 1.81.0 起支持：超时控制（timeout_sec）、失败自动重试（max_retries × retry_interval_sec，
  * 重试期间不推最终告警、不推进常规调度）、通知分级（notify_mode）。
+ * 1.84.0 起支持：链式触发——成功后自动调度 next_task_id 指向的下游任务（最多 CHAIN_MAX_DEPTH 层）。
  * @param row 任务行
+ * @param chainDepth 链式触发深度（0 = 顶层触发）
  */
-async function executeTask(row: CronTaskRow): Promise<void> {
+async function executeTask(row: CronTaskRow, chainDepth = 0): Promise<void> {
   const d = getDb();
   let config: Record<string, any> = {};
   try {
@@ -340,6 +346,113 @@ async function executeTask(row: CronTaskRow): Promise<void> {
       // 历史记录失败不影响任务执行
     }
   }
+
+  // 链式触发（1.84.0）：成功后调度下游任务（fire-and-forget，锁由 dispatchChain 自管）
+  dispatchChain(row, result, chainDepth);
+}
+
+/** 链式触发最大深度（1.84.0）：防御写入侧漏网的环，避免无限级联 */
+export const CHAIN_MAX_DEPTH = 10;
+
+/**
+ * 链式触发：任务成功后调度 next_task_id 指向的下游任务（1.84.0）
+ *
+ * 调度器与手动执行共用：下游任务按调度器路径执行（更新 next_run_at、写执行历史）。
+ * 下游未启用 / 不存在 / 执行锁被占用时静默跳过，不影响上游结果。
+ * @param row 上游任务行（读取 next_task_id）
+ * @param result 上游执行结果（仅成功触发）
+ * @param depth 当前链深度（≥ CHAIN_MAX_DEPTH 时停止）
+ */
+export function dispatchChain(row: CronTaskRow, result: TaskRunResult, depth = 0): void {
+  if (!result.ok || depth >= CHAIN_MAX_DEPTH) return;
+  const nextId = (row as CronTaskRow).next_task_id;
+  if (!nextId) return;
+  let next: CronTaskRow | undefined;
+  try {
+    next = getDb()
+      .prepare('SELECT id, name, type, cron, enabled, config, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_task_id, default_params FROM cron_tasks WHERE id = ? AND enabled = 1')
+      .get(nextId) as unknown as CronTaskRow | undefined;
+  } catch {
+    return;
+  }
+  if (!next || !tryAcquireTaskRun(next.id)) return;
+  executeTask(next, depth + 1)
+    .catch(() => {
+      // 下游执行错误不影响上游任务
+    })
+    .finally(() => releaseTaskRun(next!.id));
+}
+
+/**
+ * 判断「from → to」这条链边是否会成环（1.84.0）
+ *
+ * 从 to 出发沿 next 指针向后走，若能回到 from 则成环。
+ * @param map 全量任务的 { id → next_task_id } 映射
+ * @param from 要写入链边的任务 id
+ * @param to 计划指向的下游任务 id（null/空 直接放行）
+ * @returns true = 会成环（应拒绝写入）
+ */
+export function wouldCreateCycle(map: Record<string, string | null>, from: string, to: string | null | undefined): boolean {
+  if (!to) return false;
+  let cur: string | null | undefined = to;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    if (cur === from) return true;
+    seen.add(cur);
+    cur = map[cur] || null;
+  }
+  return false;
+}
+
+/** {{占位符}} 匹配：{{name}} / {{ name }}，键名为合法标识符 */
+const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+
+/**
+ * 提取文本中出现的全部 {{占位符}} 键名（去重，1.84.0）
+ * @param text 任意文本（通常为 JSON.stringify 后的任务配置）
+ * @returns 去重后的键名数组
+ */
+export function extractPlaceholders(text: string): string[] {
+  const out: string[] = [];
+  const re = new RegExp(PLACEHOLDER_RE.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (!out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+/**
+ * 把运行参数深替换进配置（1.84.0）：遍历对象/数组，所有字符串值中的 {{key}}
+ * 替换为 params[key]（键名需为合法标识符）。未知占位符保持原样。
+ * @param cfg 原配置（不修改原对象）
+ * @param params 运行参数
+ * @returns { config: 替换后的深拷贝, applied: 实际使用的键, missing: 未提供值的占位符键 }
+ */
+export function applyParams<T>(cfg: T, params: Record<string, string>): { config: T; applied: string[]; missing: string[] } {
+  const applied: string[] = [];
+  const missing: string[] = [];
+  const validKeys = Object.keys(params).filter((k) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k));
+  const walk = (val: any): any => {
+    if (typeof val === 'string') {
+      return val.replace(new RegExp(PLACEHOLDER_RE.source, 'g'), (raw, key: string) => {
+        if (Object.prototype.hasOwnProperty.call(params, key) && validKeys.includes(key)) {
+          if (!applied.includes(key)) applied.push(key);
+          return params[key];
+        }
+        if (!missing.includes(key)) missing.push(key);
+        return raw;
+      });
+    }
+    if (Array.isArray(val)) return val.map(walk);
+    if (val && typeof val === 'object') {
+      const out: Record<string, any> = {};
+      for (const k of Object.keys(val)) out[k] = walk(val[k]);
+      return out;
+    }
+    return val;
+  };
+  return { config: walk(cfg) as T, applied, missing };
 }
 
 /**

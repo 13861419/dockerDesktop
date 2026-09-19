@@ -600,6 +600,13 @@ Menu: **Scheduled Tasks** (`/tasks`)
   - **Timeout control**: per-task limit in seconds (empty = no limit); on timeout the run is marked failed and an alert is pushed to avoid stuck tasks hogging resources (background processes may still be running, noted in the detail);
   - **Auto-retry on failure**: configurable retry count (0–10) and retry interval (60–86400 s); retries push no final alert and do not advance the regular schedule — one alert only after all attempts fail, and every attempt is recorded in run history;
   - **Notification policy**: alert on failure only (default) / notify on both success and failure / silent; success notifications use the recovery level over the existing alert channels.
+- **Task chaining (1.84.0)**: the task editor adds a "Chain trigger (run on success)" dropdown — after task A succeeds, downstream task B is dispatched automatically, enabling pipelines such as "backup → prune → deploy";
+  - Saving validates the target exists and rejects **cycles** (self or indirect); execution is additionally capped at 10 chained hops;
+  - Chaining works for scheduled, manual, and Webhook runs alike; the downstream executes through the normal scheduler path (next-run recalculation, run history, notification policy);
+  - Disabled or locked downstream tasks are skipped silently; deleting a task clears chain references pointing to it.
+- **Run with params (1.84.0)**: task configs may contain `{{placeholders}}` (e.g. `docker stop {{TARGET}}`), and the task editor adds a "Default run params (JSON)" field;
+  - Clicking "Run now" on a task with placeholders first opens a parameter prompt (pre-filled with the defaults) and substitutes the values for that run;
+  - Scheduled / Webhook runs automatically apply the default params; placeholders without a provided value are left as-is, and params with invalid keys (leading digit, hyphen) are ignored.
 - **Cross-engine prune (crossPrune, 1.42.0)**: on schedule, prune images / containers / volumes / networks across all (or selected) registered engines; one engine failing does not block the others. Same semantics as the cross-engine batch cleanup on the Engines page.
 
 ![Scheduled tasks](../images/tasks.png)

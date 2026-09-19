@@ -31,6 +31,9 @@ import {
   nextRunTime,
   tryAcquireTaskRun,
   releaseTaskRun,
+  wouldCreateCycle,
+  applyParams,
+  dispatchChain,
   StepCollector,
   CronTaskRow,
   TaskRunResult,
@@ -122,6 +125,15 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
       gitCred = { hasCred: false };
     }
   }
+  let defaultParams: Record<string, string> | null = null;
+  if ((row as any).default_params) {
+    try {
+      const parsed = JSON.parse(String((row as any).default_params));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) defaultParams = parsed;
+    } catch {
+      defaultParams = null;
+    }
+  }
   return {
     id: row.id,
     name: row.name,
@@ -135,6 +147,8 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
     maxRetries: (row as any).max_retries ?? 0,
     retryIntervalSec: (row as any).retry_interval_sec ?? 300,
     notifyMode: (row as any).notify_mode || 'failure',
+    nextTaskId: (row as any).next_task_id || null,
+    defaultParams,
     lastRunAt: row.last_run_at,
     lastStatus: row.last_status,
     lastDetail: row.last_detail,
@@ -152,10 +166,30 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
 function getTaskRow(id: string): CronTaskRow | null {
   const row = getDb()
     .prepare(
-      'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode FROM cron_tasks WHERE id = ?',
+      'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_task_id, default_params FROM cron_tasks WHERE id = ?',
     )
     .get(id) as unknown as CronTaskRow | undefined;
   return row || null;
+}
+
+/** 校验 defaultParams 请求体：必须是「字符串值」的扁平对象；非法返回 null 之外需区分报错，这里返回 undefined 表示非法 */
+function parseDefaultParams(raw: any): Record<string, string> | undefined | null {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  for (const [k, v] of Object.entries(raw)) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k) || typeof v !== 'string') return null;
+  }
+  return raw as Record<string, string>;
+}
+
+/** 校验并规范 nextTaskId：空串/null 归一为 null；设置时要求目标任务存在。返回 null 合法，'invalid' 表示校验失败 */
+function normalizeNextTaskId(raw: any, selfId: string, d: ReturnType<typeof getDb>): string | null | 'invalid' {
+  if (raw === undefined || raw === null || raw === '') return null;
+  if (typeof raw !== 'string') return 'invalid';
+  if (raw === selfId) return 'invalid';
+  const exists = d.prepare('SELECT id FROM cron_tasks WHERE id = ?').get(raw);
+  if (!exists) return 'invalid';
+  return raw;
 }
 
 // ============ 任务类型 handler（供调度器与手动执行共用） ============
@@ -777,7 +811,7 @@ setTaskRunCallback(recordTaskRun);
  * @returns 执行结果
  * @throws 任务不存在时抛错
  */
-export async function dispatchTask(id: string): Promise<TaskRunResult> {
+export async function dispatchTask(id: string, args?: Record<string, string>): Promise<TaskRunResult> {
   const row = getTaskRow(id);
   if (!row) {
     const notFound: any = new Error('任务不存在');
@@ -789,18 +823,40 @@ export async function dispatchTask(id: string): Promise<TaskRunResult> {
     return { ok: false, detail: '任务正在执行中，请等待本次执行结束后再触发' };
   }
   try {
-    return await runDispatch(row);
+    return await runDispatch(row, args);
   } finally {
     releaseTaskRun(row.id);
   }
 }
 
-async function runDispatch(row: CronTaskRow): Promise<TaskRunResult> {
+/**
+ * 手动 / Webhook 触发执行：合并默认运行参数与请求参数（1.84.0），
+ * 把 {{占位符}} 替换进 config 后按调度器同口径执行。
+ * @param row 任务行
+ * @param args 本次请求携带的运行参数（覆盖 default_params 同名键）
+ */
+async function runDispatch(row: CronTaskRow, args?: Record<string, string>): Promise<TaskRunResult> {
   let config: Record<string, any> = {};
   try {
     config = JSON.parse(row.config || '{}');
   } catch {
     config = {};
+  }
+  // 运行参数（1.84.0）：default_params 为底，请求 args 覆盖同名键
+  let params: Record<string, string> = {};
+  if ((row as any).default_params) {
+    try {
+      const parsed = JSON.parse(String((row as any).default_params));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) params = parsed;
+    } catch {
+      // 默认参数损坏时忽略
+    }
+  }
+  if (args && typeof args === 'object') {
+    params = { ...params, ...args };
+  }
+  if (Object.keys(params).length > 0) {
+    config = applyParams(config, params).config;
   }
   const handler = taskHandlers[row.type] || getRegisteredHandler(row.type);
   let result: TaskRunResult;
@@ -839,6 +895,10 @@ async function runDispatch(row: CronTaskRow): Promise<TaskRunResult> {
   } catch {
     // 历史记录失败不影响任务执行
   }
+  // 链式触发（1.84.0）：手动执行成功后同样级联下游任务
+  if (result.ok) {
+    dispatchChain(row, result);
+  }
   return result;
 }
 
@@ -860,7 +920,7 @@ router.get(
     }
     const rows = getDb()
       .prepare(
-        'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode FROM cron_tasks ORDER BY created_at DESC',
+        'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_task_id, default_params FROM cron_tasks ORDER BY created_at DESC',
       )
       .all() as unknown as CronTaskRow[];
     const projects = listProjectDirs();
@@ -909,11 +969,29 @@ router.post(
     const maxRetries = clampInt(req.body?.maxRetries, 0, 10, 0);
     const retryIntervalSec = clampInt(req.body?.retryIntervalSec, 60, 86400, 300);
     const notifyMode = ['failure', 'always', 'never'].includes(req.body?.notifyMode) ? req.body.notifyMode : 'failure';
+    // 链式编排（1.84.0）：成功后触发的下游任务（校验存在性与成环）
+    const nextTaskId = normalizeNextTaskId(req.body?.nextTaskId, id, getDb());
+    if (nextTaskId === 'invalid') {
+      return res.status(400).json({ error: '下游任务不存在或指向自身' });
+    }
+    const defaultParams = parseDefaultParams(req.body?.defaultParams);
+    if (defaultParams === null) {
+      return res.status(400).json({ error: '默认运行参数必须是「字符串值」的扁平对象' });
+    }
+    if (nextTaskId) {
+      const chainMap: Record<string, string | null> = {};
+      for (const r of getDb().prepare('SELECT id, next_task_id FROM cron_tasks').all() as any[]) {
+        chainMap[r.id] = r.next_task_id || null;
+      }
+      if (wouldCreateCycle(chainMap, id, nextTaskId)) {
+        return res.status(400).json({ error: '检测到任务链成环，已拒绝保存' });
+      }
+    }
     getDb()
       .prepare(
-        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_task_id, default_params, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), gitCredEnc, timeoutSec, maxRetries, retryIntervalSec, notifyMode, nextRun, now, now);
+      .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), gitCredEnc, timeoutSec, maxRetries, retryIntervalSec, notifyMode, nextTaskId, defaultParams ? JSON.stringify(defaultParams) : null, nextRun, now, now);
     logOperation(res.locals.username, '新建计划任务', 'task', name, `类型: ${type}`);
     res.json({ ok: true, id });
   }),
@@ -961,11 +1039,38 @@ router.put(
     const newMaxRetries = req.body?.maxRetries !== undefined ? clampInt(req.body.maxRetries, 0, 10, 0) : (row as any).max_retries ?? 0;
     const newRetryIntervalSec = req.body?.retryIntervalSec !== undefined ? clampInt(req.body.retryIntervalSec, 60, 86400, 300) : (row as any).retry_interval_sec ?? 300;
     const newNotifyMode = req.body?.notifyMode !== undefined && ['failure', 'always', 'never'].includes(req.body.notifyMode) ? req.body.notifyMode : (row as any).notify_mode || 'failure';
+    // 链式编排（1.84.0）：显式传 nextTaskId 才变更；校验存在性 + 成环
+    let newNextTaskId = (row as any).next_task_id || null;
+    if (req.body?.nextTaskId !== undefined) {
+      const normalized = normalizeNextTaskId(req.body.nextTaskId, row.id, getDb());
+      if (normalized === 'invalid') {
+        return res.status(400).json({ error: '下游任务不存在或指向自身' });
+      }
+      if (normalized) {
+        const chainMap: Record<string, string | null> = {};
+        for (const r of getDb().prepare('SELECT id, next_task_id FROM cron_tasks').all() as any[]) {
+          chainMap[r.id] = r.next_task_id || null;
+        }
+        chainMap[row.id] = normalized; // 用新值参与成环判定
+        if (wouldCreateCycle(chainMap, row.id, normalized)) {
+          return res.status(400).json({ error: '检测到任务链成环，已拒绝保存' });
+        }
+      }
+      newNextTaskId = normalized;
+    }
+    let newDefaultParams: string | null = (row as any).default_params || null;
+    if (req.body?.defaultParams !== undefined) {
+      const parsedParams = parseDefaultParams(req.body.defaultParams);
+      if (parsedParams === null) {
+        return res.status(400).json({ error: '默认运行参数必须是「字符串值」的扁平对象' });
+      }
+      newDefaultParams = parsedParams ? JSON.stringify(parsedParams) : null;
+    }
     getDb()
       .prepare(
-        'UPDATE cron_tasks SET name = ?, cron = ?, enabled = ?, config = ?, git_cred_encrypted = ?, timeout_sec = ?, max_retries = ?, retry_interval_sec = ?, notify_mode = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
+        'UPDATE cron_tasks SET name = ?, cron = ?, enabled = ?, config = ?, git_cred_encrypted = ?, timeout_sec = ?, max_retries = ?, retry_interval_sec = ?, notify_mode = ?, next_task_id = ?, default_params = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
       )
-      .run(newName, newCron, newEnabled, newConfig, newGitCredEnc, newTimeoutSec, newMaxRetries, newRetryIntervalSec, newNotifyMode, nextRun, Date.now(), row.id);
+      .run(newName, newCron, newEnabled, newConfig, newGitCredEnc, newTimeoutSec, newMaxRetries, newRetryIntervalSec, newNotifyMode, newNextTaskId, newDefaultParams, nextRun, Date.now(), row.id);
     logOperation(res.locals.username, '更新计划任务', 'task', newName);
     res.json({ ok: true });
   }),
@@ -1043,7 +1148,16 @@ router.post(
     if (!row) {
       return res.status(404).json({ error: '任务不存在' });
     }
-    const result = await dispatchTask(row.id);
+    // 带参执行（1.84.0）：args 为「字符串值」的扁平对象，覆盖任务 default_params 同名键
+    let args: Record<string, string> | undefined;
+    if (req.body?.args !== undefined && req.body?.args !== null) {
+      const parsedArgs = parseDefaultParams(req.body.args);
+      if (parsedArgs === null) {
+        return res.status(400).json({ error: '运行参数必须是「字符串值」的扁平对象' });
+      }
+      args = parsedArgs;
+    }
+    const result = await dispatchTask(row.id, args);
     logOperation(
       res.locals.username,
       result.ok ? '手动执行计划任务' : '手动执行计划任务（失败）',
@@ -1068,9 +1182,11 @@ router.delete(
     if (!row) {
       return res.status(404).json({ error: '任务不存在' });
     }
-    const d = getDb();
-    d.prepare('DELETE FROM cron_task_logs WHERE task_id = ?').run(row.id);
-    d.prepare('DELETE FROM cron_tasks WHERE id = ?').run(row.id);
+  const d = getDb();
+  d.prepare('DELETE FROM cron_task_logs WHERE task_id = ?').run(row.id);
+  d.prepare('DELETE FROM cron_tasks WHERE id = ?').run(row.id);
+  // 清理指向被删任务的链式引用，避免悬空下游
+  d.prepare('UPDATE cron_tasks SET next_task_id = NULL WHERE next_task_id = ?').run(row.id);
     logOperation(res.locals.username, '删除计划任务', 'task', row.name);
     res.json({ ok: true });
   }),
