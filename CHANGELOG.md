@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.77.0] - 2026-09-19
+
+### Added（新增）
+
+- **Git 部署新增「GitOps 定时同步」**：面板定时调用 Git 平台 API 查询部署应用分支的最新 commit（只读查询，无需在 Git 仓库侧配置 Webhook），发现新提交后可选自动部署或仅记录提醒
+- 自动部署走既有部署链路，**CI 状态门禁对 GitOps 触发同样生效**（绿灯才上线）；未启用自动部署时仅在部署历史写「发现新提交」提醒
+- 轮询间隔按分钟配置（默认 5，1–1440）；首次启用仅记录基线 commit 不触发部署；卡片展示轮询状态，部署历史来源标记区分 Webhook / GitOps / CI 门禁 / 手动
+- 新增 deploy_apps 迁移列：gitops_enabled / gitops_auto / gitops_interval_min / gitops_last_commit / gitops_last_check
+
 ## [1.76.2] - 2026-09-18
 
 ### Added（新增）

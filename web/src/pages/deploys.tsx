@@ -42,6 +42,12 @@ interface DeployApp {
   ci_policy?: string | null;
   ci_token_set?: number;
   last_green_commit?: string | null;
+  /** GitOps 定时同步（1.77.0） */
+  gitops_enabled?: number;
+  gitops_interval_min?: number | null;
+  gitops_auto?: number;
+  gitops_last_commit?: string | null;
+  gitops_last_check?: number | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -74,6 +80,9 @@ interface AppForm {
   ciToken: string;
   ciTokenSet: boolean;
   ciPolicy: string;
+  gitopsEnabled: boolean;
+  gitopsAuto: boolean;
+  gitopsIntervalMin: number;
 }
 
 const EMPTY_FORM: AppForm = {
@@ -90,6 +99,9 @@ const EMPTY_FORM: AppForm = {
   ciToken: '',
   ciTokenSet: false,
   ciPolicy: 'fail-open',
+  gitopsEnabled: false,
+  gitopsAuto: false,
+  gitopsIntervalMin: 5,
 };
 
 function App() {
@@ -156,6 +168,9 @@ function App() {
       ciToken: '',
       ciTokenSet: app.ci_token_set === 1,
       ciPolicy: app.ci_policy || 'fail-open',
+      gitopsEnabled: app.gitops_enabled === 1,
+      gitopsAuto: app.gitops_auto === 1,
+      gitopsIntervalMin: app.gitops_interval_min || 5,
     });
     setFormOpen(true);
   }
@@ -181,6 +196,9 @@ function App() {
           ciProvider: form.ciProvider,
           ciApiUrl: form.ciApiUrl,
           ciPolicy: form.ciPolicy,
+          gitopsEnabled: form.gitopsEnabled,
+          gitopsAuto: form.gitopsAuto,
+          gitopsIntervalMin: form.gitopsIntervalMin,
           ...(form.ciToken.trim() ? { ciToken: form.ciToken.trim() } : {}),
         });
         showToast(t('应用已更新'));
@@ -369,6 +387,14 @@ function App() {
                     </Button>
                   </div>
                 )}
+                {app.gitops_enabled === 1 && (
+                  <div className="deploy-card__row deploy-card__row--muted" title={t('GitOps 定时同步')}>
+                    🔄 GitOps · {app.gitops_interval_min || 5} min
+                    {app.gitops_last_commit && <> · <code>{app.gitops_last_commit.slice(0, 7)}</code></>}
+                    {app.gitops_last_check ? ` · ${new Date(app.gitops_last_check).toLocaleTimeString()}` : ''}
+                    {app.gitops_auto === 1 ? ` · ${t('自动')}` : ''}
+                  </div>
+                )}
                 <div className="deploy-card__actions">
                   <Button
                     variant="primary"
@@ -498,6 +524,34 @@ function App() {
             )}
           </>
         )}
+
+        {form.id && (
+          <>
+            <div style={{ fontWeight: 600, margin: '16px 0 4px' }}>{t('GitOps 定时同步')}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={form.gitopsEnabled} onChange={(e) => setForm({ ...form, gitopsEnabled: e.target.checked })} />
+              {t('定时轮询分支最新提交（只读 Git API，无需 Webhook）')}
+            </label>
+            {form.gitopsEnabled && (
+              <>
+                <Field label={t('轮询间隔（分钟）')} hint={t('每次轮询会向 Git 平台 API 发起一次只读查询')}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={form.gitopsIntervalMin}
+                    onChange={(e) => setForm({ ...form, gitopsIntervalMin: Math.max(1, Math.min(1440, Number(e.target.value) || 5)) })}
+                  />
+                </Field>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={form.gitopsAuto} onChange={(e) => setForm({ ...form, gitopsAuto: e.target.checked })} />
+                  {t('发现新提交即自动部署（关闭时仅记录提醒）')}
+                </label>
+                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{t('自动部署同样经过 CI 状态门禁（若启用）；首次启用仅记录当前 commit 作为基线，不会触发部署')}</div>
+              </>
+            )}
+          </>
+        )}
       </Modal>
 
       {/* 部署历史弹窗 */}
@@ -516,7 +570,7 @@ function App() {
                     <td className="kv-val">
                       <div>
                         <DeployBadge label={h.status === 0 ? t('成功') : t('失败')} tone={h.status === 0 ? 'green' : 'red'} />
-                        <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{h.source === 'webhook' ? 'Webhook' : h.source === 'ci-gate' ? t('CI 门禁') : t('手动')}</span>
+                        <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{h.source === 'webhook' ? 'Webhook' : h.source === 'gitops' ? 'GitOps' : h.source === 'ci-gate' ? t('CI 门禁') : t('手动')}</span>
                         {h.commit_sha && (
                           <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>
                             {h.commit_sha.slice(0, 7)}

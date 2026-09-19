@@ -32,6 +32,11 @@ const deploying = new Set<number>();
 /** CI 门禁检查中的应用（不占部署锁；期间手动部署仍可执行） */
 const ciChecking = new Set<number>();
 
+/** GitOps 轮询判断：该应用是否正在部署或 CI 检查中（1.77.0） */
+export function deployBusy(appId: number): boolean {
+  return deploying.has(appId) || ciChecking.has(appId);
+}
+
 /**
  * 触发一次部署（异步执行，立即返回）
  * @param commitSha Webhook push 携带的 commit SHA（手动部署为空）；启用 CI 门禁时用于查询检查状态
@@ -45,14 +50,14 @@ export function triggerDeployByToken(appId: number, source: string, commitSha = 
   if (!app) {
     return false;
   }
-  // CI 状态门禁（1.75.0）：仅作用于 webhook 触发且携带 commit 的部署；手动部署视为管理员显式放行
-  if (app.ci_gate_enabled && source === 'webhook' && commitSha && isCommitSha(commitSha)) {
+  // CI 状态门禁（1.75.0）：作用于 webhook / gitops 触发且携带 commit 的部署；手动部署视为管理员显式放行
+  if (app.ci_gate_enabled && (source === 'webhook' || source === 'gitops') && commitSha && isCommitSha(commitSha)) {
     if (ciChecking.has(app.id)) {
       return false;
     }
     ciChecking.add(app.id);
     getDb().prepare("UPDATE deploy_apps SET last_status = 'ci-checking', updated_at = ? WHERE id = ?").run(Date.now(), appId);
-    runCiGate(app, commitSha);
+    runCiGate(app, commitSha, source);
     return true;
   }
   deploying.add(appId);
@@ -76,17 +81,17 @@ export function triggerDeployByToken(appId: number, source: string, commitSha = 
 /**
  * CI 门禁异步等待：轮询外部 CI 直到出结论/超时，再按策略放行或拦截部署
  */
-function runCiGate(app: any, commitSha: string): void {
+function runCiGate(app: any, commitSha: string, source: 'webhook' | 'gitops'): void {
   const target = parseCiTarget(app.repo_url, app.ci_provider, app.ci_api_url);
   const policy: 'fail-open' | 'fail-closed' = app.ci_policy === 'fail-closed' ? 'fail-closed' : 'fail-open';
   const short = commitSha.slice(0, 7);
   const proceed = (note: string) => {
     getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), app.id);
-    deployApp(app, 'webhook', commitSha)
+    deployApp(app, source, commitSha)
       .then((result) => {
-        recordDeploy(app.id, app.name, result.ok, 'webhook', `${note}\n${result.detail}`, commitSha);
+        recordDeploy(app.id, app.name, result.ok, source, `${note}\n${result.detail}`, commitSha);
         if (!result.ok) {
-          reportTaskFailure(`Git 部署【${app.name}】`, result.detail.slice(0, 500), 'webhook');
+          reportTaskFailure(`Git 部署【${app.name}】`, result.detail.slice(0, 500), source);
         } else {
           getDb().prepare('UPDATE deploy_apps SET last_green_commit = ? WHERE id = ?').run(commitSha, app.id);
         }
@@ -237,7 +242,8 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
       `SELECT id, name, repo_url, branch, compose_path, also_build, webhook_token, last_deploy_at, last_status, last_detail, created_at, updated_at,
               CASE WHEN webhook_secret IS NOT NULL AND webhook_secret != '' THEN 1 ELSE 0 END AS webhook_secret_set,
               ci_gate_enabled, ci_provider, ci_api_url, ci_policy, last_green_commit,
-              CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set
+              CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set,
+              gitops_enabled, gitops_interval_min, gitops_auto, gitops_last_commit, gitops_last_check
        FROM deploy_apps ORDER BY id DESC`,
     )
     .all();
@@ -305,14 +311,19 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
     const t = String(req.body.ciToken).trim();
     ciTokenEnc = t ? encryptSecret(t) : null;
   }
+  // GitOps 定时同步配置（1.77.0）：显式传布尔才变更；间隔 1–1440 分钟
+  const gitopsEnabled = req.body?.gitopsEnabled === undefined ? (app.gitops_enabled ? 1 : 0) : req.body.gitopsEnabled ? 1 : 0;
+  const gitopsAuto = req.body?.gitopsAuto === undefined ? (app.gitops_auto ? 1 : 0) : req.body.gitopsAuto ? 1 : 0;
+  const gitopsIntervalMin = Math.max(1, Math.min(1440, Number(req.body?.gitopsIntervalMin ?? app.gitops_interval_min ?? 5) || 5));
   try {
     getDb()
       .prepare(
         `UPDATE deploy_apps SET name = ?, repo_url = ?, branch = ?, compose_path = ?, also_build = ?, cred_encrypted = ?,
-           ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?, updated_at = ?
+           ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?,
+           gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, Date.now(), id);
+      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, Date.now(), id);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message || e) });
   }

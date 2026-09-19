@@ -19,6 +19,7 @@ import { startScheduler, stopScheduler } from './scheduler';
 import { startAlerting, stopAlerting } from './alerting';
 import { startSelfHeal, stopSelfHeal } from './selfheal';
 import { startUpdateChecker, stopUpdateChecker } from './systemUpdate';
+import { startGitOps, stopGitOps } from './gitops';
 import { startMetricsHistory } from './metricsHistory';
 import { startApprovalReminder } from './approvals';
 import { initStorage, closeDb } from './storage';
@@ -169,6 +170,16 @@ const server = app.listen(PORT, HOST, () => {
       console.error('更新检查服务启动失败:', err);
     }
   }, 1700);
+
+  // 启动 GitOps 定时同步（1.77.0：轮询部署应用分支最新提交，自动/提醒部署）
+  setTimeout(() => {
+    try {
+      startGitOps();
+      console.log('GitOps 定时同步已启动');
+    } catch (err) {
+      console.error('GitOps 同步启动失败:', err);
+    }
+  }, 1800);
 });
 
 // 挂载容器 WebSocket 终端
@@ -209,6 +220,7 @@ try {
       stopAlerting();
       stopSelfHeal();
       stopUpdateChecker();
+      stopGitOps();
       closeDb();
       process.exit(0);
     });

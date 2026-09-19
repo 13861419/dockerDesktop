@@ -1390,6 +1390,13 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 - **Failure policy**: when CI is unreachable or times out (~10 minutes), choose `fail-open` (deploy and push an alert, default) or `fail-closed` (block the deploy). Gate waiting does not occupy the deploy lock; manual "Deploy" always works (treated as an explicit admin override).
 - **Green snapshot & one-click rollback**: successful deploys record the commit SHA and CI state; the card shows "Last green build" with a one-click "Deploy this commit" rollback to the last commit that passed CI and deployed successfully. Deploy history keeps the full trail.
 
+**GitOps scheduled sync (1.77.0)**: enable "GitOps scheduled sync" when editing a deploy app — the panel periodically calls the Git platform API for the branch's latest commit (read-only queries, no webhook configuration needed on the Git side):
+
+- **Poll interval**: configurable in minutes (default 5, range 1–1440); failed polls never affect existing deployments and are retried next cycle.
+- **Auto-deploy**: with "auto-deploy on new commits" enabled, a new commit goes through the regular deploy pipeline (through the CI status gate when enabled). When disabled, the panel only records a "new commit found" notice in deploy history for manual confirmation.
+- **First run**: records the current commit as a baseline only — never deploys. The card shows "🔄 GitOps · interval · last commit · last check time".
+- Deploy history source labels distinguish Webhook / GitOps / CI gate / manual.
+
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 
 ---

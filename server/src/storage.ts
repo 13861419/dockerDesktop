@@ -1108,6 +1108,32 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：GitOps 定时同步（1.77.0）——定时轮询分支最新 commit
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN gitops_enabled INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN gitops_auto INTEGER NOT NULL DEFAULT 0'); // 1=发现新提交自动部署（经 CI 门禁）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN gitops_interval_min INTEGER'); // 轮询间隔（分钟，默认 5）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN gitops_last_commit TEXT'); // 上次轮询看到的 commit（首检基线）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN gitops_last_check INTEGER'); // 上次轮询时间戳
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：数据库查询历史与收藏（1.48.0）
   try {
     d.exec(
