@@ -401,6 +401,14 @@ export interface CronTask {
   webhookToken?: string | null;
   /** Git 凭证描述（不含明文） */
   gitCred?: { type?: 'token' | 'ssh'; hasCred: boolean };
+  /** 任务超时秒数（null/0 = 无限制，1.81.0） */
+  timeoutSec?: number | null;
+  /** 失败自动重试次数（默认 0，1.81.0） */
+  maxRetries?: number;
+  /** 重试间隔秒（默认 300，最小 60，1.81.0） */
+  retryIntervalSec?: number;
+  /** 通知策略：failure=仅失败（默认）| always=成功也通知 | never=静默（1.81.0） */
+  notifyMode?: 'failure' | 'always' | 'never';
 }
 
 /** 任务列表响应（/api/tasks） */

@@ -99,6 +99,13 @@ function uuid(): string {
  * @param row 数据库行
  * @returns 序列化对象（config 已 JSON.parse）
  */
+/** 整数夹取：非法输入回退默认值（1.81.0 调度增强参数用） */
+function clampInt(v: any, min: number, max: number, fallback: number): number {
+  const n = Number(v);
+  if (!isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
 function serializeTask(row: CronTaskRow): Record<string, any> {
   let config: Record<string, any> = {};
   try {
@@ -124,6 +131,10 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
     config,
     webhookToken: (row as any).webhook_token || null,
     gitCred,
+    timeoutSec: (row as any).timeout_sec ?? null,
+    maxRetries: (row as any).max_retries ?? 0,
+    retryIntervalSec: (row as any).retry_interval_sec ?? 300,
+    notifyMode: (row as any).notify_mode || 'failure',
     lastRunAt: row.last_run_at,
     lastStatus: row.last_status,
     lastDetail: row.last_detail,
@@ -141,7 +152,7 @@ function serializeTask(row: CronTaskRow): Record<string, any> {
 function getTaskRow(id: string): CronTaskRow | null {
   const row = getDb()
     .prepare(
-      'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks WHERE id = ?',
+      'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode FROM cron_tasks WHERE id = ?',
     )
     .get(id) as unknown as CronTaskRow | undefined;
   return row || null;
@@ -849,7 +860,7 @@ router.get(
     }
     const rows = getDb()
       .prepare(
-        'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks ORDER BY created_at DESC',
+        'SELECT id, name, type, cron, enabled, config, webhook_token, git_cred_encrypted, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode FROM cron_tasks ORDER BY created_at DESC',
       )
       .all() as unknown as CronTaskRow[];
     const projects = listProjectDirs();
@@ -893,11 +904,16 @@ router.post(
     const now = Date.now();
     const nextRun = nextRunTime(cron, now) as number;
     const isEnabled = enabled === true || enabled === undefined ? 1 : 0;
+    // 调度增强参数（1.81.0）
+    const timeoutSec = clampInt(req.body?.timeoutSec, 0, 86400, 0);
+    const maxRetries = clampInt(req.body?.maxRetries, 0, 10, 0);
+    const retryIntervalSec = clampInt(req.body?.retryIntervalSec, 60, 86400, 300);
+    const notifyMode = ['failure', 'always', 'never'].includes(req.body?.notifyMode) ? req.body.notifyMode : 'failure';
     getDb()
       .prepare(
-        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), gitCredEnc, nextRun, now, now);
+      .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), gitCredEnc, timeoutSec, maxRetries, retryIntervalSec, notifyMode, nextRun, now, now);
     logOperation(res.locals.username, '新建计划任务', 'task', name, `类型: ${type}`);
     res.json({ ok: true, id });
   }),
@@ -940,11 +956,16 @@ router.put(
     }
     // 重新计算 next_run_at（禁用时清空，启用时按新 cron 计算）
     const nextRun = newEnabled === 1 ? (nextRunTime(newCron, Date.now()) as number) : row.next_run_at;
+    // 调度增强参数（1.81.0）：显式传值才变更
+    const newTimeoutSec = req.body?.timeoutSec !== undefined ? clampInt(req.body.timeoutSec, 0, 86400, 0) : (row as any).timeout_sec ?? 0;
+    const newMaxRetries = req.body?.maxRetries !== undefined ? clampInt(req.body.maxRetries, 0, 10, 0) : (row as any).max_retries ?? 0;
+    const newRetryIntervalSec = req.body?.retryIntervalSec !== undefined ? clampInt(req.body.retryIntervalSec, 60, 86400, 300) : (row as any).retry_interval_sec ?? 300;
+    const newNotifyMode = req.body?.notifyMode !== undefined && ['failure', 'always', 'never'].includes(req.body.notifyMode) ? req.body.notifyMode : (row as any).notify_mode || 'failure';
     getDb()
       .prepare(
-        'UPDATE cron_tasks SET name = ?, cron = ?, enabled = ?, config = ?, git_cred_encrypted = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
+        'UPDATE cron_tasks SET name = ?, cron = ?, enabled = ?, config = ?, git_cred_encrypted = ?, timeout_sec = ?, max_retries = ?, retry_interval_sec = ?, notify_mode = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
       )
-      .run(newName, newCron, newEnabled, newConfig, newGitCredEnc, nextRun, Date.now(), row.id);
+      .run(newName, newCron, newEnabled, newConfig, newGitCredEnc, newTimeoutSec, newMaxRetries, newRetryIntervalSec, newNotifyMode, nextRun, Date.now(), row.id);
     logOperation(res.locals.username, '更新计划任务', 'task', newName);
     res.json({ ok: true });
   }),

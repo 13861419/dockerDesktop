@@ -496,6 +496,12 @@ export async function reportTaskFailure(taskName: string, detail: string, source
   await emitAlert('task', 'danger', message, null);
 }
 
+/** 计划任务执行成功通知（1.81.0，notify_mode=always 时使用） */
+export async function reportTaskSuccess(taskName: string, detail = ''): Promise<void> {
+  const message = `Docker 面板【计划任务】「${taskName}」执行成功：${(detail || '无输出').slice(0, 300)}`;
+  await emitAlert('task', 'recovery', message, null);
+}
+
 /**
  * 单次检测
  */

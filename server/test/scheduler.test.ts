@@ -16,7 +16,7 @@ import fs from 'fs';
 const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-sched-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 
-import { nextRunTime } from '../src/scheduler';
+import { nextRunTime, withTimeout } from '../src/scheduler';
 
 /** 固定基准时间：2026-01-15 10:30:00（本地时间） */
 function makeBase(): number {
@@ -233,4 +233,25 @@ test('nextRunTime: range with step 9-17/2 hours', () => {
 
 test('nextRunTime: invalid range a>b returns null', () => {
   assert.strictEqual(nextRunTime('30-20 * * * *', BASE), null);
+});
+
+// ============ withTimeout（1.81.0 任务超时控制） ============
+
+test('withTimeout: 限时内完成正常返回结果并清理定时器', async () => {
+  const result = await withTimeout(Promise.resolve('done'), 5);
+  assert.strictEqual(result, 'done');
+});
+
+test('withTimeout: 超时后拒绝并携带提示信息', async () => {
+  await assert.rejects(
+    withTimeout(new Promise(() => {}), 0.05), // 50ms 后超时
+    /任务执行超过 0.05 秒未完成/,
+  );
+});
+
+test('withTimeout: 原始错误直接透传不被吞掉', async () => {
+  await assert.rejects(
+    withTimeout(Promise.reject(new Error('原始错误')), 5),
+    /原始错误/,
+  );
 });

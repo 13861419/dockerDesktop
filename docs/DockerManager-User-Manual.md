@@ -596,6 +596,10 @@ Menu: **Scheduled Tasks** (`/tasks`)
 - **Rerun failed runs (1.49.0)**: failed entries in the run-history dialog get a "Rerun" button that executes the task immediately with its existing config — no need to wait for the next schedule.
 - **Run-history retention (1.43.0)**: task run logs are auto-purged daily per the "Task run-history retention (days)" setting (default 90; 0 = keep forever), preventing unbounded growth.
 - **Re-entry protection (1.44.0)**: while a task is running, manual / Webhook triggers return "task is already running" — the lock is shared with the scheduler so long tasks cannot run concurrently.
+- **Scheduling enhancements (1.81.0)**: the task editor adds three scheduling policies —
+  - **Timeout control**: per-task limit in seconds (empty = no limit); on timeout the run is marked failed and an alert is pushed to avoid stuck tasks hogging resources (background processes may still be running, noted in the detail);
+  - **Auto-retry on failure**: configurable retry count (0–10) and retry interval (60–86400 s); retries push no final alert and do not advance the regular schedule — one alert only after all attempts fail, and every attempt is recorded in run history;
+  - **Notification policy**: alert on failure only (default) / notify on both success and failure / silent; success notifications use the recovery level over the existing alert channels.
 - **Cross-engine prune (crossPrune, 1.42.0)**: on schedule, prune images / containers / volumes / networks across all (or selected) registered engines; one engine failing does not block the others. Same semantics as the cross-engine batch cleanup on the Engines page.
 
 ![Scheduled tasks](../images/tasks.png)

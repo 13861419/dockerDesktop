@@ -232,6 +232,11 @@ export default function TasksPage() {
   // 预览请求进行中标记
   const [cronPreviewing, setCronPreviewing] = useState(false);
   const [formEnabled, setFormEnabled] = useState(true);
+  // 调度增强（1.81.0）：超时 / 失败重试 / 通知分级
+  const [formTimeoutSec, setFormTimeoutSec] = useState('');
+  const [formMaxRetries, setFormMaxRetries] = useState('0');
+  const [formRetryIntervalSec, setFormRetryIntervalSec] = useState('300');
+  const [formNotifyMode, setFormNotifyMode] = useState<'failure' | 'always' | 'never'>('failure');
   const [formConfig, setFormConfig] = useState<Record<string, any>>({});
 
   // 执行历史分页状态
@@ -291,6 +296,11 @@ export default function TasksPage() {
     setFormType('prune');
     setFormCron(DEFAULT_CRON);
     setFormEnabled(true);
+    // 调度增强默认值
+    setFormTimeoutSec('');
+    setFormMaxRetries('0');
+    setFormRetryIntervalSec('300');
+    setFormNotifyMode('failure');
     // prune 默认全选
     setFormConfig({
       images: true,
@@ -316,6 +326,11 @@ export default function TasksPage() {
     setFormType(task.type);
     setFormCron(task.cron);
     setFormEnabled(task.enabled);
+    // 调度增强回填（空值显示为空串 = 不限制）
+    setFormTimeoutSec(task.timeoutSec ? String(task.timeoutSec) : '');
+    setFormMaxRetries(String(task.maxRetries ?? 0));
+    setFormRetryIntervalSec(String(task.retryIntervalSec ?? 300));
+    setFormNotifyMode(task.notifyMode || 'failure');
     // 深拷贝 config，避免直接修改原任务对象
     setFormConfig(JSON.parse(JSON.stringify(task.config || {})));
     setFormOpen(true);
@@ -477,6 +492,10 @@ export default function TasksPage() {
         cron: formCron.trim(),
         enabled: formEnabled,
         config: cleanConfig,
+        timeoutSec: Number(formTimeoutSec) > 0 ? Math.round(Number(formTimeoutSec)) : 0,
+        maxRetries: Math.max(0, Math.round(Number(formMaxRetries) || 0)),
+        retryIntervalSec: Math.max(60, Math.round(Number(formRetryIntervalSec) || 300)),
+        notifyMode: formNotifyMode,
       };
       if (hasCred) {
         payload.gitCred = saveGitCred;
@@ -497,7 +516,7 @@ export default function TasksPage() {
     } finally {
       setSaving(false);
     }
-  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, buildGitCred, showToast]);
+  }, [canManage, editing, formName, formType, formCron, formEnabled, formConfig, formTimeoutSec, formMaxRetries, formRetryIntervalSec, formNotifyMode, buildGitCred, showToast]);
 
   /**
    * 切换任务的启用/停用状态
@@ -1019,6 +1038,48 @@ export default function TasksPage() {
               />
               <span className="tasks__switch-slider" />
             </label>
+          </Field>
+
+          <Field label={t('超时（秒）')}>
+            <Input
+              type="number"
+              min={0}
+              value={formTimeoutSec}
+              placeholder={t('留空 = 不限制，超时按失败处理')}
+              onChange={(e) => setFormTimeoutSec(e.target.value)}
+            />
+          </Field>
+
+          <Field label={t('失败重试')}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input
+                type="number"
+                min={0}
+                max={10}
+                value={formMaxRetries}
+                placeholder={t('重试次数，0 = 不重试')}
+                onChange={(e) => setFormMaxRetries(e.target.value)}
+              />
+              <Input
+                type="number"
+                min={60}
+                max={86400}
+                value={formRetryIntervalSec}
+                placeholder={t('重试间隔（秒）')}
+                onChange={(e) => setFormRetryIntervalSec(e.target.value)}
+              />
+            </div>
+          </Field>
+
+          <Field label={t('通知策略')}>
+            <Select
+              value={formNotifyMode}
+              onChange={(e: any) => setFormNotifyMode(e.target.value)}
+            >
+              <option value="failure">{t('仅失败时告警（默认）')}</option>
+              <option value="always">{t('成功与失败都通知')}</option>
+              <option value="never">{t('静默（不通知）')}</option>
+            </Select>
           </Field>
         </div>
       </Modal>

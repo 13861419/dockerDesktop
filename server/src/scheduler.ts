@@ -9,7 +9,7 @@
  * 采用 setInterval（默认 10s tick）+ timer.unref + started 标志的控制方式（与 monitor.ts 同风格）。
  */
 import { getDb } from './storage';
-import { reportTaskFailure } from './alerting';
+import { reportTaskFailure, reportTaskSuccess } from './alerting';
 
 /** 单个任务的数据库行（snake_case 列映射） */
 export interface CronTaskRow {
@@ -25,6 +25,14 @@ export interface CronTaskRow {
   next_run_at: number;
   created_at: number;
   updated_at: number;
+  /** 任务超时秒数（1.81.0，null/0 = 无限制；超时按失败处理并告警） */
+  timeout_sec?: number | null;
+  /** 失败自动重试次数（1.81.0，默认 0 = 不重试） */
+  max_retries?: number | null;
+  /** 重试间隔秒（1.81.0，默认 300，最小 60） */
+  retry_interval_sec?: number | null;
+  /** 通知策略（1.81.0）：failure=仅失败告警（默认）| always=成功也通知 | never=不通知 */
+  notify_mode?: string | null;
 }
 
 /** 任务执行结果（handler 返回，用于落库与历史记录） */
@@ -100,6 +108,9 @@ let timer: NodeJS.Timeout | null = null;
 
 /** 防止任务并发重入时重复调度的简单运行中集合 */
 const runningIds = new Set<string>();
+
+/** 任务重试计数（内存态，1.81.0）：id → 已重试次数；成功或达到上限后清除 */
+const retryAttempts = new Map<string, number>();
 
 /**
  * 尝试占用任务执行锁（1.44.0）：成功返回 true；任务已在执行中返回 false。
@@ -221,8 +232,26 @@ function matches(field: string, value: number): boolean {
   });
 }
 
+/** 超时竞速：sec 秒后 reject；到点后 reject（后台进程可能仍在运行，detail 中说明） */
+export function withTimeout<T>(p: Promise<T>, sec: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`任务执行超过 ${sec} 秒未完成，已标记失败（后台进程可能仍在运行）`)), sec * 1000);
+    t.unref?.();
+    p.then((v) => {
+      clearTimeout(t);
+      resolve(v);
+    }, (e) => {
+      clearTimeout(t);
+      reject(e);
+    });
+  });
+}
+
 /**
  * 执行单个任务（更新状态并回调历史）
+ *
+ * 1.81.0 起支持：超时控制（timeout_sec）、失败自动重试（max_retries × retry_interval_sec，
+ * 重试期间不推最终告警、不推进常规调度）、通知分级（notify_mode）。
  * @param row 任务行
  */
 async function executeTask(row: CronTaskRow): Promise<void> {
@@ -238,8 +267,9 @@ async function executeTask(row: CronTaskRow): Promise<void> {
   if (!handler) {
     result = { ok: false, detail: `任务类型 ${row.type} 未注册处理器` };
   } else {
+    const timeoutSec = Number(row.timeout_sec) || 0;
     try {
-      result = await handler(row, config);
+      result = timeoutSec > 0 ? await withTimeout(handler(row, config), timeoutSec) : await handler(row, config);
     } catch (err: any) {
       result = { ok: false, detail: String(err?.message || err) };
     }
@@ -248,12 +278,46 @@ async function executeTask(row: CronTaskRow): Promise<void> {
   const now = Date.now();
   const nextRun = nextRunTime(row.cron, now);
 
-  // 任务执行失败：推送告警（不阻塞任务执行，失败不影响状态更新）
+  // 失败重试（1.81.0）：还有剩余次数时把 next_run_at 推迟到重试时间，不推最终告警
   if (!result.ok) {
+    const maxRetries = Math.max(0, Number(row.max_retries) || 0);
+    const attempt = retryAttempts.get(row.id) || 0;
+    if (attempt < maxRetries) {
+      retryAttempts.set(row.id, attempt + 1);
+      const delaySec = Math.max(60, Number(row.retry_interval_sec) || 300);
+      const retryAt = now + delaySec * 1000;
+      const detail = `第 ${attempt + 1}/${maxRetries} 次失败，将于 ${new Date(retryAt).toLocaleString()} 自动重试：${result.detail || '未知错误'}`.slice(0, 2000);
+      d.prepare(
+        `UPDATE cron_tasks SET last_run_at = ?, last_status = ?, last_detail = ?, next_run_at = ?, updated_at = ? WHERE id = ?`,
+      ).run(now, 1, detail, retryAt, now, row.id);
+      if (onRunCb) {
+        try {
+          onRunCb({ ...row, last_run_at: now, last_status: 1, last_detail: detail, next_run_at: retryAt }, result);
+        } catch {
+          // 历史记录失败不影响任务执行
+        }
+      }
+      return;
+    }
+    retryAttempts.delete(row.id);
+  } else {
+    retryAttempts.delete(row.id);
+  }
+
+  // 通知分级（1.81.0）：failure=仅失败（默认）| always=成功也通知 | never=静默
+  const notifyMode = row.notify_mode === 'always' || row.notify_mode === 'never' ? row.notify_mode : 'failure';
+  if (!result.ok && notifyMode !== 'never') {
     try {
       await reportTaskFailure(row.name || row.id, result.detail || '未知错误', '定时触发');
     } catch {
       // 告警失败不影响任务本身
+    }
+  }
+  if (result.ok && notifyMode === 'always') {
+    try {
+      await reportTaskSuccess(row.name || row.id, result.detail || '');
+    } catch {
+      // 成功通知失败不影响任务本身
     }
   }
 
@@ -286,7 +350,7 @@ async function tick(): Promise<void> {
   const now = Date.now();
   const rows = d
     .prepare(
-      'SELECT id, name, type, cron, enabled, config, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at FROM cron_tasks WHERE enabled = 1 AND next_run_at <= ?',
+      'SELECT id, name, type, cron, enabled, config, last_run_at, last_status, last_detail, next_run_at, created_at, updated_at, timeout_sec, max_retries, retry_interval_sec, notify_mode FROM cron_tasks WHERE enabled = 1 AND next_run_at <= ?',
     )
     .all(now) as unknown as CronTaskRow[];
   for (const row of rows) {

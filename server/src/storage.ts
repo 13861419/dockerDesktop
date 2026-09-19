@@ -1176,6 +1176,27 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：计划任务增强（1.81.0）——超时 / 失败重试 / 通知分级
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN timeout_sec INTEGER'); // 任务超时秒数（null/0 = 无限制）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 0'); // 失败自动重试次数
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN retry_interval_sec INTEGER NOT NULL DEFAULT 300'); // 重试间隔秒
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE cron_tasks ADD COLUMN notify_mode TEXT'); // failure（默认）| always | never
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：数据库查询历史与收藏（1.48.0）
   try {
     d.exec(
