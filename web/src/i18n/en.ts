@@ -2659,6 +2659,8 @@ export const en: Record<string, string> = {
   "回滚到最后一次 CI 通过并部署成功的版本": "Roll back to the last commit that passed CI and deployed successfully",
   "部署此版本": "Deploy this commit",
   "CI 状态门禁": "CI status gate",
+  "目标平台（多架构）": "Target platforms (multi-arch)",
+  "勾选两个平台即 buildx 多架构构建（首次自动安装 QEMU 模拟器并拉取构建镜像，耗时较长）；不勾选 = 单架构 docker build": "Check both to build multi-arch images with buildx (QEMU emulators and the build image are fetched automatically on first run, which takes a while); leave empty for single-arch docker build",
   "面板无自升级权限，请 SSH 手动升级（详情见提示）": "Panel cannot self-upgrade; please update via SSH (see hint)",
   "更新包已下载并校验通过，特权更新单元已接管安装，服务将重启": "Package downloaded and verified; the privileged update unit has taken over. Service will restart",
   "无法启动特权更新单元": "Failed to start the privileged update unit",

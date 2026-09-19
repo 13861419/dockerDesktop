@@ -108,6 +108,7 @@ interface AppForm {
   imageName: string;
   imageTagTemplate: string;
   imageDockerfile: string;
+  imagePlatforms: string[];
   registryUser: string;
   registryPass: string;
   registryCredsSet: boolean;
@@ -136,6 +137,7 @@ const EMPTY_FORM: AppForm = {
   imageName: '',
   imageTagTemplate: '{branch}-{sha7}',
   imageDockerfile: '',
+  imagePlatforms: [] as string[],
   registryUser: '',
   registryPass: '',
   registryCredsSet: false,
@@ -220,6 +222,7 @@ function App() {
       imageName: app.image_name || '',
       imageTagTemplate: app.image_tag_template || '{branch}-{sha7}',
       imageDockerfile: app.image_dockerfile || '',
+      imagePlatforms: (() => { try { return JSON.parse((app as any).image_platforms || '[]'); } catch { return []; } })(),
       registryUser: '',
       registryPass: '',
       registryCredsSet: app.registry_creds_set === 1,
@@ -254,6 +257,7 @@ function App() {
           preHook: form.preHook,
           postHook: form.postHook,
           imageBuildEnabled: form.imageBuildEnabled,
+          imagePlatforms: form.imagePlatforms,
           imageName: form.imageName,
           imageTagTemplate: form.imageTagTemplate,
           imageDockerfile: form.imageDockerfile,
@@ -687,6 +691,27 @@ function App() {
                 </Field>
                 <Field label={t('Dockerfile 路径（可选）')} hint={t('相对仓库根目录，留空使用 Dockerfile')}>
                   <Input value={form.imageDockerfile} onChange={(e) => setForm({ ...form, imageDockerfile: e.target.value })} placeholder="docker/Dockerfile" />
+                </Field>
+                <Field label={t('目标平台（多架构）')} hint={t('勾选两个平台即 buildx 多架构构建（首次自动安装 QEMU 模拟器并拉取构建镜像，耗时较长）；不勾选 = 单架构 docker build')}>
+                  <div style={{ display: 'flex', gap: 16 }}>
+                    {['linux/amd64', 'linux/arm64'].map((p) => (
+                      <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={form.imagePlatforms.includes(p)}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              imagePlatforms: e.target.checked
+                                ? [...form.imagePlatforms, p]
+                                : form.imagePlatforms.filter((x: string) => x !== p),
+                            })
+                          }
+                        />
+                        {p}
+                      </label>
+                    ))}
+                  </div>
                 </Field>
                 <Field label={t('Registry 凭据（可选）')} hint={t('私有仓库填写，AES 加密存储；留空保持原有凭据不变，清空用户名即清除凭据')}>
                   <div style={{ display: 'flex', gap: 8 }}>

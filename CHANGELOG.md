@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.83.0] - 2026-09-19
+
+### Added（新增）
+
+- **镜像构建推送支持 buildx 多架构**（1.80.0 二期）：部署应用镜像构建可勾选目标平台 linux/amd64 与 linux/arm64，一次构建产出多平台 manifest，一个 tag 通吃 x86 与 ARM 设备
+- 自动化流水线：首次跨架构构建时自动创建 `dm-multiarch` builder（docker-container 驱动）并幂等安装 QEMU 用户态模拟器（tonistiigi/binfmt，成功一次后留标记跳过）
+- 构建与推送合并为 `docker buildx build --push` 一步完成，双 tag（{branch}-{sha7} + latest）语义不变；不勾选平台时保持原单架构 docker build 路径
+- 新增 deploy_apps 迁移列：image_platforms（JSON 数组，null = 单架构）；平台白名单校验（amd64 / arm64 / arm/v7 / riscv64 / ppc64le / s390x）
+
 ## [1.82.0] - 2026-09-19
 
 ### Fixed（修复）

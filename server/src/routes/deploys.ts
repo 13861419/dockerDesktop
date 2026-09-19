@@ -19,7 +19,7 @@ import fs from 'fs';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { requireAdmin, requireAuth } from '../auth';
-import { getDb, encryptSecret, decryptSecret } from '../storage';
+import { getDb, encryptSecret, decryptSecret, getDataDir } from '../storage';
 import { logOperation } from '../operationLog';
 import { gitCloneOrPull, gitAvailable, randomHex, type GitCred } from '../gitCli';
 import { reportTaskFailure } from '../alerting';
@@ -207,6 +207,53 @@ export function evalImageTag(template: string | null | undefined, branch: string
   return !tag || /^[-._]/.test(tag) ? 'latest' : tag;
 }
 
+// ============ buildx 多架构构建（1.83.0） ============
+
+/** buildx 专用 builder 名称（docker-container 驱动，支持多平台 manifest） */
+export const DM_BUILDX_BUILDER = 'dm-multiarch';
+
+/** 允许的目标平台白名单 */
+export const SUPPORTED_PLATFORMS = ['linux/amd64', 'linux/arm64', 'linux/arm/v7', 'linux/riscv64', 'linux/ppc64le', 'linux/s390x'] as const;
+
+/** 归一校验平台列表：去重、去空、剔除非法项；空数组 = 单架构（沿用 docker build） */
+export function normalizePlatforms(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const out: string[] = [];
+  for (const p of input) {
+    const s = String(p || '').trim().toLowerCase();
+    if (/^linux\/(amd64|arm64|arm\/v7|riscv64|ppc64le|s390x)$/.test(s) && !out.includes(s)) {
+      out.push(s);
+    }
+  }
+  return out;
+}
+
+/** 目标平台是否需要 QEMU 模拟（与宿主机架构不同即需要） */
+export function needsEmulation(platforms: string[], hostArch: string): boolean {
+  const host = hostArch === 'x64' ? 'linux/amd64' : hostArch === 'arm64' ? 'linux/arm64' : `linux/${hostArch}`;
+  return platforms.some((p) => p !== host);
+}
+
+/** 组装 buildx 构建参数（--push 一步完成构建与推送，替代 docker build + docker push） */
+export function buildBuildxArgs(opts: { platforms: string[]; imageName: string; tag: string; dockerfile: string; context: string; builder: string }): string[] {
+  return [
+    'buildx',
+    'build',
+    '--builder',
+    opts.builder,
+    '--platform',
+    opts.platforms.join(','),
+    '-f',
+    opts.dockerfile,
+    '-t',
+    `${opts.imageName}:${opts.tag}`,
+    '-t',
+    `${opts.imageName}:latest`,
+    '--push',
+    opts.context,
+  ];
+}
+
 interface DeployApp {
   id: number;
   name: string;
@@ -229,6 +276,8 @@ interface DeployApp {
   image_name?: string | null;
   image_tag_template?: string | null;
   image_dockerfile?: string | null;
+  /** 目标平台 JSON 数组（1.83.0），null/空 = 单架构；如 '["linux/amd64","linux/arm64"]' */
+  image_platforms?: string | null;
   registry_user_enc?: string | null;
   registry_pass_enc?: string | null;
   last_deploy_at: number | null;
@@ -318,6 +367,7 @@ async function deployApp(app: DeployApp, source: string, greenRef = '', commitSh
     }
 
     // 2.6 镜像构建推送（1.80.0）：build → push（latest 双 tag）
+    //     多架构（1.83.0）：image_platforms 非空时走 buildx（docker-container builder + QEMU），--push 一步完成
     if (app.image_build_enabled) {
       const imageName = String(app.image_name || '').trim();
       if (!imageName) {
@@ -328,8 +378,12 @@ async function deployApp(app: DeployApp, source: string, greenRef = '', commitSh
         return { ok: false, detail: `${lines.join('\n')}\n仓库中未找到 Dockerfile（${dockerfile}）` };
       }
       const tag = evalImageTag(app.image_tag_template, app.branch, commitSha || greenRef);
-      lines.push(`[镜像构建] ${imageName}:${tag}（含 latest）`);
-      lines.push(await runCmdMerged(`docker build -f "${dockerfile}" -t "${imageName}:${tag}" -t "${imageName}:latest" "${repoDir}"`, repoDir));
+      let platforms: string[] = [];
+      try {
+        platforms = normalizePlatforms(app.image_platforms ? JSON.parse(app.image_platforms) : []);
+      } catch {
+        platforms = [];
+      }
       const user = app.registry_user_enc ? safeDecrypt(app.registry_user_enc) : '';
       const pass = app.registry_pass_enc ? safeDecrypt(app.registry_pass_enc) : '';
       const host = registryHostOf(imageName);
@@ -338,8 +392,32 @@ async function deployApp(app: DeployApp, source: string, greenRef = '', commitSh
         lines.push(`[Registry] 已登录 ${host || 'Docker Hub'}`);
       }
       try {
-        lines.push(await runCmdMerged(`docker push "${imageName}:${tag}"`, repoDir));
-        lines.push(await runCmdMerged(`docker push "${imageName}:latest"`, repoDir));
+        if (platforms.length > 0) {
+          // buildx 多架构路径：确保 docker-container 驱动的 builder 存在
+          lines.push(`[镜像构建] ${imageName}:${tag}（含 latest，平台 ${platforms.join(' / ')}，buildx）`);
+          try {
+            await runCmdMerged(`docker buildx inspect ${DM_BUILDX_BUILDER}`, repoDir);
+          } catch {
+            lines.push(await runCmdMerged(`docker buildx create --name ${DM_BUILDX_BUILDER} --driver docker-container --bootstrap`, repoDir));
+          }
+          // 跨架构需要 QEMU 用户态模拟器（幂等安装，成功一次后留标记跳过）
+          if (needsEmulation(platforms, process.arch)) {
+            const marker = path.join(getDataDir(), '.binfmt-installed');
+            if (!fs.existsSync(marker)) {
+              lines.push(await runCmdMerged(`docker run --privileged --rm tonistiigi/binfmt --install all`, repoDir));
+              try {
+                fs.writeFileSync(marker, new Date().toISOString());
+              } catch { /* 标记写失败仅导致下次重装，无害 */ }
+            }
+          }
+          const args = buildBuildxArgs({ platforms, imageName, tag, dockerfile, context: repoDir, builder: DM_BUILDX_BUILDER });
+          lines.push(await runCmdMerged(`docker ${args.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ')}`, repoDir));
+        } else {
+          lines.push(`[镜像构建] ${imageName}:${tag}（含 latest）`);
+          lines.push(await runCmdMerged(`docker build -f "${dockerfile}" -t "${imageName}:${tag}" -t "${imageName}:latest" "${repoDir}"`, repoDir));
+          lines.push(await runCmdMerged(`docker push "${imageName}:${tag}"`, repoDir));
+          lines.push(await runCmdMerged(`docker push "${imageName}:latest"`, repoDir));
+        }
       } finally {
         if (user && pass) {
           await runCmdMerged(`docker logout ${host ? `"${host}"` : ''}`.trim(), repoDir).catch(() => '');
@@ -373,7 +451,7 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
               CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set,
               gitops_enabled, gitops_interval_min, gitops_auto, gitops_last_commit, gitops_last_check,
               pre_hook, post_hook,
-              image_build_enabled, image_name, image_tag_template, image_dockerfile,
+              image_build_enabled, image_name, image_tag_template, image_dockerfile, image_platforms,
               CASE WHEN registry_user_enc IS NOT NULL AND registry_user_enc != '' THEN 1 ELSE 0 END AS registry_creds_set
        FROM deploy_apps ORDER BY id DESC`,
     )
@@ -454,6 +532,8 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
   const imageName = req.body?.imageName !== undefined ? String(req.body.imageName).trim().slice(0, 300) : (app.image_name || '');
   const imageTagTemplate = req.body?.imageTagTemplate !== undefined ? String(req.body.imageTagTemplate).trim().slice(0, 100) || '{branch}-{sha7}' : (app.image_tag_template || '{branch}-{sha7}');
   const imageDockerfile = req.body?.imageDockerfile !== undefined ? String(req.body.imageDockerfile).trim().slice(0, 300) : (app.image_dockerfile || '');
+  // 目标平台（1.83.0）：显式传值才变更；白名单校验，空数组 = 单架构
+  const imagePlatforms = req.body?.imagePlatforms !== undefined ? normalizePlatforms(req.body.imagePlatforms) : (() => { try { return normalizePlatforms(app.image_platforms ? JSON.parse(app.image_platforms) : []); } catch { return []; } })();
   let registryUserEnc = app.registry_user_enc;
   let registryPassEnc = app.registry_pass_enc;
   if (req.body?.registryUser !== undefined) {
@@ -475,10 +555,10 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
         `UPDATE deploy_apps SET name = ?, repo_url = ?, branch = ?, compose_path = ?, also_build = ?, cred_encrypted = ?,
            ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?,
            gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, pre_hook = ?, post_hook = ?,
-           image_build_enabled = ?, image_name = ?, image_tag_template = ?, image_dockerfile = ?, registry_user_enc = ?, registry_pass_enc = ?, updated_at = ?
+           image_build_enabled = ?, image_name = ?, image_tag_template = ?, image_dockerfile = ?, image_platforms = ?, registry_user_enc = ?, registry_pass_enc = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, imageBuildEnabled, imageName || null, imageTagTemplate, imageDockerfile || null, registryUserEnc, registryPassEnc, Date.now(), id);
+      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, imageBuildEnabled, imageName || null, imageTagTemplate, imageDockerfile || null, imagePlatforms.length ? JSON.stringify(imagePlatforms) : null, registryUserEnc, registryPassEnc, Date.now(), id);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message || e) });
   }

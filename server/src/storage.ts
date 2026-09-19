@@ -1176,6 +1176,12 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：buildx 多架构构建（1.83.0）——目标平台 JSON 数组，null/空 = 单架构
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN image_platforms TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：计划任务增强（1.81.0）——超时 / 失败重试 / 通知分级
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN timeout_sec INTEGER'); // 任务超时秒数（null/0 = 无限制）

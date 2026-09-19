@@ -1435,6 +1435,13 @@ Git 应用源（1.55.0，仅管理员）：
 - **失败处置**：构建或推送失败即中止部署（容器不改动），完整构建日志保留在部署历史中
 - Dockerfile 路径可指定（默认仓库根 `Dockerfile`），构建上下文为仓库目录，建议配合 `.dockerignore` 控制上下文体积
 
+**buildx 多架构构建（1.83.0）**：镜像构建配置中可勾选目标平台（linux/amd64 与 linux/arm64），勾选后构建命令切换为 `docker buildx build --push`：
+
+- 一次构建产出**多平台 manifest**，一个 tag 同时支持 x86 与 ARM 设备（每台机器 pull 时自动匹配本机架构）
+- 首次跨架构构建自动完成一次性环境准备：创建 `dm-multiarch` builder（docker-container 驱动）+ 幂等安装 QEMU 用户态模拟器（tonistiigi/binfmt，成功一次后留标记跳过）
+- 双 tag 语义不变（`{branch}-{sha7}` + latest）；不勾选平台时保持原单架构 `docker build` 路径
+- 注意：QEMU 模拟跨架构构建速度明显慢于本机架构（视语言/基础镜像 3-10 倍），且首次需要拉取 binfmt 与 buildkit 镜像
+
 > 与 35.2 的区别：35.2 是「计划任务」里的通用 Git 部署任务（可配 Cron 与目标路径）；35.4 是面向单应用的工作台（状态面板 + 历史回看 + 独立 Webhook），二者共用同一套 clone/pull 与 compose 执行逻辑。
 
 ---
