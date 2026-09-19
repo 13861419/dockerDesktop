@@ -26,8 +26,10 @@ for ARCH in amd64 arm64; do
   mkdir -p "$DEB_DIR/opt/docker-manager"
   mkdir -p "$DEB_DIR/opt/docker-manager/server"
   mkdir -p "$DEB_DIR/opt/docker-manager/static"
+  mkdir -p "$DEB_DIR/opt/docker-manager/sbin"
   mkdir -p "$DEB_DIR/var/lib/docker-manager"
   mkdir -p "$DEB_DIR/etc/systemd/system"
+  mkdir -p "$DEB_DIR/etc/polkit-1/rules.d"
   mkdir -p "$DEB_DIR/usr/local/bin"
 
   # 复制后端编译产物
@@ -45,6 +47,12 @@ for ARCH in amd64 arm64; do
   # 复制安装脚本
   cp "$ROOT_DIR/packaging/linux/install.sh" "$DEB_DIR/opt/docker-manager/" 2>/dev/null || true
   chmod +x "$DEB_DIR/opt/docker-manager/install.sh" 2>/dev/null || true
+
+  # 特权更新辅助（1.82.0）：root 一次性单元 + 精确 polkit 授权 + root 执行的安装脚本
+  cp "$ROOT_DIR/packaging/linux/apply-update.sh" "$DEB_DIR/opt/docker-manager/sbin/apply-update.sh"
+  chmod 755 "$DEB_DIR/opt/docker-manager/sbin/apply-update.sh"
+  cp "$ROOT_DIR/packaging/linux/docker-manager-update.service" "$DEB_DIR/etc/systemd/system/docker-manager-update.service"
+  cp "$ROOT_DIR/packaging/linux/45-docker-manager-update.rules" "$DEB_DIR/etc/polkit-1/rules.d/45-docker-manager-update.rules"
 
   # 环境配置
   cat > "$DEB_DIR/opt/docker-manager/server/.env" <<'EOF'
@@ -114,6 +122,9 @@ fi
 usermod -aG docker dockerman || true
 chown -R dockerman:docker /opt/docker-manager
 chown -R dockerman:docker /var/lib/docker-manager
+# 特权辅助脚本必须保持 root 所有（dockerman 不可改写，见 polkit 提权面）
+chown -R root:root /opt/docker-manager/sbin
+chmod 755 /opt/docker-manager/sbin/apply-update.sh
 systemctl daemon-reload
 systemctl enable docker-manager || true
 systemctl reset-failed docker-manager 2>/dev/null || true
@@ -125,8 +136,8 @@ POSTINST
   cat > "$DEB_DIR/DEBIAN/prerm" <<'PRERM'
 #!/bin/bash
 set -e
+# 仅停服务，勿 disable——升级失败时保持开机自启与 enable 状态（1.75.3）
 systemctl stop docker-manager || true
-systemctl disable docker-manager || true
 PRERM
   chmod 755 "$DEB_DIR/DEBIAN/prerm"
 

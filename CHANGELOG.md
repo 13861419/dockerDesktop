@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.83.1] - 2026-09-19
+
+### Fixed（修复）
+
+- **修复 1.82.0/1.83.0 的 deb/rpm 包缺少特权更新辅助三件套**：Release CI 实际使用 `build-deb-ci.sh` / `build-rpm-ci.sh` 打包，而 helper 单元、polkit 规则与 root 安装脚本此前只加进了本机打包路径（`.deb-inner.sh` / `.rpm-inner.sh`），导致装上 1.82.0 后一键更新权限预检仍为 denied（表现为提示「面板无自升级权限，请 SSH 手动升级」）
+- 同步修复 build-deb-ci.sh 的 prerm 遗留 `systemctl disable`（1.75.3 语义未同步到 CI 脚本）
+- 新增打包脚本防回归测试：四个打包脚本（CI + 本机两条路径）必须引用 helper 三件套，缺失即测试失败
+
+> 升级路径：仍在 1.82.0 及以下的机器需 SSH 手动安装一次 ≥1.83.1（`sudo dpkg -i docker-manager-1.83.1-<arch>.deb`），此后一键更新经特权辅助单元正常工作。
+
 ## [1.83.0] - 2026-09-19
 
 ### Added（新增）

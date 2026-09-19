@@ -23,8 +23,10 @@ for ARCH_LABEL in x86_64 aarch64; do
   rm -rf "$STAGE_DIR"
   mkdir -p "$STAGE_DIR/opt/docker-manager/server"
   mkdir -p "$STAGE_DIR/opt/docker-manager/static"
+  mkdir -p "$STAGE_DIR/opt/docker-manager/sbin"
   mkdir -p "$STAGE_DIR/var/lib/docker-manager"
   mkdir -p "$STAGE_DIR/etc/systemd/system"
+  mkdir -p "$STAGE_DIR/etc/polkit-1/rules.d"
   mkdir -p "$STAGE_DIR/usr/local/bin"
 
   # 复制后端编译产物
@@ -42,6 +44,12 @@ for ARCH_LABEL in x86_64 aarch64; do
   # 复制安装脚本
   cp "$ROOT_DIR/packaging/linux/install.sh" "$STAGE_DIR/opt/docker-manager/" 2>/dev/null || true
   chmod +x "$STAGE_DIR/opt/docker-manager/install.sh" 2>/dev/null || true
+
+  # 特权更新辅助（1.82.0）：root 一次性单元 + 精确 polkit 授权 + root 执行的安装脚本
+  cp "$ROOT_DIR/packaging/linux/apply-update.sh" "$STAGE_DIR/opt/docker-manager/sbin/apply-update.sh"
+  chmod 755 "$STAGE_DIR/opt/docker-manager/sbin/apply-update.sh"
+  cp "$ROOT_DIR/packaging/linux/docker-manager-update.service" "$STAGE_DIR/etc/systemd/system/docker-manager-update.service"
+  cp "$ROOT_DIR/packaging/linux/45-docker-manager-update.rules" "$STAGE_DIR/etc/polkit-1/rules.d/45-docker-manager-update.rules"
 
   # 环境配置
   cat > "$STAGE_DIR/opt/docker-manager/server/.env" <<'EOF'
@@ -160,6 +168,8 @@ fi
 /opt/docker-manager/*
 %dir %attr(755,dockerman,docker) /var/lib/docker-manager
 /etc/systemd/system/docker-manager.service
+/etc/systemd/system/docker-manager-update.service
+/etc/polkit-1/rules.d/45-docker-manager-update.rules
 /usr/local/bin/docker-manager-install
 SPECEOF
 
