@@ -1145,6 +1145,37 @@ function createTables(): void {
   } catch {
     // 列已存在则忽略
   }
+  // 迁移：镜像构建推送（1.80.0）——build → push → compose up 重建
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN image_build_enabled INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN image_name TEXT'); // 含 registry 前缀的完整镜像名（不含 tag）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN image_tag_template TEXT'); // 默认 {branch}-{sha7}，始终同时推送 latest
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN image_dockerfile TEXT'); // Dockerfile 相对路径（空=仓库根 Dockerfile）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN registry_user_enc TEXT'); // Registry 用户名（加密）
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN registry_pass_enc TEXT'); // Registry 密码（加密）
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：数据库查询历史与收藏（1.48.0）
   try {
     d.exec(

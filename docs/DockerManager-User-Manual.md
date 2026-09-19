@@ -1405,6 +1405,8 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 
 **CI run history (1.79.0)**: the "CI runs" button on a deploy card shows the repo's 10 most recent workflow runs (time / name / commit / status / original link). Read-only, reusing the CI gate's platform detection and token; GitHub Actions / Gitea / GitLab supported.
 
+**Image build & push (1.80.0)**: enable "image build" on a deploy app to turn the deploy into a full pipeline: pull → (CI gate) → `docker build` → `docker push` → `compose up -d` recreate. All three triggers (manual / webhook / GitOps) feed the same pipeline with the CI status gate applied. Default tag template `{branch}-{sha7}` plus `latest`; template variables `{branch}` `{sha7}` `{ts}` with illegal-character normalization. Registry credentials are AES-encrypted, passed to `docker login` via stdin (never on the command line), and logged out after push. Build/push failures abort the deploy with the full log kept in deploy history.
+
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 
 ---

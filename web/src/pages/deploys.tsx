@@ -51,6 +51,12 @@ interface DeployApp {
   /** 部署钩子（1.78.0） */
   pre_hook?: string | null;
   post_hook?: string | null;
+  /** 镜像构建推送（1.80.0） */
+  image_build_enabled?: number;
+  image_name?: string | null;
+  image_tag_template?: string | null;
+  image_dockerfile?: string | null;
+  registry_creds_set?: number;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -98,6 +104,13 @@ interface AppForm {
   gitopsIntervalMin: number;
   preHook: string;
   postHook: string;
+  imageBuildEnabled: boolean;
+  imageName: string;
+  imageTagTemplate: string;
+  imageDockerfile: string;
+  registryUser: string;
+  registryPass: string;
+  registryCredsSet: boolean;
 }
 
 const EMPTY_FORM: AppForm = {
@@ -119,6 +132,13 @@ const EMPTY_FORM: AppForm = {
   gitopsIntervalMin: 5,
   preHook: '',
   postHook: '',
+  imageBuildEnabled: false,
+  imageName: '',
+  imageTagTemplate: '{branch}-{sha7}',
+  imageDockerfile: '',
+  registryUser: '',
+  registryPass: '',
+  registryCredsSet: false,
 };
 
 function App() {
@@ -196,6 +216,13 @@ function App() {
       gitopsIntervalMin: app.gitops_interval_min || 5,
       preHook: app.pre_hook || '',
       postHook: app.post_hook || '',
+      imageBuildEnabled: app.image_build_enabled === 1,
+      imageName: app.image_name || '',
+      imageTagTemplate: app.image_tag_template || '{branch}-{sha7}',
+      imageDockerfile: app.image_dockerfile || '',
+      registryUser: '',
+      registryPass: '',
+      registryCredsSet: app.registry_creds_set === 1,
     });
     setFormOpen(true);
   }
@@ -226,6 +253,13 @@ function App() {
           gitopsIntervalMin: form.gitopsIntervalMin,
           preHook: form.preHook,
           postHook: form.postHook,
+          imageBuildEnabled: form.imageBuildEnabled,
+          imageName: form.imageName,
+          imageTagTemplate: form.imageTagTemplate,
+          imageDockerfile: form.imageDockerfile,
+          ...(form.registryUser.trim() || form.registryPass.trim()
+            ? { registryUser: form.registryUser.trim(), ...(form.registryPass.trim() ? { registryPass: form.registryPass.trim() } : {}) }
+            : {}),
           ...(form.ciToken.trim() ? { ciToken: form.ciToken.trim() } : {}),
         });
         showToast(t('应用已更新'));
@@ -438,6 +472,11 @@ function App() {
                     {app.gitops_auto === 1 ? ` · ${t('自动')}` : ''}
                   </div>
                 )}
+                {app.image_build_enabled === 1 && app.image_name && (
+                  <div className="deploy-card__row deploy-card__row--muted" title={t('部署时构建镜像并推送（Dockerfile 在仓库中，构建后 compose up 重建）')}>
+                    ⚙ 🔨 {app.image_name}
+                  </div>
+                )}
                 <div className="deploy-card__actions">
                   <Button
                     variant="primary"
@@ -628,6 +667,35 @@ function App() {
                 style={{ width: '100%', minHeight: 64, fontFamily: 'monospace', fontSize: 12, padding: '6px 8px', border: '1px solid var(--border, #ddd)', borderRadius: 6, background: 'transparent', color: 'inherit', boxSizing: 'border-box' }}
               />
             </Field>
+          </>
+        )}
+
+        {form.id && (
+          <>
+            <div style={{ fontWeight: 600, margin: '16px 0 4px' }}>{t('镜像构建推送')}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={form.imageBuildEnabled} onChange={(e) => setForm({ ...form, imageBuildEnabled: e.target.checked })} />
+              {t('部署时构建镜像并推送（Dockerfile 在仓库中，构建后 compose up 重建）')}
+            </label>
+            {form.imageBuildEnabled && (
+              <>
+                <Field label={t('镜像名（含 Registry 前缀）')} required hint={t('如 harbor.example.com/team/myapp 或 user/myapp；将同时推送 latest tag')}>
+                  <Input value={form.imageName} onChange={(e) => setForm({ ...form, imageName: e.target.value })} placeholder="harbor.example.com/team/myapp" />
+                </Field>
+                <Field label={t('Tag 模板')} hint={t('可用变量 {branch} {sha7} {ts}；非法字符自动转为 -')}>
+                  <Input value={form.imageTagTemplate} onChange={(e) => setForm({ ...form, imageTagTemplate: e.target.value })} placeholder="{branch}-{sha7}" />
+                </Field>
+                <Field label={t('Dockerfile 路径（可选）')} hint={t('相对仓库根目录，留空使用 Dockerfile')}>
+                  <Input value={form.imageDockerfile} onChange={(e) => setForm({ ...form, imageDockerfile: e.target.value })} placeholder="docker/Dockerfile" />
+                </Field>
+                <Field label={t('Registry 凭据（可选）')} hint={t('私有仓库填写，AES 加密存储；留空保持原有凭据不变，清空用户名即清除凭据')}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Input value={form.registryUser} onChange={(e) => setForm({ ...form, registryUser: e.target.value })} placeholder={form.registryCredsSet ? t('已配置（输入新值可覆盖）') : t('用户名')} />
+                    <Input type="password" value={form.registryPass} onChange={(e) => setForm({ ...form, registryPass: e.target.value })} placeholder={t('密码')} />
+                  </div>
+                </Field>
+              </>
+            )}
           </>
         )}
       </Modal>

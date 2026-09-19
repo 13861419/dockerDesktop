@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.80.0] - 2026-09-19
+
+### Added（新增）
+
+- **Git 部署新增「镜像构建推送」模式**：开启后部署流程变为 pull →（CI 门禁）→ docker build → docker push → compose up 重建，面板内建极简 CI，覆盖无 CI 团队的完整流水线
+- **三源触发全通**：手动按钮 / Webhook / GitOps 轮询发现的提交统一进入构建链路，CI 状态门禁照常生效
+- **Tag 策略**：默认模板 `{branch}-{sha7}` 并始终同时推送 `latest`，支持 `{branch}` `{sha7}` `{ts}` 变量与非法字符归一
+- Registry 凭据（用户名/密码）AES 加密存储，`docker login` 密码经 stdin 传入不落命令行，推送后自动 logout；构建/推送失败即中止部署并告警
+- 新增 deploy_apps 迁移列：image_build_enabled / image_name / image_tag_template / image_dockerfile / registry_user_enc / registry_pass_enc
+
 ## [1.79.0] - 2026-09-19
 
 ### Added（新增）

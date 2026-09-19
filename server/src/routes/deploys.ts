@@ -16,6 +16,8 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
+import { exec, spawn } from 'child_process';
+import { promisify } from 'util';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDb, encryptSecret, decryptSecret } from '../storage';
 import { logOperation } from '../operationLog';
@@ -62,7 +64,7 @@ export function triggerDeployByToken(appId: number, source: string, commitSha = 
   }
   deploying.add(appId);
   getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), appId);
-  deployApp(app, source)
+  deployApp(app, source, '', commitSha)
     .then((result) => {
       recordDeploy(appId, app.name, result.ok, source, result.detail, commitSha);
       if (!result.ok) {
@@ -87,7 +89,7 @@ function runCiGate(app: any, commitSha: string, source: 'webhook' | 'gitops'): v
   const short = commitSha.slice(0, 7);
   const proceed = (note: string) => {
     getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), app.id);
-    deployApp(app, source, commitSha)
+    deployApp(app, source, commitSha, commitSha)
       .then((result) => {
         recordDeploy(app.id, app.name, result.ok, source, `${note}\n${result.detail}`, commitSha);
         if (!result.ok) {
@@ -159,6 +161,52 @@ function recordGateBlocked(appId: number, appName: string, shortSha: string, det
     .run(Date.now(), detail.slice(0, 2000), Date.now(), appId);
 }
 
+const execAsync = promisify(exec);
+
+/** 执行命令并合并 stdout / stderr（docker build 等进度输出走 stderr 的场景） */
+async function runCmdMerged(cmd: string, cwd: string): Promise<string> {
+  const { stdout, stderr } = await execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
+  return [stdout, stderr].filter(Boolean).join('\n').trim();
+}
+
+/** docker login：密码经 stdin 传入，不落命令行 */
+function dockerLogin(host: string, username: string, password: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const args = ['login', ...(host ? [host] : []), '-u', username, '--password-stdin'];
+    const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => {
+      stderr += d;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`docker login 失败：${stderr.slice(0, 300)}`))));
+    child.stdin.end(password);
+  });
+}
+
+/** 从镜像名解析 registry host（无 host = Docker Hub，返回空串） */
+export function registryHostOf(imageName: string): string {
+  const first = String(imageName || '').split('/')[0] || '';
+  return /[:.]/.test(first) || first === 'localhost' ? first : '';
+}
+
+/**
+ * 计算镜像 tag：模板支持 {branch} {sha7} {ts}；非法字符归一为 '-'
+ */
+export function evalImageTag(template: string | null | undefined, branch: string, commitSha: string): string {
+  const b = (branch || 'main').replace(/[^a-zA-Z0-9._-]/g, '-');
+  const sha7 = (commitSha || '').slice(0, 7) || 'manual';
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const tpl = String(template || '').trim() || '{branch}-{sha7}';
+  const tag = tpl
+    .replace(/\{branch\}/g, b)
+    .replace(/\{sha7\}/g, sha7)
+    .replace(/\{ts\}/g, ts)
+    .replace(/[^a-zA-Z0-9._-]/g, '-');
+  // 空结果或首字符非法（如全 '-'）回退 latest，保证 tag 合法可用
+  return !tag || /^[-._]/.test(tag) ? 'latest' : tag;
+}
+
 interface DeployApp {
   id: number;
   name: string;
@@ -176,6 +224,13 @@ interface DeployApp {
   /** 部署钩子（1.78.0）：compose up 前后逐行执行的自定义命令 */
   pre_hook?: string | null;
   post_hook?: string | null;
+  /** 镜像构建推送（1.80.0） */
+  image_build_enabled?: number;
+  image_name?: string | null;
+  image_tag_template?: string | null;
+  image_dockerfile?: string | null;
+  registry_user_enc?: string | null;
+  registry_pass_enc?: string | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -219,8 +274,8 @@ function recordDeploy(appId: number, appName: string, ok: boolean, source: strin
     .run(Date.now(), ok ? 'ok' : 'fail', detail.slice(0, 2000), Date.now(), appId);
 }
 
-/** 执行一次部署（git 同步 + compose up；greenRef 非空时先 checkout 到该 commit——绿快照回滚） */
-async function deployApp(app: DeployApp, source: string, greenRef = ''): Promise<{ ok: boolean; detail: string }> {
+/** 执行一次部署（git 同步 + compose up；greenRef 非空时先 checkout 到该 commit——绿快照回滚；启用镜像模式时 build → push → up） */
+async function deployApp(app: DeployApp, source: string, greenRef = '', commitSha = ''): Promise<{ ok: boolean; detail: string }> {
   const lines: string[] = [];
   try {
     if (!(await gitAvailable())) {
@@ -262,6 +317,36 @@ async function deployApp(app: DeployApp, source: string, greenRef = ''): Promise
       }
     }
 
+    // 2.6 镜像构建推送（1.80.0）：build → push（latest 双 tag）
+    if (app.image_build_enabled) {
+      const imageName = String(app.image_name || '').trim();
+      if (!imageName) {
+        return { ok: false, detail: `${lines.join('\n')}\n已启用镜像构建但未填写镜像名` };
+      }
+      const dockerfile = app.image_dockerfile ? path.join(repoDir, app.image_dockerfile) : path.join(repoDir, 'Dockerfile');
+      if (!fs.existsSync(dockerfile)) {
+        return { ok: false, detail: `${lines.join('\n')}\n仓库中未找到 Dockerfile（${dockerfile}）` };
+      }
+      const tag = evalImageTag(app.image_tag_template, app.branch, commitSha || greenRef);
+      lines.push(`[镜像构建] ${imageName}:${tag}（含 latest）`);
+      lines.push(await runCmdMerged(`docker build -f "${dockerfile}" -t "${imageName}:${tag}" -t "${imageName}:latest" "${repoDir}"`, repoDir));
+      const user = app.registry_user_enc ? safeDecrypt(app.registry_user_enc) : '';
+      const pass = app.registry_pass_enc ? safeDecrypt(app.registry_pass_enc) : '';
+      const host = registryHostOf(imageName);
+      if (user && pass) {
+        await dockerLogin(host, user, pass);
+        lines.push(`[Registry] 已登录 ${host || 'Docker Hub'}`);
+      }
+      try {
+        lines.push(await runCmdMerged(`docker push "${imageName}:${tag}"`, repoDir));
+        lines.push(await runCmdMerged(`docker push "${imageName}:latest"`, repoDir));
+      } finally {
+        if (user && pass) {
+          await runCmdMerged(`docker logout ${host ? `"${host}"` : ''}`.trim(), repoDir).catch(() => '');
+        }
+      }
+    }
+
     // 3. compose up
     const buildFlag = app.also_build ? ' --build' : '';
     const output = await runCmd(`docker compose -f "${composeFile}" up -d${buildFlag}`, repoDir);
@@ -287,7 +372,9 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
               ci_gate_enabled, ci_provider, ci_api_url, ci_policy, last_green_commit,
               CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set,
               gitops_enabled, gitops_interval_min, gitops_auto, gitops_last_commit, gitops_last_check,
-              pre_hook, post_hook
+              pre_hook, post_hook,
+              image_build_enabled, image_name, image_tag_template, image_dockerfile,
+              CASE WHEN registry_user_enc IS NOT NULL AND registry_user_enc != '' THEN 1 ELSE 0 END AS registry_creds_set
        FROM deploy_apps ORDER BY id DESC`,
     )
     .all();
@@ -362,15 +449,36 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
   // 部署钩子（1.78.0）：显式传值才变更（空串=清除）
   const preHook = req.body?.preHook !== undefined ? String(req.body.preHook).trim().slice(0, 10000) || null : app.pre_hook;
   const postHook = req.body?.postHook !== undefined ? String(req.body.postHook).trim().slice(0, 10000) || null : app.post_hook;
+  // 镜像构建（1.80.0）：显式传值才变更；凭据传非空覆盖、空串清除、缺省保持
+  const imageBuildEnabled = req.body?.imageBuildEnabled === undefined ? (app.image_build_enabled ? 1 : 0) : req.body.imageBuildEnabled ? 1 : 0;
+  const imageName = req.body?.imageName !== undefined ? String(req.body.imageName).trim().slice(0, 300) : (app.image_name || '');
+  const imageTagTemplate = req.body?.imageTagTemplate !== undefined ? String(req.body.imageTagTemplate).trim().slice(0, 100) || '{branch}-{sha7}' : (app.image_tag_template || '{branch}-{sha7}');
+  const imageDockerfile = req.body?.imageDockerfile !== undefined ? String(req.body.imageDockerfile).trim().slice(0, 300) : (app.image_dockerfile || '');
+  let registryUserEnc = app.registry_user_enc;
+  let registryPassEnc = app.registry_pass_enc;
+  if (req.body?.registryUser !== undefined) {
+    const u = String(req.body.registryUser).trim();
+    if (!u) {
+      registryUserEnc = null;
+      registryPassEnc = null;
+    } else {
+      registryUserEnc = encryptSecret(u);
+      const p = String(req.body.registryPass ?? '').trim();
+      registryPassEnc = p ? encryptSecret(p) : registryPassEnc || encryptSecret('');
+    }
+  } else if (req.body?.registryPass !== undefined && String(req.body.registryPass).trim() && registryUserEnc) {
+    registryPassEnc = encryptSecret(String(req.body.registryPass).trim());
+  }
   try {
     getDb()
       .prepare(
         `UPDATE deploy_apps SET name = ?, repo_url = ?, branch = ?, compose_path = ?, also_build = ?, cred_encrypted = ?,
            ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?,
-           gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, pre_hook = ?, post_hook = ?, updated_at = ?
+           gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, pre_hook = ?, post_hook = ?,
+           image_build_enabled = ?, image_name = ?, image_tag_template = ?, image_dockerfile = ?, registry_user_enc = ?, registry_pass_enc = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, Date.now(), id);
+      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, imageBuildEnabled, imageName || null, imageTagTemplate, imageDockerfile || null, registryUserEnc, registryPassEnc, Date.now(), id);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message || e) });
   }
@@ -394,7 +502,7 @@ router.post('/:id/deploy-green', requireAuth, requireAdmin, (req: Request, res: 
   }
   deploying.add(id);
   getDb().prepare("UPDATE deploy_apps SET last_status = 'deploying', updated_at = ? WHERE id = ?").run(Date.now(), id);
-  deployApp(app, 'manual', sha)
+  deployApp(app, 'manual', sha, sha)
     .then((result) => {
       recordDeploy(id, app.name, result.ok, 'manual', result.detail, sha);
       if (!result.ok) {

@@ -1424,6 +1424,14 @@ Git 应用源（1.55.0，仅管理员）：
 
 **CI 运行记录看板（1.79.0）**：部署卡片「CI 运行」按钮可查看该仓库最近 10 条工作流运行记录（时间 / 名称 / commit / 状态 / 原链接跳转），只读查询、复用 CI 门禁的平台识别与 Token，支持 GitHub Actions / Gitea / GitLab。
 
+**镜像构建推送（1.80.0）**：编辑应用可开启「镜像构建推送」，把部署流程升级为完整流水线：pull →（CI 门禁）→ `docker build` → `docker push` → `compose up -d` 重建：
+
+- **触发源全通**：手动「立即部署」/ Webhook push / GitOps 轮询发现新提交，三种来源统一进入构建链路，CI 状态门禁照常生效
+- **Tag 策略**：默认 `{branch}-{sha7}` 并始终同时推送 `latest`，模板支持 `{branch}` `{sha7}` `{ts}` 变量，非法字符自动归一为 `-`
+- **凭据**：私有 Registry 填写用户名/密码（AES 加密存储），密码经 stdin 传给 `docker login` 不落命令行，推送后自动 logout
+- **失败处置**：构建或推送失败即中止部署（容器不改动），完整构建日志保留在部署历史中
+- Dockerfile 路径可指定（默认仓库根 `Dockerfile`），构建上下文为仓库目录，建议配合 `.dockerignore` 控制上下文体积
+
 > 与 35.2 的区别：35.2 是「计划任务」里的通用 Git 部署任务（可配 Cron 与目标路径）；35.4 是面向单应用的工作台（状态面板 + 历史回看 + 独立 Webhook），二者共用同一套 clone/pull 与 compose 执行逻辑。
 
 ---
