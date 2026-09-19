@@ -1725,6 +1725,9 @@ Settings → "About" **auto-detects the install type** (Windows service / deb / 
 > deb/rpm upgrades overwrite `/opt/docker-manager/server/.env` (back up custom settings such as the port first). A config export from the Backup section is recommended first.
 >
 > When GitHub is unreachable: download the update package on an internet-connected computer and copy it to the server (`dpkg -i` / `dnf install` over it), or prefix the download URL with a mirror. See "When GitHub Is Unreachable" in section 0.4.
+
+**Privileged update helper (1.82.0 — definitive fix for "panel unreachable after one-click update")**: the deb/rpm service runs as the low-privileged `dockerman` user (with the systemd sandbox `NoNewPrivileges=true` blocking sudo/setuid), so the updater's `dpkg -i` always failed — while the panel exited itself right after spawning the updater, leaving nothing to bring the service back until a manual `systemctl restart`. From 1.82.0 the flow is **pre-flight check + privileged helper unit**: the deb/rpm ships a root one-shot unit `docker-manager-update.service`, a root-owned install script (`/opt/docker-manager/sbin/apply-update.sh`), and a precise polkit rule (granting `dockerman` only the right to start that unit). The panel now checks privileges **before** doing anything: root panels use the original systemd-run path; non-root panels start the helper unit via polkit (independent cgroup, immune to prerm); when the helper is absent the panel returns an error with the exact manual command and **stays online** — it never "exits first, fails later" again. Existing machines must install ≥1.82.0 once via SSH (`sudo dpkg -i <new.deb>`); after that one-click updates run on the new architecture.
+
 ## 46. Edge Nodes (Multi-node Management)
 
 Menu entry: **System Tools → Edge Nodes** (admin only)

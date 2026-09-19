@@ -1,0 +1,7 @@
+[Unit]
+Description=Docker Manager - privileged update helper (oneshot)
+# 由面板一键更新触发：root 一次性执行包安装与服务重启（1.82.0）
+
+[Service]
+Type=oneshot
+ExecStart=/opt/docker-manager/sbin/apply-update.sh

@@ -96,6 +96,10 @@ interface UpdateStatusInfo {
   installLabel: string;
   hint: string;
   autoUpdate: boolean;
+  /** 一键更新权限决策（1.82.0）：root / helper / denied */
+  privilegeMode?: 'root' | 'helper' | 'denied';
+  /** 无权限时的手动升级指引 */
+  privilegeHint?: string;
   /** 最近一次一键更新结果（1.73.0） */
   lastResult?: { status: 'success' | 'rollback' | 'rollback-hint' | 'unknown'; at: string; detail: string } | null;
 }
@@ -1715,6 +1719,11 @@ export default function SettingsPage() {
                 >
                   {t('一键更新')}
                 </Button>
+              )}
+              {updateInfo?.available && updateStatus && !updateStatus.autoUpdate && updateStatus.privilegeHint && (
+                <span style={{ marginLeft: 8, fontSize: 12, color: '#d97706' }} title={updateStatus.privilegeHint}>
+                  {t('面板无自升级权限，请 SSH 手动升级（详情见提示）')}
+                </span>
               )}
               {updateInfo?.available && updateInfo.releaseUrl && (
                 <a

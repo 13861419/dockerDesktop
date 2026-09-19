@@ -22,7 +22,7 @@ import { requireAdmin, requireAuth, revokeSessions } from '../auth';
 import { listRoles } from '../rbac';
 import { getUserSecurity, setTotpSecret, setIpAllowlist, setContainerAllowlist } from '../users';
 import { generateSecret, otpauthUri, verifyTotp } from '../totp';
-import { checkUpdate, detectInstallType, installTypeLabel, applyUpdate, readLastUpdateResult } from '../systemUpdate';
+import { checkUpdate, detectInstallType, installTypeLabel, applyUpdate, readLastUpdateResult, detectPrivilege } from '../systemUpdate';
 
 const router = Router();
 
@@ -446,6 +446,12 @@ router.get(
     } catch { /* ignore */ }
     const type = detectInstallType();
     const { label, hint } = installTypeLabel(type);
+    // 权限决策（1.82.0）：非 root 且未装特权辅助单元时诚实关闭一键更新入口，
+    // 避免旧方案「先自杀后失败」导致页面打不开
+    const priv = detectPrivilege();
+    const canAuto =
+      type === 'windows-service' ||
+      ((type === 'deb' || type === 'rpm') && priv.mode !== 'denied');
     // 最近一次一键更新结果（1.73.0：升级脚本写结果文件，面板读取展示）
     const lastResult = readLastUpdateResult();
     // 最新版本信息（走 checkUpdate 的 10 分钟缓存，失败不阻塞状态返回）
@@ -463,7 +469,9 @@ router.get(
       installType: type,
       installLabel: label,
       hint,
-      autoUpdate: type === 'windows-service' || type === 'deb' || type === 'rpm',
+      autoUpdate: canAuto,
+      privilegeMode: priv.mode,
+      privilegeHint: priv.reason,
       hasUpdate,
       latest,
       lastResult,

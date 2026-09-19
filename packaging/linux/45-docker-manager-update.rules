@@ -1,0 +1,9 @@
+// Docker Manager (1.82.0+): allow the "dockerman" service user to start ONLY
+// the privileged one-shot update helper unit — nothing else.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "dockerman" &&
+        action.lookup("unit") == "docker-manager-update.service") {
+        return polkit.Result.YES;
+    }
+});

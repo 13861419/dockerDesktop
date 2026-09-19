@@ -20,8 +20,10 @@ mkdir -p "$RPM_DIR/SRPMS"
 # 创建安装目录结构（用于 %files）
 STAGE_DIR="/tmp/staging"
 mkdir -p "$STAGE_DIR/opt/docker-manager"
+mkdir -p "$STAGE_DIR/opt/docker-manager/sbin"
 mkdir -p "$STAGE_DIR/var/lib/docker-manager"
 mkdir -p "$STAGE_DIR/etc/systemd/system"
+mkdir -p "$STAGE_DIR/etc/polkit-1/rules.d"
 mkdir -p "$STAGE_DIR/usr/local/bin"
 
 # 复制构建产物
@@ -29,6 +31,12 @@ cp -a /build/server     "$STAGE_DIR/opt/docker-manager/"
 cp -a /build/web/dist   "$STAGE_DIR/opt/docker-manager/static"
 cp /build/packaging/linux/install.sh "$STAGE_DIR/opt/docker-manager/" 2>/dev/null || true
 chmod +x "$STAGE_DIR/opt/docker-manager/install.sh" 2>/dev/null || true
+
+# 特权更新辅助（1.82.0）：root 一次性单元 + 精确 polkit 授权 + root 执行的安装脚本
+cp /build/packaging/linux/apply-update.sh "$STAGE_DIR/opt/docker-manager/sbin/apply-update.sh"
+chmod 755 "$STAGE_DIR/opt/docker-manager/sbin/apply-update.sh"
+cp /build/packaging/linux/docker-manager-update.service "$STAGE_DIR/etc/systemd/system/docker-manager-update.service"
+cp /build/packaging/linux/45-docker-manager-update.rules "$STAGE_DIR/etc/polkit-1/rules.d/45-docker-manager-update.rules"
 
 # 创建环境配置文件
 cat > "$STAGE_DIR/opt/docker-manager/server/.env" <<'ENVEOF'
@@ -128,6 +136,8 @@ fi
 /opt/docker-manager/*
 %dir %attr(755,dockerman,docker) /var/lib/docker-manager
 /etc/systemd/system/docker-manager.service
+/etc/systemd/system/docker-manager-update.service
+/etc/polkit-1/rules.d/45-docker-manager-update.rules
 /usr/local/bin/docker-manager-install
 SPECEOF
 

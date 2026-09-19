@@ -14,8 +14,10 @@ DEB_DIR="/tmp/${PKG_NAME}-${PKG_VERSION}-${PKG_ARCH}"
 # 创建 deb 包结构
 mkdir -p "$DEB_DIR/DEBIAN"
 mkdir -p "$DEB_DIR/opt/docker-manager"
+mkdir -p "$DEB_DIR/opt/docker-manager/sbin"
 mkdir -p "$DEB_DIR/var/lib/docker-manager"
 mkdir -p "$DEB_DIR/etc/systemd/system"
+mkdir -p "$DEB_DIR/etc/polkit-1/rules.d"
 mkdir -p "$DEB_DIR/usr/local/bin"
 
 # 复制构建产物
@@ -23,6 +25,12 @@ cp -a /build/server     "$DEB_DIR/opt/docker-manager/"
 cp -a /build/web/dist   "$DEB_DIR/opt/docker-manager/static"
 cp /build/packaging/linux/install.sh "$DEB_DIR/opt/docker-manager/" 2>/dev/null || true
 chmod +x "$DEB_DIR/opt/docker-manager/install.sh" 2>/dev/null || true
+
+# 特权更新辅助（1.82.0）：root 一次性单元 + 精确 polkit 授权 + root 执行的安装脚本
+cp /build/packaging/linux/apply-update.sh "$DEB_DIR/opt/docker-manager/sbin/apply-update.sh"
+chmod 755 "$DEB_DIR/opt/docker-manager/sbin/apply-update.sh"
+cp /build/packaging/linux/docker-manager-update.service "$DEB_DIR/etc/systemd/system/docker-manager-update.service"
+cp /build/packaging/linux/45-docker-manager-update.rules "$DEB_DIR/etc/polkit-1/rules.d/45-docker-manager-update.rules"
 
 # 创建环境配置文件
 cat > "$DEB_DIR/opt/docker-manager/server/.env" <<'ENVEOF'
@@ -74,6 +82,9 @@ fi
 usermod -aG docker dockerman || true
 chown -R dockerman:docker /opt/docker-manager
 chown -R dockerman:docker /var/lib/docker-manager
+# 特权辅助脚本必须保持 root 所有（dockerman 不可改写，见 polkit 提权面）
+chown -R root:root /opt/docker-manager/sbin
+chmod 755 /opt/docker-manager/sbin/apply-update.sh
 systemctl daemon-reload
 systemctl enable docker-manager || true
 systemctl reset-failed docker-manager 2>/dev/null || true

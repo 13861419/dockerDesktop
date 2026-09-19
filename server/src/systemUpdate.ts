@@ -146,6 +146,62 @@ export function clearUpdateCache(): void {
 /** 安装类型：windows-service=Windows 服务版（nssm） / deb / rpm / docker / manual=手动或开发 */
 export type InstallType = 'windows-service' | 'deb' | 'rpm' | 'docker' | 'manual';
 
+// ============ 一键更新权限决策（1.82.0 重构） ============
+//
+// 旧方案缺陷（1.69.0–1.81.0 反复修不好的根因）：
+//   面板进程无条件自退出（exit 0）→ 升级脚本自己想办法提权 → 服务以 dockerman
+//   低权限用户运行（NoNewPrivileges=true 禁止 sudo/setuid）→ dpkg 必然失败 →
+//   没人拉回服务 → 页面打不开，直到用户手动 systemctl restart。
+//
+// 新方案「特权辅助单元」：
+//   deb/rpm 安装时预置 root 一次性单元 docker-manager-update.service + polkit 规则
+//   （精确授权 dockerman 仅能 start 该单元）。面板预检权限：
+//   root → 走 systemd-run 逃逸脚本；非 root + 已装辅助单元 → systemctl start 辅助单元
+//   （root 执行 dpkg，独立 cgroup 不被 prerm 连坐）；否则诚实失败并给出手动命令。
+//   面板进程绝不在「升级尚未开始」时自杀。
+
+/** 特权更新辅助单元路径（deb/rpm 安装时写入） */
+export const HELPER_UNIT_PATH = '/etc/systemd/system/docker-manager-update.service';
+export const HELPER_UNIT_NAME = 'docker-manager-update.service';
+
+/** 权限决策结果 */
+export interface PrivilegeDecision {
+  mode: 'root' | 'helper' | 'denied';
+  reason: string;
+}
+
+/**
+ * 纯函数：决定一键更新的执行路径
+ * @param isRoot 面板进程是否以 root 运行
+ * @param helperInstalled 特权更新辅助单元是否已安装
+ */
+export function decideUpdateMode(isRoot: boolean, helperInstalled: boolean): PrivilegeDecision {
+  if (isRoot) return { mode: 'root', reason: '' };
+  if (helperInstalled) return { mode: 'helper', reason: '' };
+  return {
+    mode: 'denied',
+    reason:
+      '面板以非 root 运行，且未安装特权更新辅助单元（docker-manager-update，由 1.82.0+ 的 deb/rpm 预置）。' +
+      '请 SSH 登录后手动升级一次：sudo dpkg -i <新版deb包>（rpm: sudo rpm -Uvh <新版rpm包>），之后即可在面板内一键更新。',
+  };
+}
+
+/** 特权更新辅助单元是否已安装（单元文件由 root 写入，面板可读） */
+export function helperUnitInstalled(): boolean {
+  if (isWindows()) return false;
+  try {
+    return fs.existsSync(HELPER_UNIT_PATH);
+  } catch {
+    return false;
+  }
+}
+
+/** 面板进程当前的更新权限决策 */
+export function detectPrivilege(): PrivilegeDecision {
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  return decideUpdateMode(isRoot, helperUnitInstalled());
+}
+
 /** 检测当前安装类型（用于一键更新的可行性判断与产物选择） */
 export function detectInstallType(): InstallType {
   if (process.platform === 'win32') {
@@ -495,6 +551,14 @@ export async function applyUpdate(currentVersion: string): Promise<ApplyResult> 
   const asset = info.assets.find((a) => a.name === assetName);
   if (!assetName || !asset) throw new Error(`最新版本 ${info.latest} 未找到匹配当前平台的更新包`);
 
+  // 权限预检（1.82.0）：在任何下载/退出动作之前确认升级者有安装权限——
+  // 无权限直接抛错返回 400，面板保持运行（旧方案此处先自杀后失败，页面直接打不开）
+  let priv: PrivilegeDecision = { mode: 'root', reason: '' };
+  if (type === 'deb' || type === 'rpm') {
+    priv = detectPrivilege();
+    if (priv.mode === 'denied') throw new Error(priv.reason);
+  }
+
   const staging = stagingDir();
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(staging, { recursive: true });
@@ -508,42 +572,79 @@ export async function applyUpdate(currentVersion: string): Promise<ApplyResult> 
   await downloadWithFallback(sumsAsset.url, sumsPath);
   verifySha256(pkgPath, fs.readFileSync(sumsPath, 'utf8'), asset.name);
 
-  // 生成并拉起升级脚本（detached，面板退出后仍继续执行）
+  // 生成并拉起升级脚本
   let script: string;
   if (type === 'windows-service') {
     const installDir = path.resolve(process.cwd(), '..');
     script = writeWindowsUpdater(staging, pkgPath, installDir);
-  } else {
-    script = writeLinuxUpdater(staging, type, pkgPath);
-  }
-  if (type === 'windows-service') {
     spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-  } else {
-    // 关键（1.75.5）：root 面板直接经 systemd-run 拉起升级脚本——
-    // 脚本脱离服务 cgroup，prerm 的 systemctl stop 杀不死它。
-    // 该逻辑在面板进程内实现，与脚本内容由哪个版本生成无关：
-    // 即使面板还在跑旧版脚本（无自愈能力），升级也不会再中断在半路。
-    // 非 root 时交给脚本自身的提权/诚实失败逻辑处理。
-    const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-    const unit = `dm-updater-${process.pid}-${Date.now().toString(36)}`;
-    if (isRoot && !isWindows()) {
-      const viaSystemd = spawn(
-        'systemd-run',
-        ['--collect', `--unit=${unit}`, 'bash', script],
-        { detached: true, stdio: 'ignore' },
-      );
-      // systemd-run 不可用（极简系统 / PATH 缺失）时回退为直接拉起，脚本内部仍有逃逸逻辑
-      viaSystemd.on('error', () => {
-        spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
-      });
-      viaSystemd.unref();
-    } else {
-      spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
-    }
+    return {
+      asset: asset.name,
+      script,
+      message: `更新包 ${asset.name} 已下载并校验通过，正在执行升级，服务将重启`,
+    };
   }
+
+  if (priv.mode === 'helper') {
+    // 特权辅助单元路径（非 root 面板）：写任务文件 → polkit 授权启动 root 单元 →
+    // 面板保持运行，稍后由新包 prerm 正常停止（helper 在独立 cgroup，不被连坐）
+    writeHelperJobFile(staging, pkgPath);
+    script = `${HELPER_UNIT_NAME} (任务文件: ${path.join(staging, 'update-job.env')})`;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const p = spawn('systemctl', ['start', '--no-block', HELPER_UNIT_NAME], { stdio: 'ignore' });
+        const timer = setTimeout(() => reject(new Error('systemctl 启动请求超时')), 15_000);
+        p.on('error', (e) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+        p.on('exit', (code) => {
+          clearTimeout(timer);
+          if (code === 0) resolve();
+          else reject(new Error(`systemctl 退出码 ${code}（polkit 规则缺失或单元未安装）`));
+        });
+      });
+    } catch (e: any) {
+      throw new Error(`无法启动特权更新单元：${e?.message || e}。可 SSH 手动安装：sudo dpkg -i ${pkgPath}（rpm: sudo rpm -Uvh ${pkgPath}）`);
+    }
+    return {
+      asset: asset.name,
+      script,
+      message: `更新包 ${asset.name} 已下载并校验通过，特权更新单元已接管安装，服务将重启`,
+    };
+  }
+
+  // root 路径：root 面板直接经 systemd-run 拉起升级脚本——
+  // 脚本脱离服务 cgroup，prerm 的 systemctl stop 杀不死它。
+  // 非 root 场景已在权限预检处拦截，不会走到这里。
+  script = writeLinuxUpdater(staging, type, pkgPath);
+  const unit = `dm-updater-${process.pid}-${Date.now().toString(36)}`;
+  const viaSystemd = spawn(
+    'systemd-run',
+    ['--collect', `--unit=${unit}`, 'bash', script],
+    { detached: true, stdio: 'ignore' },
+  );
+  // systemd-run 不可用（极简系统 / PATH 缺失）时回退为直接拉起，脚本内部仍有逃逸逻辑
+  viaSystemd.on('error', () => {
+    spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+  });
+  viaSystemd.unref();
   return {
     asset: asset.name,
     script,
     message: `更新包 ${asset.name} 已下载并校验通过，正在执行升级，服务将重启`,
   };
+}
+
+/** 写 helper 单元任务文件：root 的 apply-update.sh 读取 PKG_PATH 后执行安装 */
+function writeHelperJobFile(staging: string, pkgPath: string): void {
+  const job = path.join(staging, 'update-job.env');
+  fs.writeFileSync(
+    job,
+    `PKG_PATH=${JSON.stringify(pkgPath)}\nRESULT_FILE=${JSON.stringify(resultFilePath())}\n`,
+    'utf8',
+  );
+  try {
+    fs.chmodSync(job, 0o644);
+  } catch { /* ignore */ }
 }

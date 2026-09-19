@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.82.0] - 2026-09-19
+
+### Fixed（修复）
+
+- **彻底修复 Ubuntu/Debian 一键更新后页面打不开的问题**（1.69.0–1.81.0 多次修复未果的根因）：
+  - 旧方案缺陷：面板进程拉起升级脚本 800ms 后无条件自退出（exit 0），而 deb 服务以 `dockerman` 低权限用户运行且 systemd 沙箱 `NoNewPrivileges=true` 禁止 sudo 提权 → `dpkg -i` 必然失败 → 自杀的面板无人拉回 → 页面打不开，只能手动 `systemctl restart`
+  - 新方案「**特权辅助单元**」：deb/rpm 安装时预置 root 一次性 systemd 单元 `docker-manager-update.service`、root 所有的安装脚本与 **polkit 精确规则**（仅授权 dockerman 启动该单元）
+  - 面板升级前**权限预检**：root → systemd-run 逃逸脚本（原路径）；非 root + 已装辅助单元 → `systemctl start` 辅助单元（独立 cgroup，不被 prerm 连坐）；**无权限 → 直接返回 400 并给出精确手动命令，面板保持运行**——绝不再先自杀后失败
+
+### Changed（变更）
+
+- `GET /api/system/update/status` 新增 privilegeMode / privilegeHint；非 root 且未装辅助单元时 autoUpdate=false，前端显示手动升级指引
+- 新增 cron_tasks 之外的安装组件：`/opt/docker-manager/sbin/apply-update.sh`（root 所有）、`/etc/systemd/system/docker-manager-update.service`、`/etc/polkit-1/rules.d/45-docker-manager-update.rules`
+
+> ⚠️ 由于修复本身需要新版包才能生效：当前一键更新失败过的机器请 **SSH 手动安装一次 ≥1.82.0**（`sudo dpkg -i docker-manager-1.82.0-<arch>.deb`），之后一键更新即进入新架构，不会再出现页面打不开。
+
 ## [1.81.0] - 2026-09-19
 
 ### Added（新增）
