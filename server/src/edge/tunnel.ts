@@ -15,6 +15,7 @@ import type { Duplex } from 'stream';
 import { WebSocketServer, WebSocket } from 'ws';
 import { registerWsHandler, rejectWsUpgrade } from '../docker/wsRouter';
 import { ingestEdgeEvent } from '../docker/events';
+import { readAgentVersion } from './agentFile';
 import {
   findNodeByTokenHash,
   hashEdgeToken,
@@ -117,6 +118,15 @@ export function setupEdgeWsServer(httpServer: HttpServer): void {
       }
       if (msg && msg.type === 'hello') {
         touchEdgeNode(nodeId, String(msg.version || ''));
+        // 回传面板内置 agent 版本（1.86.0）：agent 比对后可自动自升级
+        try {
+          const latest = readAgentVersion();
+          if (latest && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'welcome', latest }));
+          }
+        } catch {
+          // 版本读取失败不影响隧道
+        }
         return;
       }
       // agent 转发的远端 Docker 事件（1.65.0）：并入统一事件管线

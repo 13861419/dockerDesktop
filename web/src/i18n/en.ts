@@ -1606,6 +1606,7 @@ export const en: Record<string, string> = {
   '确定删除该容器？': 'Delete this container?',
   '操作成功': 'Done',
   '在远程主机运行轻量 agent 反向连接本面板（适合 NAT / 防火墙后主机），面板内直接管理远端 Docker：部署 / 启停 / 日志，远端事件并入统一事件流与自动化（1.63.0 ~ 1.65.0）': 'Run a lightweight agent on a remote host that dials back to this panel (ideal for hosts behind NAT/firewall), then manage its Docker right in the panel: deploy, start/stop, logs; remote events feed the unified event stream and automation (1.63.0 ~ 1.65.0)',
+  '在远程主机运行轻量 agent 反向连接本面板（适合 NAT / 防火墙后主机），面板内直接管理远端 Docker：部署 / 启停 / 日志，远端事件并入统一事件流与自动化（1.63.0 ~ 1.65.0）；agent 自动更新——版本落后自动覆盖重启，EDGE_RESTART=spawn 兼容无 systemd 主机，「全部升级」批量刷新（1.86.0）': 'Run a lightweight agent on a remote host that dials back to this panel (ideal for hosts behind NAT/firewall), then manage its Docker right in the panel: deploy, start/stop, logs; remote events feed the unified event stream and automation (1.63.0 ~ 1.65.0); agent self-update — outdated agents replace and restart themselves automatically, EDGE_RESTART=spawn covers hosts without systemd, "Upgrade all" refreshes every node in one click (1.86.0)',
   '远程主机在 NAT / 防火墙后无法暴露 Docker 端口怎么办？': 'What if a remote host is behind NAT/firewall and cannot expose the Docker port?',
   '使用「Edge 节点」：面板创建节点拿到一次性 token，在远程主机上运行零依赖 agent（PANEL_URL / EDGE_TOKEN 两个环境变量），agent 主动反向连接面板，即可在面板中直接查看远端容器、镜像、网络与卷（1.63.0）。': 'Use Edge Nodes: create a node in the panel to get a one-time token, then run the zero-dependency agent on the remote host (two env vars: PANEL_URL / EDGE_TOKEN). The agent dials back to the panel, and you can browse remote containers, images, networks and volumes directly in the panel (1.63.0).',
   '节点名称不能为空': 'Node name is required',
@@ -2659,6 +2660,9 @@ export const en: Record<string, string> = {
   "回滚到最后一次 CI 通过并部署成功的版本": "Roll back to the last commit that passed CI and deployed successfully",
   "部署此版本": "Deploy this commit",
   "CI 状态门禁": "CI status gate",
+
+  "全部升级": "Upgrade all",
+  "已下发 N 个节点的升级指令": "Upgrade command sent to N node(s)",
 
   "凭据库": "Credential vault",
   "新建凭据": "New credential",

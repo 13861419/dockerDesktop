@@ -1796,6 +1796,12 @@ node agent.js
 - **Agent one-click upgrade**: when the agent version reported by a node differs from the panel's built-in version, an "Upgrade agent" entry appears in the row's More▾ menu. The panel sends the upgrade command through the tunnel; the agent downloads the latest agent.js from the panel, replaces its own file (the old one is kept as `agent.bak`) and exits, then systemd (`Restart=always`) restarts it with the new version automatically;
 - **Node resource monitor**: the agent reports host CPU / memory samples every 10 s. The "Resources" button on each node row opens a dialog with CPU and memory usage sparklines (last 15 minutes kept in memory only; auto-refresh every 5 s while open).
 
+### 46.6 Agent Self-Update & Batch Upgrade (added in 1.86.0)
+
+- **Self-update**: when an agent connects, the panel replies to the handshake with its built-in agent version; if the agent is outdated it automatically downloads the new agent.js, replaces itself and restarts — **no button clicking needed**. Set `EDGE_AUTO_UPGRADE=0` to disable; a 5-minute cooldown prevents repeated overwrites if the panel file misbehaves;
+- **Restart mode**: by default the agent relies on a service manager to restart it (the dm-edge-agent systemd unit works this way); on hosts without systemd (manual nohup runs), set `EDGE_RESTART=spawn` — the agent spawns a detached new process from the replaced file before exiting, so self-update works everywhere;
+- **Batch upgrade**: when any online node is outdated, an "Upgrade all (N)" button appears at the top right of the Edge page and sends upgrade commands to every outdated node; the version column shows a "current → latest" badge so outdated nodes are visible without opening menus.
+
 Appendix: Modules & Routes
 
 | Menu | Route | Access |

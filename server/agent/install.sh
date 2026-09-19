@@ -40,6 +40,6 @@ EOF
   systemctl enable --now dm-edge-agent
   echo "[edge-agent] 已安装并启动：systemctl status dm-edge-agent"
 else
-  echo "[edge-agent] 未检测到 systemd，请手动运行："
-  echo "  PANEL_URL=$PANEL_URL EDGE_TOKEN=$EDGE_TOKEN node $INSTALL_DIR/agent.js"
+  echo "[edge-agent] 未检测到 systemd，请手动运行（建议加 EDGE_RESTART=spawn 以支持自动升级）："
+  echo "  PANEL_URL=$PANEL_URL EDGE_TOKEN=$EDGE_TOKEN EDGE_RESTART=spawn node $INSTALL_DIR/agent.js"
 fi

@@ -13,6 +13,7 @@ import {
   deleteEdgeNode,
   listEdgeNodes,
 } from '../edge/registry';
+import { AGENT_DIR, readAgentVersion } from '../edge/agentFile';
 import {
   callEdgeNode,
   getEdgeStats,
@@ -75,20 +76,8 @@ function assertPassthroughPath(method: string, path: string): void {
 /** 长耗时操作（镜像拉取等）放宽超时 */
 const LONG_PATHS = ['/images/create'];
 
-/** 面板内置 agent 版本（读 agent.js 头部常量，缓存） */
-let agentVersionCache = '';
-function latestAgentVersion(): string {
-  if (!agentVersionCache) {
-    try {
-      const code = fs.readFileSync(path.join(AGENT_DIR, 'agent.js'), 'utf8');
-      const m = code.match(/AGENT_VERSION\s*=\s*'([\d.]+)'/);
-      agentVersionCache = m ? m[1] : '';
-    } catch {
-      // 文件缺失时返回空
-    }
-  }
-  return agentVersionCache;
-}
+/** 面板内置 agent 版本（读 agent.js 头部常量，缓存于 edge/agentFile.ts） */
+const latestAgentVersion = readAgentVersion;
 
 /** 节点列表（含在线状态） */
 router.get(
@@ -216,8 +205,6 @@ export default router;
  * 挂载于 /api/edge（须先于需登录的 edgeRouter）。
  */
 export const edgePublicRouter = Router();
-
-const AGENT_DIR = path.resolve(__dirname, '../../agent');
 
 edgePublicRouter.get('/agent.js', (_req: Request, res: Response) => {
   res.type('application/javascript').send(fs.readFileSync(path.join(AGENT_DIR, 'agent.js'), 'utf8'));

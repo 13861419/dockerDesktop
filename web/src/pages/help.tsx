@@ -176,7 +176,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
   { path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01 / 通配符 DNS-01）；证书文件可直接用于站点反代') },
   { path: '/automations', name: t('事件自动化'), desc: t('订阅 Docker 事件（容器退出 / OOM / 健康检查异常等）自动执行重启、停止、启动或 Webhook 动作，带冷却期与触发留档；触发记录按 事件匹配 → 冷却检查 → 执行动作 节点流展示（1.61.0 / 1.68.0）') },
-  { path: '/edge', name: t('Edge 节点'), desc: t('在远程主机运行轻量 agent 反向连接本面板（适合 NAT / 防火墙后主机），面板内直接管理远端 Docker：部署 / 启停 / 日志，远端事件并入统一事件流与自动化（1.63.0 ~ 1.65.0）') },
+  { path: '/edge', name: t('Edge 节点'), desc: t('在远程主机运行轻量 agent 反向连接本面板（适合 NAT / 防火墙后主机），面板内直接管理远端 Docker：部署 / 启停 / 日志，远端事件并入统一事件流与自动化（1.63.0 ~ 1.65.0）；agent 自动更新——版本落后自动覆盖重启，EDGE_RESTART=spawn 兼容无 systemd 主机，「全部升级」批量刷新（1.86.0）') },
   { path: '/sites', name: t('站点 / 反向代理'), desc: t('域名反代与 SSL 管理；1.62.0 起自动采集反代访问日志，展示每域名请求量与 4xx / 5xx 统计') },
   { path: '/swarm', name: t('Swarm'), desc: t('集群服务查看') },
   { path: '/backups', name: t('备份恢复'), desc: t('数据卷 / Compose / 站点备份；支持云端上传与从云端拉回恢复（1.43.0）；备份覆盖率体检（哪些对象没备份一目了然，1.48.0）') },

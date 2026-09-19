@@ -3,6 +3,24 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.86.0] - 2026-09-19
+
+### Added（新增）
+
+- **Edge agent 自动更新**：agent 连接面板握手时，面板回传内置 agent 最新版本；版本落后时 agent 自动下载覆盖自身并重启，全程无需人工介入（`EDGE_AUTO_UPGRADE=0` 可关闭；5 分钟冷却防止面板文件异常时反复覆盖）
+- **无服务管理器兜底**：新增 `EDGE_RESTART=spawn` 环境变量——agent 覆盖文件后自拉起分离新进程再退出，nohup / 计划任务等无 systemd 场景也能自更新；默认仍为 systemd 模式（退出交给 Restart=always 拉起）
+- **批量升级**：Edge 页新增「全部升级」按钮——一键逐个下发所有在线且版本过期的节点；版本列表直接展示 `当前 → 最新` 过期标记
+- install.sh 非 systemd 场景提示自动附加 `EDGE_RESTART=spawn`
+
+### Changed（变更）
+
+- 面板内置 agent 版本解析抽为共享模块 `edge/agentFile.ts`（版本缓存 + 纯函数解析），`/api/edge/agent.js` 下发与隧道握手共用
+- agent.js 版本号升至 1.86.0；手动「升级 agent」指令保持完全兼容
+
+### Test（测试）
+
+- 新增 edgeAgentFile.test.ts：版本解析（标准 / 畸形输入）、真实文件读取与缓存、自更新契约（welcome 处理 / 开关变量 / spawn 模式 / 冷却 / 手动指令兼容），共 3 条，累计 435 条
+
 ## [1.85.0] - 2026-09-19
 
 ### Added（新增）

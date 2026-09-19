@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * DockerManager Edge Agent（1.63.0）
+ * DockerManager Edge Agent（1.86.0）
  *
  * 零依赖单文件 agent：部署在远程主机上，主动反向连接面板，
  * 把面板下发的 Docker Engine HTTP 请求透传给本机 Docker daemon。
@@ -9,6 +9,9 @@
  *   PANEL_URL  面板地址，如 http://panel.example.com:9528
  *   EDGE_TOKEN 面板 Edge 节点 token（创建节点时返回）
  *   DOCKER_SOCK 可选，默认 /var/run/docker.sock（Windows 自动用命名管道）
+ *   EDGE_AUTO_UPGRADE 可选，默认开启（设为 0 关闭）：连接面板后版本落后则自动自升级
+ *   EDGE_RESTART 可选，默认 systemd（退出交给服务管理器拉起）；设为 spawn 时自拉起新进程再退出，
+ *                适合 nohup 等无服务管理器场景
  *
  * 要求 Node.js >= 22（使用内置 WebSocket 客户端）。
  */
@@ -16,7 +19,7 @@
 
 const PANEL_URL = (process.env.PANEL_URL || '').replace(/\/+$/, '');
 const EDGE_TOKEN = process.env.EDGE_TOKEN || '';
-const AGENT_VERSION = '1.71.0';
+const AGENT_VERSION = '1.86.0';
 
 if (!PANEL_URL || !EDGE_TOKEN) {
   console.error('[edge-agent] 缺少环境变量：PANEL_URL / EDGE_TOKEN');
@@ -164,10 +167,20 @@ function startStats(ws) {
 }
 
 /**
- * 自升级（1.71.0）：从面板下载最新 agent.js 覆盖自身后退出。
- * systemd（Restart=always）等守护进程会用新文件重新拉起。
+ * 自升级（1.71.0 手动 / 1.86.0 自动）：从面板下载最新 agent.js 覆盖自身后退出。
+ *
+ * reply 为面板下发的升级指令帧（手动触发时回执用），自动触发时为 null。
+ * 退出方式由 EDGE_RESTART 决定：
+ *   systemd（默认）：直接退出，由 systemd Restart=always 等服务管理器重新拉起；
+ *   spawn：先以同样的环境变量拉起一个分离的新进程（运行覆盖后的文件）再退出，
+ *          适合 nohup / 计划任务等无服务管理器的场景。
  */
 async function selfUpgrade(msg, ws) {
+  const reply = (payload) => {
+    if (msg) {
+      try { ws.send(JSON.stringify({ id: msg.id, ...payload })); } catch {}
+    }
+  };
   try {
     const resp = await fetch(`${PANEL_URL}/api/edge/agent.js?_=${Date.now()}`, {
       headers: { 'User-Agent': 'edge-agent' },
@@ -180,12 +193,43 @@ async function selfUpgrade(msg, ws) {
     fs.writeFileSync(tmp, code);
     fs.copyFileSync(self, self + '.bak');
     fs.renameSync(tmp, self);
-    ws.send(JSON.stringify({ id: msg.id, ok: true, status: 200, data: { restarting: true, version: 'latest' } }));
-    console.log('[edge-agent] 新版本已写入，1 秒后退出（由服务管理器拉起新版本）');
-    setTimeout(() => process.exit(0), 1000);
+    reply({ ok: true, status: 200, data: { restarting: true, version: 'latest' } });
+    console.log('[edge-agent] 新版本已写入，1 秒后退出');
+    setTimeout(() => {
+      if (process.env.EDGE_RESTART === 'spawn') {
+        try {
+          const child = require('child_process');
+          child.spawn(process.execPath, [self], { detached: true, stdio: 'ignore', env: process.env }).unref();
+          console.log('[edge-agent] 已自拉起新进程');
+        } catch (e) {
+          console.error('[edge-agent] 自拉起失败：' + String((e && e.message) || e));
+        }
+      } else {
+        console.log('[edge-agent] 等待服务管理器拉起新版本');
+      }
+      process.exit(0);
+    }, 1000);
   } catch (e) {
-    ws.send(JSON.stringify({ id: msg.id, ok: false, status: 500, error: '升级失败: ' + String((e && e.message) || e) }));
+    reply({ ok: false, status: 500, error: '升级失败: ' + String((e && e.message) || e) });
+    if (!msg) console.error('[edge-agent] 自动升级失败：' + String((e && e.message) || e));
   }
+}
+
+/** 自动自升级冷却（5 分钟）：避免面板版本异常时反复下载覆盖 */
+let lastAutoUpgradeAt = 0;
+
+/** 握手回包（1.86.0）：面板版本落后且未关闭自动升级时自动自升级 */
+function maybeAutoUpgrade(welcome, ws) {
+  const latest = String(welcome && welcome.latest || '');
+  if (!latest || latest === AGENT_VERSION) return;
+  if (process.env.EDGE_AUTO_UPGRADE === '0') {
+    console.log(`[edge-agent] 面板 agent 版本为 ${latest}，本机 ${AGENT_VERSION}（自动升级已关闭，跳过）`);
+    return;
+  }
+  if (Date.now() - lastAutoUpgradeAt < 5 * 60 * 1000) return;
+  lastAutoUpgradeAt = Date.now();
+  console.log(`[edge-agent] 检测到新版本 ${latest}（当前 ${AGENT_VERSION}），自动升级中...`);
+  selfUpgrade(null, ws);
 }
 
 function watchEvents(ws) {
@@ -246,6 +290,11 @@ function connect() {
     try {
       msg = JSON.parse(String(ev.data));
     } catch {
+      return;
+    }
+    // 面板握手回包（1.86.0）：版本落后时自动自升级
+    if (msg.type === 'welcome') {
+      maybeAutoUpgrade(msg, ws);
       return;
     }
     // 面板下发的自升级指令（1.71.0）

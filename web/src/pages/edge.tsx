@@ -145,6 +145,26 @@ export default function EdgePage() {
     }
   };
 
+  /** 批量升级：逐个下发所有在线且版本过期的节点（1.86.0） */
+  const outdatedOnline = nodes.filter((n) => n.online && agentLatest && n.agentVersion !== agentLatest);
+  const [upgradingAll, setUpgradingAll] = useState(false);
+  const upgradeAll = async () => {
+    if (!outdatedOnline.length) return;
+    setUpgradingAll(true);
+    let ok = 0;
+    for (const n of outdatedOnline) {
+      try {
+        await post(`/api/edge/nodes/${n.id}/upgrade`, {});
+        ok += 1;
+      } catch {
+        // 单个失败继续下一个
+      }
+    }
+    setUpgradingAll(false);
+    showToast(t('已下发 N 个节点的升级指令').replace('N', String(ok)), 'success');
+    setTimeout(load, 10_000);
+  };
+
   const createNode = async () => {
     if (!name.trim()) {
       showToast(t('请填写节点名称'), 'error');
@@ -268,9 +288,16 @@ export default function EdgePage() {
         title={PAGE_TITLE}
         extra={
           admin && (
-            <Button variant="primary" onClick={() => setAddOpen(true)}>
-              {t('添加节点')}
-            </Button>
+            <span>
+              {outdatedOnline.length > 0 && (
+                <Button size="sm" style={{ marginRight: 8 }} loading={upgradingAll} onClick={upgradeAll}>
+                  {t('全部升级')}（{outdatedOnline.length}）
+                </Button>
+              )}
+              <Button variant="primary" onClick={() => setAddOpen(true)}>
+                {t('添加节点')}
+              </Button>
+            </span>
           )
         }
       >
@@ -302,7 +329,14 @@ export default function EdgePage() {
                       {n.online ? t('在线') : t('离线')}
                     </span>
                   </td>
-                  <td>{n.agentVersion || '—'}</td>
+                  <td>
+                    {n.agentVersion || '—'}
+                    {agentLatest && n.agentVersion && n.agentVersion !== agentLatest && (
+                      <span style={{ color: '#e67e22', marginLeft: 6, fontSize: 12 }}>
+                        → {agentLatest}
+                      </span>
+                    )}
+                  </td>
                   <td>{n.lastSeenAt ? new Date(n.lastSeenAt).toLocaleString() : '—'}</td>
                   <td className="edge-table__actions">
                     <Button size="sm" onClick={() => ping(n.id)}>
