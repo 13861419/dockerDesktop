@@ -911,7 +911,7 @@ router.post(
     const notifyMode = ['failure', 'always', 'never'].includes(req.body?.notifyMode) ? req.body.notifyMode : 'failure';
     getDb()
       .prepare(
-        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO cron_tasks (id, name, type, cron, enabled, config, git_cred_encrypted, timeout_sec, max_retries, retry_interval_sec, notify_mode, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(id, name, type, cron, isEnabled, JSON.stringify(config || {}), gitCredEnc, timeoutSec, maxRetries, retryIntervalSec, notifyMode, nextRun, now, now);
     logOperation(res.locals.username, '新建计划任务', 'task', name, `类型: ${type}`);
