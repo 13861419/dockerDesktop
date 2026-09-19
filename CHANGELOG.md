@@ -3,6 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.87.0] - 2026-09-19
+
+### Added（新增）
+
+- **安装到桌面（PWA 安装流程）**：设置页「关于」新增「安装到桌面」行——桌面 Chrome / Edge 弹出原生安装确认，iOS 引导「分享 → 添加到主屏幕」，安装后从主屏幕全屏独立窗口打开面板；已在应用模式运行时明确标识
+- **PWA 快捷方式**：长按应用图标直达 容器 / 镜像 / 告警 / 设置 四个高频页面
+- **Service Worker 版本化缓存**：缓存名随版本更新（dm-shell-1.87.0），升级后新 Service Worker 接管自动刷新一次，避免新旧应用壳混跑
+- iOS 安全区适配：`viewport-fit=cover`，应用模式下底部导航不被手势条遮挡
+
+### Changed（变更）
+
+- manifest 增强：`id` 与 `display_override`（standalone / minimal-ui）声明、maskable 自适应图标（Android 自适应裁切）
+
+### Test（测试）
+
+- 新增 pwa.test.ts：manifest 可安装要素（display / id / maskable / shortcuts 路由与 App.tsx 一致性）、sw.js 版本化缓存与 /api /ws 放行、index.html 移动端 meta 完整性，共 3 条，累计 438 条
+
 ## [1.86.0] - 2026-09-19
 
 ### Added（新增）

@@ -21,5 +21,12 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {
       // 静默：非 HTTPS 或旧浏览器忽略
     });
+    // 新 Service Worker 激活接管后刷新一次，避免新旧 App Shell 混跑（1.87.0）
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
   });
 }

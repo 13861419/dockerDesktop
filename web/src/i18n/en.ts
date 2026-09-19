@@ -2664,6 +2664,15 @@ export const en: Record<string, string> = {
   "全部升级": "Upgrade all",
   "已下发 N 个节点的升级指令": "Upgrade command sent to N node(s)",
 
+  "安装到桌面": "Install as app",
+  "安装应用": "Install",
+  "已在应用模式运行": "Already running in app mode",
+  "点击 Safari 底部「分享」按钮，选择「添加到主屏幕」": "Tap the Share button in Safari and choose \"Add to Home Screen\"",
+  "通过 HTTPS 访问面板后可安装为应用": "Access the panel over HTTPS to install it as an app",
+  "安装成功，可从主屏幕打开面板": "Installed — open the panel from your home screen",
+  "已取消安装": "Install canceled",
+  "当前浏览器暂不支持一键安装": "This browser does not support one-click install",
+
   "凭据库": "Credential vault",
   "新建凭据": "New credential",
   "集中管理 Git / Registry 凭据，供下方部署应用下拉引用；更换密码只需改一处。": "Centrally manage Git / Registry credentials for the deploy apps below; rotate a password in one place.",

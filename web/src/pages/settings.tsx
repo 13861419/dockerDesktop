@@ -21,6 +21,7 @@ import type {
   SystemConfigImportResponse,
 } from '../types';
 import { useLang } from '../i18n';
+import { canInstall, initPwaInstall, isIOS, isStandalone, promptInstall, onPwaInstallChange } from '../pwa';
 import './settings.less';
 
 interface UserItem {
@@ -176,6 +177,22 @@ export default function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatusInfo | null>(null);
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const [updateConfirm, setUpdateConfirm] = useState(false);
+
+  // PWA 安装到桌面（1.87.0）
+  const [pwaInstallable, setPwaInstallable] = useState(canInstall());
+  const [installing, setInstalling] = useState(false);
+  useEffect(() => {
+    initPwaInstall();
+    return onPwaInstallChange(() => setPwaInstallable(canInstall()));
+  }, []);
+  const handleInstallPwa = async () => {
+    setInstalling(true);
+    const r = await promptInstall();
+    setInstalling(false);
+    if (r === 'accepted') showToast(t('安装成功，可从主屏幕打开面板'), 'success');
+    else if (r === 'dismissed') showToast(t('已取消安装'), 'info');
+    else showToast(t('当前浏览器暂不支持一键安装'), 'error');
+  };
 
   // 更新提醒浮层跳转（1.74.3）：定位「更新检查」行并高亮闪烁
   useEffect(() => {
@@ -1666,6 +1683,22 @@ export default function SettingsPage() {
                 <span style={{ marginLeft: 8, color: '#f59e0b', fontSize: 12 }}>
                   {t('(最新版 v')}{updateInfo.latest})
                 </span>
+              )}
+            </span>
+          </div>
+          <div className="settings-info__row">
+            <span>{t('安装到桌面')}</span>
+            <span>
+              {isStandalone() ? (
+                t('已在应用模式运行')
+              ) : pwaInstallable ? (
+                <Button size="sm" variant="ghost" loading={installing} onClick={handleInstallPwa}>
+                  {t('安装应用')}
+                </Button>
+              ) : isIOS() ? (
+                <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('点击 Safari 底部「分享」按钮，选择「添加到主屏幕」')}</span>
+              ) : (
+                <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('通过 HTTPS 访问面板后可安装为应用')}</span>
               )}
             </span>
           </div>

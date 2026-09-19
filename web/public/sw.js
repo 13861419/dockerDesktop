@@ -2,8 +2,11 @@
  *
  * 纯静态 App Shell 缓存，实现：可安装 + 离线打开。
  * 只缓存 GET 静态资源（js/css/html/图标）；不拦截 /api 与 /ws（动态数据与 WebSocket）。
+ *
+ * 注意：CACHE 名称必须随版本更新（dm-shell-<版本号>），否则旧壳残留；
+ * 网络优先策略下在线始终拿新资源，版本化主要用于离线回退内容的一致性。
  */
-const CACHE = 'dm-shell-v1';
+const CACHE = 'dm-shell-1.87.0';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
