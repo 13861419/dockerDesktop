@@ -238,6 +238,16 @@ function createTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_deploy_logs_app ON deploy_logs(app_id, id DESC);
 
+    -- 部署凭据库（1.85.0）：集中管理 Git / Registry 凭据，供部署应用下拉引用
+    CREATE TABLE IF NOT EXISTS deploy_creds (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE,
+      type       TEXT NOT NULL,                 -- git | registry
+      secret     TEXT NOT NULL,                 -- 加密 JSON：git={type,token,privateKey,passphrase}；registry={user,pass}
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     -- 容器日志持久化索引（logs.indexEnabled 开启后由后台采集循环写入）
     CREATE TABLE IF NOT EXISTS container_log_index (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1179,6 +1189,17 @@ function createTables(): void {
   // 迁移：buildx 多架构构建（1.83.0）——目标平台 JSON 数组，null/空 = 单架构
   try {
     d.exec('ALTER TABLE deploy_apps ADD COLUMN image_platforms TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
+  // 迁移：部署凭据库引用（1.85.0）——null = 使用应用内联凭据
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN git_cred_id INTEGER');
+  } catch {
+    // 列已存在则忽略
+  }
+  try {
+    d.exec('ALTER TABLE deploy_apps ADD COLUMN registry_cred_id INTEGER');
   } catch {
     // 列已存在则忽略
   }

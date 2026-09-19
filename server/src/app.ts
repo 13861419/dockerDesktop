@@ -73,6 +73,7 @@ import { buildPrometheusText } from './prometheus';
 import mcpRouter from './mcp/server';
 import imageUpdatesRouter from './routes/imageUpdates';
 import deploysRouter from './routes/deploys';
+import credsRouter from './routes/creds';
 import { writeRateLimiter, webhookRateLimiter } from './rateLimit';
 
 const app = express();
@@ -119,7 +120,9 @@ app.use('/api/mcp', mcpRouter);
 app.use('/api/image-updates', requireAuth, imageUpdatesRouter);
 
 // Git 部署工作台
-app.use('/api/deploys', requireAuth, deploysRouter);
+  app.use('/api/deploys', requireAuth, deploysRouter);
+
+  app.use('/api/creds', requireAuth, credsRouter);
 
 // 挂载各业务路由（均需登录鉴权）
 app.use('/api/overview', requireAuth, overviewRouter);

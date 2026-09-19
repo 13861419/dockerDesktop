@@ -280,6 +280,9 @@ interface DeployApp {
   image_platforms?: string | null;
   registry_user_enc?: string | null;
   registry_pass_enc?: string | null;
+  /** 凭据库引用（1.85.0）：非空时优先于内联凭据 */
+  git_cred_id?: number | null;
+  registry_cred_id?: number | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -323,6 +326,75 @@ function recordDeploy(appId: number, appName: string, ok: boolean, source: strin
     .run(Date.now(), ok ? 'ok' : 'fail', detail.slice(0, 2000), Date.now(), appId);
 }
 
+// ============ 凭据库解析（1.85.0） ============
+
+/**
+ * 解析 Git 凭据：git_cred_id 引用凭据库优先，其次应用内联凭据；引用不存在时回落内联并告警。
+ * @param app 部署应用行
+ * @returns GitCred 或 null（无凭据 = 匿名访问公有仓库）
+ */
+export function resolveGitCred(app: Pick<DeployApp, 'git_cred_id' | 'cred_encrypted'>): GitCred | null {
+  if (app.git_cred_id) {
+    try {
+      const row = getDb().prepare('SELECT secret FROM deploy_creds WHERE id = ?').get(app.git_cred_id) as any;
+      if (row) {
+        const parsed = JSON.parse(decryptSecret(row.secret) || '{}');
+        if (parsed && typeof parsed === 'object') return parsed as GitCred;
+      }
+    } catch {
+      // 引用损坏时回落内联
+    }
+  }
+  if (app.cred_encrypted) {
+    try {
+      return JSON.parse(decryptSecret(app.cred_encrypted) || '{}');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * 解析 Registry 凭据：registry_cred_id 引用凭据库优先，其次应用内联凭据。
+ * @param app 部署应用行
+ * @returns {user, pass} 或 { user: '', pass: '' }（匿名）
+ */
+export function resolveRegistryCred(app: Pick<DeployApp, 'registry_cred_id' | 'registry_user_enc' | 'registry_pass_enc'>): { user: string; pass: string } {
+  if (app.registry_cred_id) {
+    try {
+      const row = getDb().prepare('SELECT secret FROM deploy_creds WHERE id = ?').get(app.registry_cred_id) as any;
+      if (row) {
+        const parsed = JSON.parse(decryptSecret(row.secret) || '{}');
+        if (parsed?.user) return { user: String(parsed.user), pass: String(parsed.pass ?? '') };
+      }
+    } catch {
+      // 引用损坏时回落内联
+    }
+  }
+  return {
+    user: app.registry_user_enc ? safeDecrypt(app.registry_user_enc) : '',
+    pass: app.registry_pass_enc ? safeDecrypt(app.registry_pass_enc) : '',
+  };
+}
+
+/**
+ * 计算克隆应用的唯一名称：base、base-copy、base-copy-2 …（超长时截断后缀）
+ * @param existing 已存在的应用名集合
+ * @param base 源应用名
+ */
+export function nextCloneName(existing: string[], base: string): string {
+  const taken = new Set(existing);
+  if (!taken.has(base)) return base;
+  const prefix = `${base}-copy`.slice(0, 63).replace(/[-_.]+$/, '');
+  if (!taken.has(prefix)) return prefix;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${prefix}-${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${prefix}-${Date.now()}`;
+}
+
 /** 执行一次部署（git 同步 + compose up；greenRef 非空时先 checkout 到该 commit——绿快照回滚；启用镜像模式时 build → push → up） */
 async function deployApp(app: DeployApp, source: string, greenRef = '', commitSha = ''): Promise<{ ok: boolean; detail: string }> {
   const lines: string[] = [];
@@ -332,15 +404,8 @@ async function deployApp(app: DeployApp, source: string, greenRef = '', commitSh
     }
     const repoDir = path.join(COMPOSE_ROOT, app.name);
 
-    // 1. clone / pull
-    let cred: GitCred | null = null;
-    if (app.cred_encrypted) {
-      try {
-        cred = JSON.parse(decryptSecret(app.cred_encrypted) || '{}');
-      } catch {
-        cred = null;
-      }
-    }
+    // 1. clone / pull（凭据库引用优先，回落内联，1.85.0）
+    const cred = resolveGitCred(app);
     const gitOut = await gitCloneOrPull({ repoUrl: app.repo_url, dir: repoDir, branch: app.branch, cred });
     lines.push(gitOut);
 
@@ -384,8 +449,7 @@ async function deployApp(app: DeployApp, source: string, greenRef = '', commitSh
       } catch {
         platforms = [];
       }
-      const user = app.registry_user_enc ? safeDecrypt(app.registry_user_enc) : '';
-      const pass = app.registry_pass_enc ? safeDecrypt(app.registry_pass_enc) : '';
+      const { user, pass } = resolveRegistryCred(app);
       const host = registryHostOf(imageName);
       if (user && pass) {
         await dockerLogin(host, user, pass);
@@ -451,9 +515,10 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
               CASE WHEN ci_token_enc IS NOT NULL AND ci_token_enc != '' THEN 1 ELSE 0 END AS ci_token_set,
               gitops_enabled, gitops_interval_min, gitops_auto, gitops_last_commit, gitops_last_check,
               pre_hook, post_hook,
-              image_build_enabled, image_name, image_tag_template, image_dockerfile, image_platforms,
-              CASE WHEN registry_user_enc IS NOT NULL AND registry_user_enc != '' THEN 1 ELSE 0 END AS registry_creds_set
-       FROM deploy_apps ORDER BY id DESC`,
+               image_build_enabled, image_name, image_tag_template, image_dockerfile, image_platforms,
+               CASE WHEN registry_user_enc IS NOT NULL AND registry_user_enc != '' THEN 1 ELSE 0 END AS registry_creds_set,
+               git_cred_id, registry_cred_id
+        FROM deploy_apps ORDER BY id DESC`,
     )
     .all();
   res.json({ items: apps });
@@ -476,14 +541,17 @@ router.post('/', requireAuth, requireAdmin, (req: Request, res: Response) => {
   if (req.body?.cred && typeof req.body.cred === 'object') {
     credEnc = encryptSecret(JSON.stringify(req.body.cred));
   }
+  // 凭据库引用（1.85.0）：数字 id 或 null（null = 内联）
+  const gitCredId = Number.isInteger(req.body?.gitCredId) && req.body.gitCredId > 0 ? req.body.gitCredId : null;
+  const registryCredId = Number.isInteger(req.body?.registryCredId) && req.body.registryCredId > 0 ? req.body.registryCredId : null;
   const now = Date.now();
   try {
     getDb()
       .prepare(
-        `INSERT INTO deploy_apps (name, repo_url, branch, compose_path, also_build, cred_encrypted, webhook_token, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO deploy_apps (name, repo_url, branch, compose_path, also_build, cred_encrypted, git_cred_id, registry_cred_id, webhook_token, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(name, repoUrl, branch, composePath, alsoBuild ? 1 : 0, credEnc, randomHex(16), now, now);
+      .run(name, repoUrl, branch, composePath, alsoBuild ? 1 : 0, credEnc, gitCredId, registryCredId, randomHex(16), now, now);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message || e) });
   }
@@ -510,6 +578,9 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
   if (req.body?.cred && typeof req.body.cred === 'object') {
     credEnc = encryptSecret(JSON.stringify(req.body.cred));
   }
+  // 凭据库引用（1.85.0）：显式传值才变更；null = 清除引用改回内联
+  const gitCredId = req.body?.gitCredId !== undefined ? (Number.isInteger(req.body.gitCredId) && req.body.gitCredId > 0 ? req.body.gitCredId : null) : (app.git_cred_id ?? null);
+  const registryCredId = req.body?.registryCredId !== undefined ? (Number.isInteger(req.body.registryCredId) && req.body.registryCredId > 0 ? req.body.registryCredId : null) : (app.registry_cred_id ?? null);
   // CI 门禁配置：显式传布尔才变更；token 传非空覆盖、空串清除、缺省保持
   const ciGateEnabled = req.body?.ciGateEnabled === undefined ? (app.ci_gate_enabled ? 1 : 0) : req.body.ciGateEnabled ? 1 : 0;
   const ciProvider = String(req.body?.ciProvider ?? app.ci_provider ?? '').trim();
@@ -555,10 +626,11 @@ router.put('/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
         `UPDATE deploy_apps SET name = ?, repo_url = ?, branch = ?, compose_path = ?, also_build = ?, cred_encrypted = ?,
            ci_gate_enabled = ?, ci_provider = ?, ci_api_url = ?, ci_policy = ?, ci_token_enc = ?,
            gitops_enabled = ?, gitops_auto = ?, gitops_interval_min = ?, pre_hook = ?, post_hook = ?,
-           image_build_enabled = ?, image_name = ?, image_tag_template = ?, image_dockerfile = ?, image_platforms = ?, registry_user_enc = ?, registry_pass_enc = ?, updated_at = ?
+           image_build_enabled = ?, image_name = ?, image_tag_template = ?, image_dockerfile = ?, image_platforms = ?, registry_user_enc = ?, registry_pass_enc = ?,
+           git_cred_id = ?, registry_cred_id = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, imageBuildEnabled, imageName || null, imageTagTemplate, imageDockerfile || null, imagePlatforms.length ? JSON.stringify(imagePlatforms) : null, registryUserEnc, registryPassEnc, Date.now(), id);
+      .run(name, repoUrl, branch, composePath, alsoBuild, credEnc, ciGateEnabled, ciProvider || null, ciApiUrl || null, ciPolicy, ciTokenEnc, gitopsEnabled, gitopsAuto, gitopsIntervalMin, preHook, postHook, imageBuildEnabled, imageName || null, imageTagTemplate, imageDockerfile || null, imagePlatforms.length ? JSON.stringify(imagePlatforms) : null, registryUserEnc, registryPassEnc, gitCredId, registryCredId, Date.now(), id);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message || e) });
   }
@@ -594,6 +666,33 @@ router.post('/:id/deploy-green', requireAuth, requireAdmin, (req: Request, res: 
     });
   logOperation(res.locals.username, '部署最后绿构建', 'compose', app.name, sha.slice(0, 7), true);
   res.json({ ok: true, message: '绿快照部署已开始，结果见部署历史' });
+});
+
+/** POST /:id/clone — 复制应用（1.85.0）：新 webhook token + 清空部署状态，其余配置（含凭据引用）原样复制 */
+router.post('/:id/clone', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const app = getDb().prepare('SELECT * FROM deploy_apps WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!app) {
+    return res.status(404).json({ error: '应用不存在' });
+  }
+  const names = (getDb().prepare('SELECT name FROM deploy_apps').all() as any[]).map((r) => r.name);
+  // 克隆副本再克隆时去掉 -copy 后缀重新编号，避免 name-copy-copy 越长越长
+  const name = nextCloneName(names, app.name.replace(/-copy(-\d+)?$/, '') || app.name);
+  const now = Date.now();
+  getDb()
+    .prepare(
+      `INSERT INTO deploy_apps (name, repo_url, branch, compose_path, also_build, cred_encrypted, webhook_secret, ci_gate_enabled, ci_provider, ci_api_url, ci_policy, ci_token_enc, gitops_enabled, gitops_auto, gitops_interval_min, pre_hook, post_hook, image_build_enabled, image_name, image_tag_template, image_dockerfile, image_platforms, registry_user_enc, registry_pass_enc, git_cred_id, registry_cred_id, webhook_token, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      name, app.repo_url, app.branch, app.compose_path, app.also_build, app.cred_encrypted,
+      app.webhook_secret, app.ci_gate_enabled ? 1 : 0, app.ci_provider, app.ci_api_url, app.ci_policy, app.ci_token_enc,
+      0, 0, app.gitops_interval_min || 5, app.pre_hook, app.post_hook,
+      app.image_build_enabled ? 1 : 0, app.image_name, app.image_tag_template, app.image_dockerfile, app.image_platforms, app.registry_user_enc, app.registry_pass_enc,
+      app.git_cred_id ?? null, app.registry_cred_id ?? null,
+      randomHex(16), now, now,
+    );
+  logOperation(res.locals.username, '复制部署应用', 'compose', app.name, `→ ${name}`, true);
+  res.json({ ok: true, name });
 });
 
 /** DELETE /:id — 删除应用 */

@@ -1420,6 +1420,14 @@ Auto-deploy: each app has its own webhook token; the full URL is shown under the
 
 **buildx multi-arch builds (1.83.0)**: the image build config gains target platform checkboxes (linux/amd64 and linux/arm64). When checked, the build switches to `docker buildx build --push`, producing a multi-platform manifest under a single tag that runs on both x86 and ARM machines (each machine pulls its native arch automatically). First cross-arch build performs one-time environment prep: creating the `dm-multiarch` builder (docker-container driver) and idempotently installing QEMU user emulators (tonistiigi/binfmt, skipped afterwards via a marker file). The dual-tag semantics are unchanged; leaving platforms unchecked keeps the original single-arch `docker build` path. Note that QEMU cross-builds are noticeably slower than native builds (3-10x depending on language/base image), and the first run also pulls the binfmt and buildkit images.
 
+**Credential vault (1.85.0)**: a "Credential vault" card at the top of the Git Deploys page centrally manages Git (token / SSH key) and Registry (username + password) credentials:
+
+- Credentials are AES-encrypted at rest; the list shows only names and types, and leaving secret fields empty on edit keeps the current values.
+- The app editor's "Git credential" and "Registry credential" dropdowns can reference vault entries; **a vault reference takes precedence over inline credentials**, and if the referenced credential is deleted the app falls back to its inline values.
+- Rotate a password in one place and every referencing app picks it up immediately; deleting a credential that is still referenced by an app is rejected with 409.
+
+**Clone deploy app (1.85.0)**: the "Clone" button on a card copies the app (e.g. for staging / multi-environment): a fresh webhook token plus cleared deploy status, with every other setting (repo / branch / CI gate / GitOps / hooks / image build / credential references) carried over. Cloning a clone auto-numbers the name (`app-copy-2`) to keep names tidy.
+
 > Difference from 35.2: 35.2 is a generic Git deployment task inside Scheduled Tasks (cron + target path); 35.4 is a per-app workbench (status panel + history + dedicated webhook). Both share the same clone/pull and compose execution logic.
 
 ---

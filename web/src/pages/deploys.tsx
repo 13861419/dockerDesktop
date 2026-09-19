@@ -7,7 +7,7 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import Empty from '../components/Empty';
-import { Field, Input } from '../components/Form';
+import { Field, Input, Select } from '../components/Form';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import { get, post, put, del } from '../api/client';
@@ -57,6 +57,9 @@ interface DeployApp {
   image_tag_template?: string | null;
   image_dockerfile?: string | null;
   registry_creds_set?: number;
+  /** 凭据库引用（1.85.0） */
+  git_cred_id?: number | null;
+  registry_cred_id?: number | null;
   last_deploy_at: number | null;
   last_status: string | null;
   last_detail: string | null;
@@ -81,6 +84,15 @@ interface CiRunItem {
   status: 'success' | 'failure' | 'pending' | 'error';
   url: string;
   startedAt: string;
+}
+
+/** 部署凭据库条目（1.85.0，列表不含密文） */
+interface DeployCred {
+  id: number;
+  name: string;
+  type: 'git' | 'registry';
+  created_at: number;
+  updated_at: number;
 }
 
 /** 表单态 */
@@ -112,6 +124,8 @@ interface AppForm {
   registryUser: string;
   registryPass: string;
   registryCredsSet: boolean;
+  gitCredId: number | null;
+  registryCredId: number | null;
 }
 
 const EMPTY_FORM: AppForm = {
@@ -141,6 +155,8 @@ const EMPTY_FORM: AppForm = {
   registryUser: '',
   registryPass: '',
   registryCredsSet: false,
+  gitCredId: null,
+  registryCredId: null,
 };
 
 function App() {
@@ -173,6 +189,12 @@ function App() {
   const [ciRunsLoading, setCiRunsLoading] = useState(false);
   const [ciRunsError, setCiRunsError] = useState('');
 
+  // 凭据库（1.85.0）
+  const [creds, setCreds] = useState<DeployCred[]>([]);
+  const [credFormOpen, setCredFormOpen] = useState(false);
+  const [credForm, setCredForm] = useState<{ id?: number; name: string; type: 'git' | 'registry'; token: string; privateKey: string; passphrase: string; user: string; pass: string }>({ name: '', type: 'git', token: '', privateKey: '', passphrase: '', user: '', pass: '' });
+  const [credSaving, setCredSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError('');
@@ -183,6 +205,12 @@ function App() {
       setLoadError(e?.message || '');
     } finally {
       setLoading(false);
+    }
+    try {
+      const res = await get<{ items: DeployCred[] }>('/api/creds');
+      setCreds(res.items || []);
+    } catch {
+      // 凭据库加载失败不阻塞应用列表
     }
   }, []);
 
@@ -226,6 +254,8 @@ function App() {
       registryUser: '',
       registryPass: '',
       registryCredsSet: app.registry_creds_set === 1,
+      gitCredId: app.git_cred_id ?? null,
+      registryCredId: app.registry_cred_id ?? null,
     });
     setFormOpen(true);
   }
@@ -261,6 +291,8 @@ function App() {
           imageName: form.imageName,
           imageTagTemplate: form.imageTagTemplate,
           imageDockerfile: form.imageDockerfile,
+          gitCredId: form.gitCredId,
+          registryCredId: form.registryCredId,
           ...(form.registryUser.trim() || form.registryPass.trim()
             ? { registryUser: form.registryUser.trim(), ...(form.registryPass.trim() ? { registryPass: form.registryPass.trim() } : {}) }
             : {}),
@@ -275,6 +307,8 @@ function App() {
           composePath: form.composePath,
           cred,
           alsoBuild: form.alsoBuild,
+          gitCredId: form.gitCredId,
+          registryCredId: form.registryCredId,
         });
         showToast(t('应用已创建'));
       }
@@ -382,6 +416,84 @@ function App() {
     }
   }
 
+  /** 复制应用（1.85.0）：新 webhook token + 清空部署状态，其余配置原样复制 */
+  async function handleClone(app: DeployApp) {
+    try {
+      const res = await post<{ name: string }>(`/api/deploys/${app.id}/clone`, {});
+      showToast(t('已复制为「{{name}}」', { name: res?.name || '' }));
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('复制失败'), 'error');
+    }
+  }
+
+  /** 打开凭据弹窗（新建或编辑） */
+  function openCredForm(cred?: DeployCred) {
+    setCredForm(
+      cred
+        ? { id: cred.id, name: cred.name, type: cred.type, token: '', privateKey: '', passphrase: '', user: '', pass: '' }
+        : { name: '', type: 'git', token: '', privateKey: '', passphrase: '', user: '', pass: '' },
+    );
+    setCredFormOpen(true);
+  }
+
+  /** 保存凭据（编辑时密文留空 = 保持原值） */
+  async function handleSaveCred() {
+    if (!credForm.name.trim()) {
+      showToast(t('请填写凭据名称'), 'error');
+      return;
+    }
+    const secret: Record<string, string> =
+      credForm.type === 'git'
+        ? {
+            type: credForm.privateKey.trim() ? 'ssh' : 'token',
+            ...(credForm.token.trim() ? { token: credForm.token.trim() } : {}),
+            ...(credForm.privateKey.trim() ? { privateKey: credForm.privateKey } : {}),
+            ...(credForm.passphrase.trim() ? { passphrase: credForm.passphrase } : {}),
+          }
+        : { user: credForm.user.trim(), pass: credForm.pass };
+    if (credForm.id && !credForm.token.trim() && !credForm.privateKey.trim() && credForm.type === 'git') {
+      delete secret.token;
+      delete secret.privateKey;
+    }
+    if (!credForm.id && credForm.type === 'git' && !secret.token && !secret.privateKey) {
+      showToast(t('Git 凭据需要 Token 或私钥'), 'error');
+      return;
+    }
+    if (!credForm.id && credForm.type === 'registry' && (!secret.user || !secret.pass)) {
+      showToast(t('Registry 凭据需要用户名与密码'), 'error');
+      return;
+    }
+    setCredSaving(true);
+    try {
+      if (credForm.id) {
+        await put(`/api/creds/${credForm.id}`, { name: credForm.name.trim(), ...(credForm.token.trim() || credForm.privateKey.trim() || (credForm.type === 'registry' && credForm.pass) ? { secret } : {}) });
+        showToast(t('凭据已更新'));
+      } else {
+        await post('/api/creds', { name: credForm.name.trim(), type: credForm.type, secret });
+        showToast(t('凭据已创建'));
+      }
+      setCredFormOpen(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('保存失败'), 'error');
+    } finally {
+      setCredSaving(false);
+    }
+  }
+
+  /** 删除凭据（被引用时后端 409） */
+  async function handleDeleteCred(cred: DeployCred) {
+    if (!window.confirm(t('确认删除凭据「{{name}}」？', { name: cred.name }))) return;
+    try {
+      await del(`/api/creds/${cred.id}`);
+      showToast(t('已删除'));
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('删除失败'), 'error');
+    }
+  }
+
   /** 保存/清除 HMAC 签名密钥 */
   async function handleSaveSecret(clear: boolean) {
     if (!secretTarget) return;
@@ -410,6 +522,37 @@ function App() {
 
   return (
     <div className="page">
+      <Card
+        title={t('凭据库')}
+        extra={
+          <Button variant="primary" size="sm" disabled={!canManage} onClick={() => openCredForm()}>
+            {t('新建凭据')}
+          </Button>
+        }
+      >
+        {creds.length === 0 ? (
+          <div style={{ fontSize: 13, opacity: 0.75 }}>
+            {t('集中管理 Git / Registry 凭据，供下方部署应用下拉引用；更换密码只需改一处。')}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 6 }}>
+            {creds.map((c) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <span style={{ fontWeight: 500 }}>{c.name}</span>
+                <span style={{ opacity: 0.65 }}>{c.type === 'git' ? 'Git' : 'Registry'}</span>
+                <span style={{ flex: 1, opacity: 0.45 }}>{new Date(c.updated_at).toLocaleString()}</span>
+                <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openCredForm(c)}>
+                  {t('编辑')}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleDeleteCred(c)}>
+                  {t('删除')}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       <Card
         title={t('Git 部署')}
         extra={
@@ -500,6 +643,9 @@ function App() {
                   <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => openEdit(app)}>
                     {t('编辑')}
                   </Button>
+                  <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleClone(app)} title={t('复制全部配置为一个新的应用（用于 staging / 多环境）')}>
+                    {t('复制')}
+                  </Button>
                   <Button variant="ghost" size="sm" disabled={!canManage} onClick={() => handleResetToken(app)}>
                     {t('重置 Token')}
                   </Button>
@@ -561,10 +707,22 @@ function App() {
         <Field label={t('compose 文件相对路径（可选）')} hint={t('留空自动探测 compose.yaml / docker-compose.yml 等')}>
           <Input value={form.composePath} onChange={(e) => setForm({ ...form, composePath: e.target.value })} placeholder="deploy/compose.yaml" />
         </Field>
-        <Field label={t('Git 凭据（可选）')} hint={t('私有仓库填写；留空保持原有凭据不变')}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input value={form.credUser} onChange={(e) => setForm({ ...form, credUser: e.target.value })} placeholder={t('用户名 / token')} />
-            <Input type="password" value={form.credPass} onChange={(e) => setForm({ ...form, credPass: e.target.value })} placeholder={t('密码')} />
+        <Field label={t('Git 凭据（可选）')} hint={t('私有仓库填写；留空保持原有凭据不变；选择凭据库引用时优先于下方内联凭据')}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Select value={form.gitCredId ?? ''} onChange={(e: any) => setForm({ ...form, gitCredId: e.target.value === '' ? null : Number(e.target.value) })}>
+              <option value="">{t('内联凭据（下方填写）')}</option>
+              {creds
+                .filter((c) => c.type === 'git')
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {t('凭据库')}: {c.name}
+                  </option>
+                ))}
+            </Select>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input value={form.credUser} onChange={(e) => setForm({ ...form, credUser: e.target.value })} placeholder={t('用户名 / token')} />
+              <Input type="password" value={form.credPass} onChange={(e) => setForm({ ...form, credPass: e.target.value })} placeholder={t('密码')} />
+            </div>
           </div>
         </Field>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
@@ -713,10 +871,22 @@ function App() {
                     ))}
                   </div>
                 </Field>
-                <Field label={t('Registry 凭据（可选）')} hint={t('私有仓库填写，AES 加密存储；留空保持原有凭据不变，清空用户名即清除凭据')}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input value={form.registryUser} onChange={(e) => setForm({ ...form, registryUser: e.target.value })} placeholder={form.registryCredsSet ? t('已配置（输入新值可覆盖）') : t('用户名')} />
-                    <Input type="password" value={form.registryPass} onChange={(e) => setForm({ ...form, registryPass: e.target.value })} placeholder={t('密码')} />
+                <Field label={t('Registry 凭据（可选）')} hint={t('私有仓库填写，AES 加密存储；选择凭据库引用时优先于下方内联凭据')}>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <Select value={form.registryCredId ?? ''} onChange={(e: any) => setForm({ ...form, registryCredId: e.target.value === '' ? null : Number(e.target.value) })}>
+                      <option value="">{t('内联凭据（下方填写）')}</option>
+                      {creds
+                        .filter((c) => c.type === 'registry')
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {t('凭据库')}: {c.name}
+                          </option>
+                        ))}
+                    </Select>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Input value={form.registryUser} onChange={(e) => setForm({ ...form, registryUser: e.target.value })} placeholder={form.registryCredsSet ? t('已配置（输入新值可覆盖）') : t('用户名')} />
+                      <Input type="password" value={form.registryPass} onChange={(e) => setForm({ ...form, registryPass: e.target.value })} placeholder={t('密码')} />
+                    </div>
                   </div>
                 </Field>
               </>
@@ -831,6 +1001,56 @@ function App() {
             placeholder={secretTarget?.webhook_secret_set ? t('已配置（输入新值可覆盖）') : t('例如：my-webhook-secret')}
           />
         </Field>
+      </Modal>
+
+      {/* 凭据库新建 / 编辑弹窗（1.85.0） */}
+      <Modal
+        open={credFormOpen}
+        title={credForm.id ? t('编辑凭据') : t('新建凭据')}
+        onClose={() => setCredFormOpen(false)}
+        width={480}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCredFormOpen(false)}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" loading={credSaving} onClick={handleSaveCred}>
+              {t('保存')}
+            </Button>
+          </>
+        }
+      >
+        <Field label={t('凭据名称')} required hint={t('例如：github-main / dockerhub / aliyun-registry')}>
+          <Input value={credForm.name} onChange={(e) => setCredForm({ ...credForm, name: e.target.value })} />
+        </Field>
+        <Field label={t('凭据类型')}>
+          <Select value={credForm.type} disabled={!!credForm.id} onChange={(e: any) => setCredForm({ ...credForm, type: e.target.value === 'registry' ? 'registry' : 'git' })}>
+            <option value="git">Git</option>
+            <option value="registry">Registry</option>
+          </Select>
+        </Field>
+        {credForm.type === 'git' ? (
+          <>
+            <Field label={t('Token / 密码')} hint={credForm.id ? t('留空保持原值不变') : t('HTTPS 仓库使用 access token 或账号密码')}>
+              <Input type="password" value={credForm.token} onChange={(e) => setCredForm({ ...credForm, token: e.target.value, privateKey: e.target.value ? '' : credForm.privateKey })} />
+            </Field>
+            <Field label={t('SSH 私钥（可选）')} hint={t('ssh 仓库使用，填写后类型自动为 SSH；编辑时留空保持原值')}>
+              <Input value={credForm.privateKey} onChange={(e) => setCredForm({ ...credForm, privateKey: e.target.value, token: e.target.value ? '' : credForm.token })} />
+            </Field>
+            <Field label={t('私钥口令（可选）')}>
+              <Input type="password" value={credForm.passphrase} onChange={(e) => setCredForm({ ...credForm, passphrase: e.target.value })} />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label={t('用户名')} required>
+              <Input value={credForm.user} onChange={(e) => setCredForm({ ...credForm, user: e.target.value })} />
+            </Field>
+            <Field label={t('密码 / Token')} required hint={credForm.id ? t('留空保持原值不变') : undefined}>
+              <Input type="password" value={credForm.pass} onChange={(e) => setCredForm({ ...credForm, pass: e.target.value })} />
+            </Field>
+          </>
+        )}
       </Modal>
     </div>
   );
