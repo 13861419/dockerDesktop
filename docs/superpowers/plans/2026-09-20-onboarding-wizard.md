@@ -177,9 +177,8 @@ git commit -m "feat(onboarding): onboarding.done 设置项与首装种子"
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../components/Button';
-import Input from '../components/Input';
 import { get, put } from '../api/client';
-import { isAdmin, getUsername } from '../api/auth';
+import { isAdmin } from '../api/auth';
 import { translateNow as t } from '../i18n';
 import './onboarding.less';
 
@@ -189,11 +188,13 @@ export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [scan, setScan] = useState<ScanResult | null>(null);
-  const [hubSource, setHubSource] = useState('');
   const [busy, setBusy] = useState(false);
+  const [username, setUsername] = useState('');
 
   useEffect(() => {
     document.title = t('欢迎使用 Docker Manager');
+    // 默认账号判定：/api/auth/me 返回当前用户名（web/src/api/auth.ts 无 getUsername）
+    get<{ username: string }>('/api/auth/me').then((r) => setUsername(r.username)).catch(() => {});
   }, []);
 
   /** 完成并写标记（bool 归一化由 settings 层处理） */
@@ -206,14 +207,14 @@ export default function OnboardingPage() {
   const runScan = async () => {
     setBusy(true);
     const [c, i, cp] = await Promise.all([
-      get<any[]>('/api/containers/json?all=true').catch(() => []),
-      get<any[]>('/api/images/json').catch(() => []),
-      get<{ items: any[] }>('/api/compose').catch(() => ({ items: [] })),
+      get<any[]>('/api/containers', { all: true }).catch(() => []),
+      get<any[]>('/api/images').catch(() => []),
+      get<any[]>('/api/compose').catch(() => []),
     ]);
     setScan({
       containers: Array.isArray(c) ? c.length : 0,
       images: Array.isArray(i) ? i.length : 0,
-      compose: (cp?.items || []).filter((x: any) => x.source === 'external').length,
+      compose: Array.isArray(cp) ? cp.filter((x: any) => x.source === 'external').length : 0,
     });
     setBusy(false);
   };
@@ -230,7 +231,7 @@ export default function OnboardingPage() {
         <div>
           <h1>{t('欢迎使用 Docker Manager')}</h1>
           <p>{t('本向导将带你完成初始设置（约 1 分钟）。')}</p>
-          {getUsername() === 'admin' && (
+          {username === 'admin' && (
             <div className="onboard__warn">
               {t('当前使用默认管理员账号，建议立即修改密码。')}
               <Button size="sm" onClick={() => navigate('/settings')}>{t('立即改密')}</Button>
@@ -250,14 +251,13 @@ export default function OnboardingPage() {
       )}
       {step === 3 && (
         <div>
-          <h1>{t('可选：镜像加速源')}</h1>
-          <Input value={hubSource} onChange={(e: any) => setHubSource(e.target.value)} placeholder="https://docker-0.unsee.tech" />
-          <Button onClick={() => setStep(4)}>{t('跳过')}</Button>
-          <Button variant="primary" loading={busy} onClick={async () => {
-            setBusy(true);
-            try { await put('/api/settings/hub.source', { value: hubSource }); } catch { /* 可选配置失败不阻塞 */ }
-            setBusy(false); setStep(4);
-          }}>{t('保存')}</Button>
+          <h1>{t('可选：常用配置直达')}</h1>
+          <p>{t('镜像加速源（国内建议配置）与告警通知渠道可稍后在对应页面设置，均可跳过。')}</p>
+          <div className="onboard__links">
+            <Button onClick={() => navigate('/hub')}>{t('镜像源设置')}</Button>
+            <Button onClick={() => navigate('/notifications')}>{t('告警通知渠道')}</Button>
+          </div>
+          <Button variant="primary" onClick={() => setStep(4)}>{t('下一步')}</Button>
         </div>
       )}
       {step === 4 && (
@@ -280,7 +280,7 @@ export default function OnboardingPage() {
 }
 ```
 
-> 注：`Input` / `getUsername` 的实际导入路径以仓库现有组件为准（`web/src/components/Input` 或 Form 内）；若 `Input` 来自 `Form`，改为 `import { Input } from '../components/Form'`。`hub.source` 保存前先在 settings.ts 确认已有该键，若无则删去该保存调用、仅保留输入框占位说明——**不得引用未注册的设置键**。
+> 注：`Input` / `getUsername` 的实际导入路径以仓库现有组件为准；本计划已解析——当前用户名经 `GET /api/auth/me` 获取（`getUsername` 不存在）；`hub.source` 未在 settings 注册中心注册，故步骤③不做写操作、仅提供页面直达链接。
 
 新建 `web/src/pages/onboarding.less`（居中卡片布局，复用全局 CSS 变量）：
 
@@ -335,6 +335,11 @@ export default function OnboardingPage() {
     border-bottom: 1px solid var(--border-color, #e5e7eb);
   }
 }
+
+.onboard__links {
+  display: flex;
+  gap: 12px;
+}
 ```
 
 - [ ] **Step 2: 路由注册**
@@ -387,14 +392,17 @@ const OnboardingPage = lazy(() => import('./pages/onboarding'));
   "开始": "Start",
   "检测本机环境": "Detect local environment",
   "扫描中...": "Scanning...",
-  "可选：镜像加速源": "Optional: registry mirror",
-  "保存": "Save",
+  "可选：常用配置直达": "Optional: quick configuration",
+  "镜像加速源（国内建议配置）与告警通知渠道可稍后在对应页面设置，均可跳过。": "Registry mirrors (recommended for CN users) and alert channels can be configured later in their pages.",
+  "镜像源设置": "Registry mirrors",
+  "告警通知渠道": "Alert channels",
+  "下一步": "Next",
   "完成，进入面板": "Finish and open the panel",
   "跳过向导": "Skip the wizard",
   "重看首装向导": "Replay the setup wizard",
 ```
 
-（向导其余长句沿用中文回退，与 help.tsx 现状一致；后续版本再补翻。）
+（向导其余长句沿用中文回退，与 help.tsx 现状一致；后续版本再补翻。`useToast` 已从向导导入中移除——未使用。'立即改密' / '取消' 等键已存在 en.ts，无需重复添加。）
 
 - [ ] **Step 5: 构建验证**
 
