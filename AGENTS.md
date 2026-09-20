@@ -7,7 +7,7 @@
 1. **CHANGELOG.md**：本批次变更是否已按 Keep a Changelog 归入对应版本段（Added / Fixed / Changed / Test）
 2. **README.md**：
    - 功能特性列表是否包含新功能
-   - 安装包 / 版本号是否与根 `package.json` 一致
+   - 安装包 / 版本号是否与根 `package.json` 一致（`npm run docs:check` 已自动校验；不一致时 `npm run docs:sync-version` 一键改写）
    - 数据表清单是否包含新增的 SQLite 表
 3. **两份手册**（`docs/DockerManager-操作手册.md` 与 `docs/DockerManager-User-Manual.md`）：新功能是否有对应章节（中英文都要）；章节编号连续
 4. **截图**：`images/` 目录覆盖文档全部图片引用，零死链。注意 GitHub 按文档所在目录解析相对路径：`docs/*.md` 中必须写 `../images/`（`npm run docs:check` 已按此规则校验）。
