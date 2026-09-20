@@ -550,4 +550,12 @@ registerSettings([
     group: 'security',
     hidden: true,
   },
+  {
+    key: 'onboarding.done',
+    label: '首次启动向导已完成',
+    type: 'bool',
+    def: true,
+    group: 'general',
+    hidden: true,
+  },
 ]);

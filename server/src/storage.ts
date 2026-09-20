@@ -1704,6 +1704,25 @@ export function initStorage(): void {
   getDb();
   migrateLegacyData();
   seedContainerTemplates(getDb());
+  seedOnboardingFlag();
+}
+
+/**
+ * 首装向导标记种子（1.88.0）：仅当 users 表为空（全新安装）且尚未有标记时，
+ * 写入 onboarding.done='0'（待完成）；存量库无此键即视为已完成，不受打扰。
+ * 由 initStorage() 在建表后调用一次；独立导出供单测。
+ */
+export function seedOnboardingFlag(): void {
+  try {
+    const d = getDb();
+    const row = d.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number };
+    if (row.n > 0) return;
+    const existed = d.prepare('SELECT key FROM setting WHERE key = ?').get('onboarding.done');
+    if (existed) return;
+    d.prepare('INSERT INTO setting (key, value) VALUES (?, ?)').run('onboarding.done', '0');
+  } catch {
+    // users/setting 表未就绪等异常时静默跳过，不影响启动
+  }
 }
 
 /**
