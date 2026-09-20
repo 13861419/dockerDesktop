@@ -2,22 +2,21 @@
  * 统一配置中心 API 路由（挂载路径 /api/settings）
  *
  * - GET  /api/settings        已知设置 + 值 + 来源 + 分组（登录即可读；secret 只回显 configured）
- * - GET  /api/settings/:key   单键读取（登录即可读；hidden 键经此读取，未注册键 404）
+ * - GET  /api/settings/:key   单键读取（登录即可读；hidden 键经此读取，未注册键 404；secret 类型键拒绝读取，同形 404 掩蔽存在性）
  * - PUT  /api/settings        批量更新（body: { key: value, ... }，管理员）
  * - PUT  /api/settings/:key   单个更新（管理员）
  * - DELETE /api/settings/:key 恢复默认（清除落库值，回退 env/default，管理员）
  */
 import { Router, Request, Response } from 'express';
 import { requireAdmin, requireAuth } from '../auth';
-import { listSettings, setSetting, resetSetting, validateSetting, getSettingRaw } from '../settings';
+import { listSettings, setSetting, resetSetting, validateSetting, getSettingRaw, getSettingType } from '../settings';
 import { logOperation } from '../operationLog';
 
 const router = Router();
 
-/** 取设置项类型（用于审计脱敏） */
+/** 取设置项类型（用于审计脱敏与 secret 拦截）：必须经注册中心解析（listSettings 会过滤 hidden 键） */
 function settingType(key: string): string {
-  const item = listSettings().find((x) => x.key === key);
-  return item?.type || 'string';
+  return getSettingType(key) || 'string';
 }
 
 /** 序列化设置值用于操作日志：secret 脱敏为 ***，超长截断 */
@@ -40,9 +39,14 @@ router.get('/', requireAuth, (_req: Request, res: Response) => {
 /**
  * GET /api/settings/:key
  * 单键读取（含 hidden 键，供首次启动向导等专属界面使用）。未注册的键返回 404。
+ * secret 类型键一律 404（与未注册键同形，掩蔽存在性）：getSettingRaw 会解密 secret，
+ * 任何登录用户可访问本端点，若回显明文将造成秘密泄漏。
  */
 router.get('/:key', requireAuth, (req: Request, res: Response) => {
   const key = String(req.params.key || '');
+  if (settingType(key) === 'secret') {
+    return res.status(404).json({ error: '未知的设置项' });
+  }
   const raw = getSettingRaw(key);
   if (!raw) {
     return res.status(404).json({ error: '未知的设置项' });

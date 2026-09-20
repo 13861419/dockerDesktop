@@ -5,6 +5,7 @@
  *  - onboarding.done 设置描述符注册（bool / 默认 true / hidden）
  *  - 首装种子：users 表为空 → 写入 '0'；有用户 → 不写（存量库不受打扰）
  *  - GET /api/settings/:key 单键读取（首装种子后 value=false；未注册键 404）
+ *  - GET /api/settings/:key secret 类型键拒绝读取（404 掩蔽存在性，不回显 value）
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert';
@@ -19,7 +20,7 @@ const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-onboard-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 
 import { initStorage, getDb, seedOnboardingFlag } from '../src/storage';
-import { getSettingRaw } from '../src/settings';
+import { getSettingRaw, setSetting } from '../src/settings';
 import settingsRouter from '../src/routes/settings';
 import { createSession } from '../src/auth';
 
@@ -100,4 +101,14 @@ test('GET /api/settings/:key：未注册的键返回 404', async () => {
   const res = await get('/api/settings/not-a-key');
   assert.strictEqual(res.status, 404);
   assert.strictEqual(res.data.error, '未知的设置项');
+});
+
+test('GET /api/settings/:key：secret 类型键拒绝读取（404 掩蔽存在性，无 value）', async () => {
+  // 预置一个已配置的 secret 值：若无修复，该端点会解密并回显明文（200 + value）
+  setSetting('mcp.token', 'super-secret-plain');
+  assert.ok(getSettingRaw('mcp.token'), 'mcp.token 已配置值（确认走 secret 拒绝分支而非未注册 404）');
+  const res = await get('/api/settings/mcp.token');
+  assert.strictEqual(res.status, 404);
+  assert.strictEqual(res.data.error, '未知的设置项');
+  assert.ok(!('value' in res.data), '响应体不得包含 value 字段');
 });

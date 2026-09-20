@@ -70,6 +70,15 @@ function normalizeValue(d: SettingDescriptor, raw: any): any {
 }
 
 /**
+ * 查询设置项类型（含 hidden 键；listSettings 会过滤 hidden，路由层脱敏/拦截需经此判断）
+ * @param key 设置键
+ * @returns 类型（string/bool/number/secret）；未注册的键返回 null
+ */
+export function getSettingType(key: string): string | null {
+  return registry.get(key)?.type ?? null;
+}
+
+/**
  * 读取设置的原始信息（值 + 来源），三态回退：db > env > default
  * @param key 设置键
  * @returns 值与来源；未注册的键返回 null
