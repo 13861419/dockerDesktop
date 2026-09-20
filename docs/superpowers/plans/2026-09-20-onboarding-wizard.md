@@ -162,7 +162,7 @@ git commit -m "feat(onboarding): onboarding.done 设置项与首装种子"
 - Modify: `web/src/i18n/en.ts`（新增键）
 
 **Interfaces:**
-- Consumes: Task 1 的 `onboarding.done`（GET/PUT `/api/settings`）；`web/src/api/client` 的 `get/put`；`isAdmin()`（`web/src/api/auth`）；`Empty`（action prop）
+- Consumes: Task 1 的 `onboarding.done`（单键读 `GET /api/settings/:key` + 写 `PUT /api/settings/:key`，该键 hidden 不在列表端点）；`web/src/api/client` 的 `get/put`；`isAdmin()`（`web/src/api/auth`）；`Empty`（action prop）
 - Produces: 路由 `/onboarding`；settings 页 Task 3 依赖键 `onboarding.done` 与跳转函数 `resetOnboarding()`（Task 3 内实现，见其说明）
 
 - [ ] **Step 1: 创建向导页**
@@ -372,11 +372,9 @@ const OnboardingPage = lazy(() => import('./pages/onboarding'));
   const navigate = useNavigate();
   useEffect(() => {
     if (!isAdmin()) return;
-    get<{ items: Array<{ key: string; value: any }> }>('/api/settings')
-      .then((r) => {
-        const item = (r.items || []).find((x) => x.key === 'onboarding.done');
-        if (item && item.value === false) navigate('/onboarding');
-      })
+    // onboarding.done 是 hidden 键，不在 GET /api/settings 列表里，走单键读取端点
+    get<{ value: any }>('/api/settings/onboarding.done')
+      .then((r) => { if (r.value === false) navigate('/onboarding'); })
       .catch(() => {});
   }, []);
 ```
