@@ -269,6 +269,52 @@ dockerDesktop/
 
 ## 🚀 安装与运行
 
+### 方式零：从 GitHub Releases 首次安装（推荐）
+
+示例版本以 `1.87.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
+
+**Ubuntu / Debian（amd64）**
+
+```bash
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-amd64.deb
+sudo dpkg -i docker-manager-1.87.0-amd64.deb
+```
+
+**Ubuntu / Debian（arm64，如树莓派 / Oracle ARM）**
+
+```bash
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-arm64.deb
+sudo dpkg -i docker-manager-1.87.0-arm64.deb
+```
+
+**CentOS / RHEL / AlmaLinux（x86_64）**
+
+```bash
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-1.x86_64.rpm
+sudo yum localinstall -y docker-manager-1.87.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.87.0-1.x86_64.rpm
+```
+
+**CentOS / RHEL / AlmaLinux（aarch64）**
+
+```bash
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-1.aarch64.rpm
+sudo yum localinstall -y docker-manager-1.87.0-1.aarch64.rpm
+```
+
+**macOS**
+
+```bash
+# Homebrew（推荐，见下方 macOS Homebrew 安装）
+brew tap 13861419/dockerDesktop https://github.com/13861419/dockerDesktop
+brew install docker-manager
+```
+
+**Windows**：从 [Releases](https://github.com/13861419/dockerDesktop/releases) 下载 `DockerManager-windows-amd64.zip`，解压后以管理员身份运行 `install.bat`（或按提示手动注册 NSSM 服务）。
+
+> - `ghfast.top` 为国内加速前缀，海外机器可直接用 `https://github.com/...` 原始链接；
+> - deb / rpm 包内置 Node.js 22 运行时（要求 glibc ≥ 2.28，CentOS 7 无法运行）与 systemd 服务，安装即开机自启；
+> - 安装后浏览器打开 `http://<主机IP>:9528`，默认账号 `admin` / `admin888`（登录后请立即改密）。
+
 ### 方式一：源码开发模式
 
 ```bash
