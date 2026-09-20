@@ -17,6 +17,7 @@ import { I18nProvider } from './i18n';
 
 // ---- 路由级懒加载：各页面独立 chunk，进入路由时才加载 ----
 const LoginPage = lazy(() => import('./pages/login'));
+const OnboardingPage = lazy(() => import('./pages/onboarding'));
 const ApiDocsPage = lazy(() => import('./pages/apiDocs'));
 const OverviewPage = lazy(() => import('./pages/overview'));
 const ContainersPage = lazy(() => import('./pages/containers'));
@@ -97,6 +98,15 @@ export default function App() {
           />
           {/* 受保护路由：RequireAuth 校验登录态后再渲染 Layout 及其子路由 */}
           <Route element={<RequireAuth />}>
+            {/* 首装向导：RequireAuth 内、Layout 外（全屏无侧栏，1.88.0） */}
+            <Route
+              path="/onboarding"
+              element={
+                <PageSuspense>
+                  <OnboardingPage />
+                </PageSuspense>
+              }
+            />
             <Route element={<Layout />}>
               <Route
                 path="/"

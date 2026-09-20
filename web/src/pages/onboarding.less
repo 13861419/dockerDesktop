@@ -1,0 +1,55 @@
+/* 首次启动向导（1.88.0） */
+.onboard {
+  max-width: 560px;
+  margin: 8vh auto 0;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--bg-secondary, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+}
+
+.onboard__progress {
+  display: flex;
+  gap: 8px;
+}
+
+.onboard__dot {
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color, #e5e7eb);
+
+  &.is-active {
+    background: var(--primary, #6366f1);
+  }
+}
+
+.onboard__warn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.onboard__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+  }
+}
+
+.onboard__links {
+  display: flex;
+  gap: 12px;
+}

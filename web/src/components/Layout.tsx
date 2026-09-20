@@ -595,6 +595,15 @@ export default function Layout() {
     return () => clearInterval(t);
   }, []);
 
+  // 首装向导检测（1.88.0）：管理员 + 待完成标记 → 跳转向导
+  useEffect(() => {
+    if (!isAdmin()) return;
+    // onboarding.done 是 hidden 键，不在 GET /api/settings 列表里，走单键读取端点
+    get<{ value: any }>('/api/settings/onboarding.done')
+      .then((r) => { if (r.value === false) navigate('/onboarding'); })
+      .catch(() => {});
+  }, []);
+
   // 当前用户是否为管理员：非管理员时过滤掉仅管理员的菜单项（隐藏入口）
   const admin = isAdmin();
 
