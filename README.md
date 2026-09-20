@@ -460,6 +460,20 @@ cd e2e && npx playwright test   # Playwright E2E 冒烟（登录/容器/审批/�
 - **镜像漏洞扫描不可用**：镜像详情页的漏洞扫描依赖宿主机已安装 **Trivy**（未安装时会给出引导文案）。可在目标机器安装 Trivy 后刷新即可启用。
 - **Webhook 触发任务无反应**：确认计划任务已配置并启用 `webhook_token`，用 `POST /api/webhook/:token` 触发；如需二次校验可在 Header 携带 `X-Docker-Panel-Token`。
 - **Linux 安装后无法连接 Docker**：确保 `dockerman` 用户已加入 `docker` 组（`sudo usermod -aG docker dockerman`），并重启服务。
+- **Linux 服务无法启动 / 查看启动日志**：Linux 安装为 systemd 服务（`docker-manager`），启动信息在 journal 中：
+
+  ```bash
+  sudo systemctl status docker-manager -l          # 服务状态（Active / 主进程退出码）
+  sudo journalctl -u docker-manager -n 200 --no-pager   # 最近 200 行启动日志
+  sudo journalctl -u docker-manager -f             # 实时跟踪（重启时同步看输出）
+  sudo journalctl -u docker-manager --no-pager | tail -100  # 全部历史（排查反复重启）
+
+  # 面板自身日志文件
+  ls -lt /opt/docker-manager/logs/
+  tail -100 /opt/docker-manager/logs/$(ls -t /opt/docker-manager/logs/ | head -1)
+  ```
+
+  典型案例——`ERR_SQLITE_ERROR: disk I/O error`（卡在 `PRAGMA journal_mode = WAL`）：数据目录所在磁盘 I/O 异常。依次检查 `df -h /opt`（磁盘满是最常见原因，清理后服务会自动恢复）、`dmesg | tail -50`（宿主机硬件报错需换盘）；`-wal` / `-shm` 文件损坏时，停服备份 `data/` 后删除这两个文件再启动。
 
 ## 📜 License
 
