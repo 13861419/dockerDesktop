@@ -2684,6 +2684,7 @@ export const en: Record<string, string> = {
   "完成，进入面板": "Finish and open the panel",
   "跳过向导": "Skip the wizard",
   "重看首装向导": "Replay the setup wizard",
+  "新建编排": "New Compose Project",
 
   "全部升级": "Upgrade all",
   "已下发 N 个节点的升级指令": "Upgrade command sent to N node(s)",

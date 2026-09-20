@@ -981,6 +981,7 @@ const [trustOpen, setTrustOpen] = useState(false);
             kind={keyword ? 'search' : 'empty'}
             title={keyword ? t('未找到匹配镜像') : t('暂无镜像')}
             description={keyword ? t('尝试更换搜索关键字') : t('点击右上角')}
+            action={!keyword ? <Button size="sm" variant="primary" onClick={() => setPullOpen(true)} disabled={!canPull}>{t('拉取镜像')}</Button> : undefined}
           />
         ) : (
           <>

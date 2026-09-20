@@ -4,7 +4,7 @@
  * 提供账号管理（列用户 / 新增 / 删除 / 改密）与关于 / Docker 引擎信息展示。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -160,6 +160,7 @@ export default function SettingsPage() {
   const { showToast } = useToast();
   const { theme, setTheme } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
   // 强制改密模式：首次使用默认密码登录后进入，需完成改密
   const [forceChange, setForceChange] = useState(
     (location.state as { forceChangePassword?: boolean } | null)?.forceChangePassword === true,
@@ -1701,6 +1702,15 @@ export default function SettingsPage() {
                 <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('通过 HTTPS 访问面板后可安装为应用')}</span>
               )}
             </span>
+          </div>
+          <div className="settings-info__row">
+            <span>{t('重看首装向导')}</span>
+            <Button size="sm" variant="ghost" onClick={async () => {
+              await put('/api/settings/onboarding.done', { value: '0' });
+              navigate('/onboarding');
+            }}>
+              {t('打开')}
+            </Button>
           </div>
           {updateStatus && (
             <div className="settings-info__row">

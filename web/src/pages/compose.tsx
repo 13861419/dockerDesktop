@@ -1057,7 +1057,25 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             }
           />
         ) : projects.length === 0 ? (
-          <Empty title={t('暂无 Compose 项目')} description={t('点击右上角「新建项目」创建')} />
+          <Empty
+            title={t('暂无 Compose 项目')}
+            description={t('点击右上角「新建项目」创建')}
+            action={
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!canManage}
+                onClick={() => {
+                  setCreateFileName('');
+                  setCreateTemplate('');
+                  setCreateOpen(true);
+                  fetchUserTemplates();
+                }}
+              >
+                {t('新建编排')}
+              </Button>
+            }
+          />
         ) : (
           <table className="data-table">
             <thead>
