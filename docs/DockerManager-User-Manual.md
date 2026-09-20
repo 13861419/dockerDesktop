@@ -324,6 +324,19 @@ To back up, copy the entire data directory.
 >
 > Login notification (1.49.0): with "Security → Login notification" enabled in Settings, successful and failed logins (wrong password / wrong 2FA code) are pushed to the enabled notification channels with account / IP / time (successes via the recovery route, failures via warn); at most one push per account+IP within 60 seconds to avoid flooding during brute-force attempts.
 
+### 1.4 First-Run Wizard (new in 1.88.0)
+
+**When it appears**: only once, automatically, after a **fresh install** (empty database) when you first log in as `admin`. **Existing databases are untouched — the wizard never pops up on upgrade.** Logging in as a non-admin user does not trigger it.
+
+**Four steps**:
+
+1. **Welcome & password change reminder**: a welcome message plus a reminder to change the default password `admin888`, with a direct link to change it.
+2. **One-click environment scan**: the panel scans the local Docker environment and summarizes containers / images / Compose projects so you know what is being managed.
+3. **Optional setup shortcuts**: direct entry points for image registry mirrors and notification channels, configured as needed.
+4. **Migration concept mapping**: a concept mapping table for users migrating from 1Panel / BaoTa (aaPanel) / Portainer.
+
+**Skip & replay**: the wizard can be skipped at any time without affecting later use; afterwards it can be reopened anytime via **Settings → About → Replay First-Run Wizard**.
+
 ---
 
 ## 2. Overview & Health Check

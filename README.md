@@ -63,6 +63,7 @@
 - **供应链与容量防护（1.34.0）**：镜像信任锁定（sha256 摘要漂移检测，1.36.0 起新镜像与锁定值不符自动更新直接拦截）、磁盘写满与内存耗尽趋势预测告警（24h 线性回归）并在总览曲线绘制趋势外推虚线（1.36.0）、静默期值班渠道兜底转发
 - **监控导出（1.34.0）**：监控指标导出 CSV（UTF-8 BOM）、一键生成近 7 天运维周报（打印为 PDF）
 - **移动端体验（1.34.0）**：底部导航栏 + 侧栏滑动手势（≤768px）；**PWA 安装到桌面**（1.87.0）——原生安装确认 / iOS 添加到主屏幕、长按图标快捷方式直达容器 / 镜像 / 告警 / 设置、Service Worker 版本化缓存与自动接管刷新
+- **首次启动向导（1.88.0）**：欢迎改密提醒、一键检测纳管本机环境、镜像源预配置、竞品迁移概念对照
 - **高危操作审批流**：开启后非管理员的删除容器/卷、停止编排、批量删镜像、清理类等高危操作自动进入「审批中心」待审批，管理员批准后系统执行；支持手动提交镜像删除、网络清理等申请，全程留痕；支持批量批准/拒绝（拒绝理由必填）、AI 高危操作建议自动转审批单；支持两级审批链（第一级运维/管理员、末级强制管理员）与审批单编号（AP-YYYYMMDD-ID）、超时前自动催办
 - **面板数据库备份**：面板自身 SQLite 数据库一致性快照（不停服），支持定时任务自动备份、保留份数自动清理、一键恢复（含完整性与格式校验）与下载
 - **定时备份自动上传云端（1.50.0）**：备份定时任务可配置「备份后上传云端」——备份成功即自动上传到指定云端目标（WebDAV / S3 / OSS），配合云端拉回恢复形成异地容灾闭环
@@ -271,34 +272,34 @@ dockerDesktop/
 
 ### 方式零：从 GitHub Releases 首次安装（推荐）
 
-示例版本以 `1.87.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
+示例版本以 `1.88.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
 
 **Ubuntu / Debian（amd64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-amd64.deb
-sudo dpkg -i docker-manager-1.87.0-amd64.deb
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.88.0/docker-manager-1.88.0-amd64.deb
+sudo dpkg -i docker-manager-1.88.0-amd64.deb
 ```
 
 **Ubuntu / Debian（arm64，如树莓派 / Oracle ARM）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-arm64.deb
-sudo dpkg -i docker-manager-1.87.0-arm64.deb
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.88.0/docker-manager-1.88.0-arm64.deb
+sudo dpkg -i docker-manager-1.88.0-arm64.deb
 ```
 
 **CentOS / RHEL / AlmaLinux（x86_64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-1.x86_64.rpm
-sudo yum localinstall -y docker-manager-1.87.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.87.0-1.x86_64.rpm
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.88.0/docker-manager-1.88.0-1.x86_64.rpm
+sudo yum localinstall -y docker-manager-1.88.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.88.0-1.x86_64.rpm
 ```
 
 **CentOS / RHEL / AlmaLinux（aarch64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.87.0/docker-manager-1.87.0-1.aarch64.rpm
-sudo yum localinstall -y docker-manager-1.87.0-1.aarch64.rpm
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.88.0/docker-manager-1.88.0-1.aarch64.rpm
+sudo yum localinstall -y docker-manager-1.88.0-1.aarch64.rpm
 ```
 
 **macOS**
