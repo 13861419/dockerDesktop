@@ -2001,7 +2001,7 @@ export default function ContainersPage() {
             kind={search ? 'search' : 'empty'}
             title={search ? t('未找到匹配的容器') : filter === 'running' ? t('暂无运行中的容器') : filter === 'stopped' ? t('暂无已停止的容器') : t('暂无容器')}
             description={search ? t('请尝试更换搜索关键字') : t('容器未创建或已被删除')}
-            action={!search ? <Button size="sm" variant="primary" onClick={openCreate}>{t('创建容器')}</Button> : undefined}
+            action={!search ? <Button size="sm" variant="primary" onClick={openCreate} disabled={!canDelete}>{t('创建容器')}</Button> : undefined}
           />
         ) : (
           <>

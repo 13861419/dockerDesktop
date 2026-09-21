@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../components/Button';
+import { useToast } from '../components/Toast';
 import { get, put } from '../api/client';
 import { isAdmin } from '../api/auth';
 import { translateNow as t } from '../i18n';
@@ -14,6 +15,7 @@ interface ScanResult { containers: number; images: number; compose: number }
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [step, setStep] = useState(1);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -25,10 +27,14 @@ export default function OnboardingPage() {
     get<{ username: string }>('/api/auth/me').then((r) => setUsername(r.username)).catch(() => {});
   }, []);
 
-  /** 完成并写标记（bool 归一化由 settings 层处理） */
+  /** 完成并写标记（bool 归一化由 settings 层处理）；失败提示并停留，避免静默卡死 */
   const finish = async () => {
-    await put('/api/settings/onboarding.done', { value: true });
-    navigate('/');
+    try {
+      await put('/api/settings/onboarding.done', { value: true });
+      navigate('/');
+    } catch (e: any) {
+      showToast(e?.message || t('写入失败，请重试'), 'error');
+    }
   };
 
   /** 步骤②：并行扫描本机环境（失败降级为 0，不阻塞） */
