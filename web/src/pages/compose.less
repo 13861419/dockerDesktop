@@ -185,6 +185,30 @@
   height: 14px;
 }
 
+/* 批量删除：外部项目强确认提示 */
+.compose-confirm__warn {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--warning-soft, rgba(217, 119, 6, 0.08));
+  border: 1px solid var(--warning-border, rgba(217, 119, 6, 0.4));
+  border-radius: var(--radius-md);
+  color: var(--warning, #d97706);
+}
+
+.compose-confirm__warn p {
+  margin: 0;
+}
+
+.compose-confirm__warn-names {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.compose-confirm__warn .compose-confirm__check {
+  margin-top: 8px;
+}
+
 /* 配置内容查看器 */
 .config-viewer {
   margin: 0;

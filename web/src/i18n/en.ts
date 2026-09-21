@@ -2692,6 +2692,9 @@ export const en: Record<string, string> = {
   "已删除 {{n}} 个项目": "Deleted {{n}} project(s)",
   "成功 {{n}} 个，失败 {{m}} 个": "{{n}} succeeded, {{m}} failed",
   "批量删除失败": "Batch delete failed",
+  "含 {{n}} 个外部项目，删除将下线其容器（compose 文件保留）：": "Includes {{n}} external project(s); deleting will stop their containers (compose files are kept):",
+  "我已知晓外部项目将被下线容器": "I understand external projects' containers will be stopped",
+  "写入失败，请重试": "Failed to save, please retry",
 
   "全部升级": "Upgrade all",
   "已下发 N 个节点的升级指令": "Upgrade command sent to N node(s)",

@@ -298,6 +298,9 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [batchVolumes, setBatchVolumes] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  // 外部项目强确认（1.89.0）：勾选含外部项目时须显式知晓才会放行删除
+  const [batchExternalAck, setBatchExternalAck] = useState(false);
+  const selectedExternal = projects.filter((p) => selectedNames.includes(p.name) && p.source === 'external');
 
   /**
    * 执行 Compose 操作（启动 / 停止 / 重启）
@@ -837,8 +840,9 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         failCount === 0 ? t('已删除 {{n}} 个项目', { n: okCount }) : t('成功 {{n}} 个，失败 {{m}} 个', { n: okCount, m: failCount }),
         failCount === 0 ? undefined : 'error',
       );
-      setBatchDeleteOpen(false);
-      setBatchVolumes(false);
+              setBatchDeleteOpen(false);
+              setBatchVolumes(false);
+              setBatchExternalAck(false);
       setSelectedNames([]);
       setRefreshKey((k) => k + 1);
     } catch (e: any) {
@@ -1124,7 +1128,15 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             {selectedNames.length > 0 && (
               <div className="compose__batch">
                 <span className="compose__batch-count">{t('已选 {{n}} 项', { n: selectedNames.length })}</span>
-                <Button size="sm" variant="danger" disabled={!canDelete} onClick={() => setBatchDeleteOpen(true)}>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={!canDelete}
+                  onClick={() => {
+                    setBatchExternalAck(false);
+                    setBatchDeleteOpen(true);
+                  }}
+                >
                   {t('批量删除')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSelectedNames([])}>
@@ -1829,12 +1841,18 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               onClick={() => {
                 setBatchDeleteOpen(false);
                 setBatchVolumes(false);
+                setBatchExternalAck(false);
               }}
               disabled={batchDeleting}
             >
               {t('取消')}
             </Button>
-            <Button variant="danger" onClick={handleBatchDelete} loading={batchDeleting} disabled={!canDelete}>
+            <Button
+              variant="danger"
+              onClick={handleBatchDelete}
+              loading={batchDeleting}
+              disabled={!canDelete || (selectedExternal.length > 0 && !batchExternalAck)}
+            >
               {t('删除')}
             </Button>
           </>
@@ -1842,6 +1860,22 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       >
         <div className="compose-confirm">
           <p>{t('确定要删除 {{n}} 个 Compose 项目吗？此操作不可恢复。', { n: selectedNames.length })}</p>
+          {selectedExternal.length > 0 && (
+            <div className="compose-confirm__warn">
+              <p>
+                {t('含 {{n}} 个外部项目，删除将下线其容器（compose 文件保留）：', { n: selectedExternal.length })}
+              </p>
+              <p className="compose-confirm__warn-names">{selectedExternal.map((p) => p.name).join('、')}</p>
+              <label className="compose-confirm__check">
+                <input
+                  type="checkbox"
+                  checked={batchExternalAck}
+                  onChange={(e) => setBatchExternalAck(e.target.checked)}
+                />
+                <span>{t('我已知晓外部项目将被下线容器')}</span>
+              </label>
+            </div>
+          )}
           <label className="compose-confirm__check">
             <input
               type="checkbox"
