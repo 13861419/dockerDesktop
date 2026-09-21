@@ -2685,6 +2685,13 @@ export const en: Record<string, string> = {
   "跳过向导": "Skip the wizard",
   "重看首装向导": "Replay the setup wizard",
   "新建编排": "New Compose Project",
+  "清除选择": "Clear selection",
+  "批量删除项目": "Batch Delete Projects",
+  "确定要删除 {{n}} 个 Compose 项目吗？此操作不可恢复。": "Delete {{n}} Compose project(s)? This action cannot be undone.",
+  "同时删除数据卷（volumes）": "Also delete volumes",
+  "已删除 {{n}} 个项目": "Deleted {{n}} project(s)",
+  "成功 {{n}} 个，失败 {{m}} 个": "{{n}} succeeded, {{m}} failed",
+  "批量删除失败": "Batch delete failed",
 
   "全部升级": "Upgrade all",
   "已下发 N 个节点的升级指令": "Upgrade command sent to N node(s)",

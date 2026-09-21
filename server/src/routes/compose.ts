@@ -1463,6 +1463,48 @@ router.post(
 );
 
 /**
+ * POST /api/compose/batch-delete
+ * 批量删除 Compose 项目（1.89.0）：body { names: string[], volumes?: boolean }
+ * 逐项执行与单删一致的 down + 目录清理（panel 项目删目录，外部项目仅下线容器保留文件）。
+ * 注意：必须注册在 DELETE /:name 等参数路由之前，避免被 :name 吞掉。
+ */
+router.post(
+  '/batch-delete',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const names: string[] = Array.isArray(req.body?.names) ? req.body.names : [];
+    if (!names.length) {
+      return res.status(400).json({ error: '缺少待删除的项目列表' });
+    }
+    const volumes = req.body?.volumes === true;
+    const deleted: string[] = [];
+    const failed: Array<{ name: string; error: string }> = [];
+    // 串行执行，避免并发 docker compose 互相争抢
+    for (const name of names) {
+      try {
+        const ctx = await resolveProjectCtx(name);
+        if (!ctx) {
+          failed.push({ name, error: `项目 ${name} 不存在或缺少 compose 文件` });
+          continue;
+        }
+        const downVolumes = volumes ? ' -v' : '';
+        await runCmd(`docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
+        // 外部项目仅下线容器，不删除 compose 文件
+        if (ctx.source === 'panel') {
+          fs.rmSync(ctx.dir, { recursive: true, force: true });
+        }
+        logOperation(res.locals.username, '删除 Compose', 'compose', name,
+          ctx.source === 'external' ? '外部项目：仅下线容器并保留文件（批量）' : '批量删除');
+        deleted.push(name);
+      } catch (e: any) {
+        failed.push({ name, error: e?.message || '删除失败' });
+      }
+    }
+    res.json({ ok: failed.length === 0, deleted, failed });
+  }),
+);
+
+/**
  * DELETE /api/compose/:name
  * 删除本地项目目录（若项目仍在运行，需先 down；支持 volumes 参数一并删除数据卷）
  * query: volumes? - 传 true 时 down 会携带 -v 删除数据卷

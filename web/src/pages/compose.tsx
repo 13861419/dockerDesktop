@@ -293,6 +293,11 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<ComposeProject | null>(null);
   const [deleteVolumes, setDeleteVolumes] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // 多选批量删除（1.89.0）
+  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchVolumes, setBatchVolumes] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   /**
    * 执行 Compose 操作（启动 / 停止 / 重启）
@@ -805,6 +810,44 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     }
   }, [canDelete, deleteTarget, deleteVolumes, showToast]);
 
+  /** 全选 / 单行选择（多选删除，选择集为当前过滤后的列表） */
+  const allChecked = projects.length > 0 && projects.every((p) => selectedNames.includes(p.name));
+  const toggleSelectAll = (checked: boolean) =>
+    setSelectedNames(checked ? projects.map((p) => p.name) : []);
+  const toggleSelect = (name: string) =>
+    setSelectedNames((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
+
+  /** 批量删除：调后端批量端点，按成功/失败计数提示 */
+  const handleBatchDelete = useCallback(async () => {
+    if (!selectedNames.length) return;
+    if (!canDelete) {
+      showToast(t('仅管理员可删除 Compose 项目'), 'error');
+      setBatchDeleteOpen(false);
+      return;
+    }
+    setBatchDeleting(true);
+    try {
+      const r = await post<{ ok: boolean; deleted: string[]; failed: Array<{ name: string; error: string }> }>(
+        '/api/compose/batch-delete',
+        { names: selectedNames, volumes: batchVolumes },
+      );
+      const okCount = r?.deleted?.length || 0;
+      const failCount = r?.failed?.length || 0;
+      showToast(
+        failCount === 0 ? t('已删除 {{n}} 个项目', { n: okCount }) : t('成功 {{n}} 个，失败 {{m}} 个', { n: okCount, m: failCount }),
+        failCount === 0 ? undefined : 'error',
+      );
+      setBatchDeleteOpen(false);
+      setBatchVolumes(false);
+      setSelectedNames([]);
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      showToast(e?.message || t('批量删除失败'), 'error');
+    } finally {
+      setBatchDeleting(false);
+    }
+  }, [batchVolumes, canDelete, selectedNames, showToast]);
+
   /** 打开编辑弹窗并加载指定项目的 compose 文件内容 */
   const openEdit = useCallback(
     async (project: ComposeProject) => {
@@ -1077,10 +1120,30 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             }
           />
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{t('项目名')}</th>
+          <>
+            {selectedNames.length > 0 && (
+              <div className="compose__batch">
+                <span className="compose__batch-count">{t('已选 {{n}} 项', { n: selectedNames.length })}</span>
+                <Button size="sm" variant="danger" disabled={!canDelete} onClick={() => setBatchDeleteOpen(true)}>
+                  {t('批量删除')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedNames([])}>
+                  {t('清除选择')}
+                </Button>
+              </div>
+            )}
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="col-select">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                      aria-label={t('全选')}
+                    />
+                  </th>
+                  <th>{t('项目名')}</th>
                 <th>{t('状态')}</th>
                 <th>{t('Compose 文件')}</th>
                 <th>{t('路径')}</th>
@@ -1089,7 +1152,15 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             </thead>
             <tbody>
               {projects.map((proj) => (
-                <tr key={proj.name}>
+                <tr key={proj.name} className={selectedNames.includes(proj.name) ? 'row--selected' : ''}>
+                  <td className="col-select">
+                    <input
+                      type="checkbox"
+                      checked={selectedNames.includes(proj.name)}
+                      onChange={() => toggleSelect(proj.name)}
+                      aria-label={t('选择 {{name}}', { name: proj.name })}
+                    />
+                  </td>
                   <td className="col-name">
                     <div className="name-main" title={proj.source === 'external' ? proj.path : proj.name}>
                       {proj.name}
@@ -1198,6 +1269,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               ))}
             </tbody>
           </table>
+          </>
         )}
       </Card>
 
@@ -1740,6 +1812,43 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
               onChange={(e) => setDeleteVolumes(e.target.checked)}
             />
             <span>{t('同时删除该项目的数据卷（volumes）')}</span>
+          </label>
+        </div>
+      </Modal>
+
+      {/* 批量删除确认框（1.89.0）：与单删一致支持数据卷选项 */}
+      <Modal
+        open={batchDeleteOpen}
+        title={t('批量删除项目')}
+        onClose={() => setBatchDeleteOpen(false)}
+        width={420}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setBatchDeleteOpen(false);
+                setBatchVolumes(false);
+              }}
+              disabled={batchDeleting}
+            >
+              {t('取消')}
+            </Button>
+            <Button variant="danger" onClick={handleBatchDelete} loading={batchDeleting} disabled={!canDelete}>
+              {t('删除')}
+            </Button>
+          </>
+        }
+      >
+        <div className="compose-confirm">
+          <p>{t('确定要删除 {{n}} 个 Compose 项目吗？此操作不可恢复。', { n: selectedNames.length })}</p>
+          <label className="compose-confirm__check">
+            <input
+              type="checkbox"
+              checked={batchVolumes}
+              onChange={(e) => setBatchVolumes(e.target.checked)}
+            />
+            <span>{t('同时删除数据卷（volumes）')}</span>
           </label>
         </div>
       </Modal>
