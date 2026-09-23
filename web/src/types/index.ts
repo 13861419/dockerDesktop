@@ -173,6 +173,8 @@ export interface ComposeProject {
   running?: number;
   /** 外部项目容器总数（1.51.0） */
   total?: number;
+  /** 外部项目 compose 文件面板用户是否可直接读写（1.89.1；false 时走提权通道，界面标注「文件受限」） */
+  fileAccessible?: boolean;
 }
 
 /** Compose 服务状态 */

@@ -15,6 +15,7 @@ import { requireAdmin, requireAuth } from '../auth';
 import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
+import { runAsHostRoot } from '../platform/hostRoot';
 import { getDb } from '../storage';
 import { inferCompose, type InferInput } from '../composeInfer';
 import { parseRunCommand } from '../run2compose';
@@ -166,19 +167,29 @@ async function validateComposeYaml(content: string): Promise<string | null> {
 
 // ============ 项目定位（本地目录 + 外部发现，1.51.0） ============
 
-/** 项目上下文：dir 为工作目录，composeFile 为绝对路径 */
-type ComposeCtx = { dir: string; composeFile: string; source: 'panel' | 'external' };
+/** 项目上下文：dir 为工作目录，composeFile 为绝对路径；fileAccessible 表示面板用户可直接读写该文件 */
+type ComposeCtx = { dir: string; composeFile: string; source: 'panel' | 'external'; fileAccessible: boolean };
+
+/** 文件是否可被面板服务账号读取（无权限目录下 existsSync/accessSync 均返回 false） */
+function isFileReadable(file: string): boolean {
+  try {
+    fs.accessSync(file, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 从容器标签反查主机上所有外部 compose 项目
  * （在面板目录之外创建的项目，如手动 docker compose up 或第三方工具创建）
  */
 async function discoverExternalProjects(): Promise<
-  Map<string, { dir: string; composeFile: string; running: number; total: number }>
+  Map<string, { dir: string; composeFile: string; fileAccessible: boolean; running: number; total: number }>
 > {
   const docker = await getDockerClient();
   const containers = await docker.listContainers({ all: true });
-  const map = new Map<string, { dir: string; composeFile: string; running: number; total: number }>();
+  const map = new Map<string, { dir: string; composeFile: string; fileAccessible: boolean; running: number; total: number }>();
   const rootAbs = path.resolve(COMPOSE_ROOT);
   for (const c of containers) {
     const labels = c.Labels || {};
@@ -192,9 +203,9 @@ async function discoverExternalProjects(): Promise<
     if (!entry) {
       const configFiles = labels['com.docker.compose.project.config_files'] || '';
       const firstFile = configFiles.split(',')[0]?.trim();
-      const composeFile =
-        (firstFile && fs.existsSync(firstFile) ? firstFile : '') || findComposeFile(workingDir) || '';
-      entry = { dir: workingDir, composeFile, running: 0, total: 0 };
+      // 保留标签里的文件路径（即使当前用户不可读，1.89.1 起可经提权通道读写）
+      const composeFile = (firstFile || findComposeFile(workingDir) || '');
+      entry = { dir: workingDir, composeFile, fileAccessible: !!composeFile && isFileReadable(composeFile), running: 0, total: 0 };
       map.set(project, entry);
     }
     entry.total += 1;
@@ -205,6 +216,7 @@ async function discoverExternalProjects(): Promise<
 
 /**
  * 按项目名定位 compose 项目：先查面板本地目录，再从容器标签反查外部项目
+ * 外部项目文件面板用户不可读时同样返回（fileAccessible=false，读写走提权通道）
  * @returns 找不到时返回 null
  */
 async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
@@ -212,13 +224,13 @@ async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
   const localDir = path.join(COMPOSE_ROOT, name);
   const localFile = findComposeFile(localDir);
   if (localFile) {
-    return { dir: localDir, composeFile: path.join(localDir, localFile), source: 'panel' };
+    return { dir: localDir, composeFile: path.join(localDir, localFile), source: 'panel', fileAccessible: true };
   }
   try {
     const externals = await discoverExternalProjects();
     const ext = externals.get(name);
     if (ext && ext.composeFile) {
-      return { dir: ext.dir, composeFile: ext.composeFile, source: 'external' };
+      return { dir: ext.dir, composeFile: ext.composeFile, source: 'external', fileAccessible: ext.fileAccessible };
     }
   } catch {
     // docker 不可用时按未找到处理
@@ -226,15 +238,62 @@ async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
   return null;
 }
 
+/** 统一项目定位：找不到时抛 404（原各路由重复的 prologue） */
+async function requireProjectCtx(name: string): Promise<ComposeCtx> {
+  const ctx = await resolveProjectCtx(name);
+  if (!ctx) {
+    const err: any = new Error(`项目 ${name} 不存在或缺少 compose 文件`);
+    err.statusCode = 404;
+    throw err;
+  }
+  return ctx;
+}
+
+/**
+ * 项目级命令执行（1.89.1）：compose 文件面板用户可读时本地执行；
+ * 不可读（如 1Panel 创建的 root 属主文件）时经 hostRoot 助手容器以宿主机 root 执行
+ */
+async function runProjectCmd(ctx: ComposeCtx, cmd: string, cwd: string): Promise<string> {
+  if (ctx.source === 'external' && !isFileReadable(ctx.composeFile)) {
+    const cdPrefix = `cd '${cwd.replace(/'/g, "'\\''")}' 2>/dev/null; `;
+    try {
+      return await runAsHostRoot(cdPrefix + cmd);
+    } catch (err: any) {
+      throw Object.assign(new Error(err?.message || '命令执行失败'), { statusCode: 400 });
+    }
+  }
+  return runCmd(cmd, cwd);
+}
+
+/** 读取 compose 文件内容：直接读取失败（权限不足）时经提权通道 base64 读回 */
+async function readComposeFileContent(composeFile: string): Promise<string> {
+  try {
+    return fs.readFileSync(composeFile, 'utf8');
+  } catch {
+    const b64 = await runAsHostRoot(`base64 '${composeFile.replace(/'/g, "'\\''")}'`);
+    return Buffer.from(b64.replace(/\s+/g, ''), 'base64').toString('utf8');
+  }
+}
+
+/** 写入 compose 文件内容：直接写入失败（权限不足）时经提权通道 base64 写回 */
+async function writeComposeFileContent(composeFile: string, content: string): Promise<void> {
+  try {
+    fs.writeFileSync(composeFile, content, 'utf8');
+  } catch {
+    const b64 = Buffer.from(content, 'utf8').toString('base64');
+    await runAsHostRoot(`printf %s '${b64}' | base64 -d > '${composeFile.replace(/'/g, "'\\''")}'`);
+  }
+}
+
 /**
  * 保存前记录 compose 文件的上一版内容（1.52.0），用于历史回退
  * 内容未变不记录；每个文件最多保留 20 条；记录失败不阻断保存
+ * 文件面板用户不可读时经提权通道读取（1.89.1）
  */
-function recordComposeHistory(composeFile: string, projectName: string, username: string, nextContent: string): void {
+async function recordComposeHistory(composeFile: string, projectName: string, username: string, nextContent: string): Promise<void> {
   try {
-    if (!fs.existsSync(composeFile)) return;
-    const old = fs.readFileSync(composeFile, 'utf8');
-    if (old === nextContent) return;
+    const old = await readComposeFileContent(composeFile).catch(() => null);
+    if (old === null || old === nextContent) return;
     const d = getDb();
     d.prepare(
       'INSERT INTO compose_file_history (project_name, compose_file, content, username, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -265,6 +324,7 @@ router.get(
       source: 'panel' | 'external';
       running?: number;
       total?: number;
+      fileAccessible?: boolean;
     }> = dirs.map((name) => {
       const dir = path.join(COMPOSE_ROOT, name);
       const composeFile = findComposeFile(dir);
@@ -277,10 +337,11 @@ router.get(
       };
     });
     // 外部项目（1.51.0）：从容器标签反查宿主机上其他 compose 项目
+    // 1.89.1 起不再丢弃文件不可达的项目（如 1Panel 创建的 root 属主文件），标注 fileAccessible
     try {
       const externals = await discoverExternalProjects();
       for (const [name, info] of externals) {
-        if (!info.composeFile) continue; // compose 文件已丢失的外部项目暂不收录
+        if (!info.composeFile) continue; // 连文件路径都拿不到（无 config_files 标签且目录下未找到）才跳过
         projects.push({
           name,
           path: info.dir,
@@ -289,6 +350,7 @@ router.get(
           source: 'external' as const,
           running: info.running,
           total: info.total,
+          fileAccessible: info.fileAccessible,
         });
       }
     } catch {
@@ -334,7 +396,7 @@ router.get(
     }
     const dir = projCtx.dir;
     const composeFile = projCtx.composeFile;
-    const psOutput = await runCmd(`docker compose -f "${composeFile}" ps -a --format json`, dir);
+    const psOutput = await runProjectCmd(projCtx, `docker compose -f "${composeFile}" ps -a --format json`, dir);
     let services: any[] = [];
     try {
       services = JSON.parse(psOutput.trim() || '[]');
@@ -352,12 +414,8 @@ router.get(
 router.get(
   '/:name/config',
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
-    const output = await runCmd(`docker compose -f "${composeFile}" config`, dir);
+    const ctx = await requireProjectCtx(req.params.name);
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" config`, ctx.dir);
     res.json({ config: output });
   }),
 );
@@ -478,11 +536,11 @@ async function waitForServiceHealthy(
  * 供单服务与全项目滚动更新两条路由复用（1.37.0 抽取）。
  */
 async function rollingUpdateOne(
+  ctx: ComposeCtx,
   projectName: string,
-  composeFile: string,
-  dir: string,
   service: string,
 ): Promise<{ ok: boolean; healthOk: boolean; rolledBack: boolean; detail: string; output: string }> {
+  const { composeFile, dir } = ctx;
   const docker = await getDockerClient();
   // 更新前记录当前镜像（用于失败回滚）
   let oldImageId = '';
@@ -502,8 +560,9 @@ async function rollingUpdateOne(
   } catch {
     // 记录失败不阻断更新
   }
-  const pullOut = await runCmd(`docker compose -f "${composeFile}" pull ${service}`, dir);
-  const upOut = await runCmd(
+  const pullOut = await runProjectCmd(ctx, `docker compose -f "${composeFile}" pull ${service}`, dir);
+  const upOut = await runProjectCmd(
+    ctx,
     `docker compose -f "${composeFile}" up -d --no-deps ${service}`,
     dir,
   );
@@ -514,7 +573,7 @@ async function rollingUpdateOne(
   if (!health.ok && oldImageId && imageTag && !imageTag.startsWith('sha256:')) {
     try {
       await execAsync(`docker tag "${oldImageId}" "${imageTag}"`);
-      await runCmd(`docker compose -f "${composeFile}" up -d --no-deps ${service}`, dir);
+      await runProjectCmd(ctx, `docker compose -f "${composeFile}" up -d --no-deps ${service}`, dir);
       const back = await waitForServiceHealthy(projectName, service, 30000);
       rolledBack = back.ok;
       rollbackDetail = back.ok ? '已自动回滚到旧镜像' : `回滚后仍异常：${back.detail}`;
@@ -546,16 +605,12 @@ router.post(
   '/:name/rolling-update',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
     const service = String(req.body?.service || '').trim();
     if (!service || /[^\w-.]/.test(service)) {
       return res.status(400).json({ error: '缺少或非法的 service 参数' });
     }
-    const r = await rollingUpdateOne(req.params.name, composeFile, dir, service);
+    const r = await rollingUpdateOne(ctx, req.params.name, service);
     logOperation(
       res.locals.username,
       '服务滚动更新',
@@ -584,21 +639,16 @@ router.post(
   '/:name/rolling-update-all',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
+    const dir = ctx.dir;
+    const composeFile = ctx.composeFile;
     // 服务列表：优先取请求指定，否则取 compose 配置中的全部服务（定义顺序）
     let services: string[] = Array.isArray(req.body?.services)
       ? req.body.services.map((x: unknown) => String(x).trim()).filter(Boolean)
       : [];
     if (services.length === 0) {
-      const out = await execAsync(`docker compose -f "${composeFile}" config --services`, {
-        cwd: dir,
-        maxBuffer: 1024 * 1024,
-      });
-      services = out.stdout.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+      const out = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --services`, dir);
+      services = out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
     }
     if (services.length === 0) {
       return res.status(400).json({ error: '未找到任何可更新的服务' });
@@ -612,7 +662,7 @@ router.post(
       detail: string;
     }> = [];
     for (const service of services) {
-      const r = await rollingUpdateOne(req.params.name, composeFile, dir, service);
+      const r = await rollingUpdateOne(ctx, req.params.name, service);
       results.push({
         service,
         ok: r.ok,
@@ -652,13 +702,11 @@ router.get(
   '/:name/drift',
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
+    const dir = ctx.dir;
+    const composeFile = ctx.composeFile;
     // 本地期望配置（docker compose config 规范化输出）
-    const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+    const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
     const jsonStart = output.indexOf('{');
     const jsonEnd = output.lastIndexOf('}');
     const parsed =
@@ -845,14 +893,15 @@ router.get(
  * @param recreate 已存在同名容器时是否强制重建
  */
 async function remoteDeployServices(
+  ctx: ComposeCtx,
   projectName: string,
-  composeFile: string,
-  dir: string,
   client: any,
   recreate: boolean,
   onlyServices?: string[],
 ): Promise<Array<{ service: string; name: string; ok: boolean; detail: string }>> {
-  const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+  const composeFile = ctx.composeFile;
+  const dir = ctx.dir;
+  const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
   // 兼容单行与多行缩进两种 JSON 输出（不同 docker CLI 版本行为不一）：取首个 { 到最后一个 } 之间解析
   const jsonStart = output.indexOf('{');
   const jsonEnd = output.lastIndexOf('}');
@@ -951,15 +1000,13 @@ router.post(
   '/:name/distribute',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
+    const dir = ctx.dir;
+    const composeFile = ctx.composeFile;
     const engines: string[] = Array.isArray(req.body?.engines) ? req.body.engines.filter(Boolean) : [];
     if (engines.length === 0) return res.status(400).json({ error: '需要 engines 参数（远端引擎地址列表）' });
     const deploy = req.body?.deploy === true;
-    const imagesOut = await runCmd(`docker compose -f "${composeFile}" config --images`, dir);
+    const imagesOut = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --images`, dir);
     const images = imagesOut.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     const results: Array<{ engine: string; image: string; ok: boolean; detail: string }> = [];
     for (const engine of engines) {
@@ -985,7 +1032,7 @@ router.post(
       }
       if (deploy) {
         try {
-          const deployResults = await remoteDeployServices(req.params.name, composeFile, dir, client, false);
+          const deployResults = await remoteDeployServices(ctx, req.params.name, client, false);
           for (const d of deployResults) {
             results.push({ engine, image: `[部署] ${d.service}`, ok: d.ok, detail: `${d.name}：${d.detail}` });
           }
@@ -1015,16 +1062,14 @@ router.post(
   '/:name/remote-deploy',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
+    const dir = ctx.dir;
+    const composeFile = ctx.composeFile;
     const endpoint = String(req.body?.endpoint || '').trim();
     if (!endpoint) return res.status(400).json({ error: '需要 endpoint 参数（远端引擎地址）' });
     const recreate = req.body?.recreate === true;
     const client = getDockerClientForEndpoint(endpoint);
-    const results = await remoteDeployServices(req.params.name, composeFile, dir, client, recreate);
+    const results = await remoteDeployServices(ctx, req.params.name, client, recreate);
     logOperation(
       res.locals.username,
       '远端代理部署',
@@ -1050,11 +1095,9 @@ router.post(
   '/:name/fix-drift',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
+    const dir = ctx.dir;
+    const composeFile = ctx.composeFile;
     const services: string[] = Array.isArray(req.body?.services)
       ? req.body.services.map((x: unknown) => String(x)).filter(Boolean)
       : [];
@@ -1103,7 +1146,8 @@ router.post(
       // 本地引擎：直接用 compose CLI 重建指定服务
       if (services.length > 0) {
         try {
-          await runCmd(
+          await runProjectCmd(
+            ctx,
             `docker compose -f "${composeFile}" up -d --force-recreate ${services.map((s) => `"${s}"`).join(' ')}`,
             dir,
           );
@@ -1127,7 +1171,7 @@ router.post(
     }
 
     // 远端引擎：先确保镜像存在（拉取失败不中断，由逐服务创建兜底报错），再按本地配置重建
-    const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+    const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
     const jsonStart = output.indexOf('{');
     const jsonEnd = output.lastIndexOf('}');
     const parsed = jsonStart >= 0 && jsonEnd > jsonStart ? JSON.parse(output.slice(jsonStart, jsonEnd + 1)) : null;
@@ -1147,7 +1191,7 @@ router.post(
     }
     const results =
       services.length > 0
-        ? await remoteDeployServices(req.params.name, composeFile, dir, client, true, services)
+        ? await remoteDeployServices(ctx, req.params.name, client, true, services)
         : [];
     const ok = results.every((r) => r.ok) && removeResults.every((r) => r.ok);
     logOperation(
@@ -1192,8 +1236,8 @@ router.post(
       const externals = await discoverExternalProjects();
       const ext = externals.get(safeName);
       if (ext && ext.composeFile) {
-        recordComposeHistory(ext.composeFile, safeName, res.locals.username, content);
-        fs.writeFileSync(ext.composeFile, content, 'utf8');
+        await recordComposeHistory(ext.composeFile, safeName, res.locals.username, content);
+        await writeComposeFileContent(ext.composeFile, content);
         logOperation(res.locals.username, '保存 Compose（外部）', 'compose', safeName, `文件: ${ext.composeFile}`);
         return res.status(201).json({ name: safeName, path: ext.dir, composeFile: ext.composeFile, external: true });
       }
@@ -1245,8 +1289,8 @@ router.get(
     }
     const dir = projCtx.dir;
     const composeFile = projCtx.composeFile;
-    const content = fs.readFileSync(composeFile, 'utf8');
-    res.json({ name: req.params.name, composeFile, content });
+    const content = await readComposeFileContent(composeFile);
+    res.json({ name: req.params.name, composeFile, content, fileAccessible: projCtx.fileAccessible });
   }),
 );
 
@@ -1308,8 +1352,17 @@ router.get(
       return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
     }
     const envPath = path.join(ctx.dir, '.env');
-    const exists = fs.existsSync(envPath);
-    res.json({ path: envPath, exists, content: exists ? fs.readFileSync(envPath, 'utf8') : '' });
+    // 存在性：直接探测失败（权限不足）时经提权通道确认（1.89.1）
+    let exists = fs.existsSync(envPath);
+    let content = exists ? fs.readFileSync(envPath, 'utf8') : '';
+    if (!exists && ctx.source === 'external' && !ctx.fileAccessible) {
+      const escalated = await readComposeFileContent(envPath).catch(() => null);
+      if (escalated !== null) {
+        exists = true;
+        content = escalated;
+      }
+    }
+    res.json({ path: envPath, exists, content });
   }),
 );
 
@@ -1331,7 +1384,7 @@ router.post(
       return res.status(400).json({ error: '缺少 content 参数' });
     }
     const envPath = path.join(ctx.dir, '.env');
-    fs.writeFileSync(envPath, content, 'utf8');
+    await writeComposeFileContent(envPath, content);
     logOperation(res.locals.username, '保存 Compose 环境变量', 'compose', req.params.name, `文件: ${envPath}`);
     res.json({ ok: true, path: envPath });
   }),
@@ -1345,12 +1398,8 @@ router.post(
   '/:name/up',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: '未找到 compose 文件' });
-    }
-    const output = await runCmd(`docker compose -f "${composeFile}" up -d`, dir);
+    const ctx = await requireProjectCtx(req.params.name);
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" up -d`, ctx.dir);
     logOperation(res.locals.username, '部署 Compose', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1369,7 +1418,7 @@ export async function composeProjectDown(name: string, volumes: boolean): Promis
   if (!ctx) {
     throw Object.assign(new Error('未找到 compose 文件'), { statusCode: 404 });
   }
-  return runCmd(`docker compose -f "${ctx.composeFile}" down${volumes ? ' -v' : ''}`, ctx.dir);
+  return runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" down${volumes ? ' -v' : ''}`, ctx.dir);
 }
 
 /**
@@ -1395,12 +1444,8 @@ router.post(
   '/:name/restart',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: '未找到 compose 文件' });
-    }
-    const output = await runCmd(`docker compose -f "${composeFile}" restart`, dir);
+    const ctx = await requireProjectCtx(req.params.name);
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" restart`, ctx.dir);
     logOperation(res.locals.username, '重启 Compose', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1414,12 +1459,8 @@ router.post(
   '/:name/pull',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: '未找到 compose 文件' });
-    }
-    const output = await runCmd(`docker compose -f "${composeFile}" pull`, dir);
+    const ctx = await requireProjectCtx(req.params.name);
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" pull`, ctx.dir);
     logOperation(res.locals.username, '拉取 Compose 镜像', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1433,12 +1474,8 @@ router.post(
   '/:name/build',
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: '未找到 compose 文件' });
-    }
-    const output = await runCmd(`docker compose -f "${composeFile}" build`, dir);
+    const ctx = await requireProjectCtx(req.params.name);
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" build`, ctx.dir);
     logOperation(res.locals.username, '构建 Compose 镜像', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1451,13 +1488,9 @@ router.post(
 router.post(
   '/:name/logs',
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: '未找到 compose 文件' });
-    }
+    const ctx = await requireProjectCtx(req.params.name);
     const tail = Number(req.body?.tail || '200');
-    const output = await runCmd(`docker compose -f "${composeFile}" logs --tail=${tail}`, dir);
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" logs --tail=${tail}`, ctx.dir);
     res.json({ logs: output });
   }),
 );
@@ -1488,7 +1521,7 @@ router.post(
           continue;
         }
         const downVolumes = volumes ? ' -v' : '';
-        await runCmd(`docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
+        await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
         // 外部项目仅下线容器，不删除 compose 文件
         if (ctx.source === 'panel') {
           fs.rmSync(ctx.dir, { recursive: true, force: true });
@@ -1520,7 +1553,7 @@ router.delete(
     // 兼容字符串 "true" 与字面量 true 两种写法（Express 查询串通常为字符串）
     const volumes = req.query.volumes === 'true' || (req.query.volumes as unknown) === true;
     const downVolumes = volumes ? ' -v' : '';
-    await runCmd(`docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
+    await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
     // 外部项目仅下线容器，不删除 compose 文件（避免误删第三方工具管理的项目文件）
     if (ctx.source === 'panel') {
       fs.rmSync(ctx.dir, { recursive: true, force: true });
@@ -1631,12 +1664,10 @@ function normalizeDependsOn(deps: any): string[] {
 router.get(
   '/:name/structure',
   asyncHandler(async (req: Request, res: Response) => {
-    const dir = path.join(COMPOSE_ROOT, req.params.name);
-    const composeFile = findComposeFile(dir);
-    if (!composeFile) {
-      return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
-    }
-    const output = await runCmd(`docker compose -f "${composeFile}" config --format json`, dir);
+    const ctx = await requireProjectCtx(req.params.name);
+    const dir = ctx.dir;
+    const composeFile = ctx.composeFile;
+    const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
     // 兼容单行与多行缩进两种 JSON 输出：取首个 { 到最后一个 } 之间解析
     let parsed: any = null;
     const jsonStart = output.indexOf('{');
@@ -1692,7 +1723,8 @@ async function runServiceAction(name: string, service: string, action: string, u
   const composeFile = ctx.composeFile;
   // 服务名经 shell 单引号包裹并转义防止注入
   const safeService = service.replace(/'/g, "'\\''");
-  const output = await runCmd(
+  const output = await runProjectCmd(
+    ctx,
     `docker compose -f "${composeFile}" ${action} '${safeService}'`,
     dir,
   );

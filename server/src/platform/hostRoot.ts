@@ -12,7 +12,7 @@
  * 宿主机 root shell。离线且本地无可用的助手镜像时自动回退为当前用户。
  */
 import { existsSync } from 'fs';
-import { execFileSync, spawn } from 'child_process';
+import { exec, execFile, execFileSync, spawn } from 'child_process';
 import { isWindows } from './detect';
 
 /** 本机是否为 root（Windows 恒为 null） */
@@ -167,4 +167,31 @@ export function dockerHelperArgs(
 /** 当前服务运行用户名（仅用于提示信息） */
 export function serviceUserName(): string {
   return process.env.USER || process.env.USERNAME || `uid ${currentEuid() ?? '?'}`;
+}
+
+/**
+ * 以宿主机视角执行一条 shell 命令（1.89.1）
+ * - Windows / root / 容器外直跑：直接执行，行为与普通 exec 一致
+ * - 低权限服务：经 Docker 助手容器（nsenter）以宿主机 root 执行
+ * @param innerCmd shell 命令（宿主机视角）
+ * @param timeoutMs 超时毫秒
+ * @returns stdout（非零退出抛错，消息含 stderr 摘要）
+ */
+export function runAsHostRoot(innerCmd: string, timeoutMs = 60000): Promise<string> {
+  const channel = resolveHostRootChannel();
+  const run = (bin: string, args: string[] | null): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const cb = (err: Error | null, stdout: string, stderr: string) => {
+        if (err) reject(new Error(String(stderr || err.message || '命令执行失败').trim()));
+        else resolve(String(stdout));
+      };
+      if (args) execFile(bin, args, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, cb);
+      else exec(bin, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, cb);
+    });
+
+  if (channel.mode === 'direct') return run(innerCmd, null);
+  if (channel.mode !== 'docker') {
+    return Promise.reject(new Error('宿主机提权通道不可用（缺少 docker CLI 或助手镜像）'));
+  }
+  return run(channel.dockerBin, dockerHelperArgs(channel, innerCmd, false));
 }

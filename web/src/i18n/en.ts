@@ -48,6 +48,7 @@ export const en: Record<string, string> = {
   "载入历史版本失败": "Failed to load version",
   "每次保存前的上一版内容会自动记录（保留最近 20 条），可随时载入回退": "The previous content is recorded on each save (last 20 kept); load any version to roll back",
   "外部": "External",
+  "文件受限": "restricted file",
   "外部项目已下线容器，compose 文件已保留": "External project containers removed; the compose file is kept",
   "备份后上传云端": "Upload to cloud after backup",
   "选择云端目标后，备份成功即自动上传（需先在「云端备份」页配置目标）；上传失败会在任务详情中标注，不影响备份本身": "When a cloud target is selected, successful backups upload automatically (configure targets on the Cloud Backup page first); upload failures are noted in task details without affecting the backup",

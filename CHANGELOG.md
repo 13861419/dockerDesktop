@@ -7,6 +7,8 @@
 
 ### Fixed（修复）
 
+- **外部 Compose 项目「配置」报「项目 xxx 不存在或缺少 compose 文件」**（与 1Panel 编排关联能力的核心缺口）：配置、结构、启动 / 重启 / 拉取 / 构建 / 日志、滚动更新、漂移修复、跨引擎分发等 16 个接口此前只查找面板自身目录，对自动纳管的外部项目一律 404；现统一走项目解析（本地目录 → 容器标签反查外部项目）
+- **外部项目文件权限不足时被整个丢弃**（如面板与 1Panel 同机、编排文件属主为 root）：发现逻辑保留标签中的文件路径并标记 `fileAccessible`，列表照常显示（标注「文件受限」）；读写与 up/down 等操作经 Docker 助手容器提权通道以宿主机 root 执行（复用宿主机终端同款机制，root / Windows 面板行为不变）
 - CI Test 工作流长期红灯（1.88.0 起引入，两处均为测试侧问题，不影响产品）：
   - e2e 全量失败——1.88.0 首装向导使全新库首次登录重定向到 `/onboarding`，冒烟用例仍断言进入总览；新增 Playwright `globalSetup` 经 API 将 `onboarding.done` 置 true（幂等，登录失败不阻塞）
   - unit 偶发 `withTimeout` 两条报 "Promise resolution is still pending"——其超时定时器为 unref，CI 事件循环可能先行排空；测试补 ref'd 哨兵句柄

@@ -1181,6 +1181,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                       <div className="name-sub badge badge--muted" title={proj.path}>
                         {t('外部')}
                         {typeof proj.running === 'number' ? ` · ${proj.running}/${proj.total ?? '-'}` : ''}
+                        {proj.fileAccessible === false ? ` · ${t('文件受限')}` : ''}
                       </div>
                     ) : proj.hasCompose ? (
                       <div className="name-sub badge badge--running">{t('已配置')}</div>
