@@ -31,6 +31,7 @@ before(() => {
 });
 after(() => {
   closeDb();
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });
 
 /** 每测前清空 ai_profiles（同文件共享一个临时 DB，靠清表隔离；复用 storage 连接避免二次连库锁冲突） */

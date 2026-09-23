@@ -11,8 +11,16 @@ import { writeLinuxUpdater } from '../src/systemUpdate';
 
 function gen(type: 'deb' | 'rpm'): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-updater-'));
-  const file = writeLinuxUpdater(dir, type, '/var/lib/docker-manager/updates/docker-manager-1.75.1-amd64.deb');
-  return fs.readFileSync(file, 'utf8');
+  try {
+    const file = writeLinuxUpdater(dir, type, '/var/lib/docker-manager/updates/docker-manager-1.75.1-amd64.deb');
+    return fs.readFileSync(file, 'utf8');
+  } finally {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // 句柄释放滞后等场景清理失败不阻塞
+    }
+  }
 }
 
 test('升级脚本：root 检查在 systemd-run 逃逸之前，逃逸在安装之前', () => {
@@ -103,6 +111,10 @@ test('升级脚本：bash -n 语法校验（bash 可用时）', () => {
     }
     assert.strictEqual(r.status, 0, `bash -n 语法错误: ${r.stderr?.toString()}`);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // 句柄释放滞后等场景清理失败不阻塞
+    }
   }
 });

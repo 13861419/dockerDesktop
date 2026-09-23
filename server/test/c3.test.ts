@@ -2,7 +2,7 @@
  * C3「更细粒度告警」Task 1 单元测试（node:test，零第三方依赖）
  * 覆盖：网络带宽速率差分纯函数 computeNetRate
  */
-import { test, describe } from 'node:test';
+import { test, describe, after } from 'node:test';
 import assert from 'node:assert';
 import { computeNetRate } from '../src/docker/monitor';
 
@@ -12,7 +12,7 @@ import path from 'path';
 import fs from 'fs';
 const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-c3-test-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
-import { initStorage } from '../src/storage';
+import { initStorage, closeDb } from '../src/storage';
 import { updateAlertRule, createContainerAlertRule, deleteContainerAlertRule } from '../src/alerting';
 initStorage();
 
@@ -67,4 +67,10 @@ describe('C3 更细粒度告警（串行执行，避免 SQLite 并发写锁）',
   test('容器 cpu 规则阈值越界被拒绝', () => {
     assert.throws(() => createContainerAlertRule({ containerId: 'c3-test-cpu2', watchType: 'cpu', warnThreshold: 150, dangerThreshold: 85 }));
   });
+});
+
+// 测试后清理临时数据目录（失败不阻塞退出）
+after(() => {
+  closeDb();
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });

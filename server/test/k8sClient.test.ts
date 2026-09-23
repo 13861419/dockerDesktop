@@ -3,7 +3,7 @@
  *
  * 不依赖真实集群：通过临时 kubeconfig 文件验证加载、context 列表/切换与 Quantity 解析。
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -115,4 +115,9 @@ test('parseQuantity 解析 CPU 与二进制/十进制内存单位', () => {
   // 空值
   assert.equal(parseQuantity(''), 0);
   assert.equal(parseQuantity(undefined), 0);
+});
+
+// 测试后清理临时数据目录（失败不阻塞退出）
+after(() => {
+  try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });

@@ -14,12 +14,13 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import express from 'express';
+import type { AddressInfo } from 'net';
 
 // 必须先于 storage 模块加载设置临时数据目录
 const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-onboard-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 
-import { initStorage, getDb, seedOnboardingFlag } from '../src/storage';
+import { closeDb, initStorage, getDb, seedOnboardingFlag } from '../src/storage';
 import { getSettingRaw, setSetting } from '../src/settings';
 import settingsRouter from '../src/routes/settings';
 import { createSession } from '../src/auth';
@@ -28,13 +29,23 @@ import { createSession } from '../src/auth';
 const app = express();
 app.use('/api/settings', settingsRouter);
 const server = app.listen(0);
-const BASE = `http://127.0.0.1:${(server.address() as any).port}`;
+const BASE = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 const token = createSession('admin');
 
-// 测试结束后关闭监听句柄，避免 --test-force-exit 退出时触发 libuv 断言崩溃
+// 测试结束后关库释放句柄、关闭监听并清理临时数据目录（Windows 下句柄未释放会删不掉）
 after(() => {
   server.closeAllConnections();
-  return new Promise<void>((resolve) => server.close(() => resolve()));
+  return new Promise<void>((resolve) =>
+    server.close(() => {
+      closeDb();
+      try {
+        fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 });
+      } catch {
+        // 句柄释放滞后等场景清理失败不阻塞退出
+      }
+      resolve();
+    }),
+  );
 });
 
 /** 最小 GET 封装：返回 status 与解析后的 JSON body */

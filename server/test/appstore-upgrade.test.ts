@@ -70,3 +70,8 @@ test('升级快照保存 / 读取 / 清除往返', () => {
 test('无快照读取返回 null（不抛错）', () => {
   assert.strictEqual(loadUpgradeSnapshot('never-existed'), null);
 });
+
+// 测试后清理临时数据目录（失败不阻塞退出）
+after(() => {
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
+});

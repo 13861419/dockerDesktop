@@ -6,7 +6,7 @@
  *  非法表达式返回 null
  *  边界场景（闰年、跨月、跨年）
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert';
 
 // 必须先于 storage 模块加载设置临时数据目录
@@ -254,4 +254,9 @@ test('withTimeout: 原始错误直接透传不被吞掉', async () => {
     withTimeout(Promise.reject(new Error('原始错误')), 5),
     /原始错误/,
   );
+});
+
+// 测试后清理临时数据目录（失败不阻塞退出）
+after(() => {
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });

@@ -1706,8 +1706,12 @@ export default function SettingsPage() {
           <div className="settings-info__row">
             <span>{t('重看首装向导')}</span>
             <Button size="sm" variant="ghost" onClick={async () => {
-              await put('/api/settings/onboarding.done', { value: '0' });
-              navigate('/onboarding');
+              try {
+                await put('/api/settings/onboarding.done', { value: '0' });
+                navigate('/onboarding');
+              } catch (e: any) {
+                showToast(e?.message || t('写入失败，请重试'), 'error');
+              }
             }}>
               {t('打开')}
             </Button>

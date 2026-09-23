@@ -6,7 +6,7 @@
  *  - extractPlaceholders：{{占位符}} 提取（去重 / 非法键名忽略）
  *  - applyParams：config 深替换（嵌套对象 / 数组 / 缺失键保留 / 非字符串原样）
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert';
 
 // 必须先于 storage 模块加载设置临时数据目录
@@ -86,4 +86,9 @@ test('applyParams: 非法键名的参数被忽略', () => {
 
 test('CHAIN_MAX_DEPTH 兜底上限存在', () => {
   assert.strictEqual(CHAIN_MAX_DEPTH, 10);
+});
+
+// 测试后清理临时数据目录（失败不阻塞退出）
+after(() => {
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });

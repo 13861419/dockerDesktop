@@ -37,14 +37,15 @@ export default function OnboardingPage() {
     }
   };
 
-  /** 步骤②：并行扫描本机环境（失败降级为 0，不阻塞） */
-  const runScan = async () => {
+  /** 步骤②：并行扫描本机环境（失败降级为 0，不阻塞）；卸载后丢弃结果防越权 setState */
+  const runScan = async (isCancelled: () => boolean) => {
     setBusy(true);
     const [c, i, cp] = await Promise.all([
       get<any[]>('/api/containers', { all: true }).catch(() => []),
       get<any[]>('/api/images').catch(() => []),
       get<any[]>('/api/compose').catch(() => []),
     ]);
+    if (isCancelled()) return;
     setScan({
       containers: Array.isArray(c) ? c.length : 0,
       images: Array.isArray(i) ? i.length : 0,
@@ -52,7 +53,13 @@ export default function OnboardingPage() {
     });
     setBusy(false);
   };
-  useEffect(() => { if (step === 2 && !scan) { setBusy(true); runScan(); } }, [step]);
+  useEffect(() => {
+    if (step === 2 && !scan) {
+      let cancelled = false;
+      runScan(() => cancelled);
+      return () => { cancelled = true; };
+    }
+  }, [step]);
 
   return (
     <div className="onboard">
@@ -80,7 +87,7 @@ export default function OnboardingPage() {
           {busy ? <p>{t('扫描中...')}</p> : (
             <p>{t('发现 {{c}} 个容器、{{i}} 个镜像、{{k}} 个外部 Compose 项目（已自动纳管）', { c: scan?.containers ?? 0, i: scan?.images ?? 0, k: scan?.compose ?? 0 })}</p>
           )}
-          <Button onClick={() => setStep(3)}>{t('下一步')}</Button>
+          <Button onClick={() => setStep(3)} disabled={busy}>{t('下一步')}</Button>
         </div>
       )}
       {step === 3 && (

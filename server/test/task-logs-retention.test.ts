@@ -25,10 +25,11 @@ before(() => {
 });
 
 after(() => {
+  closeDb();
   try {
-    fs.rmSync(tmpData, { recursive: true, force: true });
+    fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 });
   } catch {
-    // 忽略清理失败
+    // 句柄释放滞后等场景清理失败不阻塞退出
   }
 });
 
@@ -68,8 +69,4 @@ test('retention：0 = 永久保留', () => {
 
   assert.equal(countLog('ancient-row'), 1, '保留天数 <= 0 时不清任何记录');
   d.prepare('DELETE FROM cron_task_logs WHERE name = ?').run('ancient-row');
-});
-
-after(() => {
-  closeDb();
 });

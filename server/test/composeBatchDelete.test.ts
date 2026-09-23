@@ -18,7 +18,7 @@ import express from 'express';
 const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-test-composebatch-'));
 process.env.DOCKERMANAGER_DATA = tmpData;
 
-import { initStorage, getDb } from '../src/storage';
+import { closeDb, initStorage, getDb } from '../src/storage';
 import composeRouter from '../src/routes/compose';
 import { createSession, requireAuth } from '../src/auth';
 
@@ -42,7 +42,17 @@ const userToken = createSession('batchuser');
 
 after(() => {
   server.closeAllConnections();
-  return new Promise<void>((resolve) => server.close(() => resolve()));
+  return new Promise<void>((resolve) =>
+    server.close(() => {
+      closeDb();
+      try {
+        fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 });
+      } catch {
+        // 句柄释放滞后等场景清理失败不阻塞退出
+      }
+      resolve();
+    }),
+  );
 });
 
 /** 最小 POST 封装：JSON body + 可选 token */

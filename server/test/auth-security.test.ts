@@ -105,6 +105,7 @@ before(() => {
 
 after(() => {
   closeDb();
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });
 
 /** 幂等添加普通用户（首次调用创建） */

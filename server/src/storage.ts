@@ -1721,7 +1721,8 @@ export function seedOnboardingFlag(): void {
     if (existed) return;
     d.prepare('INSERT INTO setting (key, value) VALUES (?, ?)').run('onboarding.done', '0');
   } catch {
-    // users/setting 表未就绪等异常时静默跳过，不影响启动
+    // 良性吞错：users/setting 表未就绪等异常时跳过，不阻塞启动；
+    // 种子幂等（existed 守卫），下次启动会自动重试补种
   }
 }
 

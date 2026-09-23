@@ -6,7 +6,7 @@
  *  - nextCloneName：克隆应用唯一命名
  *  - resolveGitCred / resolveRegistryCred：凭据库引用优先、回落内联、损坏回落
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert';
 
 // 必须先于 storage 模块加载设置临时数据目录
@@ -18,7 +18,7 @@ process.env.DOCKERMANAGER_DATA = tmpData;
 
 import { normalizeCredSecret } from '../src/routes/creds';
 import { nextCloneName, resolveGitCred, resolveRegistryCred } from '../src/routes/deploys';
-import { getDb, encryptSecret } from '../src/storage';
+import { getDb, encryptSecret, closeDb } from '../src/storage';
 
 test('normalizeCredSecret: git token / ssh / registry', () => {
   assert.deepStrictEqual(normalizeCredSecret('git', { token: ' t1 ' }), { type: 'token', token: 't1' });
@@ -77,4 +77,10 @@ test('resolveGitCred: 引用优先、回落内联、无凭据 null', () => {
   // 无凭据
   assert.strictEqual(resolveGitCred({ git_cred_id: null, cred_encrypted: null } as any), null);
   assert.deepStrictEqual(resolveRegistryCred({ registry_cred_id: null, registry_user_enc: null, registry_pass_enc: null } as any), { user: '', pass: '' });
+});
+
+// 测试后清理临时数据目录（失败不阻塞退出）
+after(() => {
+  closeDb();
+  try { fs.rmSync(tmpData, { recursive: true, force: true, maxRetries: 3 }); } catch { /* 句柄释放滞后等场景清理失败不阻塞 */ }
 });
