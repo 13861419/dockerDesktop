@@ -2695,6 +2695,8 @@ export const en: Record<string, string> = {
   "含 {{n}} 个外部项目，删除将下线其容器（compose 文件保留）：": "Includes {{n}} external project(s); deleting will stop their containers (compose files are kept):",
   "我已知晓外部项目将被下线容器": "I understand external projects' containers will be stopped",
   "写入失败，请重试": "Failed to save, please retry",
+  "批量删除 Compose 项目会影响外部项目吗？": "Does batch-deleting Compose projects affect external projects?",
+  "批量删除支持一次删除多个项目（可同时删除数据卷），逐项执行并反馈结果。若勾选中含「外部」项目（自动纳管的第三方编排），确认弹窗会列出项目名并要求显式勾选确认——外部项目只会下线容器，compose 文件保留，重新 up 即可恢复运行。": "Batch delete removes multiple projects at once (volumes optional) and reports per-item results. If the selection includes \"external\" projects (auto-adopted third-party stacks), the confirmation dialog lists them and requires an explicit ack — external projects only get their containers stopped while compose files are kept; a fresh `up` brings them back.",
 
   "全部升级": "Upgrade all",
   "已下发 N 个节点的升级指令": "Upgrade command sent to N node(s)",
