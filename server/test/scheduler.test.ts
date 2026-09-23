@@ -243,17 +243,29 @@ test('withTimeout: 限时内完成正常返回结果并清理定时器', async (
 });
 
 test('withTimeout: 超时后拒绝并携带提示信息', async () => {
-  await assert.rejects(
-    withTimeout(new Promise(() => {}), 0.05), // 50ms 后超时
-    /任务执行超过 0.05 秒未完成/,
-  );
+  // ref'd 哨兵句柄：withTimeout 的超时定时器是 unref 的，若事件循环无其他持有者，
+  // CI 上循环会先于定时器排空并报 "Promise resolution is still pending"
+  const keepAlive = setTimeout(() => {}, 10_000);
+  try {
+    await assert.rejects(
+      withTimeout(new Promise(() => {}), 0.05), // 50ms 后超时
+      /任务执行超过 0.05 秒未完成/,
+    );
+  } finally {
+    clearTimeout(keepAlive);
+  }
 });
 
 test('withTimeout: 原始错误直接透传不被吞掉', async () => {
-  await assert.rejects(
-    withTimeout(Promise.reject(new Error('原始错误')), 5),
-    /原始错误/,
-  );
+  const keepAlive = setTimeout(() => {}, 10_000);
+  try {
+    await assert.rejects(
+      withTimeout(Promise.reject(new Error('原始错误')), 5),
+      /原始错误/,
+    );
+  } finally {
+    clearTimeout(keepAlive);
+  }
 });
 
 // 测试后清理临时数据目录（失败不阻塞退出）

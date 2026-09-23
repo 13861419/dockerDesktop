@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Fixed（修复）
+
+- CI Test 工作流长期红灯（1.88.0 起引入，两处均为测试侧问题，不影响产品）：
+  - e2e 全量失败——1.88.0 首装向导使全新库首次登录重定向到 `/onboarding`，冒烟用例仍断言进入总览；新增 Playwright `globalSetup` 经 API 将 `onboarding.done` 置 true（幂等，登录失败不阻塞）
+  - unit 偶发 `withTimeout` 两条报 "Promise resolution is still pending"——其超时定时器为 unref，CI 事件循环可能先行排空；测试补 ref'd 哨兵句柄
+
 ## [1.89.0] - 2026-09-23
 
 ### Added（新增）

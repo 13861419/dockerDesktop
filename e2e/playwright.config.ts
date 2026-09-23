@@ -9,6 +9,7 @@ import path from 'path';
 
 export default defineConfig({
   testDir: '.',
+  globalSetup: './global-setup.ts',
   timeout: 30_000,
   retries: 0,
   workers: 1,
