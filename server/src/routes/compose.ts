@@ -250,6 +250,15 @@ async function requireProjectCtx(name: string): Promise<ComposeCtx> {
 }
 
 /**
+ * 组装 -f 参数（1.89.1）：多文件编排（-f a.yml -f b.yml 启动）按标签记录的顺序全部带上，
+ * 保证 up/down/config 与启动时完全一致；单文件项目与原行为相同
+ */
+function composeFileFlags(ctx: ComposeCtx): string {
+  const files = ctx.files && ctx.files.length > 1 ? ctx.files : [ctx.composeFile];
+  return files.map((f) => `-f "${f}"`).join(' ');
+}
+
+/**
  * 项目级命令执行（1.89.1）：compose 文件面板用户可读时本地执行；
  * 不可读（如 1Panel 创建的 root 属主文件）时经 hostRoot 助手容器以宿主机 root 执行
  */
@@ -454,7 +463,7 @@ router.get(
     }
     const dir = projCtx.dir;
     const composeFile = projCtx.composeFile;
-    const psOutput = await runProjectCmd(projCtx, `docker compose -f "${composeFile}" ps -a --format json`, dir);
+    const psOutput = await runProjectCmd(projCtx, `docker compose ${composeFileFlags(projCtx)}`, dir);
     let services: any[] = [];
     try {
       const text = psOutput.trim();
@@ -483,7 +492,7 @@ router.get(
   '/:name/config',
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" config`, ctx.dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config`, ctx.dir);
     res.json({ config: output });
   }),
 );
@@ -628,10 +637,10 @@ async function rollingUpdateOne(
   } catch {
     // 记录失败不阻断更新
   }
-  const pullOut = await runProjectCmd(ctx, `docker compose -f "${composeFile}" pull ${service}`, dir);
+  const pullOut = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} pull ${service}`, dir);
   const upOut = await runProjectCmd(
     ctx,
-    `docker compose -f "${composeFile}" up -d --no-deps ${service}`,
+    `docker compose ${composeFileFlags(ctx)} up -d --no-deps ${service}`,
     dir,
   );
   // 健康检查 + 失败自动回滚
@@ -641,7 +650,7 @@ async function rollingUpdateOne(
   if (!health.ok && oldImageId && imageTag && !imageTag.startsWith('sha256:')) {
     try {
       await execAsync(`docker tag "${oldImageId}" "${imageTag}"`);
-      await runProjectCmd(ctx, `docker compose -f "${composeFile}" up -d --no-deps ${service}`, dir);
+      await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} up -d --no-deps ${service}`, dir);
       const back = await waitForServiceHealthy(projectName, service, 30000);
       rolledBack = back.ok;
       rollbackDetail = back.ok ? '已自动回滚到旧镜像' : `回滚后仍异常：${back.detail}`;
@@ -715,7 +724,7 @@ router.post(
       ? req.body.services.map((x: unknown) => String(x).trim()).filter(Boolean)
       : [];
     if (services.length === 0) {
-      const out = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --services`, dir);
+      const out = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config --services`, dir);
       services = out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
     }
     if (services.length === 0) {
@@ -774,7 +783,7 @@ router.get(
     const dir = ctx.dir;
     const composeFile = ctx.composeFile;
     // 本地期望配置（docker compose config 规范化输出）
-    const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config --format json`, dir);
     const jsonStart = output.indexOf('{');
     const jsonEnd = output.lastIndexOf('}');
     const parsed =
@@ -969,7 +978,7 @@ async function remoteDeployServices(
 ): Promise<Array<{ service: string; name: string; ok: boolean; detail: string }>> {
   const composeFile = ctx.composeFile;
   const dir = ctx.dir;
-  const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
+  const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config --format json`, dir);
   // 兼容单行与多行缩进两种 JSON 输出（不同 docker CLI 版本行为不一）：取首个 { 到最后一个 } 之间解析
   const jsonStart = output.indexOf('{');
   const jsonEnd = output.lastIndexOf('}');
@@ -1074,7 +1083,7 @@ router.post(
     const engines: string[] = Array.isArray(req.body?.engines) ? req.body.engines.filter(Boolean) : [];
     if (engines.length === 0) return res.status(400).json({ error: '需要 engines 参数（远端引擎地址列表）' });
     const deploy = req.body?.deploy === true;
-    const imagesOut = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --images`, dir);
+    const imagesOut = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config --images`, dir);
     const images = imagesOut.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     const results: Array<{ engine: string; image: string; ok: boolean; detail: string }> = [];
     for (const engine of engines) {
@@ -1216,7 +1225,7 @@ router.post(
         try {
           await runProjectCmd(
             ctx,
-            `docker compose -f "${composeFile}" up -d --force-recreate ${services.map((s) => `"${s}"`).join(' ')}`,
+            `docker compose ${composeFileFlags(ctx)} up -d --force-recreate ${services.map((s) => `"${s}"`).join(' ')}`,
             dir,
           );
         } catch (err: any) {
@@ -1239,7 +1248,7 @@ router.post(
     }
 
     // 远端引擎：先确保镜像存在（拉取失败不中断，由逐服务创建兜底报错），再按本地配置重建
-    const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config --format json`, dir);
     const jsonStart = output.indexOf('{');
     const jsonEnd = output.lastIndexOf('}');
     const parsed = jsonStart >= 0 && jsonEnd > jsonStart ? JSON.parse(output.slice(jsonStart, jsonEnd + 1)) : null;
@@ -1467,7 +1476,7 @@ router.post(
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" up -d`, ctx.dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} up -d`, ctx.dir);
     logOperation(res.locals.username, '部署 Compose', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1486,7 +1495,7 @@ export async function composeProjectDown(name: string, volumes: boolean): Promis
   if (!ctx) {
     throw Object.assign(new Error('未找到 compose 文件'), { statusCode: 404 });
   }
-  return runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" down${volumes ? ' -v' : ''}`, ctx.dir);
+  return runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${volumes ? ' -v' : ''}`, ctx.dir);
 }
 
 /**
@@ -1513,7 +1522,7 @@ router.post(
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" restart`, ctx.dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} restart`, ctx.dir);
     logOperation(res.locals.username, '重启 Compose', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1528,7 +1537,7 @@ router.post(
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" pull`, ctx.dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} pull`, ctx.dir);
     logOperation(res.locals.username, '拉取 Compose 镜像', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1543,7 +1552,7 @@ router.post(
   requirePermission('compose.write'),
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" build`, ctx.dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} build`, ctx.dir);
     logOperation(res.locals.username, '构建 Compose 镜像', 'compose', req.params.name);
     res.json({ ok: true, output });
   }),
@@ -1564,7 +1573,7 @@ router.post(
       return res.status(400).json({ error: '非法的 service 参数' });
     }
     const svc = service ? ` ${service}` : '';
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" logs --tail=${tail}${svc}`, ctx.dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} logs --tail=${tail}${svc}`, ctx.dir);
     res.json({ logs: output });
   }),
 );
@@ -1595,7 +1604,7 @@ router.post(
           continue;
         }
         const downVolumes = volumes ? ' -v' : '';
-        await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
+        await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${downVolumes}`, ctx.dir).catch(() => undefined);
         // 外部项目仅下线容器，不删除 compose 文件
         if (ctx.source === 'panel') {
           fs.rmSync(ctx.dir, { recursive: true, force: true });
@@ -1627,7 +1636,7 @@ router.delete(
     // 兼容字符串 "true" 与字面量 true 两种写法（Express 查询串通常为字符串）
     const volumes = req.query.volumes === 'true' || (req.query.volumes as unknown) === true;
     const downVolumes = volumes ? ' -v' : '';
-    await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" down${downVolumes}`, ctx.dir).catch(() => undefined);
+    await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${downVolumes}`, ctx.dir).catch(() => undefined);
     // 外部项目仅下线容器，不删除 compose 文件（避免误删第三方工具管理的项目文件）
     if (ctx.source === 'panel') {
       fs.rmSync(ctx.dir, { recursive: true, force: true });
@@ -1741,7 +1750,7 @@ router.get(
     const ctx = await requireProjectCtx(req.params.name);
     const dir = ctx.dir;
     const composeFile = ctx.composeFile;
-    const output = await runProjectCmd(ctx, `docker compose -f "${composeFile}" config --format json`, dir);
+    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} config --format json`, dir);
     // 兼容单行与多行缩进两种 JSON 输出：取首个 { 到最后一个 } 之间解析
     let parsed: any = null;
     const jsonStart = output.indexOf('{');
@@ -1799,7 +1808,7 @@ async function runServiceAction(name: string, service: string, action: string, u
   const safeService = service.replace(/'/g, "'\\''");
   const output = await runProjectCmd(
     ctx,
-    `docker compose -f "${composeFile}" ${action} '${safeService}'`,
+    `docker compose ${composeFileFlags(ctx)} ${action} '${safeService}'`,
     dir,
   );
   logOperation(username, `Compose 服务${action}`, 'compose', `${name}/${service}`);
