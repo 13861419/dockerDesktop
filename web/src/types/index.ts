@@ -175,6 +175,8 @@ export interface ComposeProject {
   total?: number;
   /** 外部项目 compose 文件面板用户是否可直接读写（1.89.1；false 时走提权通道，界面标注「文件受限」） */
   fileAccessible?: boolean;
+  /** 外部项目 -f 多文件编排的全量文件列表（1.89.1；仅多于一个时返回） */
+  composeFiles?: string[];
 }
 
 /** Compose 服务状态 */

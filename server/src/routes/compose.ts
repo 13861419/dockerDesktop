@@ -16,7 +16,7 @@ import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
 import { runAsHostRoot } from '../platform/hostRoot';
-import { getDb } from '../storage';
+import { getDb, getDataDir } from '../storage';
 import { inferCompose, type InferInput } from '../composeInfer';
 import { parseRunCommand } from '../run2compose';
 
@@ -167,8 +167,8 @@ async function validateComposeYaml(content: string): Promise<string | null> {
 
 // ============ 项目定位（本地目录 + 外部发现，1.51.0） ============
 
-/** 项目上下文：dir 为工作目录，composeFile 为绝对路径；fileAccessible 表示面板用户可直接读写该文件 */
-type ComposeCtx = { dir: string; composeFile: string; source: 'panel' | 'external'; fileAccessible: boolean };
+/** 项目上下文：dir 为工作目录，composeFile 为主文件绝对路径；files 为 -f 多文件全量（外部项目）；fileAccessible 表示面板用户可直接读写该文件 */
+type ComposeCtx = { dir: string; composeFile: string; source: 'panel' | 'external'; fileAccessible: boolean; files?: string[] };
 
 /** 文件是否可被面板服务账号读取（无权限目录下 existsSync/accessSync 均返回 false） */
 function isFileReadable(file: string): boolean {
@@ -185,11 +185,11 @@ function isFileReadable(file: string): boolean {
  * （在面板目录之外创建的项目，如手动 docker compose up 或第三方工具创建）
  */
 async function discoverExternalProjects(): Promise<
-  Map<string, { dir: string; composeFile: string; fileAccessible: boolean; running: number; total: number }>
+  Map<string, { dir: string; composeFile: string; files: string[]; fileAccessible: boolean; running: number; total: number }>
 > {
   const docker = await getDockerClient();
   const containers = await docker.listContainers({ all: true });
-  const map = new Map<string, { dir: string; composeFile: string; fileAccessible: boolean; running: number; total: number }>();
+  const map = new Map<string, { dir: string; composeFile: string; files: string[]; fileAccessible: boolean; running: number; total: number }>();
   const rootAbs = path.resolve(COMPOSE_ROOT);
   for (const c of containers) {
     const labels = c.Labels || {};
@@ -202,10 +202,10 @@ async function discoverExternalProjects(): Promise<
     let entry = map.get(project);
     if (!entry) {
       const configFiles = labels['com.docker.compose.project.config_files'] || '';
-      const firstFile = configFiles.split(',')[0]?.trim();
-      // 保留标签里的文件路径（即使当前用户不可读，1.89.1 起可经提权通道读写）
-      const composeFile = (firstFile || findComposeFile(workingDir) || '');
-      entry = { dir: workingDir, composeFile, fileAccessible: !!composeFile && isFileReadable(composeFile), running: 0, total: 0 };
+      // -f 多文件覆盖（如 -f docker-compose.yml -f prod.yml）时标签含全部文件，首个为主文件（1.89.1）
+      const files = configFiles.split(',').map((f) => f.trim()).filter(Boolean);
+      const composeFile = files[0] || findComposeFile(workingDir) || '';
+      entry = { dir: workingDir, composeFile, files, fileAccessible: !!composeFile && isFileReadable(composeFile), running: 0, total: 0 };
       map.set(project, entry);
     }
     entry.total += 1;
@@ -230,7 +230,7 @@ async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
     const externals = await discoverExternalProjects();
     const ext = externals.get(name);
     if (ext && ext.composeFile) {
-      return { dir: ext.dir, composeFile: ext.composeFile, source: 'external', fileAccessible: ext.fileAccessible };
+      return { dir: ext.dir, composeFile: ext.composeFile, source: 'external', fileAccessible: ext.fileAccessible, files: ext.files };
     }
   } catch {
     // docker 不可用时按未找到处理
@@ -275,8 +275,36 @@ async function readComposeFileContent(composeFile: string): Promise<string> {
   }
 }
 
-/** 写入 compose 文件内容：直接写入失败（权限不足）时经提权通道 base64 写回 */
-async function writeComposeFileContent(composeFile: string, content: string): Promise<void> {
+/** compose 文件物理备份：每项目保留最近份数（1.89.1，版本历史存 SQLite，此处为文件级防灾底）
+ *  注意：目录用 compose-files，避开已有备份系统的 backups/compose/<id>/ 结构 */
+const COMPOSE_BACKUP_KEEP = 5;
+
+/**
+ * 写入 compose 文件内容前先做物理备份（1.89.1）
+ * 直接写入失败（权限不足）时经提权通道 base64 写回；备份失败不阻断保存
+ */
+async function writeComposeFileContent(projectName: string, composeFile: string, content: string): Promise<void> {
+  try {
+    const old = await readComposeFileContent(composeFile).catch(() => null);
+    if (old !== null) {
+      const dir = path.join(getDataDir(), 'backups', 'compose-files');
+      fs.mkdirSync(dir, { recursive: true });
+      const safe = projectName.replace(/[^\w.-]/g, '_') || 'project';
+      const ext = path.extname(composeFile) || '.yml';
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      // @ 不可出现在 safe（已归一化）中，避免前缀碰撞误删其他项目的备份
+      fs.writeFileSync(path.join(dir, `${safe}@${stamp}${ext}`), old, 'utf8');
+      const olds = fs
+        .readdirSync(dir)
+        .filter((f) => f.startsWith(`${safe}@`) && f.endsWith(ext))
+        .sort();
+      while (olds.length > COMPOSE_BACKUP_KEEP) {
+        fs.unlinkSync(path.join(dir, olds.shift() as string));
+      }
+    }
+  } catch {
+    // 备份失败不阻断保存
+  }
   try {
     fs.writeFileSync(composeFile, content, 'utf8');
   } catch {
@@ -325,6 +353,7 @@ router.get(
       running?: number;
       total?: number;
       fileAccessible?: boolean;
+      composeFiles?: string[];
     }> = dirs.map((name) => {
       const dir = path.join(COMPOSE_ROOT, name);
       const composeFile = findComposeFile(dir);
@@ -351,12 +380,41 @@ router.get(
           running: info.running,
           total: info.total,
           fileAccessible: info.fileAccessible,
+          composeFiles: info.files.length > 1 ? info.files : undefined,
         });
       }
     } catch {
       // docker 不可用时仅返回本地项目
     }
     res.json(projects);
+  }),
+);
+
+/**
+ * GET /api/compose/status
+ * 全项目状态批量加载（1.89.1）：一次 listContainers 按项目标签聚合，
+ * 替代前端逐项目调用 docker compose ps（每项目一次子进程）。
+ * 返回 { [project]: [{ID, Name, Service, State}] }，条目形状与 GET /:name 的 services 一致。
+ */
+router.get(
+  '/status',
+  requireAuth,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const docker = await getDockerClient();
+    const all = await docker.listContainers({ all: true });
+    const map: Record<string, Array<{ ID: string; Name: string; Service: string; State: string }>> = {};
+    for (const c of all) {
+      const project = c.Labels?.['com.docker.compose.project'];
+      if (!project) continue;
+      const arr = (map[project] ||= []);
+      arr.push({
+        ID: c.Id,
+        Name: c.Names?.[0]?.replace(/^\//, '') || '',
+        Service: c.Labels?.['com.docker.compose.service'] || '',
+        State: c.State,
+      });
+    }
+    res.json(map);
   }),
 );
 
@@ -1247,7 +1305,7 @@ router.post(
       const ext = externals.get(safeName);
       if (ext && ext.composeFile) {
         await recordComposeHistory(ext.composeFile, safeName, res.locals.username, content);
-        await writeComposeFileContent(ext.composeFile, content);
+        await writeComposeFileContent(safeName, ext.composeFile, content);
         logOperation(res.locals.username, '保存 Compose（外部）', 'compose', safeName, `文件: ${ext.composeFile}`);
         return res.status(201).json({ name: safeName, path: ext.dir, composeFile: ext.composeFile, external: true });
       }
@@ -1258,7 +1316,7 @@ router.post(
     ensureDir(dir);
     const targetFile = fileName && COMPOSE_FILES.includes(fileName) ? fileName : 'docker-compose.yml';
     recordComposeHistory(path.join(dir, targetFile), safeName, res.locals.username, content);
-    fs.writeFileSync(path.join(dir, targetFile), content, 'utf8');
+    await writeComposeFileContent(safeName, path.join(dir, targetFile), content);
     logOperation(res.locals.username, '保存 Compose', 'compose', safeName, `文件: ${targetFile}`);
     res.status(201).json({ name: safeName, path: dir, composeFile: targetFile });
   }),
@@ -1394,7 +1452,7 @@ router.post(
       return res.status(400).json({ error: '缺少 content 参数' });
     }
     const envPath = path.join(ctx.dir, '.env');
-    await writeComposeFileContent(envPath, content);
+    await writeComposeFileContent(req.params.name, envPath, content);
     logOperation(res.locals.username, '保存 Compose 环境变量', 'compose', req.params.name, `文件: ${envPath}`);
     res.json({ ok: true, path: envPath });
   }),
@@ -1500,7 +1558,13 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
     const tail = Number(req.body?.tail || '200');
-    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" logs --tail=${tail}`, ctx.dir);
+    // 可选 service：结构视图里按服务查看日志（1.89.1）
+    const service = typeof req.body?.service === 'string' ? req.body.service.trim() : '';
+    if (service && /[^\w-.]/.test(service)) {
+      return res.status(400).json({ error: '非法的 service 参数' });
+    }
+    const svc = service ? ` ${service}` : '';
+    const output = await runProjectCmd(ctx, `docker compose -f "${ctx.composeFile}" logs --tail=${tail}${svc}`, ctx.dir);
     res.json({ logs: output });
   }),
 );

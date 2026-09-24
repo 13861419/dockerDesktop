@@ -188,6 +188,7 @@ export default function ComposePage() {
   // 日志弹窗状态
   const [logOpen, setLogOpen] = useState(false);
   const [logName, setLogName] = useState('');
+  const [logService, setLogService] = useState('');
   const [logContent, setLogContent] = useState('');
   const [logLoading, setLogLoading] = useState(false);
 
@@ -487,23 +488,18 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
 
 
   /**
-   * 拉取单个项目的服务运行状态（compose ps）
-   * @param name 项目名
+   * 批量拉取全部项目的服务运行状态（1.89.1）
+   * 单次 /status 接口按容器标签聚合，替代逐项目 docker compose ps（每项目一次子进程）
    */
-  const loadStatus = useCallback(
-    async (name: string) => {
-      try {
-        const data = await get<{ services?: ComposeService[] }>(projectUrl(name));
-        // 响应形如 { name, path, services }，仅保留服务数组（1.53.0 修复：此前误存整个响应对象）
-        const services = Array.isArray(data?.services) ? data.services : [];
-        setStatusMap((prev) => ({ ...prev, [name]: services }));
-      } catch {
-        // 拉取失败时不显示具体状态，置为空
-        setStatusMap((prev) => ({ ...prev, [name]: [] }));
-      }
-    },
-    []
-  );
+  const loadStatus = useCallback(async () => {
+    try {
+      const data = await get<Record<string, ComposeService[]>>('/api/compose/status');
+      setStatusMap(data && typeof data === 'object' ? data : {});
+    } catch {
+      // 拉取失败时不显示具体状态
+      setStatusMap({});
+    }
+  }, []);
 
   /**
    * 拉取 Compose 项目列表
@@ -514,8 +510,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       const data = await get<ComposeProject[]>('/api/compose');
       setProjects(data || []);
       setLoadError('');
-      // 逐个拉取各项目的服务运行状态
-      (data || []).forEach((p) => loadStatus(p.name));
+      // 批量拉取各项目的服务运行状态
+      await loadStatus();
     } catch (e: any) {
       setLoadError(e?.message || t('拉取项目列表失败'));
       showToast(e?.message || t('拉取项目列表失败'), 'error');
@@ -713,7 +709,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             : res?.content ||
               res?.config ||
               JSON.stringify(res, null, 2);
-        setConfigTitle(project.name);
+        setConfigTitle(project.name + ' · ' + t('规范化配置'));
         setConfigContent(content || t('（无配置文件）'));
         setConfigOpen(true);
       } catch (e: any) {
@@ -1020,13 +1016,14 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
    * @param name 项目名
    */
   const openLog = useCallback(
-    async (name: string) => {
+    async (name: string, service?: string) => {
       setLogName(name);
+      setLogService(service || '');
       setLogOpen(true);
       setLogLoading(true);
       setLogContent('');
       try {
-        const res = await post<unknown>(projectUrl(name) + '/logs', { tail: 200 });
+        const res = await post<unknown>(projectUrl(name) + '/logs', { tail: 200, service: service || undefined });
         setLogContent(
           typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
         );
@@ -1047,7 +1044,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     if (!logName) return;
     setLogLoading(true);
     try {
-      const res = await post<unknown>(projectUrl(logName) + '/logs', { tail: 200 });
+      const res = await post<unknown>(projectUrl(logName) + '/logs', { tail: 200, service: logService || undefined });
       setLogContent(
         typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
       );
@@ -1056,12 +1053,13 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     } finally {
       setLogLoading(false);
     }
-  }, [logName, showToast]);
+  }, [logName, logService, showToast]);
 
   /** 关闭日志弹窗 */
   const closeLog = useCallback(() => {
     setLogOpen(false);
     setLogName('');
+    setLogService('');
     setLogContent('');
   }, []);
 
@@ -1214,8 +1212,9 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                       <span className="badge badge--muted">-</span>
                     )}
                   </td>
-                  <td className="col-mono" title={proj.composeFile || '-'}>
+                  <td className="col-mono" title={proj.composeFiles && proj.composeFiles.length > 1 ? proj.composeFiles.join('\n') : proj.composeFile || '-'}>
                     {proj.composeFile || '-'}
+                    {proj.composeFiles && proj.composeFiles.length > 1 ? ` +${proj.composeFiles.length - 1}` : ''}
                   </td>
                   <td className="col-mono" title={proj.path}>
                     {proj.path}
@@ -1255,11 +1254,11 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                         disabled={!canManage}
                         items={[
                           { label: t('查看'), group: true, onClick: () => {} },
-                          { label: t('配置'), onClick: () => handleViewConfig(proj) },
+                          { label: t('编辑'), onClick: () => openEdit(proj) },
+                          { label: t('配置'), title: t('compose 规范化配置'), onClick: () => handleViewConfig(proj) },
                           { label: t('结构'), onClick: () => openStructure(proj) },
                           { label: t('看板'), onClick: () => void openStats(proj.name) },
-                          { label: t('编辑配置'), group: true, onClick: () => {} },
-                          { label: t('编辑'), onClick: () => openEdit(proj) },
+                          { label: t('配置文件'), group: true, onClick: () => {} },
                           { label: t('环境变量'), onClick: () => openEnv(proj) },
                           { label: t('目录'), title: proj.path, onClick: () => navigate(`/files?path=${encodeURIComponent(proj.path)}`) },
                           { label: t('镜像操作'), group: true, onClick: () => {} },
@@ -1681,6 +1680,13 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                           >
                             {t('重启')}
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openLog(structureData.name, svc.name)}
+                          >
+                            {t('日志')}
+                          </Button>
                         </div>
                       </div>
                       <div className="structure-card__body">
@@ -1741,7 +1747,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       {/* 日志弹窗 */}
       <Modal
         open={logOpen}
-        title={t('{{logName}} - 日志', { logName })}
+            title={logService ? t('{{logName}} - {{service}} 日志', { logName, service: logService }) : t('{{logName}} - 日志', { logName })}
         onClose={closeLog}
         width={760}
         footer={
