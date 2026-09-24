@@ -23,17 +23,24 @@ export interface MoreMenuItem {
 export default function MoreMenu({ items, disabled }: { items: MoreMenuItem[]; disabled?: boolean }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   function toggle() {
     if (!open && ref.current) {
       const rect = ref.current.getBoundingClientRect();
-      const pos: { top: number; left?: number; right?: number } = { top: rect.bottom + 4, left: rect.left };
+      // 预估菜单高度（与 .more-menu__panel 的 max-height:60vh 上限一致）
+      const estH = Math.min(items.length * 33 + 12, window.innerHeight * 0.6);
+      const pos: { top?: number; bottom?: number; left?: number; right?: number } = { top: rect.bottom + 4, left: rect.left };
       // 靠近视口右缘时改为右对齐展开，避免菜单溢出屏幕
       if (rect.left + 160 > window.innerWidth) {
         pos.left = undefined;
         pos.right = Math.max(0, window.innerWidth - rect.right);
+      }
+      // 靠近视口底部时改为向上展开，避免菜单被页面底部裁掉（1.89.1）
+      if (window.innerHeight - rect.bottom < estH + 8) {
+        delete pos.top;
+        pos.bottom = window.innerHeight - rect.top + 4;
       }
       setMenuPos(pos);
     }
@@ -74,7 +81,12 @@ export default function MoreMenu({ items, disabled }: { items: MoreMenuItem[]; d
       {open && menuPos && (
         <div
           className="more-menu__panel"
-          style={{ top: menuPos.top, left: menuPos.left ?? 'auto', right: menuPos.right ?? 'auto' }}
+          style={{
+            top: menuPos.top ?? 'auto',
+            bottom: menuPos.bottom ?? 'auto',
+            left: menuPos.left ?? 'auto',
+            right: menuPos.right ?? 'auto',
+          }}
         >
           {items.map((it, idx) =>
             it.group ? (
