@@ -16,6 +16,7 @@ import { requirePermission } from '../rbac';
 import { maybeGateOrForbidden } from '../approvals';
 import { getDockerClient, getDockerClientForEndpoint } from '../docker/client';
 import { runAsHostRoot } from '../platform/hostRoot';
+import { stripAnsi } from '../docker/logUtil';
 import { getDb, getDataDir } from '../storage';
 import { inferCompose, type InferInput } from '../composeInfer';
 import { parseRunCommand } from '../run2compose';
@@ -1574,7 +1575,8 @@ router.post(
     }
     const svc = service ? ` ${service}` : '';
     const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} logs --tail=${tail}${svc}`, ctx.dir);
-    res.json({ logs: output });
+    // compose CLI 会给日志上 ANSI 颜色，非终端环境显示为乱码，统一剥除（1.89.1）
+    res.json({ logs: stripAnsi(output) });
   }),
 );
 
