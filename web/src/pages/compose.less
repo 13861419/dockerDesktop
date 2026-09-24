@@ -268,6 +268,13 @@
   word-break: break-all;
 }
 
+/* 日志弹窗放大（全屏）时日志区撑满视口剩余高度（头部+底部约占 140px） */
+.modal--fullscreen .log-viewer {
+  flex: 1;
+  max-height: none;
+  height: calc(94vh - 140px);
+}
+
 .log-empty {
   padding: 24px;
   text-align: center;

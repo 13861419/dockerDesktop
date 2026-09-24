@@ -189,6 +189,7 @@ export default function ComposePage() {
   const [logOpen, setLogOpen] = useState(false);
   const [logName, setLogName] = useState('');
   const [logService, setLogService] = useState('');
+  const [logFull, setLogFull] = useState(false);
   const [logContent, setLogContent] = useState('');
   const [logLoading, setLogLoading] = useState(false);
 
@@ -1750,6 +1751,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             title={logService ? t('{{logName}} - {{service}} 日志', { logName, service: logService }) : t('{{logName}} - 日志', { logName })}
         onClose={closeLog}
         width={760}
+        fullscreen={logFull}
+        onToggleFullscreen={() => setLogFull((v) => !v)}
         footer={
           <>
             <Button variant="secondary" onClick={refreshLog} loading={logLoading}>
