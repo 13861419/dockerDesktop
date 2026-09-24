@@ -6,7 +6,7 @@
  * 注意：CACHE 名称必须随版本更新（dm-shell-<版本号>），否则旧壳残留；
  * 网络优先策略下在线始终拿新资源，版本化主要用于离线回退内容的一致性。
  */
-const CACHE = 'dm-shell-1.88.0';
+const CACHE = 'dm-shell-1.90.0';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

@@ -23,7 +23,7 @@
 - **宿主机文件 / 终端**：宿主机文件浏览与远程终端（xterm）
 - **Docker 引擎**：多 Docker 引擎端点管理（新增 / 编辑 / 设为当前 / 删除）
 - **数据库可视化**：容器数据库 / Redis 的可视化查询与信息查看（只读保护）；表数据一键导出 CSV（上限 5 万行，1.46.0）；SQL 查询历史与收藏（最近 100 条自动留痕、常用查询收藏一键填入，1.48.0）
-- **Compose 项目纳管（1.50.0）**：除面板自建项目外，自动发现宿主机上其他方式创建的 Compose 项目（手动 `docker compose up` / 第三方工具），同样支持编辑 compose 文件并 `up -d` 生效、服务状态 / 日志 / 资源查看；删除外部项目仅下线容器保留文件；编辑器支持全屏放大（1.52.0）与版本历史回退（每次保存自动记录上一版，保留最近 20 条）；**多选批量删除（1.89.0）**——勾选列 + 全选一次删除多个项目（可同时删数据卷），含外部项目时需显式确认防误下线
+- **Compose 项目纳管（1.50.0）**：除面板自建项目外，自动发现宿主机上其他方式创建的 Compose 项目（手动 `docker compose up` / 第三方工具），同样支持编辑 compose 文件并 `up -d` 生效、服务状态 / 日志 / 资源查看；删除外部项目仅下线容器保留文件；编辑器支持全屏放大（1.52.0）与版本历史回退（每次保存自动记录上一版，保留最近 20 条）；**多选批量删除（1.89.0）**——勾选列 + 全选一次删除多个项目（可同时删数据卷），含外部项目时需显式确认防误下线；**外部项目全量修复与提权读写（1.90.0）**——配置 / 结构 / 启停 / 日志 / 滚动更新 / 漂移等 16 个接口统一按容器标签反查项目解析，root 属主文件经 Docker 助手容器提权读写；**多文件编排关联与切换编辑（1.90.0）**——`-f` 多文件全量关联展示，命令按标签顺序全量带 `-f` 与启动状态严格一致，编辑弹窗可切换目标文件（文件白名单校验）；保存前自动物理备份原文件到 `backups/compose-files/`（每项目保留 5 份）；日志弹窗一键放大全屏、结构视图服务级日志、ANSI 颜色转义剥离防乱码、状态单接口批量加载
 - **备份恢复**：DATA / Compose / 卷 / 站点备份恢复中心；支持将备份文件**上传到云端**（S3 / OSS / WebDAV）；数据库恢复前自动执行 SQLite 完整性校验（quick_check，1.45.0）；**备份覆盖率体检**（盘点 Compose 项目 / 命名卷 / 数据库实例的备份覆盖状态，未覆盖对象一目了然，1.48.0）
 - **云端备份**：S3 / OSS / WebDAV 目标配置（零第三方依赖，https 手写）、连通性测试、文件上传
 - **站点反代 / SSL**：基于反代容器的站点反向代理、启停与配置 reload、SSL 证书状态与替换，证书到期自动提醒（≤30 天提醒 / ≤7 天紧急，1.44.0）
@@ -272,34 +272,34 @@ dockerDesktop/
 
 ### 方式零：从 GitHub Releases 首次安装（推荐）
 
-示例版本以 `1.89.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
+示例版本以 `1.90.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
 
 **Ubuntu / Debian（amd64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.89.0/docker-manager-1.89.0-amd64.deb
-sudo dpkg -i docker-manager-1.89.0-amd64.deb
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-amd64.deb
+sudo dpkg -i docker-manager-1.90.0-amd64.deb
 ```
 
 **Ubuntu / Debian（arm64，如树莓派 / Oracle ARM）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.89.0/docker-manager-1.89.0-arm64.deb
-sudo dpkg -i docker-manager-1.89.0-arm64.deb
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-arm64.deb
+sudo dpkg -i docker-manager-1.90.0-arm64.deb
 ```
 
 **CentOS / RHEL / AlmaLinux（x86_64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.89.0/docker-manager-1.89.0-1.x86_64.rpm
-sudo yum localinstall -y docker-manager-1.89.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.89.0-1.x86_64.rpm
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-1.x86_64.rpm
+sudo yum localinstall -y docker-manager-1.90.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.90.0-1.x86_64.rpm
 ```
 
 **CentOS / RHEL / AlmaLinux（aarch64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.89.0/docker-manager-1.89.0-1.aarch64.rpm
-sudo yum localinstall -y docker-manager-1.89.0-1.aarch64.rpm
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-1.aarch64.rpm
+sudo yum localinstall -y docker-manager-1.90.0-1.aarch64.rpm
 ```
 
 **macOS**
