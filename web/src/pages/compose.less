@@ -275,6 +275,34 @@
   height: calc(94vh - 140px);
 }
 
+/* 多文件编排编辑弹窗：目标文件切换按钮（1.89.1） */
+.edit-file-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.edit-file-switch__btn {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    filter: brightness(0.97);
+  }
+  &.is-active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+}
+
 .log-empty {
   padding: 24px;
   text-align: center;

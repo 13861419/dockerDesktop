@@ -1314,10 +1314,17 @@ router.post(
       const externals = await discoverExternalProjects();
       const ext = externals.get(safeName);
       if (ext && ext.composeFile) {
-        await recordComposeHistory(ext.composeFile, safeName, res.locals.username, content);
-        await writeComposeFileContent(safeName, ext.composeFile, content);
-        logOperation(res.locals.username, '保存 Compose（外部）', 'compose', safeName, `文件: ${ext.composeFile}`);
-        return res.status(201).json({ name: safeName, path: ext.dir, composeFile: ext.composeFile, external: true });
+        // 多文件编排：允许指定保存到哪个文件，必须命中标签列表（1.89.1）
+        const targetFile = typeof req.body?.file === 'string' ? req.body.file.trim() : '';
+        const allowed = ext.files && ext.files.length ? ext.files : [ext.composeFile];
+        if (targetFile && !allowed.includes(targetFile)) {
+          return res.status(400).json({ error: '文件不在该项目编排文件列表中' });
+        }
+        const composeFile = targetFile || ext.composeFile;
+        await recordComposeHistory(composeFile, safeName, res.locals.username, content);
+        await writeComposeFileContent(safeName, composeFile, content);
+        logOperation(res.locals.username, '保存 Compose（外部）', 'compose', safeName, `文件: ${composeFile}`);
+        return res.status(201).json({ name: safeName, path: ext.dir, composeFile, external: true });
       }
     } catch {
       // docker 不可用时按本地项目处理
@@ -1366,9 +1373,24 @@ router.get(
       return res.status(404).json({ error: '未找到 compose 文件' });
     }
     const dir = projCtx.dir;
-    const composeFile = projCtx.composeFile;
+    // 可选 file 参数：多文件编排时编辑非主文件，必须命中标签记录的文件列表（1.89.1）
+    const reqFile = typeof req.query.file === 'string' ? req.query.file.trim() : '';
+    const allowed = projCtx.files && projCtx.files.length ? projCtx.files : [projCtx.composeFile];
+    let composeFile = projCtx.composeFile;
+    if (reqFile) {
+      if (!allowed.includes(reqFile)) {
+        return res.status(400).json({ error: '文件不在该项目编排文件列表中' });
+      }
+      composeFile = reqFile;
+    }
     const content = await readComposeFileContent(composeFile);
-    res.json({ name: req.params.name, composeFile, content, fileAccessible: projCtx.fileAccessible });
+    res.json({
+      name: req.params.name,
+      composeFile,
+      content,
+      fileAccessible: projCtx.fileAccessible,
+      files: projCtx.files && projCtx.files.length > 1 ? projCtx.files : undefined,
+    });
   }),
 );
 

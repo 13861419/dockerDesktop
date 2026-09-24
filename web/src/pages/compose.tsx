@@ -207,8 +207,10 @@ export default function ComposePage() {
 
   // 编辑项目弹窗状态
   const [editOpen, setEditOpen] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editContent, setEditContent] = useState('');
+const [editName, setEditName] = useState('');
+const [editContent, setEditContent] = useState('');
+const [editFiles, setEditFiles] = useState<string[]>([]);
+const [editFile, setEditFile] = useState('');
   // 编辑 YAML 校验错误（保存被拒绝时回显到编辑器）
   const [editYamlErr, setEditYamlErr] = useState<{ message: string; line: number | null }>({ message: '', line: null });
   const [editLoading, setEditLoading] = useState(false);
@@ -860,8 +862,34 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       setEditOpen(true);
       setEditLoading(true);
       setEditContent('');
+      setEditFiles(project.composeFiles || []);
+      setEditFile('');
       try {
         const res = await get<any>(projectUrl(project.name) + '/file');
+        const content = typeof res === 'string' ? res : res?.content || '';
+        setEditContent(content);
+        if (Array.isArray(res?.files) && res.files.length > 1) {
+          setEditFiles(res.files);
+          setEditFile(res.composeFile || res.files[0] || '');
+        }
+      } catch (e: any) {
+        setEditContent('');
+        showToast(e?.message || t('获取 compose 文件失败'), 'error');
+      } finally {
+        setEditLoading(false);
+      }
+    },
+    [canManage, showToast]
+  );
+
+  /** 多文件编排：切换编辑的目标文件（1.89.1） */
+  const switchEditFile = useCallback(
+    async (file: string) => {
+      if (!editName || !file) return;
+      setEditLoading(true);
+      setEditFile(file);
+      try {
+        const res = await get<any>(projectUrl(editName) + '/file?file=' + encodeURIComponent(file));
         const content = typeof res === 'string' ? res : res?.content || '';
         setEditContent(content);
       } catch (e: any) {
@@ -871,7 +899,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         setEditLoading(false);
       }
     },
-    [canManage, showToast]
+    [editName, showToast]
   );
 
   /** 保存编辑后的 compose 文件（复用 POST /api/compose 同名覆盖端点） */
@@ -892,7 +920,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     }
     setSavingEdit(true);
     try {
-      await post('/api/compose', { name, content: editContent });
+      await post('/api/compose', { name, content: editContent, file: editFile || undefined });
       showToast(t('项目修改已保存'));
       setEditOpen(false);
       setEditYamlErr({ message: '', line: null });
@@ -905,14 +933,17 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     } finally {
       setSavingEdit(false);
     }
-  }, [canManage, editName, editContent, showToast]);
+  }, [canManage, editName, editContent, editFile, showToast]);
 
+  /** 关闭编辑弹窗 */
   /** 关闭编辑弹窗 */
   const closeEdit = useCallback(() => {
     setEditOpen(false);
     setEditFull(false);
     setEditName('');
     setEditContent('');
+    setEditFiles([]);
+    setEditFile('');
     setEditYamlErr({ message: '', line: null });
   }, []);
 
@@ -1460,7 +1491,21 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         {editLoading ? (
           <div className="log-empty">{t('正在加载 compose 文件…')}</div>
         ) : (
-          <Field label="docker-compose.yml" required>
+          <Field label={editFiles.length > 1 ? t('目标文件') : 'docker-compose.yml'} required>
+            {editFiles.length > 1 && (
+              <div className="edit-file-switch">
+                {editFiles.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={`edit-file-switch__btn${editFile === f ? ' is-active' : ''}`}
+                    onClick={() => switchEditFile(f)}
+                  >
+                    {f.split(/[\\/]/).pop()}
+                  </button>
+                ))}
+              </div>
+            )}
             <YamlEditor
               value={editContent}
               onChange={(v) => {
