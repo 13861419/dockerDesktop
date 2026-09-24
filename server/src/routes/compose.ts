@@ -399,7 +399,17 @@ router.get(
     const psOutput = await runProjectCmd(projCtx, `docker compose -f "${composeFile}" ps -a --format json`, dir);
     let services: any[] = [];
     try {
-      services = JSON.parse(psOutput.trim() || '[]');
+      const text = psOutput.trim();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          // 兼容旧版数组输出与单对象输出
+          services = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          // docker compose v2 为 NDJSON（每行一个对象，多容器时整段解析必失败）
+          services = text.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+        }
+      }
     } catch {
       services = [];
     }
