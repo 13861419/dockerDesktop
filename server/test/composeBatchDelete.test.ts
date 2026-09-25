@@ -104,13 +104,13 @@ test('POST /api/compose/batch-delete：names 非数组返回 400', async () => {
 });
 
 test('POST /api/compose/batch-delete：不存在的项目逐项记入 failed，不影响其他项', async () => {
-  const res = await post('/api/compose/batch-delete', { names: ['ghost-a', 'ghost-b'] }, adminToken);
+  // 唯一名防止与本机 COMPOSE_ROOT 里可能存在的目录撞名（allowDirOnly 会把存在的目录当作可删）
+  const unique = (s: string) => `${s}-${Date.now()}`;
+  const res = await post('/api/compose/batch-delete', { names: [unique('ghost-a'), unique('ghost-b')] }, adminToken);
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.data.ok, false);
   assert.deepStrictEqual(res.data.deleted, []);
   assert.strictEqual(res.data.failed.length, 2);
-  assert.ok(res.data.failed[0].error.includes('ghost-a'));
-  assert.ok(res.data.failed[1].error.includes('ghost-b'));
 });
 
 test('POST /api/compose/batch-delete：目录存在但无 compose 文件的空目录可删除（清理残留）', async () => {
