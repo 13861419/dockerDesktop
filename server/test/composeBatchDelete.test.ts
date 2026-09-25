@@ -112,3 +112,14 @@ test('POST /api/compose/batch-delete：不存在的项目逐项记入 failed，�
   assert.ok(res.data.failed[0].error.includes('ghost-a'));
   assert.ok(res.data.failed[1].error.includes('ghost-b'));
 });
+
+test('POST /api/compose/batch-delete：目录存在但无 compose 文件的空目录可删除（清理残留）', async () => {
+  // 路由默认 COMPOSE_ROOT = tmpdir()/docker-compose-projects（与服务一致的兜底）
+  const composeRoot = path.join(os.tmpdir(), 'docker-compose-projects');
+  const dirName = `dm-test-leftover-${Date.now()}`;
+  fs.mkdirSync(path.join(composeRoot, dirName), { recursive: true });
+  const res = await post('/api/compose/batch-delete', { names: [dirName] }, adminToken);
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(res.data.deleted, [dirName]);
+  assert.strictEqual(fs.existsSync(path.join(composeRoot, dirName)), false);
+});

@@ -218,14 +218,22 @@ async function discoverExternalProjects(): Promise<
 /**
  * 按项目名定位 compose 项目：先查面板本地目录，再从容器标签反查外部项目
  * 外部项目文件面板用户不可读时同样返回（fileAccessible=false，读写走提权通道）
+ * @param opts allowDirOnly：目录存在但已无 compose 文件时也返回（composeFile 为空串，供删除路由清理空目录）
  * @returns 找不到时返回 null
  */
-async function resolveProjectCtx(name: string): Promise<ComposeCtx | null> {
+async function resolveProjectCtx(
+  name: string,
+  opts?: { allowDirOnly?: boolean }
+): Promise<ComposeCtx | null> {
   if (!name || /[\\/]/.test(name) || name === '.' || name === '..') return null;
   const localDir = path.join(COMPOSE_ROOT, name);
   const localFile = findComposeFile(localDir);
   if (localFile) {
     return { dir: localDir, composeFile: path.join(localDir, localFile), source: 'panel', fileAccessible: true };
+  }
+  // 面板目录存在但已无 compose 文件（如测试残留空目录）：仅删除路由需要
+  if (opts?.allowDirOnly && fs.existsSync(localDir) && fs.statSync(localDir).isDirectory()) {
+    return { dir: localDir, composeFile: '', source: 'panel', fileAccessible: true };
   }
   try {
     const externals = await discoverExternalProjects();
@@ -1632,13 +1640,15 @@ router.post(
     // 串行执行，避免并发 docker compose 互相争抢
     for (const name of names) {
       try {
-        const ctx = await resolveProjectCtx(name);
+        const ctx = await resolveProjectCtx(name, { allowDirOnly: true });
         if (!ctx) {
           failed.push({ name, error: `项目 ${name} 不存在或缺少 compose 文件` });
           continue;
         }
         const downVolumes = volumes ? ' -v' : '';
-        await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${downVolumes}`, ctx.dir).catch(() => undefined);
+        if (ctx.composeFile) {
+          await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${downVolumes}`, ctx.dir).catch(() => undefined);
+        }
         // 外部项目仅下线容器，不删除 compose 文件
         if (ctx.source === 'panel') {
           fs.rmSync(ctx.dir, { recursive: true, force: true });
@@ -1663,14 +1673,17 @@ router.delete(
   '/:name',
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    const ctx = await resolveProjectCtx(req.params.name);
+    const ctx = await resolveProjectCtx(req.params.name, { allowDirOnly: true });
     if (!ctx) {
       return res.status(404).json({ error: `项目 ${req.params.name} 不存在或缺少 compose 文件` });
     }
     // 兼容字符串 "true" 与字面量 true 两种写法（Express 查询串通常为字符串）
     const volumes = req.query.volumes === 'true' || (req.query.volumes as unknown) === true;
     const downVolumes = volumes ? ' -v' : '';
-    await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${downVolumes}`, ctx.dir).catch(() => undefined);
+    // 空目录残留（无 compose 文件）无容器可下线，跳过 down
+    if (ctx.composeFile) {
+      await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} down${downVolumes}`, ctx.dir).catch(() => undefined);
+    }
     // 外部项目仅下线容器，不删除 compose 文件（避免误删第三方工具管理的项目文件）
     if (ctx.source === 'panel') {
       fs.rmSync(ctx.dir, { recursive: true, force: true });
