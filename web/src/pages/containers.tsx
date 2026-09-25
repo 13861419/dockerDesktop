@@ -244,6 +244,9 @@ export default function ContainersPage() {
   const [logFollow, setLogFollow] = useState(false);
   const [logWrap, setLogWrap] = useState(true);
   const [logSearch, setLogSearch] = useState('');
+  // 时间范围过滤（秒，0 = 所有）与时间戳显示开关
+  const [logSince, setLogSince] = useState(0);
+  const [logTs, setLogTs] = useState(false);
   const logScrollRef = useRef<HTMLDivElement>(null);
 
   // 创建表单端口占用检测结果（key 为端口行 index）
@@ -312,13 +315,13 @@ export default function ContainersPage() {
   useEffect(() => {
     if (!logFollow || !logTarget) return;
     const timer = setInterval(async () => {
-      if (!logLoading) await loadLogs(logTarget.id, logTail);
+      if (!logLoading) await loadLogs(logTarget.id, logTail, logSince, logTs);
       const el = logScrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     }, 3000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logFollow, logTarget, logTail]);
+  }, [logFollow, logTarget, logTail, logSince, logTs]);
 
   /** 新日志到达且跟随模式开启时滚动到底部 */
   useEffect(() => {
@@ -342,10 +345,14 @@ export default function ContainersPage() {
    * @param id 容器 ID
    * @param tail 尾部行数
    */
-  async function loadLogs(id: string, tail: number) {
+  async function loadLogs(id: string, tail: number, since = logSince, ts = logTs) {
     setLogLoading(true);
     try {
-      const res = await get<{ logs: string }>('/api/containers/' + id + '/logs', { tail });
+      const res = await get<{ logs: string }>('/api/containers/' + id + '/logs', {
+        tail,
+        ...(since > 0 ? { since: Math.floor(Date.now() / 1000) - since } : {}),
+        ...(ts ? { timestamps: 'true' } : {}),
+      });
       const text = res?.logs || '';
       const lines = text
         .split(/\r?\n/)
@@ -374,6 +381,26 @@ export default function ContainersPage() {
   async function handleLogTailChange(tail: number) {
     if (!logTarget) return;
     await loadLogs(logTarget.id, tail);
+  }
+
+  /** 切换时间范围过滤（秒，0 = 所有）后重新拉取 */
+  async function handleLogSinceChange(since: number) {
+    if (!logTarget) return;
+    setLogSince(since);
+    await loadLogs(logTarget.id, logTail, since, logTs);
+  }
+
+  /** 切换时间戳显示后重新拉取 */
+  async function handleLogTsToggle() {
+    if (!logTarget) return;
+    const next = !logTs;
+    setLogTs(next);
+    await loadLogs(logTarget.id, logTail, logSince, next);
+  }
+
+  /** 清空当前显示的日志（仅清视图；追踪开启时下轮拉取会重新填充） */
+  function clearLogs() {
+    setLogLines([]);
   }
 
   /**
@@ -2599,20 +2626,6 @@ export default function ContainersPage() {
         onClose={closeLogs}
         footer={
           <>
-            <Select
-              className="containers__log-tail"
-              value={String(logTail)}
-              onChange={(e) => handleLogTailChange(Number(e.target.value))}
-              style={{ marginRight: 8 }}
-            >
-              <option value="100">{t('最近 100 行')}</option>
-              <option value="300">{t('最近 300 行')}</option>
-              <option value="1000">{t('最近 1000 行')}</option>
-              <option value="0">{t('全部')}</option>
-            </Select>
-            <Button variant={logFollow ? 'primary' : 'secondary'} onClick={() => setLogFollow((v) => !v)}>
-              {logFollow ? t('跟随中') : t('跟随刷新')}
-            </Button>
             <Button variant="secondary" onClick={reloadLogs} loading={logLoading}>
               {t('刷新')}
             </Button>
@@ -2631,6 +2644,31 @@ export default function ContainersPage() {
           </>
         }
       >
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Select value={String(logSince)} onChange={(e) => handleLogSinceChange(Number(e.target.value))} style={{ width: 136 }}>
+            <option value="0">{t('所有')}</option>
+            <option value="600">{t('最近 10 分钟')}</option>
+            <option value="3600">{t('最近 1 小时')}</option>
+            <option value="14400">{t('最近 4 小时')}</option>
+            <option value="86400">{t('最近 1 天')}</option>
+          </Select>
+          <Select value={String(logTail)} onChange={(e) => handleLogTailChange(Number(e.target.value))} style={{ width: 136 }}>
+            <option value="100">{t('最近 100 行')}</option>
+            <option value="200">{t('最近 200 行')}</option>
+            <option value="500">{t('最近 500 行')}</option>
+            <option value="1000">{t('最近 1000 行')}</option>
+            <option value="0">{t('全部')}</option>
+          </Select>
+          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
+            {logFollow ? t('追踪中') : t('追踪')}
+          </Button>
+          <Button variant={logTs ? 'primary' : 'secondary'} size="sm" onClick={handleLogTsToggle}>
+            {t('时间戳')}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={clearLogs}>
+            {t('清空')}
+          </Button>
+        </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <Input
             placeholder={t('在日志中搜索…')}
