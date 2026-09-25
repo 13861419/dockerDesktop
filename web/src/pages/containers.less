@@ -858,3 +858,11 @@
 
 
 
+
+/* 日志滚动区：普通 480px；Modal 放大（全屏）时撑满视口剩余高度 */
+.containers__log-scroll {
+  max-height: 480px;
+}
+.modal--fullscreen .containers__log-scroll {
+  max-height: calc(94vh - 260px);
+}

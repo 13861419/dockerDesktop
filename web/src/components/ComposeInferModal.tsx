@@ -120,7 +120,14 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
   }, [content, aiBusy, showToast]);
 
   return (
-    <Modal open={open} title="生成 Compose" onClose={onClose} width={fullscreen ? window.innerWidth - 32 : 720}>
+    <Modal
+      open={open}
+      title="生成 Compose"
+      onClose={onClose}
+      width={720}
+      fullscreen={fullscreen}
+      onToggleFullscreen={() => setFullscreen((f) => !f)}
+    >
       {inferring ? (
         <SkeletonRows rows={8} />
       ) : result ? (
@@ -158,9 +165,6 @@ export default function ComposeInferModal({ open, onClose, initialIds = [] }: Pr
           <div className="infer-modal__actions">
             <Button variant="ghost" size="sm" disabled={aiBusy || !content.trim()} loading={aiBusy} onClick={aiReview}>
               AI 审查优化
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setFullscreen((f) => !f)}>
-              {fullscreen ? '退出全屏' : '全屏编辑'}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setResult(null)}>
               返回

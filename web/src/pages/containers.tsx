@@ -239,8 +239,7 @@ export default function ContainersPage() {
   const [logLoading, setLogLoading] = useState(false);
   // 日志行数上限（tail 参数）
   const [logTail, setLogTail] = useState(300);
-  // 日志弹窗增强：全屏 / 跟随刷新 / 自动换行 / 内联搜索
-  const [logFull, setLogFull] = useState(false);
+  // 日志弹窗增强：跟随刷新 / 自动换行 / 内联搜索（放大/还原由 Modal 统一提供）
   const [logFollow, setLogFollow] = useState(false);
   const [logWrap, setLogWrap] = useState(true);
   const [logSearch, setLogSearch] = useState('');
@@ -308,7 +307,6 @@ export default function ContainersPage() {
     setLogTarget(null);
     setLogLines([]);
     setLogFollow(false);
-    setLogFull(false);
   }
 
   /** 跟随模式：每 3 秒重新拉取并滚动到底部 */
@@ -2622,7 +2620,7 @@ export default function ContainersPage() {
       <Modal
         open={!!logTarget}
         title={t('容器日志 - {{v1}}', { v1: logTarget?.name || '' })}
-        width={logFull ? 4000 : 860}
+        width={860}
         onClose={closeLogs}
         footer={
           <>
@@ -2634,9 +2632,6 @@ export default function ContainersPage() {
             </Button>
             <Button variant="secondary" onClick={downloadLogs}>
               {t('下载')}
-            </Button>
-            <Button variant="secondary" onClick={() => setLogFull((v) => !v)}>
-              {logFull ? t('退出全屏') : t('全屏')}
             </Button>
             <Button variant="secondary" onClick={closeLogs}>
               {t('关闭')}
@@ -2695,13 +2690,13 @@ export default function ContainersPage() {
         </div>
         <div
           ref={logScrollRef}
+          className="containers__log-scroll"
           onWheel={() => setLogFollow(false)}
           style={{
             background: 'var(--bg-code, #1e1e1e)',
             color: 'var(--text-code, #d4d4d4)',
             borderRadius: 8,
             padding: 12,
-            maxHeight: logFull ? 'calc(94vh - 260px)' : 480,
             overflow: 'auto',
             fontFamily: 'var(--font-mono, monospace)',
             fontSize: 12,
