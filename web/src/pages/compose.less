@@ -268,11 +268,18 @@
   word-break: break-all;
 }
 
-/* 日志弹窗放大（全屏）时日志区撑满视口剩余高度（头部+底部约占 140px） */
+/* 日志弹窗放大（全屏）时弹窗体不滚动，日志区 flex 撑满剩余高度并自行滚动（避免双滚动条） */
+.modal--fullscreen .modal__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .modal--fullscreen .log-viewer {
   flex: 1;
+  min-height: 0;
   max-height: none;
-  height: calc(94vh - 140px);
 }
 
 /* 多文件编排编辑弹窗：目标文件切换按钮（1.89.1） */

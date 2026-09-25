@@ -193,8 +193,9 @@ export default function ComposePage() {
   const [logFull, setLogFull] = useState(false);
   const [logContent, setLogContent] = useState('');
   // 日志工具栏状态（与容器日志弹窗一致）：时间范围 / 时间戳 / 跟随刷新 / 自动换行 / 搜索
-  // 条数无下拉：普通视图最近 200 行，放大（全屏）自动拉取全部
+  // 条数与时间共用唯一下拉：普通视图最近 200 行，放大（全屏）自动拉取全部
   const [logSince, setLogSince] = useState(0);
+  const [logLines, setLogLines] = useState(0);
   const [logTs, setLogTs] = useState(false);
   const [logFollow, setLogFollow] = useState(false);
   const [logWrap, setLogWrap] = useState(false);
@@ -1058,7 +1059,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const fetchLog = useCallback(
     async (o?: { tail?: number; since?: number; ts?: boolean; quiet?: boolean }) => {
       if (!logName) return;
-      const tail = o?.tail ?? (logFull ? 0 : 200);
+      const tail = o?.tail ?? (logLines > 0 ? logLines : logFull ? 0 : 200);
       const since = o?.since ?? logSince;
       const ts = o?.ts ?? logTs;
       if (!o?.quiet) setLogLoading(true);
@@ -1078,7 +1079,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         if (!o?.quiet) setLogLoading(false);
       }
     },
-    [logName, logService, logFull, logSince, logTs, showToast]
+    [logName, logService, logFull, logSince, logLines, logTs, showToast]
   );
 
   /**
@@ -1848,8 +1849,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         onToggleFullscreen={() => {
           const next = !logFull;
           setLogFull(next);
-          // 放大后自动拉取全部日志，还原回最近 200 行
-          fetchLog({ tail: next ? 0 : 200 });
+          // 放大后自动拉取全部日志，还原回当前档位（条数或最近 200 行）
+          fetchLog({ tail: next ? 0 : logLines > 0 ? logLines : 200 });
         }}
         footer={
           <>
@@ -1891,14 +1892,40 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         }
       >
         <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Select value={String(logSince)} onChange={(e) => { const v = Number(e.target.value); setLogSince(v); fetchLog({ since: v }); }} style={{ width: 136 }}>
+          <Select
+            value={logLines > 0 ? `l${logLines}` : String(logSince)}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith('l')) {
+                const n = Number(v.slice(1));
+                setLogLines(n);
+                setLogSince(0);
+                fetchLog({ since: 0, tail: n });
+              } else {
+                setLogLines(0);
+                setLogSince(Number(v));
+                fetchLog({ since: Number(v), tail: 0 });
+              }
+            }}
+            style={{ width: 136 }}
+          >
             <option value="0">{t('所有')}</option>
             <option value="600">{t('最近 10 分钟')}</option>
             <option value="3600">{t('最近 1 小时')}</option>
             <option value="14400">{t('最近 4 小时')}</option>
             <option value="86400">{t('最近 1 天')}</option>
+            <option value="l100">{t('最近 100 行')}</option>
+            <option value="l200">{t('最近 200 行')}</option>
+            <option value="l500">{t('最近 500 行')}</option>
+            <option value="l1000">{t('最近 1000 行')}</option>
           </Select>
-          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
+          <Input
+            placeholder={t('在日志中搜索…')}
+            value={logSearch}
+            onChange={(e) => setLogSearch(e.target.value)}
+            style={{ flex: 1, minWidth: 160 }}
+          />
+          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)} style={{ minWidth: 88 }}>
             {logFollow ? t('跟随中') : t('跟随刷新')}
           </Button>
           <Button variant={logTs ? 'primary' : 'secondary'} size="sm" onClick={() => { const nv = !logTs; setLogTs(nv); fetchLog({ ts: nv }); }}>
@@ -1907,15 +1934,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
           <Button variant="secondary" size="sm" onClick={() => setLogContent('')}>
             {t('清空')}
           </Button>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Input
-            placeholder={t('在日志中搜索…')}
-            value={logSearch}
-            onChange={(e) => setLogSearch(e.target.value)}
-            style={{ flex: 1, minWidth: 180 }}
-          />
-          <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap', minWidth: 72, textAlign: 'right' }}>
             {logSearch ? `${logContent.split('\n').filter((l) => l.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}` : `${logContent.split('\n').length - 1} ${t('行')}`}
           </span>
           <Button variant={logWrap ? 'primary' : 'secondary'} size="sm" onClick={() => setLogWrap((v) => !v)}>
