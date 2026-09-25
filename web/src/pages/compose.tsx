@@ -5,7 +5,7 @@
  * 查看配置与删除项目等操作。
  */
 import { useNavigate } from 'react-router-dom';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -192,6 +192,14 @@ export default function ComposePage() {
   const [logService, setLogService] = useState('');
   const [logFull, setLogFull] = useState(false);
   const [logContent, setLogContent] = useState('');
+  // 日志工具栏状态（与容器日志弹窗一致）：条数 / 时间范围 / 时间戳 / 跟随刷新 / 自动换行 / 搜索
+  const [logTail, setLogTail] = useState(200);
+  const [logSince, setLogSince] = useState(0);
+  const [logTs, setLogTs] = useState(false);
+  const [logFollow, setLogFollow] = useState(false);
+  const [logWrap, setLogWrap] = useState(false);
+  const [logSearch, setLogSearch] = useState('');
+  const logPreRef = useRef<HTMLPreElement>(null);
   const [logLoading, setLogLoading] = useState(false);
 
   // 新建项目弹窗状态
@@ -1045,7 +1053,36 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   }, [stopTarget, stopVolumes, showToast]);
 
   /**
-   * 打开日志弹窗并拉取最近日志
+   * 拉取项目日志（tail/since/timestamps 可覆盖；quiet 用于跟随刷新不闪 loading）
+   */
+  const fetchLog = useCallback(
+    async (o?: { tail?: number; since?: number; ts?: boolean; quiet?: boolean }) => {
+      if (!logName) return;
+      const tail = o?.tail ?? logTail;
+      const since = o?.since ?? logSince;
+      const ts = o?.ts ?? logTs;
+      if (!o?.quiet) setLogLoading(true);
+      try {
+        const res = await post<unknown>(projectUrl(logName) + '/logs', {
+          tail,
+          ...(since > 0 ? { since: Math.floor(Date.now() / 1000) - since } : {}),
+          timestamps: ts || undefined,
+          service: logService || undefined,
+        });
+        setLogContent(
+          typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
+        );
+      } catch (e: any) {
+        if (!o?.quiet) showToast(e?.message || t('获取日志失败'), 'error');
+      } finally {
+        if (!o?.quiet) setLogLoading(false);
+      }
+    },
+    [logName, logService, logTail, logSince, logTs, showToast]
+  );
+
+  /**
+   * 打开日志弹窗并拉取最近日志（重置工具栏为默认档位）
    * @param name 项目名
    */
   const openLog = useCallback(
@@ -1053,6 +1090,11 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       setLogName(name);
       setLogService(service || '');
       setLogOpen(true);
+      setLogTail(200);
+      setLogSince(0);
+      setLogTs(false);
+      setLogFollow(false);
+      setLogSearch('');
       setLogLoading(true);
       setLogContent('');
       try {
@@ -1073,20 +1115,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   /**
    * 刷新当前项目日志
    */
-  const refreshLog = useCallback(async () => {
-    if (!logName) return;
-    setLogLoading(true);
-    try {
-      const res = await post<unknown>(projectUrl(logName) + '/logs', { tail: 200, service: logService || undefined });
-      setLogContent(
-        typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
-      );
-    } catch (e: any) {
-      showToast(e?.message || t('刷新日志失败'), 'error');
-    } finally {
-      setLogLoading(false);
-    }
-  }, [logName, logService, showToast]);
+  const refreshLog = useCallback(() => fetchLog(), [fetchLog]);
 
   /** 关闭日志弹窗 */
   const closeLog = useCallback(() => {
@@ -1094,7 +1123,26 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     setLogName('');
     setLogService('');
     setLogContent('');
+    setLogFollow(false);
   }, []);
+
+  /** 跟随刷新：每 3 秒静默重拉并滚动到底部 */
+  useEffect(() => {
+    if (!logFollow || !logOpen) return;
+    const timer = setInterval(async () => {
+      await fetchLog({ quiet: true });
+      const el = logPreRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [logFollow, logOpen, fetchLog]);
+
+  /** 新内容到达且跟随刷新开启时滚动到底部 */
+  useEffect(() => {
+    if (!logFollow) return;
+    const el = logPreRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logContent, logFollow]);
 
   return (
     <div className="page">
@@ -1804,12 +1852,89 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             <Button variant="secondary" onClick={refreshLog} loading={logLoading}>
               {t('刷新')}
             </Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(logContent);
+                  showToast(t('已复制'), 'success');
+                } catch {
+                  showToast(t('复制失败'), 'error');
+                }
+              }}
+            >
+              {t('复制')}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${logName || 'compose'}.log`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              disabled={!logContent}
+            >
+              {t('下载')}
+            </Button>
             <Button variant="secondary" onClick={closeLog}>
               {t('关闭')}
             </Button>
           </>
         }
       >
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Select value={String(logSince)} onChange={(e) => { const v = Number(e.target.value); setLogSince(v); fetchLog({ since: v }); }} style={{ width: 136 }}>
+            <option value="0">{t('所有')}</option>
+            <option value="600">{t('最近 10 分钟')}</option>
+            <option value="3600">{t('最近 1 小时')}</option>
+            <option value="14400">{t('最近 4 小时')}</option>
+            <option value="86400">{t('最近 1 天')}</option>
+          </Select>
+          <Select value={String(logTail)} onChange={(e) => { const v = Number(e.target.value); setLogTail(v); fetchLog({ tail: v }); }} style={{ width: 136 }}>
+            <option value="100">{t('最近 100 行')}</option>
+            <option value="200">{t('最近 200 行')}</option>
+            <option value="500">{t('最近 500 行')}</option>
+            <option value="1000">{t('最近 1000 行')}</option>
+            <option value="0">{t('全部')}</option>
+          </Select>
+          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
+            {logFollow ? t('跟随中') : t('跟随刷新')}
+          </Button>
+          <Button variant={logTs ? 'primary' : 'secondary'} size="sm" onClick={() => { const nv = !logTs; setLogTs(nv); fetchLog({ ts: nv }); }}>
+            {t('时间戳')}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setLogContent('')}>
+            {t('清空')}
+          </Button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Input
+            placeholder={t('在日志中搜索…')}
+            value={logSearch}
+            onChange={(e) => setLogSearch(e.target.value)}
+            style={{ flex: 1, minWidth: 180 }}
+          />
+          <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap' }}>
+            {logSearch ? `${logContent.split('\n').filter((l) => l.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}` : `${logContent.split('\n').length - 1} ${t('行')}`}
+          </span>
+          <Button variant={logWrap ? 'primary' : 'secondary'} size="sm" onClick={() => setLogWrap((v) => !v)}>
+            {t('自动换行')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              const el = logPreRef.current;
+              if (el) el.scrollTop = el.scrollHeight;
+            }}
+          >
+            {t('到底部')}
+          </Button>
+        </div>
         {logLoading && !logContent ? (
           <div className="log-empty">{t('正在拉取日志…')}</div>
         ) : (
@@ -1817,6 +1942,11 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             content={logContent}
             emptyText={t('（暂无日志）')}
             truncatedText={t('（日志较长，仅显示最近 {{count}} 行）', { count: LOG_MAX_RENDER_LINES })}
+            showLineNumbers
+            search={logSearch}
+            wrap={logWrap}
+            preRef={logPreRef}
+            onWheel={() => setLogFollow(false)}
           />
         )}
       </Modal>

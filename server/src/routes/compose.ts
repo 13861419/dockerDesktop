@@ -1589,16 +1589,24 @@ router.post(
   '/:name/logs',
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    let tail = Number(req.body?.tail || '200');
-    if (!Number.isFinite(tail) || tail < 1) tail = 200;
+    let tail = Number(req.body?.tail ?? 200);
+    if (!Number.isFinite(tail) || tail < 0) tail = 200;
     if (tail > 5000) tail = 5000;
     // 可选 service：结构视图里按服务查看日志（1.89.1）
     const service = typeof req.body?.service === 'string' ? req.body.service.trim() : '';
     if (service && /[^\w-.]/.test(service)) {
       return res.status(400).json({ error: '非法的 service 参数' });
     }
-    const svc = service ? ` ${service}` : '';
-    const output = await runProjectCmd(ctx, `docker compose ${composeFileFlags(ctx)} logs --tail=${tail}${svc}`, ctx.dir);
+    // 可选 since：Unix 秒时间戳（时间范围过滤）；timestamps：每行前附带时间戳
+    const since = Number(req.body?.since);
+    const cmd = [
+      `docker compose ${composeFileFlags(ctx)} logs`,
+      ...(tail > 0 ? [`--tail=${tail}`] : []),
+      ...(Number.isFinite(since) && since > 0 ? [`--since=${Math.floor(since)}`] : []),
+      ...(req.body?.timestamps === true ? ['--timestamps'] : []),
+      ...(service ? [service] : []),
+    ];
+    const output = await runProjectCmd(ctx, cmd.join(' '), ctx.dir);
     // compose CLI 会给日志上 ANSI 颜色，非终端环境显示为乱码，统一剥除（1.89.1）
     res.json({ logs: stripAnsi(output) });
   }),

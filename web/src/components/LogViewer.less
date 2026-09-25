@@ -12,3 +12,20 @@
   color: var(--text-muted, #8a8f98);
   font-style: italic;
 }
+.log-viewer .log-line__no {
+  opacity: 0.45;
+  user-select: none;
+  display: inline-block;
+  min-width: 34px;
+  margin-right: 8px;
+  text-align: right;
+}
+.log-viewer .log-line mark {
+  background: #ffd54f;
+  color: #000;
+}
+/* 自动换行模式（默认 pre 不换行，与容器页日志一致） */
+.log-viewer--wrap {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
