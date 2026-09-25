@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added（新增）
+
+- **日志级别着色**：Compose 日志弹窗与容器日志弹窗按行着色——错误类（ERROR / FATAL / PANIC / Exception 等）红色、警告类（WARN / WARNING）黄色，排障时一眼定位问题行；关键字按单词边界匹配避免普通句子误报
+- **大日志防卡顿**：Compose 日志渲染行数封顶（最近 3000 行，超出显示截断提示），`useMemo` 仅在内容变化时重解析；后端 compose logs 接口 tail 参数钳制到 5000 行，防超大日志拖慢传输与渲染
+
 ## [1.90.0] - 2026-09-24
 
 ### Added（新增）

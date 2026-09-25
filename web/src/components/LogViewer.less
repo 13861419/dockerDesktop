@@ -1,0 +1,14 @@
+/* 日志行级别着色：错误=红 / 警告=黄 / 截断提示=灰 */
+.log-viewer .log-line {
+  min-height: 1.6em;
+}
+.log-viewer .log-line--error {
+  color: var(--danger, #ff6b6b);
+}
+.log-viewer .log-line--warn {
+  color: var(--warning, #e6b450);
+}
+.log-viewer .log-line--meta {
+  color: var(--text-muted, #8a8f98);
+  font-style: italic;
+}

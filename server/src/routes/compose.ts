@@ -1589,7 +1589,9 @@ router.post(
   '/:name/logs',
   asyncHandler(async (req: Request, res: Response) => {
     const ctx = await requireProjectCtx(req.params.name);
-    const tail = Number(req.body?.tail || '200');
+    let tail = Number(req.body?.tail || '200');
+    if (!Number.isFinite(tail) || tail < 1) tail = 200;
+    if (tail > 5000) tail = 5000;
     // 可选 service：结构视图里按服务查看日志（1.89.1）
     const service = typeof req.body?.service === 'string' ? req.body.service.trim() : '';
     if (service && /[^\w-.]/.test(service)) {

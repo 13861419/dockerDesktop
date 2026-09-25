@@ -28,6 +28,7 @@ import { Field, Input, Select } from '../components/Form';
 import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import ComposeInferModal from '../components/ComposeInferModal';
+import { detectLogLevel } from '../utils/logLevel';
 import { useLang } from '../i18n';
 import './containers.less';
 
@@ -233,7 +234,7 @@ export default function ContainersPage() {
   // 日志查看弹窗状态
   const [logTarget, setLogTarget] = useState<{ id: string; name: string } | null>(null);
   // 日志弹窗中的实时日志内容（每行一个对象，区分 stdout/stderr）
-  const [logLines, setLogLines] = useState<{ text: string; isErr: boolean }[]>([]);
+  const [logLines, setLogLines] = useState<{ text: string; level: 'error' | 'warn' | null }[]>([]);
   // 日志是否加载中
   const [logLoading, setLogLoading] = useState(false);
   // 日志行数上限（tail 参数）
@@ -349,11 +350,11 @@ export default function ContainersPage() {
       const lines = text
         .split(/\r?\n/)
         .filter((l) => l.length > 0)
-        .map((l) => ({ text: l, isErr: false }));
+        .map((l) => ({ text: l, level: detectLogLevel(l) }));
       setLogLines(lines);
       setLogTail(tail);
     } catch (e: any) {
-      setLogLines([{ text: t('（拉取日志失败：{{msg}}）', { msg: e?.message || t('未知错误') }), isErr: true }]);
+      setLogLines([{ text: t('（拉取日志失败：{{msg}}）', { msg: e?.message || t('未知错误') }), level: 'error' as const }]);
     } finally {
       setLogLoading(false);
     }
@@ -2695,7 +2696,7 @@ export default function ContainersPage() {
                 <div
                   key={i}
                   style={{
-                    color: l.isErr ? 'var(--danger, #ff6b6b)' : undefined,
+                    color: l.level === 'error' ? 'var(--danger, #ff6b6b)' : l.level === 'warn' ? 'var(--warning, #e6b450)' : undefined,
                     whiteSpace: logWrap ? 'pre-wrap' : 'pre',
                     wordBreak: logWrap ? 'break-all' : 'normal',
                     background: hit && logSearch ? 'rgba(255, 213, 79, 0.12)' : undefined,

@@ -1609,6 +1609,7 @@ export const en: Record<string, string> = {
   '例如：nginx:alpine': 'e.g. nginx:alpine',
   '部署': 'Deploy',
   '暂无日志': 'No logs yet',
+  '（日志较长，仅显示最近 {{count}} 行）': '(Log truncated: showing the last {{count}} lines)',
   '确定删除该容器？': 'Delete this container?',
   '操作成功': 'Done',
   '在远程主机运行轻量 agent 反向连接本面板（适合 NAT / 防火墙后主机），面板内直接管理远端 Docker：部署 / 启停 / 日志，远端事件并入统一事件流与自动化（1.63.0 ~ 1.65.0）': 'Run a lightweight agent on a remote host that dials back to this panel (ideal for hosts behind NAT/firewall), then manage its Docker right in the panel: deploy, start/stop, logs; remote events feed the unified event stream and automation (1.63.0 ~ 1.65.0)',

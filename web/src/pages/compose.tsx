@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast';
 import { get, post, del } from '../api/client';
 import StateActions from '../components/StateActions';
 import MoreMenu, { MoreMenuItem } from '../components/MoreMenu';
+import LogViewer, { LOG_MAX_RENDER_LINES } from '../components/LogViewer';
 import { useCanManage } from '../hooks/useCanManage';
 import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
 import { translateNow as t } from '../i18n';
@@ -1812,7 +1813,11 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         {logLoading && !logContent ? (
           <div className="log-empty">{t('正在拉取日志…')}</div>
         ) : (
-          <pre className="log-viewer">{logContent || t('（暂无日志）')}</pre>
+          <LogViewer
+            content={logContent}
+            emptyText={t('（暂无日志）')}
+            truncatedText={t('（日志较长，仅显示最近 {{count}} 行）', { count: LOG_MAX_RENDER_LINES })}
+          />
         )}
       </Modal>
 
