@@ -192,8 +192,8 @@ export default function ComposePage() {
   const [logService, setLogService] = useState('');
   const [logFull, setLogFull] = useState(false);
   const [logContent, setLogContent] = useState('');
-  // 日志工具栏状态（与容器日志弹窗一致）：条数 / 时间范围 / 时间戳 / 跟随刷新 / 自动换行 / 搜索
-  const [logTail, setLogTail] = useState(200);
+  // 日志工具栏状态（与容器日志弹窗一致）：时间范围 / 时间戳 / 跟随刷新 / 自动换行 / 搜索
+  // 条数无下拉：普通视图最近 200 行，放大（全屏）自动拉取全部
   const [logSince, setLogSince] = useState(0);
   const [logTs, setLogTs] = useState(false);
   const [logFollow, setLogFollow] = useState(false);
@@ -1058,7 +1058,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const fetchLog = useCallback(
     async (o?: { tail?: number; since?: number; ts?: boolean; quiet?: boolean }) => {
       if (!logName) return;
-      const tail = o?.tail ?? logTail;
+      const tail = o?.tail ?? (logFull ? 0 : 200);
       const since = o?.since ?? logSince;
       const ts = o?.ts ?? logTs;
       if (!o?.quiet) setLogLoading(true);
@@ -1078,7 +1078,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         if (!o?.quiet) setLogLoading(false);
       }
     },
-    [logName, logService, logTail, logSince, logTs, showToast]
+    [logName, logService, logFull, logSince, logTs, showToast]
   );
 
   /**
@@ -1090,7 +1090,6 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       setLogName(name);
       setLogService(service || '');
       setLogOpen(true);
-      setLogTail(200);
       setLogSince(0);
       setLogTs(false);
       setLogFollow(false);
@@ -1846,7 +1845,12 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         onClose={closeLog}
         width={760}
         fullscreen={logFull}
-        onToggleFullscreen={() => setLogFull((v) => !v)}
+        onToggleFullscreen={() => {
+          const next = !logFull;
+          setLogFull(next);
+          // 放大后自动拉取全部日志，还原回最近 200 行
+          fetchLog({ tail: next ? 0 : 200 });
+        }}
         footer={
           <>
             <Button variant="secondary" onClick={refreshLog} loading={logLoading}>
@@ -1893,13 +1897,6 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             <option value="3600">{t('最近 1 小时')}</option>
             <option value="14400">{t('最近 4 小时')}</option>
             <option value="86400">{t('最近 1 天')}</option>
-          </Select>
-          <Select value={String(logTail)} onChange={(e) => { const v = Number(e.target.value); setLogTail(v); fetchLog({ tail: v }); }} style={{ width: 136 }}>
-            <option value="100">{t('最近 100 行')}</option>
-            <option value="200">{t('最近 200 行')}</option>
-            <option value="500">{t('最近 500 行')}</option>
-            <option value="1000">{t('最近 1000 行')}</option>
-            <option value="0">{t('全部')}</option>
           </Select>
           <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
             {logFollow ? t('跟随中') : t('跟随刷新')}
