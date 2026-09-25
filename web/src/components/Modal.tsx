@@ -4,7 +4,7 @@
  * 支持：点击遮罩 / Esc / 关闭按钮关闭；打开时锁定背景滚动；
  * 初始聚焦移入弹窗并在关闭后归还焦点；通过 aria-labelledby 关联标题。
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './Modal.less';
 
 interface ModalProps {
@@ -14,10 +14,12 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   width?: number;
-  /** 全屏模式（1.51.0）：弹窗占满视口，适合编辑大文件 */
+  /** 全屏模式（1.51.0）：受控用法，由调用方配合 onToggleFullscreen 管理状态 */
   fullscreen?: boolean;
-  /** 传入时在标题栏渲染全屏切换按钮 */
+  /** 传入时由调用方控制全屏切换；未传入时组件自管全屏状态（所有弹窗默认可放大） */
   onToggleFullscreen?: () => void;
+  /** 是否显示「放大 / 还原」按钮（默认显示） */
+  fullscreenable?: boolean;
 }
 
 /**
@@ -31,9 +33,14 @@ export default function Modal({
   children,
   footer,
   width = 560,
-  fullscreen = false,
+  fullscreen: fullscreenProp = false,
   onToggleFullscreen,
+  fullscreenable = true,
 }: ModalProps) {
+  const [innerFull, setInnerFull] = useState(false);
+  // 受控（调用方传 onToggleFullscreen）或非受控（组件自管）双模式
+  const fullscreen = onToggleFullscreen ? fullscreenProp : innerFull;
+  const toggleFullscreen = onToggleFullscreen ?? (() => setInnerFull((v) => !v));
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   // 用 ref 持有最新 onClose，避免内联函数导致 effect 频繁重跑
@@ -43,6 +50,11 @@ export default function Modal({
   useEffect(() => {
     onCloseRef.current = onClose;
   });
+
+  // 非受控全屏在弹窗关闭时还原，避免下次打开仍是放大态
+  useEffect(() => {
+    if (!open) setInnerFull(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -86,10 +98,10 @@ export default function Modal({
             {title}
           </div>
           <div className="modal__header-actions">
-            {onToggleFullscreen && (
+            {fullscreenable && (
               <button
                 className="modal__close"
-                onClick={onToggleFullscreen}
+                onClick={toggleFullscreen}
                 aria-label={fullscreen ? '还原' : '放大'}
                 title={fullscreen ? '还原' : '放大'}
               >
