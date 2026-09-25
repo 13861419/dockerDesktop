@@ -272,34 +272,34 @@ dockerDesktop/
 
 ### 方式零：从 GitHub Releases 首次安装（推荐）
 
-示例版本以 `1.90.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
+示例版本以 `1.91.0` 为例（安装前请到 [Releases](https://github.com/13861419/dockerDesktop/releases) 替换为最新版本号）。
 
 **Ubuntu / Debian（amd64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-amd64.deb
-sudo dpkg -i docker-manager-1.90.0-amd64.deb
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.91.0/docker-manager-1.91.0-amd64.deb
+sudo dpkg -i docker-manager-1.91.0-amd64.deb
 ```
 
 **Ubuntu / Debian（arm64，如树莓派 / Oracle ARM）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-arm64.deb
-sudo dpkg -i docker-manager-1.90.0-arm64.deb
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.91.0/docker-manager-1.91.0-arm64.deb
+sudo dpkg -i docker-manager-1.91.0-arm64.deb
 ```
 
 **CentOS / RHEL / AlmaLinux（x86_64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-1.x86_64.rpm
-sudo yum localinstall -y docker-manager-1.90.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.90.0-1.x86_64.rpm
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.91.0/docker-manager-1.91.0-1.x86_64.rpm
+sudo yum localinstall -y docker-manager-1.91.0-1.x86_64.rpm   # 或 sudo dnf install -y ./docker-manager-1.91.0-1.x86_64.rpm
 ```
 
 **CentOS / RHEL / AlmaLinux（aarch64）**
 
 ```bash
-wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.90.0/docker-manager-1.90.0-1.aarch64.rpm
-sudo yum localinstall -y docker-manager-1.90.0-1.aarch64.rpm
+wget https://ghfast.top/https://github.com/13861419/dockerDesktop/releases/download/v1.91.0/docker-manager-1.91.0-1.aarch64.rpm
+sudo yum localinstall -y docker-manager-1.91.0-1.aarch64.rpm
 ```
 
 **macOS**
