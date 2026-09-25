@@ -2660,7 +2660,7 @@ export default function ContainersPage() {
             <option value="0">{t('全部')}</option>
           </Select>
           <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
-            {logFollow ? t('追踪中') : t('追踪')}
+            {logFollow ? t('跟随中') : t('跟随刷新')}
           </Button>
           <Button variant={logTs ? 'primary' : 'secondary'} size="sm" onClick={handleLogTsToggle}>
             {t('时间戳')}

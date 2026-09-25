@@ -1250,8 +1250,6 @@ export const en: Record<string, string> = {
   '最近 1 天': 'Last 24 hours',
   '最近 200 行': 'Last 200 lines',
   '最近 500 行': 'Last 500 lines',
-  '追踪': 'Follow',
-  '追踪中': 'Following',
   '时间戳': 'Timestamps',
   '清空失败': 'Failed to clear',
   '渠道名称': 'Channel Name',
