@@ -69,6 +69,7 @@ import rolesRouter from './routes/roles';
 import selfhealRouter from './routes/selfheal';
 import sqliteBackupRouter from './routes/sqliteBackup';
 import { requireAuth } from './auth';
+import { entranceGate } from './entrance';
 import { getSetting } from './settings';
 import { buildPrometheusText } from './prometheus';
 import mcpRouter from './mcp/server';
@@ -78,6 +79,10 @@ import credsRouter from './routes/creds';
 import { writeRateLimiter, webhookRateLimiter } from './rateLimit';
 
 const app = express();
+
+// 安全入口（隐藏路径）：须最先挂载。未设置 ENTRANCE_PATH 时直通（向后兼容），
+// 设置后仅秘密路径可进入面板，其余请求（含未知 API）一律 404
+app.use(entranceGate());
 
 // 允许跨域访问（前后端分离开发时）
 app.use(cors());

@@ -1851,4 +1851,4 @@ function seedContainerTemplates(d: DatabaseSync): void {
   });
 }
 
-export { DATA_DIR, DB_FILE };
+export { DATA_DIR, DB_FILE, getCredentialKey };
