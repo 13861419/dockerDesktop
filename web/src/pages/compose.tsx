@@ -11,6 +11,12 @@ import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ComposeLogModal from '../components/ComposeLogModal';
 import ComposeStructureModal from '../components/ComposeStructureModal';
+import ComposeHistoryModal from '../components/ComposeHistoryModal';
+import ComposeEnvModal from '../components/ComposeEnvModal';
+import ComposeConfigModal from '../components/ComposeConfigModal';
+import StopDownModal from '../components/StopDownModal';
+import DeleteProjectModal from '../components/DeleteProjectModal';
+import BatchDeleteModal from '../components/BatchDeleteModal';
 import Empty from '../components/Empty';
 import { Field, Input, Select } from '../components/Form';
 import YamlEditor from '../components/YamlEditor';
@@ -217,18 +223,10 @@ const [editFile, setEditFile] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   // 编辑弹窗全屏（1.52.0）
   const [editFull, setEditFull] = useState(false);
-  // compose 文件编辑历史（1.52.0）
-  const [histOpen, setHistOpen] = useState(false);
-  const [histLoading, setHistLoading] = useState(false);
-  const [histItems, setHistItems] = useState<Array<{ id: number; username: string; createdAt: number }>>([]);
-  const [histLoadingId, setHistLoadingId] = useState<number | null>(null);
-  // 环境变量（.env）编辑（1.54.0）
-  const [envOpen, setEnvOpen] = useState(false);
-  const [envLoading, setEnvLoading] = useState(false);
-  const [envName, setEnvName] = useState('');
-  const [envContent, setEnvContent] = useState('');
-  const [envExists, setEnvExists] = useState(false);
-  const [envSaving, setEnvSaving] = useState(false);
+  // compose 文件编辑历史（1.52.0）：目标项目名，列表拉取与版本载入在 ComposeHistoryModal 内部
+  const [histTarget, setHistTarget] = useState<string | null>(null);
+  // 环境变量（.env）编辑（1.54.0）：目标项目名，读取与保存在 ComposeEnvModal 内部
+  const [envTarget, setEnvTarget] = useState<string | null>(null);
 
   // 用户保存的 Compose 模板（来自 /api/compose-templates，用于"从模板新建"下拉）
   const [userTemplates, setUserTemplates] = useState<ComposeTemplate[]>([]);
@@ -266,10 +264,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const [saveModalDesc, setSaveModalDesc] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
 
-  // 停止（down）确认弹窗状态：记录目标项目与是否删除数据卷
+  // 停止（down）确认弹窗状态：仅记录目标项目，执行逻辑在 StopDownModal 内部
   const [stopTarget, setStopTarget] = useState<ComposeProject | null>(null);
-  const [stopVolumes, setStopVolumes] = useState(false);
-  const [stopping, setStopping] = useState(false);
 
   // docker run 导入弹窗状态
   const [runImportOpen, setRunImportOpen] = useState(false);
@@ -279,10 +275,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const [runImportErr, setRunImportErr] = useState('');
   const [runImportLoading, setRunImportLoading] = useState(false);
 
-  // 查看配置弹窗状态
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configTitle, setConfigTitle] = useState('');
-  const [configContent, setConfigContent] = useState('');
+  // 查看配置弹窗：目标项目名，配置拉取在 ComposeConfigModal 内部
+  const [configTarget, setConfigTarget] = useState<string | null>(null);
 
   // 结构视图弹窗：仅持有目标项目，数据拉取与服务操作在 ComposeStructureModal 内部（1.92.0 拆分）
   const [structureTarget, setStructureTarget] = useState<string | null>(null);
@@ -292,15 +286,9 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const [opName, setOpName] = useState<string | null>(null);
   const navigate = useNavigate();
   const [deleteTarget, setDeleteTarget] = useState<ComposeProject | null>(null);
-  const [deleteVolumes, setDeleteVolumes] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   // 多选批量删除（1.89.0）
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
-  const [batchVolumes, setBatchVolumes] = useState(false);
-  const [batchDeleting, setBatchDeleting] = useState(false);
-  // 外部项目强确认（1.89.0）：勾选含外部项目时须显式知晓才会放行删除
-  const [batchExternalAck, setBatchExternalAck] = useState(false);
   const selectedExternal = projects.filter((p) => selectedNames.includes(p.name) && p.source === 'external');
 
   /**
@@ -698,26 +686,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   }, [runImportYaml]);
 
 
-  /** 查看项目配置文件 */
-  const handleViewConfig = useCallback(
-    async (project: ComposeProject) => {
-      try {
-        const res = await get<any>(projectUrl(project.name) + '/config');
-        const content =
-          typeof res === 'string'
-            ? res
-            : res?.content ||
-              res?.config ||
-              JSON.stringify(res, null, 2);
-        setConfigTitle(project.name + ' · ' + t('规范化配置'));
-        setConfigContent(content || t('（无配置文件）'));
-        setConfigOpen(true);
-      } catch (e: any) {
-        showToast(e?.message || t('获取配置失败'), 'error');
-      }
-    },
-    [showToast]
-  );
+  /** 查看项目配置文件（配置拉取在 ComposeConfigModal 内部） */
+  const handleViewConfig = (project: ComposeProject) => setConfigTarget(project.name);
 
   /** 打开结构视图弹窗（数据拉取与服务操作在 ComposeStructureModal 内部） */
   function openStructure(project: ComposeProject) {
@@ -730,28 +700,6 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
    * @param action 动作标识
     * @param successMsg 成功提示
     */
-  /** 删除项目（根据 deleteVolumes 决定是否同时删除数据卷） */
-  const handleDelete = useCallback(async () => {
-    if (!deleteTarget) return;
-    if (!canDelete) {
-      showToast(t('仅管理员可删除 Compose 项目'), 'error');
-      setDeleteTarget(null);
-      setDeleteVolumes(false);
-      return;
-    }
-    setDeleting(true);
-    try {
-      const r = await del<{ ok: boolean; external?: boolean }>(projectUrl(deleteTarget.name), { volumes: deleteVolumes });
-      showToast(r?.external ? t('外部项目已下线容器，compose 文件已保留') : t('项目删除成功'));
-      setDeleteTarget(null);
-      setDeleteVolumes(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e: any) {
-      showToast(e?.message || t('项目删除失败'), 'error');
-    } finally {
-      setDeleting(false);
-    }
-  }, [canDelete, deleteTarget, deleteVolumes, showToast]);
 
   /** 全选 / 单行选择（多选删除，选择集为当前过滤后的列表） */
   const allChecked = projects.length > 0 && projects.every((p) => selectedNames.includes(p.name));
@@ -760,37 +708,6 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const toggleSelect = (name: string) =>
     setSelectedNames((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
 
-  /** 批量删除：调后端批量端点，按成功/失败计数提示 */
-  const handleBatchDelete = useCallback(async () => {
-    if (!selectedNames.length) return;
-    if (!canDelete) {
-      showToast(t('仅管理员可删除 Compose 项目'), 'error');
-      setBatchDeleteOpen(false);
-      return;
-    }
-    setBatchDeleting(true);
-    try {
-      const r = await post<{ ok: boolean; deleted: string[]; failed: Array<{ name: string; error: string }> }>(
-        '/api/compose/batch-delete',
-        { names: selectedNames, volumes: batchVolumes },
-      );
-      const okCount = r?.deleted?.length || 0;
-      const failCount = r?.failed?.length || 0;
-      showToast(
-        failCount === 0 ? t('已删除 {{n}} 个项目', { n: okCount }) : t('成功 {{n}} 个，失败 {{m}} 个', { n: okCount, m: failCount }),
-        failCount === 0 ? undefined : 'error',
-      );
-              setBatchDeleteOpen(false);
-              setBatchVolumes(false);
-              setBatchExternalAck(false);
-      setSelectedNames([]);
-      setRefreshKey((k) => k + 1);
-    } catch (e: any) {
-      showToast(e?.message || t('批量删除失败'), 'error');
-    } finally {
-      setBatchDeleting(false);
-    }
-  }, [batchVolumes, canDelete, selectedNames, showToast]);
 
   /** 打开编辑弹窗并加载指定项目的 compose 文件内容 */
   const openEdit = useCallback(
@@ -888,101 +805,15 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     setEditYamlErr({ message: '', line: null });
   }, []);
 
-  /** 打开 compose 文件编辑历史（1.52.0） */
-  const openHistory = useCallback(async () => {
-    if (!editName) return;
-    setHistOpen(true);
-    setHistLoading(true);
-    try {
-      const data = await get<{ items: Array<{ id: number; username: string; createdAt: number }> }>(
-        projectUrl(editName) + '/history'
-      );
-      setHistItems(data?.items || []);
-    } catch {
-      setHistItems([]);
-    } finally {
-      setHistLoading(false);
-    }
-  }, [editName]);
+  /** 打开 compose 文件编辑历史（1.52.0）：列表拉取在 ComposeHistoryModal 内部 */
+  const openHistory = () => {
+    if (editName) setHistTarget(editName);
+  };
 
-  /** 载入某个历史版本到编辑器（保存后生效） */
-  const loadHistoryVersion = useCallback(
-    async (id: number) => {
-      setHistLoadingId(id);
-      try {
-        const data = await get<{ content: string }>(projectUrl(editName) + '/history/' + id + '/content');
-        setEditContent(data?.content || '');
-        setHistOpen(false);
-        showToast(t('已载入历史版本，保存后生效'), 'success');
-      } catch (e: any) {
-        showToast(e?.message || t('载入历史版本失败'), 'error');
-      } finally {
-        setHistLoadingId(null);
-      }
-    },
-    [editName, showToast]
-  );
+  /** 打开环境变量（.env）编辑弹窗（1.54.0）：读取与保存在 ComposeEnvModal 内部 */
+  const openEnv = (project: ComposeProject) => setEnvTarget(project.name);
 
-  /** 打开环境变量（.env）编辑弹窗（1.54.0） */
-  const openEnv = useCallback(
-    async (project: ComposeProject) => {
-      setEnvName(project.name);
-      setEnvContent('');
-      setEnvExists(false);
-      setEnvOpen(true);
-      setEnvLoading(true);
-      try {
-        const data = await get<{ content: string; exists: boolean }>(projectUrl(project.name) + '/env');
-        setEnvContent(data?.content || '');
-        setEnvExists(!!data?.exists);
-      } catch (e: any) {
-        showToast(e?.message || t('读取环境变量失败'), 'error');
-        setEnvOpen(false);
-      } finally {
-        setEnvLoading(false);
-      }
-    },
-    [showToast]
-  );
 
-  /** 保存 .env（保存后需再次「启动」应用） */
-  const saveEnv = useCallback(async () => {
-    setEnvSaving(true);
-    try {
-      await post(projectUrl(envName) + '/env', { content: envContent });
-      showToast(t('环境变量已保存，重新「启动」项目后生效'), 'success');
-      setEnvExists(true);
-      setEnvOpen(false);
-    } catch (e: any) {
-      showToast(e?.message || t('保存失败'), 'error');
-    } finally {
-      setEnvSaving(false);
-    }
-  }, [envName, envContent, showToast]);
-
-  /** 执行停止（down）操作，带删卷选择 */
-  const handleStopConfirm = useCallback(async () => {
-    if (!stopTarget) return;
-    setStopping(true);
-    try {
-      const resp = await post<{ ok: boolean; approvalPending?: boolean }>(projectUrl(stopTarget.name) + '/down', {
-        volumes: stopVolumes,
-      });
-      if (resp?.approvalPending) {
-        showToast(t('该操作已提交审批，等待管理员批准后执行'), 'info');
-      } else {
-        showToast(stopVolumes ? t('项目已停止，数据卷已删除') : t('项目已停止'));
-      }
-      setStopTarget(null);
-      setStopVolumes(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e: any) {
-      showToast(e?.message || t('停止项目失败'), 'error');
-      setStopping(false);
-      return;
-    }
-    setStopping(false);
-  }, [stopTarget, stopVolumes, showToast]);
 
   /** 打开日志弹窗（快照拉取与跟随流逻辑在 ComposeLogModal 内部） */
   function openLog(name: string, service?: string) {
@@ -1057,7 +888,6 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                   variant="danger"
                   disabled={!canDelete}
                   onClick={() => {
-                    setBatchExternalAck(false);
                     setBatchDeleteOpen(true);
                   }}
                 >
@@ -1158,7 +988,6 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                         onAction={(action) => {
                           if (action === 'up') runAction(proj, 'up', t('项目启动成功'));
                           else if (action === 'down') {
-                            setStopVolumes(false);
                             setStopTarget(proj);
                           } else if (action === 'restart') runAction(proj, 'restart', t('项目重启成功'));
                         }}
@@ -1414,83 +1243,20 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         )}
       </Modal>
 
-      {/* 历史版本弹窗（1.52.0） */}
-      <Modal
-        open={histOpen}
-        title={t('历史版本 - {{editName}}', { editName })}
-        onClose={() => setHistOpen(false)}
-        width={520}
-      >
-        {histLoading ? (
-          <SkeletonRows rows={4} />
-        ) : histItems.length === 0 ? (
-          <Empty title={t('暂无历史版本记录')} description={t('每次保存前的上一版内容会自动记录（保留最近 20 条），可随时载入回退')} />
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{t('保存时间')}</th>
-                <th>{t('保存人')}</th>
-                <th style={{ width: 90 }}>{t('操作')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {histItems.map((h) => (
-                <tr key={h.id}>
-                  <td className="mono">{new Date(h.createdAt).toLocaleString()}</td>
-                  <td>{h.username || '—'}</td>
-                  <td>
-                    <Button variant="ghost" size="sm" onClick={() => loadHistoryVersion(h.id)} loading={histLoadingId === h.id}>
-                      {t('载入')}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Modal>
+      {/* 历史版本弹窗（1.52.0）：列表拉取与版本载入在 ComposeHistoryModal 内部（1.92.0 拆分） */}
+      {histTarget && (
+        <ComposeHistoryModal
+          name={histTarget}
+          onClose={() => setHistTarget(null)}
+          onLoaded={(content) => {
+            setEditContent(content);
+            setHistTarget(null);
+          }}
+        />
+      )}
 
-      {/* 环境变量（.env）编辑弹窗（1.54.0） */}
-      <Modal
-        open={envOpen}
-        title={t('环境变量 - {{envName}}', { envName })}
-        onClose={() => setEnvOpen(false)}
-        width={640}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setEnvOpen(false)} disabled={envSaving}>
-              {t('取消')}
-            </Button>
-            <Button onClick={saveEnv} loading={envSaving}>
-              {t('保存')}
-            </Button>
-          </>
-        }
-      >
-        {envLoading ? (
-          <div className="log-empty">{t('正在加载…')}</div>
-        ) : (
-          <>
-            {!envExists && (
-              <div className="name-sub" style={{ marginBottom: 8 }}>
-                {t('项目目录下还没有 .env 文件，保存后将创建。')}
-              </div>
-            )}
-            <textarea
-              className="compose-env-textarea"
-              value={envContent}
-              onChange={(e) => setEnvContent(e.target.value)}
-              rows={16}
-              spellCheck={false}
-              placeholder={t('KEY=value 格式，每行一条，如：') + '\nDATABASE_URL=postgres://postgres:pass@postgres:5432/postgres'}
-            />
-            <div className="name-sub" style={{ marginTop: 6 }}>
-              {t('提示：保存后需重新「启动」项目才会应用环境变量')}
-            </div>
-          </>
-        )}
-      </Modal>
+      {/* 环境变量（.env）编辑弹窗（1.54.0）：读取与保存在 ComposeEnvModal 内部（1.92.0 拆分） */}
+      {envTarget && <ComposeEnvModal name={envTarget} onClose={() => setEnvTarget(null)} />}
 
       {/* 保存为模板弹窗 */}
       <Modal
@@ -1530,20 +1296,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         </Field>
       </Modal>
 
-      {/* 查看配置弹窗 */}
-      <Modal
-        open={configOpen}
-        title={t('{{configTitle}} - 配置', { configTitle })}
-        onClose={() => setConfigOpen(false)}
-        width={720}
-        footer={
-          <Button variant="secondary" onClick={() => setConfigOpen(false)}>
-            {t('关闭')}
-          </Button>
-        }
-      >
-        <pre className="config-viewer">{configContent}</pre>
-      </Modal>
+      {/* 查看配置弹窗：配置拉取在 ComposeConfigModal 内部（1.92.0 拆分） */}
+      {configTarget && <ComposeConfigModal name={configTarget} onClose={() => setConfigTarget(null)} />}
 
       {/* 结构视图弹窗 */}
       {structureTarget && (
@@ -1561,131 +1315,38 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
 
 
 
-      {/* 停止（down）确认弹窗：可选择是否同时删除数据卷 */}
-      <Modal
-        open={!!stopTarget}
-        title={t('停止项目')}
-        onClose={() => setStopTarget(null)}
-        width={420}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setStopTarget(null)} disabled={stopping}>
-              {t('取消')}
-            </Button>
-            <Button onClick={handleStopConfirm} loading={stopping} disabled={!canManage}>
-              {t('停止')}
-            </Button>
-          </>
-        }
-      >
-        <div className="compose-confirm">
-          <p>{t('确定要停止 Compose 项目 "{{name}}" 吗？', { name: stopTarget?.name || '' })}</p>
-          <label className="compose-confirm__check">
-            <input
-              type="checkbox"
-              checked={stopVolumes}
-              onChange={(e) => setStopVolumes(e.target.checked)}
-            />
-            <span>{t('同时删除该项目的数据卷（volumes）')}</span>
-          </label>
-        </div>
-      </Modal>
+      {/* 停止（down）确认弹窗：停止执行在 StopDownModal 内部（1.92.0 拆分） */}
+      {stopTarget && (
+        <StopDownModal
+          name={stopTarget.name}
+          onClose={() => setStopTarget(null)}
+          onDone={() => setRefreshKey((k) => k + 1)}
+        />
+      )}
 
-      {/* 删除项目确认框：可选择是否同时删除数据卷 */}
-      <Modal
-        open={!!deleteTarget}
-        title={t('删除项目')}
-        onClose={() => setDeleteTarget(null)}
-        width={420}
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setDeleteTarget(null);
-                setDeleteVolumes(false);
-              }}
-              disabled={deleting}
-            >
-              {t('取消')}
-            </Button>
-            <Button variant="danger" onClick={handleDelete} loading={deleting} disabled={!canDelete}>
-              {t('删除')}
-            </Button>
-          </>
-        }
-      >
-        <div className="compose-confirm">
-          <p>{t('确定要删除 Compose 项目 "{{name}}" 吗？此操作不可恢复。', { name: deleteTarget?.name || '' })}</p>
-          <label className="compose-confirm__check">
-            <input
-              type="checkbox"
-              checked={deleteVolumes}
-              onChange={(e) => setDeleteVolumes(e.target.checked)}
-            />
-            <span>{t('同时删除该项目的数据卷（volumes）')}</span>
-          </label>
-        </div>
-      </Modal>
+      {/* 删除项目确认框：删除执行在 DeleteProjectModal 内部（1.92.0 拆分） */}
+      {deleteTarget && (
+        <DeleteProjectModal
+          name={deleteTarget.name}
+          canDelete={canDelete}
+          onClose={() => setDeleteTarget(null)}
+          onDone={() => setRefreshKey((k) => k + 1)}
+        />
+      )}
 
-      {/* 批量删除确认框（1.89.0）：与单删一致支持数据卷选项 */}
-      <Modal
-        open={batchDeleteOpen}
-        title={t('批量删除项目')}
-        onClose={() => setBatchDeleteOpen(false)}
-        width={420}
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setBatchDeleteOpen(false);
-                setBatchVolumes(false);
-                setBatchExternalAck(false);
-              }}
-              disabled={batchDeleting}
-            >
-              {t('取消')}
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleBatchDelete}
-              loading={batchDeleting}
-              disabled={!canDelete || (selectedExternal.length > 0 && !batchExternalAck)}
-            >
-              {t('删除')}
-            </Button>
-          </>
-        }
-      >
-        <div className="compose-confirm">
-          <p>{t('确定要删除 {{n}} 个 Compose 项目吗？此操作不可恢复。', { n: selectedNames.length })}</p>
-          {selectedExternal.length > 0 && (
-            <div className="compose-confirm__warn">
-              <p>
-                {t('含 {{n}} 个外部项目，删除将下线其容器（compose 文件保留）：', { n: selectedExternal.length })}
-              </p>
-              <p className="compose-confirm__warn-names">{selectedExternal.map((p) => p.name).join('、')}</p>
-              <label className="compose-confirm__check">
-                <input
-                  type="checkbox"
-                  checked={batchExternalAck}
-                  onChange={(e) => setBatchExternalAck(e.target.checked)}
-                />
-                <span>{t('我已知晓外部项目将被下线容器')}</span>
-              </label>
-            </div>
-          )}
-          <label className="compose-confirm__check">
-            <input
-              type="checkbox"
-              checked={batchVolumes}
-              onChange={(e) => setBatchVolumes(e.target.checked)}
-            />
-            <span>{t('同时删除数据卷（volumes）')}</span>
-          </label>
-        </div>
-      </Modal>
+      {/* 批量删除确认框（1.89.0）：删除执行在 BatchDeleteModal 内部（1.92.0 拆分） */}
+      {batchDeleteOpen && (
+        <BatchDeleteModal
+          names={selectedNames}
+          externals={selectedExternal.map((p) => p.name)}
+          canDelete={canDelete}
+          onClose={() => setBatchDeleteOpen(false)}
+          onDone={() => {
+            setSelectedNames([]);
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
 
       {/* 项目资源看板（1.34.0）：按服务聚合 CPU / 内存 / 网络 / IO + 服务级滚动更新 */}
       <Modal open={statsOpen} title={t('项目资源看板 · {{name}}', { name: statsName })} onClose={() => setStatsOpen(false)} width={860}>
