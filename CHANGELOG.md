@@ -35,6 +35,7 @@
 
 ### Test（测试）
 
+- e2e Compose 日志用例 CI 兼容：无 compose 项目时自动经 API 创建最小演示项目（busybox 循环打日志并 `up -d`），断言后自动清理——修复 CI Linux runner 无项目数据导致行菜单「日志」定位超时的红测试
 - 新增 `entrance.test.ts`（5 例）：入口未设置直通、未持凭证 404、机器入口豁免、秘密路径签发 Cookie 与持凭证放行、篡改 Cookie 拦截、完整 app 集成（`/api/auth/me` 未持凭证 404 → 持凭证到鉴权层 401）
 - 新增 `cli-recovery.test.ts`（6 例）：reset-admin 重置密码与强制改密标记、--disable-totp 关闭 2FA、unlock 清除持久化锁定、用户不存在返回 1、弱密码拒绝且原密码不变、list-users 正常退出
 - `logUtil` 单测补充光标控制序列（`\u001b[2J\u001b[H`）与 8 位 CSI（`\u009b`）清理用例
