@@ -18,6 +18,7 @@
 - **全站 gzip 压缩**：Express 增加 compression 中间件，大 JSON、CSV 导出与静态资源传输体积显著下降；SSE 流式响应自动排除，避免缓冲破坏事件推送
 - **安全响应头**：全站增加 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`（防点击劫持）、`Referrer-Policy: no-referrer` 与基础 CSP（允许内联样式，脚本仅限同源）
 - **日志历史查询免全表计数**：日志索引查询改为先取 limit+1 行，未取满时直接以行数作为总数并跳过 `COUNT(*)` 全表扫描；仅在结果被截断时才回退精确计数，常规查询开销减半
+- **操作审计日志复合索引**：`operation_logs` 新增 `(username, id DESC)` 与 `(target_type, id DESC)` 复合索引（启动时自动创建），按用户 / 目标类型筛选的审计查询走索引免全表扫描与排序
 
 ### Fixed（修复）
 

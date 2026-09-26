@@ -165,6 +165,9 @@ function createTables(): void {
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at DESC);
+    -- 审计高频过滤复合索引：按用户 / 目标类型筛选 + 最新优先（ORDER BY id DESC）走索引免排序
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_username_id ON operation_logs(username, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_target_type_id ON operation_logs(target_type, id DESC);
 
     -- 定时任务表：记录计划任务（自动清理/备份/拉取/Compose 等）
     CREATE TABLE IF NOT EXISTS cron_tasks (
