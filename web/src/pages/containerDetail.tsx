@@ -15,6 +15,11 @@ import { ContainerDetailInfo, ContainerStats } from '../types';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import EnvEditModal from '../components/EnvEditModal';
+import MountEditModal from '../components/MountEditModal';
+import NetEditModal from '../components/NetEditModal';
+import PortEditModal from '../components/PortEditModal';
+import ConfigRunModal from '../components/ConfigRunModal';
 import { Field, Input, Select } from '../components/Form';
 import StatusBadge from '../components/StatusBadge';
 import Empty from '../components/Empty';
@@ -168,29 +173,13 @@ export default function ContainerDetailPage() {
   const [stopping, setStopping] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [unpausing, setUnpausing] = useState(false);
-  // 环境变量编辑弹窗状态
+  // 环境变量 / 挂载卷 / 网络 / 端口映射 / 运行配置编辑弹窗：仅持有开关，
+  // 草稿与提交逻辑在 EnvEditModal / MountEditModal / NetEditModal / PortEditModal / ConfigRunModal 内部（1.92.0 拆分）
   const [envEditOpen, setEnvEditOpen] = useState(false);
-  // 编辑中的环境变量（支持修改键名/值、删除、新增）
-  const [envDraft, setEnvDraft] = useState<Array<{ key: string; value: string }>>([]);
-  const [envSaving, setEnvSaving] = useState(false);
-  // 挂载卷编辑弹窗状态
   const [mountEditOpen, setMountEditOpen] = useState(false);
-  const [mountDraft, setMountDraft] = useState<Array<{ source: string; destination: string; rw: boolean }>>([]);
-  const [mountSaving, setMountSaving] = useState(false);
-  // 网络编辑弹窗状态
   const [netEditOpen, setNetEditOpen] = useState(false);
-  const [netDraft, setNetDraft] = useState('');
-  const [netOptions, setNetOptions] = useState<Array<{ Name: string; Id: string; Driver: string }>>([]);
-  const [netSaving, setNetSaving] = useState(false);
-  // 端口映射编辑弹窗状态
   const [portEditOpen, setPortEditOpen] = useState(false);
-  const [portDraft, setPortDraft] = useState<Array<{ container: string; host: string; protocol: string }>>([]);
-  const [portSaving, setPortSaving] = useState(false);
-  // 运行配置（重启策略 / 特权模式）编辑弹窗状态
   const [cfgEditOpen, setCfgEditOpen] = useState(false);
-  const [cfgRestartDraft, setCfgRestartDraft] = useState('no');
-  const [cfgPrivilegedDraft, setCfgPrivilegedDraft] = useState(false);
-  const [cfgSaving, setCfgSaving] = useState(false);
   // 提交为镜像弹窗状态
   const [commitOpen, setCommitOpen] = useState(false);
   const [commitRepo, setCommitRepo] = useState('');
@@ -763,284 +752,25 @@ export default function ContainerDetailPage() {
     }
   }
 
-  /**
-   * 打开环境变量编辑弹窗：以当前环境变量初始化草稿
-   */
+  /** 打开编辑弹窗（草稿与提交逻辑在各自 Modal 组件内部） */
   function openEnvEdit() {
-    const entries = Object.entries(detail?.env || {}).map(([k, v]) => ({ key: k, value: v }));
-    setEnvDraft(entries.length ? entries : [{ key: '', value: '' }]);
     setEnvEditOpen(true);
   }
 
-  /**
-   * 更新草稿中单个环境变量
-   * @param index 环境变量索引
-   * @param field 修改键还是值
-   * @param value 新值
-   */
-  function updateEnvDraft(index: number, field: 'key' | 'value', value: string) {
-    setEnvDraft((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
-  }
-
-  /**
-   * 删除草稿中某个环境变量
-   * @param index 环境变量索引
-   */
-  function removeEnvDraft(index: number) {
-    setEnvDraft((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  /**
-   * 新增一个空的环境变量条目
-   */
-  function addEnvDraft() {
-    setEnvDraft((prev) => [...prev, { key: '', value: '' }]);
-  }
-
-  /**
-   * 保存环境变量：基于现有容器重建（其余配置保留），替换为新的环境变量
-   */
-  async function saveEnv() {
-    if (!id) return;
-    // 过滤空键名条目，并校验重复
-    const cleaned: Record<string, string> = {};
-    let valid = true;
-    for (const item of envDraft) {
-      const k = item.key.trim();
-      if (!k) continue;
-      if (k in cleaned) {
-        showToast(t('环境变量 {{k}} 重复定义', { k }), 'error');
-        valid = false;
-        break;
-      }
-      cleaned[k] = item.value;
-    }
-    if (!valid) return;
-    setEnvSaving(true);
-    try {
-      await post(`/api/containers/${id}/recreate`, { env: cleaned });
-      showToast(t('环境变量已更新（容器已重建）'));
-      setEnvEditOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setEnvSaving(false);
-    }
-  }
-
-  /**
-   * 打开挂载卷编辑弹窗：以当前挂载卷初始化草稿
-   */
   function openMountEdit() {
-    const entries = (detail?.mounts || []).map((m) => ({
-      source: m.source || '',
-      destination: m.destination || '',
-      rw: m.rw !== false,
-    }));
-    setMountDraft(entries.length ? entries : [{ source: '', destination: '', rw: true }]);
     setMountEditOpen(true);
   }
 
-  /**
-   * 更新挂载卷草稿中单个条目
-   * @param index 挂载索引
-   * @param field 修改字段
-   * @param value 新值
-   */
-  function updateMountDraft(index: number, field: 'source' | 'destination' | 'rw', value: any) {
-    setMountDraft((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
-  }
-
-  /**
-   * 删除挂载卷草稿中某个条目
-   * @param index 挂载索引
-   */
-  function removeMountDraft(index: number) {
-    setMountDraft((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  /**
-   * 新增一个挂载卷条目
-   */
-  function addMountDraft() {
-    setMountDraft((prev) => [...prev, { source: '', destination: '', rw: true }]);
-  }
-
-  /**
-   * 保存挂载卷：组装 "source:destination[:ro]" 数组并重建容器
-   */
-  async function saveMounts() {
-    if (!id) return;
-    // 过滤缺项的挂载，并组装 Binds 数组
-    const binds: string[] = [];
-    for (const item of mountDraft) {
-      const source = item.source.trim();
-      const destination = item.destination.trim();
-      if (!source || !destination) continue;
-      binds.push(`${source}:${destination}${item.rw ? '' : ':ro'}`);
-    }
-    setMountSaving(true);
-    try {
-      await post(`/api/containers/${id}/recreate`, { binds });
-      showToast(t('挂载卷已更新（容器已重建）'));
-      setMountEditOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setMountSaving(false);
-    }
-  }
-
-  /**
-   * 打开网络编辑弹窗：加载可用网络并初始化当前选择
-   */
-  async function openNetEdit() {
-    const current = detail?.networks?.[0]?.name || 'bridge';
-    setNetDraft(current);
-    try {
-      const list = await get<Array<{ Name: string; Id: string; Driver: string }>>('/api/networks');
-      setNetOptions(list || []);
-    } catch (e: any) {
-      showToast(t('获取网络列表失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-      setNetOptions([]);
-    }
+  function openNetEdit() {
     setNetEditOpen(true);
   }
 
-  /**
-   * 保存网络：基于现有容器重建并切换到所选网络
-   */
-  async function saveNet() {
-    if (!id) return;
-    if (!netDraft) {
-      showToast(t('请选择网络'), 'error');
-      return;
-    }
-    setNetSaving(true);
-    try {
-      await post(`/api/containers/${id}/recreate`, { network: netDraft });
-      showToast(t('网络已更新（容器已重建）'));
-      setNetEditOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setNetSaving(false);
-    }
-  }
-
-  /**
-   * 打开端口映射编辑弹窗：以当前端口映射初始化草稿
-   *
-   * detail.ports 为 internal/published 格式（如 internal "80/tcp"），需要拆分出容器端口与协议；
-   * published 取第一个 hostPort 作为宿主机端口，并带上 hostIp 前缀（默认 0.0.0.0），
-   * 避免编辑保存后丢失 127.0.0.1 等指定 IP 的绑定。
-   */
   function openPortEdit() {
-    const entries = (detail?.ports || []).map((p) => {
-      const [container, proto] = (p.internal || '').split('/');
-      const first = p.published && p.published.length > 0 ? p.published[0] : null;
-      const hostPort = first ? String(first.hostPort) : '';
-      const hostIp = first?.hostIp || '0.0.0.0';
-      return {
-        container: container || '',
-        host: hostPort ? `${hostIp}:${hostPort}` : '',
-        protocol: (proto || 'tcp') as string,
-      };
-    });
-    setPortDraft(entries.length ? entries : [{ container: '', host: '', protocol: 'tcp' }]);
     setPortEditOpen(true);
   }
 
-  /**
-   * 更新端口草稿中单个条目
-   * @param index 端口索引
-   * @param field 修改字段
-   * @param value 新值
-   */
-  function updatePortDraft(index: number, field: 'container' | 'host' | 'protocol', value: string) {
-    setPortDraft((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
-  }
-
-  /**
-   * 删除端口草稿中某个条目
-   * @param index 端口索引
-   */
-  function removePortDraft(index: number) {
-    setPortDraft((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  /**
-   * 新增一个端口映射条目
-   */
-  function addPortDraft() {
-    setPortDraft((prev) => [...prev, { container: '', host: '', protocol: 'tcp' }]);
-  }
-
-  /**
-   * 保存端口映射：过滤空项并组装 ports 数组（container 转数字）后重建容器。
-   * 宿主机栏支持「8080」或「127.0.0.1:8080」两种写法，保留指定的绑定 IP。
-   */
-  async function savePorts() {
-    if (!id) return;
-    // 过滤容器端口为空的条目，并组装 ports 数组
-    const ports = portDraft
-      .filter((item) => item.container.trim() !== '')
-      .map((item) => {
-        const raw = item.host.trim();
-        const m = raw.match(/^(?:(\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])):(\d+)$/);
-        const hostIp = m ? m[1].replace(/^\[|\]$/g, '') : '0.0.0.0';
-        const host = m ? m[2] : raw;
-        return {
-          host,
-          hostIp: host ? hostIp : '',
-          container: Number(item.container.trim()),
-          protocol: item.protocol,
-        };
-      });
-    setPortSaving(true);
-    try {
-      await post(`/api/containers/${id}/recreate`, { ports });
-      showToast(t('端口映射已更新（容器已重建）'));
-      setPortEditOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setPortSaving(false);
-    }
-  }
-
-  /**
-   * 打开运行配置（重启策略 / 特权模式）编辑弹窗：以当前配置初始化草稿
-   */
   function openCfgEdit() {
-    setCfgRestartDraft(detail?.restartPolicy || 'no');
-    setCfgPrivilegedDraft(!!detail?.privileged);
     setCfgEditOpen(true);
-  }
-
-  /**
-   * 保存运行配置：更新重启策略与特权模式并重建容器
-   */
-  async function saveCfg() {
-    if (!id) return;
-    setCfgSaving(true);
-    try {
-      await post(`/api/containers/${id}/recreate`, {
-        restartPolicy: cfgRestartDraft,
-        privileged: cfgPrivilegedDraft,
-      });
-      showToast(t('运行配置已更新（容器已重建）'));
-      setCfgEditOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(t('更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setCfgSaving(false);
-    }
   }
 
   /**
@@ -2634,271 +2364,21 @@ export default function ContainerDetailPage() {
         </Field>
       </Modal>
 
-      {/* 环境变量编辑弹窗（通过重建容器生效） */}
-      <Modal
-        open={envEditOpen}
-        title={t('编辑环境变量')}
-        onClose={() => !envSaving && setEnvEditOpen(false)}
-        width={620}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setEnvEditOpen(false)} disabled={envSaving}>
-              {t('取消')}
-            </Button>
-            <Button type="submit" variant="primary" size="md" loading={envSaving} onClick={saveEnv}>
-              {t('保存并重建')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('修改环境变量需重新创建容器（保留镜像、端口、挂载、网络等配置）。重建会导致容器短暂中断，容器 ID 会改变。')}
-        </div>
-        <div className="env-modal__list">
-          {envDraft.map((item, index) => (
-            <div className="env-modal__row" key={index}>
-              <Input
-                className="env-modal__key"
-                placeholder={t('变量名')}
-                value={item.key}
-                onChange={(e) => updateEnvDraft(index, 'key', e.target.value)}
-              />
-              <Input
-                className="env-modal__value"
-                placeholder={t('变量值')}
-                value={item.value}
-                onChange={(e) => updateEnvDraft(index, 'value', e.target.value)}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="env-modal__del"
-                onClick={() => removeEnvDraft(index)}
-                disabled={envSaving}
-                title={t('删除这项')}
-              >
-                {t('删除')}
-              </Button>
-            </div>
-          ))}
-        </div>
-        <div className="env-modal__add">
-          <Button variant="secondary" size="sm" onClick={addEnvDraft} disabled={envSaving}>
-            {t('+ 添加环境变量')}
-          </Button>
-        </div>
-      </Modal>
-
-      {/* 挂载卷编辑弹窗（通过重建容器生效） */}
-      <Modal
-        open={mountEditOpen}
-        title={t('编辑挂载卷')}
-        onClose={() => !mountSaving && setMountEditOpen(false)}
-        width={640}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setMountEditOpen(false)} disabled={mountSaving}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={mountSaving} onClick={saveMounts}>
-              {t('保存并重建')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('修改挂载卷需重新创建容器（保留镜像、端口、网络、环境变量等配置）。「来源」为宿主机路径或已存在的卷名，「目标」为容器内路径。')}
-        </div>
-        <div className="mount-modal__head">
-          <span className="mount-modal__col-source">{t('来源')}</span>
-          <span className="mount-modal__col-dst">{t('容器内路径')}</span>
-          <span className="mount-modal__col-rw">{t('读写')}</span>
-          <span className="mount-modal__col-op" />
-        </div>
-        <div className="mount-modal__list">
-          {mountDraft.map((item, index) => (
-            <div className="mount-modal__row" key={index}>
-              <Input
-                className="mount-modal__col-source"
-                placeholder={t('宿主机路径或卷名')}
-                value={item.source}
-                onChange={(e) => updateMountDraft(index, 'source', e.target.value)}
-              />
-              <Input
-                className="mount-modal__col-dst"
-                placeholder={t('/容器/路径')}
-                value={item.destination}
-                onChange={(e) => updateMountDraft(index, 'destination', e.target.value)}
-              />
-              <label className="mount-modal__rw">
-                <input
-                  type="checkbox"
-                  checked={item.rw}
-                  onChange={(e) => updateMountDraft(index, 'rw', e.target.checked)}
-                />
-              </label>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mount-modal__col-op"
-                onClick={() => removeMountDraft(index)}
-                disabled={mountSaving}
-                title={t('删除这项挂载')}
-              >
-                {t('删除')}
-              </Button>
-            </div>
-          ))}
-        </div>
-        <div className="env-modal__add">
-          <Button variant="secondary" size="sm" onClick={addMountDraft} disabled={mountSaving}>
-            {t('+ 添加挂载')}
-          </Button>
-        </div>
-      </Modal>
-
-      {/* 网络编辑弹窗（通过重建容器生效） */}
-      <Modal
-        open={netEditOpen}
-        title={t('选择网络')}
-        onClose={() => !netSaving && setNetEditOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setNetEditOpen(false)} disabled={netSaving}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={netSaving} onClick={saveNet}>
-              {t('保存并重建')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('切换网络需重新创建容器（保留镜像、端口、挂载、环境变量等配置）。重建会导致容器短暂中断，容器 ID 会改变。')}
-        </div>
-        <Field label={t('网络')} required>
-          <Select value={netDraft} onChange={(e) => setNetDraft(e.target.value)}>
-            <option value="bridge">{t('bridge（默认桥接）')}</option>
-            <option value="host">{t('host（使用宿主机网络）')}</option>
-            <option value="none">{t('none（禁用网络）')}</option>
-            {netOptions.map((n) => (
-              <option key={n.Name} value={n.Name}>
-                {n.Name}（{n.Driver}）
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </Modal>
-
-      {/* 端口映射编辑弹窗（通过重建容器生效） */}
-      <Modal
-        open={portEditOpen}
-        title={t('编辑端口映射')}
-        onClose={() => !portSaving && setPortEditOpen(false)}
-        width={640}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setPortEditOpen(false)} disabled={portSaving}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={portSaving} onClick={savePorts}>
-              {t('保存并重建')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('修改端口映射需重新创建容器（保留镜像、挂载、网络、环境变量等配置）。「容器端口」为容器内端口；「宿主机端口」支持「8080」或「127.0.0.1:8080」写法，仅写端口时默认绑定 0.0.0.0，未填写时以容器端口随机映射。')}
-        </div>
-        <div className="port-modal__head">
-          <span className="port-modal__col-container">{t('容器端口')}</span>
-          <span className="port-modal__col-host">{t('宿主机映射')}</span>
-          <span className="port-modal__col-protocol">{t('协议')}</span>
-          <span className="port-modal__col-op" />
-        </div>
-        <div className="port-modal__list">
-          {portDraft.map((item, index) => (
-            <div className="port-modal__row" key={index}>
-              <Input
-                className="port-modal__col-container"
-                placeholder="80"
-                value={item.container}
-                onChange={(e) => updatePortDraft(index, 'container', e.target.value)}
-              />
-              <Input
-                className="port-modal__col-host"
-                placeholder={t('0.0.0.0:8080（可选）')}
-                value={item.host}
-                onChange={(e) => updatePortDraft(index, 'host', e.target.value)}
-              />
-              <Select
-                className="port-modal__col-protocol"
-                value={item.protocol}
-                onChange={(e) => updatePortDraft(index, 'protocol', e.target.value)}
-              >
-                <option value="tcp">tcp</option>
-                <option value="udp">udp</option>
-              </Select>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="port-modal__col-op"
-                onClick={() => removePortDraft(index)}
-                disabled={portSaving}
-                title={t('删除这项端口')}
-              >
-                {t('删除')}
-              </Button>
-            </div>
-          ))}
-        </div>
-        <div className="env-modal__add">
-          <Button variant="secondary" size="sm" onClick={addPortDraft} disabled={portSaving}>
-            {t('+ 添加端口')}
-          </Button>
-        </div>
-      </Modal>
-
-      {/* 运行配置编辑弹窗（重启策略 / 特权模式，通过重建容器生效） */}
-      <Modal
-        open={cfgEditOpen}
-        title={t('运行配置')}
-        onClose={() => !cfgSaving && setCfgEditOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setCfgEditOpen(false)} disabled={cfgSaving}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={cfgSaving} onClick={saveCfg}>
-              {t('保存并重建')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('修改重启策略或特权模式需重新创建容器（保留镜像、端口、挂载、网络、环境变量等配置）。重建会导致容器短暂中断，容器 ID 会改变。')}
-        </div>
-        <Field label={t('重启策略')} required>
-          <Select value={cfgRestartDraft} onChange={(e) => setCfgRestartDraft(e.target.value)}>
-            <option value="no">{t('no（不自动重启）')}</option>
-            <option value="always">{t('always（总是重启）')}</option>
-            <option value="on-failure">{t('on-failure（失败时重启）')}</option>
-            <option value="unless-stopped">{t('unless-stopped（除非停止，否则重启）')}</option>
-          </Select>
-        </Field>
-        <Field label={t('特权模式')}>
-          <label className="cfg-modal__priv">
-            <input
-              type="checkbox"
-              checked={cfgPrivilegedDraft}
-              onChange={(e) => setCfgPrivilegedDraft(e.target.checked)}
-            />
-            {t('以特权模式运行（授予容器更多 host 权限）')}
-          </label>
-        </Field>
-      </Modal>
+      {envEditOpen && (
+        <EnvEditModal containerId={id || ''} env={detail?.env || {}} onClose={() => setEnvEditOpen(false)} onDone={fetchDetail} />
+      )}
+      {mountEditOpen && (
+        <MountEditModal containerId={id || ''} mounts={detail?.mounts || []} onClose={() => setMountEditOpen(false)} onDone={fetchDetail} />
+      )}
+      {netEditOpen && (
+        <NetEditModal containerId={id || ''} current={detail?.networks?.[0]?.name || 'bridge'} onClose={() => setNetEditOpen(false)} onDone={fetchDetail} />
+      )}
+      {portEditOpen && (
+        <PortEditModal containerId={id || ''} ports={detail?.ports || []} onClose={() => setPortEditOpen(false)} onDone={fetchDetail} />
+      )}
+      {cfgEditOpen && (
+        <ConfigRunModal containerId={id || ''} restartPolicy={detail?.restartPolicy || 'no'} privileged={!!detail?.privileged} onClose={() => setCfgEditOpen(false)} onDone={fetchDetail} />
+      )}
 
       {/* 更新配置弹窗（重启策略 / 资源限制，免重建，对应 docker update） */}
       <Modal
