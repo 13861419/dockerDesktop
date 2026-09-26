@@ -1284,6 +1284,21 @@ function createTables(): void {
   } catch {
     // 表已存在则忽略
   }
+  // 迁移：容器回收站（1.92.0）——面板删除容器时自动存配置快照，支持一键重建
+  try {
+    d.exec(
+      'CREATE TABLE IF NOT EXISTS container_recycle (' +
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+        'name TEXT NOT NULL, ' +
+        'image TEXT, ' +
+        'config TEXT NOT NULL, ' +
+        'deleted_by TEXT, ' +
+        'deleted_at INTEGER NOT NULL)',
+    );
+    d.exec('CREATE INDEX IF NOT EXISTS idx_recycle_deleted ON container_recycle (deleted_at)');
+  } catch {
+    // 表已存在则忽略
+  }
   // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');

@@ -1329,12 +1329,14 @@ router.get(
     const withTs = req.query.timestamps === 'true' || req.query.timestamps === '1';
     const since = Number(req.query.since);
 
+    // SSE 头（立即 flush，理由同容器日志流：空输出时响应头需随首个 ping 前置下发）
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
+    res.flushHeaders();
     const writeEvent = (data: unknown) => {
       if (!res.writableEnded) res.write('data: ' + JSON.stringify(data) + '\n\n');
     };

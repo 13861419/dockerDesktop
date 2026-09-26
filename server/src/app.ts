@@ -12,6 +12,7 @@ import path from 'path';
 import fs from 'fs';
 
 import containersRouter from './routes/containers';
+import recycleRouter from './routes/recycle';
 import imagesRouter from './routes/images';
 import volumesRouter from './routes/volumes';
 import hubRouter from './routes/hub';
@@ -163,6 +164,7 @@ app.use('/api', requireAuth, openapiRouter);
 app.use('/api/health-check', requireAuth, healthCheckRouter);
 app.use('/api/tools', requireAuth, toolsRouter);
 app.use('/api/containers', requireAuth, containersRouter);
+app.use('/api/recycle', requireAuth, recycleRouter);
 app.use('/api/images', requireAuth, imagesRouter);
 app.use('/api/volumes', requireAuth, volumesRouter);
 app.use('/api/hub', requireAuth, hubRouter);

@@ -18,6 +18,7 @@ import { getSetting } from './settings';
 import { listChannels, sendAlert } from './notify';
 import { markExecuted } from './aiActions';
 import { hasPermission } from './rbac';
+import { captureContainerSnapshot } from './recycle';
 
 /** 审批状态 */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -698,6 +699,8 @@ type Executor = (target: string, payload: Record<string, any>) => Promise<string
 const executors: Record<string, Executor> = {
   'container.delete': async (target, payload) => {
     const docker = await getDockerClient();
+    // 回收站快照（尽力而为）：审批通过的删除同样可找回
+    await captureContainerSnapshot(docker, target, 'approval');
     await docker.getContainer(target).remove({ force: !!payload.force, v: !!payload.v });
     return `容器 ${target} 已删除`;
   },

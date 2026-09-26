@@ -19,6 +19,7 @@ import { requireAdmin, requireOperator } from '../auth';
 import { requirePermission } from '../rbac';
 import { getSetting } from '../settings';
 import { maybeGate, shouldGate, submitApproval } from '../approvals';
+import { captureContainerSnapshot } from '../recycle';
 
 const router = Router();
 
@@ -596,9 +597,12 @@ router.post(
       );
       return res.status(202).json({ approvalPending: true, approvalIds });
     }
-    const docker = await getDockerClient();
-    const r = await runBatch(ids, (id) => docker.getContainer(id).remove({ force, v }));
-    res.json({ ok: r.fail === 0, ...r });
+      const docker = await getDockerClient();
+      const r = await runBatch(ids, async (id) => {
+        await captureContainerSnapshot(docker, id, res.locals.username);
+        await docker.getContainer(id).remove({ force, v });
+      });
+      res.json({ ok: r.fail === 0, ...r });
   }),
 );
 
@@ -836,6 +840,7 @@ router.delete(
       // 审批门禁：开启审批流且非管理员时，转为待审批请求
       if (maybeGate(req, res, 'container.delete', id, { force, v })) return;
       const docker = await getDockerClient();
+      await captureContainerSnapshot(docker, id, res.locals.username);
       await docker.getContainer(id).remove({ force, v });
       logOperation(res.locals.username, '删除容器', 'container', id, force ? '强制删除' : '');
       res.json({ ok: true });
@@ -957,13 +962,14 @@ router.get(
     const withTs = req.query.timestamps === 'true' || req.query.timestamps === '1';
     const since = Number(req.query.since);
 
-    // SSE 头
+    // SSE 头（立即 flush：空日志容器没有首字节写入，不 flush 会等到首个 ping 才下发响应头）
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
+    res.flushHeaders();
 
     // 先探测容器 TTY 配置（决定日志是纯流还是多路复用帧）与运行状态
     let inspectInfo: any = null;

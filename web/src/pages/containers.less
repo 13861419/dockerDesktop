@@ -866,3 +866,83 @@
 .modal--fullscreen .containers__log-scroll {
   max-height: calc(94vh - 260px);
 }
+
+/* ============ 容器回收站弹窗 ============ */
+.recycle-bin__hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.recycle-bin__empty {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.recycle-bin__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.recycle-bin__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.recycle-bin__info {
+  min-width: 0;
+  flex: 1;
+}
+
+.recycle-bin__name {
+  font-weight: 500;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recycle-bin__meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recycle-bin__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.recycle-bin__restore {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recycle-bin__restore-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.recycle-bin__restore-actions {
+  display: flex;
+  gap: 8px;
+}

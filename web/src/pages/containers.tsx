@@ -33,6 +33,7 @@ import MigrateContainerModal, { type MigrateTarget } from '../components/Migrate
 import EditImageModal from '../components/EditImageModal';
 import BatchResourceModal from '../components/BatchResourceModal';
 import PruneModal from '../components/PruneModal';
+import RecycleBinModal from '../components/RecycleBinModal';
 import CreateContainerModal, { type CreateSeed } from '../components/CreateContainerModal';
 import ContainerLogModal from '../components/ContainerLogModal';
 import { useLang } from '../i18n';
@@ -110,6 +111,8 @@ export default function ContainersPage() {
   const [statsMap, setStatsMap] = useState<Record<string, ContainerStat>>({});
   // 清理未使用资源：仅持有开关，逻辑在 PruneModal 内部（1.92.0 拆分）
   const [pruneOpen, setPruneOpen] = useState(false);
+  // 容器回收站弹窗开关（列表/恢复/清空逻辑在 RecycleBinModal 内部）
+  const [recycleOpen, setRecycleOpen] = useState(false);
   // 批量编辑资源弹窗开关（CPU / 内存表单逻辑在 BatchResourceModal 内部）
   const [batchEditOpen, setBatchEditOpen] = useState(false);
 
@@ -1080,6 +1083,14 @@ export default function ContainersPage() {
           <Button
             variant="secondary"
             size="sm"
+            onClick={() => setRecycleOpen(true)}
+            title={t('被删除容器的配置快照，可一键重建')}
+          >
+            {t('回收站')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => setInferOpen(true)}
             disabled={!canDelete}
             title={t('从选中容器一键逆向生成 docker-compose 配置')}
@@ -1357,6 +1368,7 @@ export default function ContainersPage() {
         onClose={() => setBatchEditOpen(false)}
         onDone={() => { setSelectedIds([]); load(); }}
       />
+      <RecycleBinModal open={recycleOpen} onClose={() => setRecycleOpen(false)} onDone={load} />
 
       {/* 批量操作确认对话框 */}
       <ConfirmDialog

@@ -14,6 +14,7 @@
 - **Compose 日志实时流**：「跟随刷新」由 3 秒轮询改为 SSE 增量推送（`GET /api/compose/:name/logs/stream`，`docker compose logs --follow`）——连接建立即推送尾部历史，此后日志产生即推送，延迟从秒级降到毫秒级；条数 / 时间范围 / 时间戳 / 服务筛选变化时自动经流式 URL 重连；外部项目无文件读取权限时降级提示改用手动刷新
 - **容器日志弹窗跟随刷新改 SSE**：容器日志弹窗「跟随刷新」同步切换为 SSE 增量推送（`GET /api/containers/:id/logs/stream` 新增 `since` / `timestamps` 参数），替代 3 秒全量轮询；滚轮向上滚动或关闭跟随时自动固化当前流内容为快照，视图连续不闪跳
 - **容器详情实时日志级别筛选与着色**：容器详情页「实时日志」Tab 补齐级别筛选 chips（全部 / 错误 / 警告，含命中计数）与错误红 / 警告黄按行着色，与其他日志视图体验一致
+- **容器回收站**：经面板删除的容器（单个 / 批量 / 审批通过后删除）自动捕获完整配置快照（docker inspect JSON）存入 SQLite 新表 `container_recycle`（最多保留 100 条，超出自动清理最旧）；容器管理页工具栏新增「回收站」入口，支持按快照一键重建容器（可改名规避同名冲突，默认启动）、单条删除与清空（二次确认）；恢复只透传创建时字段的安全子集（镜像 / 命令 / 环境变量 / 标签 / 端口 / 挂载 / 重启策略 / 网络模式 / 特权 / 资源限制 / 健康检查等），运行时解析字段不透传，历史快照不污染创建请求；快照捕获尽力而为，不阻塞删除流程
 
 ### Changed（变更）
 
@@ -32,12 +33,15 @@
 - **日志聚合查询响应体截断**：`GET /api/logs/query` 原先 `truncated` 标志形同虚设，多容器大 tail 时全量返回最多 10 万行 JSON；现在 `total` 保留真实命中数，`lines` 只返回最近 10000 行，超出时 `truncated=true`
 - **日志索引采集防重入**：后台增量采集（每 60s 一轮）加防重入标志，容器较多、单轮耗时超过间隔时跳过本轮（返回 `busy: true`），避免两轮并发写库造成游标竞态与重复插入
 - **stripAnsi 实现统一**：`containers.ts` 本地的 ANSI 清理正则与 `logUtil.ts` 不一致（后者漏清光标控制序列与 8 位 CSI），现统一复用 `logUtil.stripAnsi` 完整正则，日志聚合中心与容器日志的清理行为保持一致
+- **SSE 日志流响应头延迟下发**：容器与 Compose 日志流路由 `writeHead` 后缺少 `flushHeaders()`，Node 将响应头缓冲至首次写入——零输出容器的日志流要等 15s 心跳首包才下发响应头，前端「跟随刷新」表现为 15 秒空转（e2e `waitForResponse` 15s 超时必败）；现连接建立即 flush 响应头，安静容器打开日志流即时就绪
 
 ### Test（测试）
 
 - e2e Compose 日志用例 CI 兼容：无 compose 项目时自动经 API 创建最小演示项目（busybox 循环打日志并 `up -d`），断言后自动清理——修复 CI Linux runner 无项目数据导致行菜单「日志」定位超时的红测试
 - 新增 `entrance.test.ts`（5 例）：入口未设置直通、未持凭证 404、机器入口豁免、秘密路径签发 Cookie 与持凭证放行、篡改 Cookie 拦截、完整 app 集成（`/api/auth/me` 未持凭证 404 → 持凭证到鉴权层 401）
 - 新增 `cli-recovery.test.ts`（6 例）：reset-admin 重置密码与强制改密标记、--disable-totp 关闭 2FA、unlock 清除持久化锁定、用户不存在返回 1、弱密码拒绝且原密码不变、list-users 正常退出
+- 新增 `recycle.test.ts`（6 例）：快照→创建参数子集还原（端口回退 / no 策略剔除 / 运行时字段剔除）、捕获与名称清洗、inspect 失败不阻塞、保留上限自动裁剪、getRecycle / deleteRecycle / purgeRecycle
+- 新增 `api-recycle.test.ts`（2 例）：创建 → 删除入站 → 回收站列表校验 → 恢复 → 容器存在 → 清理的全链路集成；恢复不存在记录返回 404
 - `logUtil` 单测补充光标控制序列（`\u001b[2J\u001b[H`）与 8 位 CSI（`\u009b`）清理用例
 - 新增 `e2e/logs.spec.ts`：Compose 与容器日志弹窗的级别 chips 可见性、「跟随刷新」建立 SSE 连接（/logs/stream 200）、流式内容非空断言
 

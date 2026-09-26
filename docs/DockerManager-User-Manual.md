@@ -457,6 +457,20 @@ Click a container to open its detail page (`containerDetail`), which provides:
 
 ![Container list](../images/containers.png)
 
+### 3.6 Container Recycle Bin
+
+An "undo" for accidentally deleted containers: containers deleted through the panel (single delete, batch delete, or post-approval delete) automatically capture a **full config snapshot** (docker inspect JSON) before removal, which can be rebuilt with one click from the recycle bin.
+
+**Entry**: the **"Recycle Bin"** button in the container page toolbar.
+
+**Capabilities**:
+
+1. **List**: shows container name, image, deleted by, and deletion time (newest first). Up to 100 records are kept; the oldest are cleaned up automatically.
+2. **Restore**: click "Restore" on a record, optionally **change the container name** (defaults to the original name), then confirm — the panel rebuilds and starts the container from the snapshot. If the original name is taken, just pick another. Missing images are reported clearly (pull the image first). Restored records leave the bin automatically.
+3. **Delete record / Purge**: remove a single record or empty the bin (purge requires a second confirming click).
+
+> Note: snapshot capture is best-effort — deletion never blocks on snapshot failures. Restore only recreates creation-time fields (image / command / env / labels / port mappings / volumes / restart policy / network mode / privileged / resource limits / healthcheck, etc.); runtime state (IP, processes) is not restored. Containers removed outside the panel (e.g. `docker compose down`) are not covered.
+
 ---
 
 ## 4. Container Templates 🔒
