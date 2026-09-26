@@ -20,6 +20,13 @@ import MountEditModal from '../components/MountEditModal';
 import NetEditModal from '../components/NetEditModal';
 import PortEditModal from '../components/PortEditModal';
 import ConfigRunModal from '../components/ConfigRunModal';
+import HistoryLogModal from '../components/HistoryLogModal';
+import CloneModal from '../components/CloneModal';
+import SaveTemplateModal from '../components/SaveTemplateModal';
+import CommitImageModal from '../components/CommitImageModal';
+import ExecCommandModal from '../components/ExecCommandModal';
+import UpdateConfigModal from '../components/UpdateConfigModal';
+import HealthCheckModal from '../components/HealthCheckModal';
 import { Field, Input, Select } from '../components/Form';
 import StatusBadge from '../components/StatusBadge';
 import Empty from '../components/Empty';
@@ -180,53 +187,19 @@ export default function ContainerDetailPage() {
   const [netEditOpen, setNetEditOpen] = useState(false);
   const [portEditOpen, setPortEditOpen] = useState(false);
   const [cfgEditOpen, setCfgEditOpen] = useState(false);
-  // 提交为镜像弹窗状态
+  // 提交为镜像 / 克隆 / 保存为模板 / 执行命令弹窗：仅持有开关，
+  // 草稿与提交逻辑在 CommitImageModal / CloneModal / SaveTemplateModal / ExecCommandModal 内部（1.92.0 拆分）
   const [commitOpen, setCommitOpen] = useState(false);
-  const [commitRepo, setCommitRepo] = useState('');
-  const [commitTag, setCommitTag] = useState('latest');
-  const [commitComment, setCommitComment] = useState('');
-  const [commitAuthor, setCommitAuthor] = useState('');
-  const [committing, setCommitting] = useState(false);
-  // 克隆容器弹窗状态
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [cloneValue, setCloneValue] = useState('');
-  const [cloneStart, setCloneStart] = useState(true);
-  const [cloning, setCloning] = useState(false);
-
-  // 保存为容器模板弹窗状态
   const [saveTplOpen, setSaveTplOpen] = useState(false);
-  const [saveTplName, setSaveTplName] = useState('');
-  const [saveTplDesc, setSaveTplDesc] = useState('');
-  const [saveTplSaving, setSaveTplSaving] = useState(false);
-  // 执行命令弹窗状态
   const [execOpen, setExecOpen] = useState(false);
-  const [execCmd, setExecCmd] = useState('');
-  const [execOutput, setExecOutput] = useState('');
-  const [execExitCode, setExecExitCode] = useState<number | null>(null);
-  const [executing, setExecuting] = useState(false);
   // 宿主机端口占用冲突映射（key 为宿主端口，值为占用该端口的其他容器）
   const [portConflicts, setPortConflicts] = useState<ContainerPortConflicts>({});
-  // 在线更新配置（重启策略 / 资源限制，免重建，对应 docker update）弹窗状态
+  // 更新配置 / 健康检查 / 历史日志弹窗：仅持有开关，
+  // 草稿与提交逻辑在 UpdateConfigModal / HealthCheckModal / HistoryLogModal 内部（1.92.0 拆分）
   const [updateOpen, setUpdateOpen] = useState(false);
-  const [uRestart, setURestart] = useState('no');
-  const [uCpu, setUCpu] = useState('');
-  const [uMem, setUMem] = useState('');
-  const [updating, setUpdating] = useState(false);
-  // 健康检查编辑弹窗状态
   const [hcEditOpen, setHcEditOpen] = useState(false);
-  const [hcEnabled, setHcEnabled] = useState(true);
-  const [hcTestCmd, setHcTestCmd] = useState('');
-  const [hcInterval, setHcInterval] = useState(30);
-  const [hcTimeout, setHcTimeout] = useState(5);
-  const [hcRetries, setHcRetries] = useState(3);
-  const [hcSaving, setHcSaving] = useState(false);
-
-  // 历史日志查看（按时间范围分页拉取）状态
   const [histOpen, setHistOpen] = useState(false);
-  const [histStart, setHistStart] = useState('');
-  const [histEnd, setHistEnd] = useState('');
-  const [histLoading, setHistLoading] = useState(false);
-  const [histLogs, setHistLogs] = useState<string>('');
 
   /** 实时日志 hook（容器 id 存在时自动连接） */
   const { lines, connected, error, start, stop, clear } = useContainerLogs(id || null, {
@@ -235,6 +208,7 @@ export default function ContainerDetailPage() {
   });
 
   // 级别筛选 chips（1.92.0）：全部 / 错误 / 警告，纯前端过滤
+
   const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilterValue>('all');
   const leveledLines = useMemo(
     () => lines.map((l) => ({ ...l, level: detectLogLevel(l.text) })),
@@ -841,322 +815,33 @@ export default function ContainerDetailPage() {
     }
   }
 
-  /**
-   * 打开"保存为模板"弹窗：拉取当前容器导出配置，预填模板名称（默认容器名）
-   */
-  async function openSaveTemplate() {
-    if (!id) return;
-    try {
-      const res = await get<any>(`/api/containers/${id}/config`);
-      const cfg = res?.config || res || {};
-      // 预填模板名称与描述
-      setSaveTplName(cfg?.name || detail?.name || '');
-      setSaveTplDesc(cfg?.description || '');
-      setSaveTplOpen(true);
-    } catch (e: any) {
-      showToast(t('获取容器配置失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    }
+  /** 打开弹窗（草稿与提交逻辑在各自 Modal 组件内部） */
+  function openSaveTemplate() {
+    setSaveTplOpen(true);
   }
 
-  /**
-   * 提交保存当前容器配置为模板（调用 POST /api/templates）
-   */
-  async function submitSaveTemplate() {
-    if (!id) return;
-    // 模板名称必填校验
-    if (!saveTplName.trim()) {
-      showToast(t('模板名称不能为空'), 'error');
-      return;
-    }
-    setSaveTplSaving(true);
-    try {
-      const res = await get<any>(`/api/containers/${id}/config`);
-      const cfg = res?.config || res || {};
-      await post('/api/templates', {
-        name: saveTplName.trim(),
-        description: saveTplDesc.trim(),
-        image: cfg?.image || '',
-        config: cfg,
-      });
-      showToast(t('已保存为模板'));
-      setSaveTplOpen(false);
-    } catch (e: any) {
-      showToast(t('保存模板失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setSaveTplSaving(false);
-    }
-  }
-
-  /**
-   * 打开历史日志查看弹窗
-   */
   function openHistoryLogs() {
-    setHistStart('');
-    setHistEnd('');
-    setHistLogs('');
     setHistOpen(true);
   }
 
-  /**
-   * 按时间范围拉取历史日志（后端 since/until 为 Unix 秒）
-   */
-  async function loadHistoryLogs() {
-    if (!id) return;
-    // 至少需要一个时间边界，否则无意义（等于全量）
-    if (!histStart && !histEnd) {
-      showToast(t('请指定开始或结束时间'), 'error');
-      return;
-    }
-    setHistLoading(true);
-    try {
-      const params: Record<string, any> = { tail: 0 };
-      if (histStart) {
-        params.since = Math.floor(new Date(histStart).getTime() / 1000);
-      }
-      if (histEnd) {
-        params.until = Math.floor(new Date(histEnd).getTime() / 1000);
-      }
-      const res = await get<{ logs: string }>(`/api/containers/${id}/logs`, params);
-      const text = res?.logs || '';
-      setHistLogs(text.trim() ? text : t('（该时间范围内无日志）'));
-    } catch (e: any) {
-      showToast(t('拉取历史日志失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setHistLoading(false);
-    }
-  }
-
-  /**
-   * 下载当前历史日志内容为文本文件
-   */
-  function downloadHistoryLogs() {
-    if (!histLogs) return;
-    const blob = new Blob([histLogs], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `history-logs-${id}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  /** 打开提交为镜像弹窗，以当前容器镜像名作为默认 repo 前缀 */
   function openCommit() {
-    const img = detail?.image || '';
-    setCommitRepo(img || '');
-    setCommitTag('latest');
-    setCommitComment('');
-    setCommitAuthor('');
     setCommitOpen(true);
   }
 
-  /** 打开在线更新弹窗，以当前重启策略 / 资源限制预填（免重建） */
   function openUpdate() {
-    setURestart(detail?.restartPolicy || 'no');
-    // cpuLimit 为 NanoCpus（纳核），转为核数供输入
-    setUCpu(detail?.cpuLimit ? String((detail.cpuLimit / 1e9).toFixed(3)) : '');
-    // memLimit 为字节，转为 GB 供输入
-    setUMem(detail?.memLimit ? String((detail.memLimit / 1024 / 1024 / 1024).toFixed(2)) : '');
     setUpdateOpen(true);
   }
 
-  /** 在线更新容器配置：提交重启策略与资源限制（对应 docker update，免重建） */
-  async function saveUpdate() {
-    if (!id) return;
-    const body: Record<string, unknown> = { restartPolicy: uRestart };
-    // CPU：留空表示不修改；填数字则转为纳核
-    if (uCpu.trim() !== '') {
-      const cpus = parseFloat(uCpu);
-      if (isNaN(cpus) || cpus < 0) {
-        showToast(t('请输入有效的 CPU 核数（如 1 或 1.5）'), 'error');
-        return;
-      }
-      body.cpuLimit = Math.round(cpus * 1e9);
-    }
-    // 内存：留空表示不修改；填数字则转为字节
-    if (uMem.trim() !== '') {
-      const gb = parseFloat(uMem);
-      if (isNaN(gb) || gb < 0) {
-        showToast(t('请输入有效的内存大小（GB，如 2）'), 'error');
-        return;
-      }
-      body.memLimit = Math.round(gb * 1024 * 1024 * 1024);
-    }
-    setUpdating(true);
-    try {
-      await post(`/api/containers/${id}/update`, body);
-      showToast(t('容器配置已在线更新'));
-      setUpdateOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(e?.message || t('更新失败'), 'error');
-    } finally {
-      setUpdating(false);
-    }
-  }
-
-  /** 打开健康检查编辑弹窗，以当前配置预填 */
   function openHealthEdit() {
-    const hc = detail?.healthcheck;
-    const has = !!hc && !!hc.test && hc.test.length > 0 && hc.test[0] !== 'NONE';
-    setHcEnabled(has);
-    if (hc && hc.test && hc.test.length > 0) {
-      // test 形如 ['CMD','curl','-f','http://...']，去掉 CMD 前缀后以空格连接
-      const parts = hc.test[0] === 'CMD' ? hc.test.slice(1) : hc.test;
-      setHcTestCmd(parts.join(' '));
-    } else {
-      setHcTestCmd('');
-    }
-    setHcInterval(hc?.interval || 30);
-    setHcTimeout(hc?.timeout || 5);
-    setHcRetries(hc?.retries || 3);
     setHcEditOpen(true);
   }
 
-  /** 保存健康检查配置（通过重建容器生效；一并保留现有环境变量） */
-  async function saveHealth() {
-    if (!id) return;
-    setHcSaving(true);
-    try {
-      let healthcheck: any;
-      if (hcEnabled) {
-        const parts = hcTestCmd.trim().split(/\s+/).filter(Boolean);
-        if (parts.length === 0) {
-          showToast(t('请填写健康检查命令'), 'error');
-          setHcSaving(false);
-          return;
-        }
-        healthcheck = {
-          test: ['CMD', ...parts],
-          interval: hcInterval || 0,
-          timeout: hcTimeout || 0,
-          retries: hcRetries || 0,
-        };
-      } else {
-        // 禁用健康检查
-        healthcheck = { test: ['NONE'], interval: 0, timeout: 0, retries: 0 };
-      }
-      // 通过重建容器套用健康检查（其余配置由后端从原容器保留）
-      await post(`/api/containers/${id}/recreate`, {
-        env: detail?.env || {},
-        healthcheck,
-      });
-      showToast(t('健康检查已更新（容器已重建）'));
-      setHcEditOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(e?.message || t('更新健康检查失败'), 'error');
-    } finally {
-      setHcSaving(false);
-    }
-  }
-
-  /** 提交为镜像（确认后调用后端接口） */
-  async function submitCommit() {
-    if (!id) return;
-    // repo 必填校验
-    if (!commitRepo.trim()) {
-      showToast(t('请填写镜像仓库名 repo'), 'error');
-      return;
-    }
-    setCommitting(true);
-    try {
-      const tag = commitTag.trim() || 'latest';
-      const res = await post<any>(`/api/containers/${id}/commit`, {
-        repo: commitRepo.trim(),
-        tag,
-        comment: commitComment.trim() || undefined,
-        author: commitAuthor.trim() || undefined,
-      });
-      const image = res?.image || `${commitRepo.trim()}:${tag}`;
-      showToast(t('已生成镜像 {{image}}', { image }));
-      setCommitOpen(false);
-    } catch (e: any) {
-      showToast(t('提交失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setCommitting(false);
-    }
-  }
-
-  /**
-   * 打开克隆弹窗，预填 <原名>-clone 作为新名称，"创建后启动"默认开启
-   */
   function openClone() {
-    const name = detail?.name || '';
-    setCloneValue(name ? `${name}-clone` : '');
-    setCloneStart(true);
     setCloneOpen(true);
   }
 
-  /**
-   * 执行克隆：基于现有容器复制配置创建新容器，不删除原容器
-   *
-   * 成功后提示新容器名并刷新详情；失败时 toast 后端错误信息。
-   */
-  async function submitClone() {
-    if (!id) return;
-    // 新名称必填校验
-    if (!cloneValue.trim()) {
-      showToast(t('新名称不能为空'), 'error');
-      return;
-    }
-    setCloning(true);
-    try {
-      const res = await post<any>(`/api/containers/${id}/clone`, {
-        name: cloneValue.trim(),
-        start: cloneStart,
-      });
-      // 以后端返回的新容器名为准，缺省回退到输入框内容
-      const clonedName = res?.name || cloneValue.trim();
-      showToast(t('已克隆为 {{clonedName}}', { clonedName }));
-      setCloneOpen(false);
-      fetchDetail();
-    } catch (e: any) {
-      showToast(t('克隆失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setCloning(false);
-    }
-  }
-
-  /**
-   * 打开执行命令弹窗，并清空上一次的命令输入与输出
-   */
   function openExec() {
-    setExecCmd('');
-    setExecOutput('');
-    setExecExitCode(null);
     setExecOpen(true);
-  }
-
-  /**
-   * 在容器内执行单条命令（非交互式），展示 stdout/stderr 拼接输出与退出码
-   *
-   * 若容器未运行，后端返回 400「容器未运行」，此处仅弹 toast 提示。
-   */
-  async function submitExec() {
-    if (!id) return;
-    // 命令必填校验
-    if (!execCmd.trim()) {
-      showToast(t('请输入要执行的命令'), 'error');
-      return;
-    }
-    setExecuting(true);
-    // 清空上一次输出，进入新一轮执行
-    setExecOutput('');
-    setExecExitCode(null);
-    try {
-      const res = await post<{ ok: boolean; exitCode: number | null; output: string }>(
-        `/api/containers/${id}/exec`,
-        { cmd: execCmd.trim() },
-      );
-      setExecOutput(res?.output || '');
-      setExecExitCode(res?.exitCode ?? null);
-    } catch (e: any) {
-      // 容器未运行等后端口径错误，统一 toast 提示
-      showToast(t('执行失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setExecuting(false);
-    }
   }
 
   /** 日志框的滚动处理 */
@@ -2181,189 +1866,21 @@ export default function ContainerDetailPage() {
         onCancel={() => setRebuildOpen(false)}
       />
 
-      {/* 历史日志查看弹窗（按时间范围分页拉取） */}
-      <Modal
-        open={histOpen}
-        title={t('历史日志')}
-        onClose={() => !histLoading && setHistOpen(false)}
-        width={760}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setHistOpen(false)} disabled={histLoading}>
-              {t('关闭')}
-            </Button>
-            <Button variant="secondary" size="md" onClick={downloadHistoryLogs} disabled={!histLogs}>
-              {t('下载结果')}
-            </Button>
-            <Button variant="primary" size="md" loading={histLoading} onClick={loadHistoryLogs}>
-              {t('拉取日志')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="histlog__range">
-          <label className="histlog__field">
-            <span>{t('开始时间（含）')}</span>
-            <input
-              type="datetime-local"
-              value={histStart}
-              onChange={(e) => setHistStart(e.target.value)}
-            />
-          </label>
-          <label className="histlog__field">
-            <span>{t('结束时间（含）')}</span>
-            <input
-              type="datetime-local"
-              value={histEnd}
-              onChange={(e) => setHistEnd(e.target.value)}
-            />
-          </label>
-          <p className="histlog__tip">
-            {t('至少填写一个时间边界即可按时间范围拉取历史日志；留空表示不限制该边界。')}
-          </p>
-        </div>
-        <div className="histlog__box">
-          {histLogs ? (
-            <pre className="histlog__content">{histLogs}</pre>
-          ) : (
-            <div className="histlog__empty">{t('设置时间范围后点击「拉取日志」查看历史记录。')}</div>
-          )}
-        </div>
-      </Modal>
-
-      {/* 克隆容器弹窗 */}
-      <Modal
-        open={cloneOpen}
-        title={t('克隆容器')}
-        onClose={() => !cloning && setCloneOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setCloneOpen(false)} disabled={cloning}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={cloning} onClick={submitClone}>
-              {t('克隆')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('基于「{{name}}」复制配置并创建新容器，原容器保留不变。', { name: detail?.name || '' })}
-        </div>
-        <Field label={t('新名称')} required>
-          <Input
-            placeholder={t('新容器名称')}
-            value={cloneValue}
-            onChange={(e) => setCloneValue(e.target.value)}
-            autoFocus
-            disabled={cloning}
-          />
-        </Field>
-        <label className="clone-modal__start">
-          <input
-            type="checkbox"
-            checked={cloneStart}
-            onChange={(e) => setCloneStart(e.target.checked)}
-            disabled={cloning}
-          />
-          {t('创建后启动')}
-        </label>
-      </Modal>
-
-      {/* 保存为容器模板弹窗 */}
-      <Modal
-        open={saveTplOpen}
-        title={t('保存为容器模板')}
-        onClose={() => !saveTplSaving && setSaveTplOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setSaveTplOpen(false)} disabled={saveTplSaving}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={saveTplSaving} onClick={submitSaveTemplate}>
-              {t('保存')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('将当前容器「{{name}}」的完整配置保存为模板，日后可在容器页一键按模板创建。', { name: detail?.name || '' })}
-        </div>
-        <Field label={t('模板名称')} required>
-          <Input
-            placeholder={t('模板名称')}
-            value={saveTplName}
-            onChange={(e) => setSaveTplName(e.target.value)}
-            autoFocus
-            disabled={saveTplSaving}
-          />
-        </Field>
-        <Field label={t('描述（可选）')}>
-          <Input
-            placeholder={t('模板用途说明')}
-            value={saveTplDesc}
-            onChange={(e) => setSaveTplDesc(e.target.value)}
-            disabled={saveTplSaving}
-          />
-        </Field>
-      </Modal>
-
-      {/* 提交为镜像弹窗 */}
-      <Modal
-        open={commitOpen}
-        title={t('提交为镜像')}
-        onClose={() => !committing && setCommitOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setCommitOpen(false)} disabled={committing}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={committing} onClick={submitCommit}>
-              {t('提交')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('将容器当前的文件系统状态打包成一个新镜像（commit）。原容器不会被删除。')}
-        </div>
-        <Field label={t('仓库名 repo')} required hint={t('例如：myapp 或 registry.local/myapp')}>
-          <Input
-            placeholder={t('镜像仓库名')}
-            value={commitRepo}
-            onChange={(e) => setCommitRepo(e.target.value)}
-            disabled={committing}
-          />
-        </Field>
-        <Field label={t('标签 tag')} hint={t('默认 latest')}>
-          <Input
-            placeholder="latest"
-            value={commitTag}
-            onChange={(e) => setCommitTag(e.target.value)}
-            disabled={committing}
-          />
-        </Field>
-        <Field label={t('提交说明 comment')}>
-          <Input
-            placeholder={t('可选提交说明')}
-            value={commitComment}
-            onChange={(e) => setCommitComment(e.target.value)}
-            disabled={committing}
-          />
-        </Field>
-        <Field label={t('作者 author')}>
-          <Input
-            placeholder={t('可选作者')}
-            value={commitAuthor}
-            onChange={(e) => setCommitAuthor(e.target.value)}
-            disabled={committing}
-          />
-        </Field>
-      </Modal>
-
+      {histOpen && (
+        <HistoryLogModal containerId={id || ''} onClose={() => setHistOpen(false)} />
+      )}
+      {cloneOpen && (
+        <CloneModal containerId={id || ''} containerName={detail?.name || ''} onClose={() => setCloneOpen(false)} onDone={fetchDetail} />
+      )}
+      {saveTplOpen && (
+        <SaveTemplateModal containerId={id || ''} containerName={detail?.name || ''} onClose={() => setSaveTplOpen(false)} />
+      )}
+      {commitOpen && (
+        <CommitImageModal containerId={id || ''} currentImage={detail?.image || ''} onClose={() => setCommitOpen(false)} />
+      )}
+      {execOpen && (
+        <ExecCommandModal containerId={id || ''} onClose={() => setExecOpen(false)} />
+      )}
       {envEditOpen && (
         <EnvEditModal containerId={id || ''} env={detail?.env || {}} onClose={() => setEnvEditOpen(false)} onDone={fetchDetail} />
       )}
@@ -2379,123 +1896,12 @@ export default function ContainerDetailPage() {
       {cfgEditOpen && (
         <ConfigRunModal containerId={id || ''} restartPolicy={detail?.restartPolicy || 'no'} privileged={!!detail?.privileged} onClose={() => setCfgEditOpen(false)} onDone={fetchDetail} />
       )}
-
-      {/* 更新配置弹窗（重启策略 / 资源限制，免重建，对应 docker update） */}
-      <Modal
-        open={updateOpen}
-        title={t('更新配置')}
-        onClose={() => !updating && setUpdateOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setUpdateOpen(false)} disabled={updating}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={updating} onClick={saveUpdate}>
-              {t('保存')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('在线更新无需重建容器，不中断运行、不改变容器 ID。留空的字段将保持现状。')}
-        </div>
-        <Field label={t('重启策略')} required>
-          <Select value={uRestart} onChange={(e) => setURestart(e.target.value)}>
-            <option value="no">{t('no（不自动重启）')}</option>
-            <option value="always">{t('always（总是重启）')}</option>
-            <option value="on-failure">{t('on-failure（失败时重启）')}</option>
-            <option value="unless-stopped">{t('unless-stopped（除非停止，否则重启）')}</option>
-          </Select>
-        </Field>
-        <Field label={t('CPU 限制（核数，留空不修改；填 0 取消限制）')}>
-          <Input
-            type="number"
-            min={0}
-            step="0.1"
-            placeholder={t('如 1 或 1.5')}
-            value={uCpu}
-            onChange={(e) => setUCpu(e.target.value)}
-          />
-        </Field>
-        <Field label={t('内存限制（GB，留空不修改；填 0 取消限制）')}>
-          <Input
-            type="number"
-            min={0}
-            step="0.5"
-            placeholder={t('如 2')}
-            value={uMem}
-            onChange={(e) => setUMem(e.target.value)}
-          />
-        </Field>
-      </Modal>
-
-      {/* 健康检查编辑弹窗（通过重建容器生效） */}
-      <Modal
-        open={hcEditOpen}
-        title={t('健康检查')}
-        onClose={() => !hcSaving && setHcEditOpen(false)}
-        width={520}
-        footer={
-          <div className="env-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setHcEditOpen(false)} disabled={hcSaving}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={hcSaving} onClick={saveHealth}>
-              {t('保存并重建')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="env-modal__tip">
-          {t('修改健康检查需重新创建容器（其余配置保留）。重建会导致容器短暂中断，容器 ID 会改变。')}
-        </div>
-        <Field label={t('启用健康检查')}>
-          <label className="cfg-modal__priv">
-            <input
-              type="checkbox"
-              checked={hcEnabled}
-              onChange={(e) => setHcEnabled(e.target.checked)}
-            />
-            {t('启用（监测容器运行状况并在详情页展示）')}
-          </label>
-        </Field>
-        {hcEnabled && (
-          <>
-            <Field label={t('检测命令')} required>
-              <Input
-                placeholder={t('如 curl -f http://localhost 或 node /app/health.js')}
-                value={hcTestCmd}
-                onChange={(e) => setHcTestCmd(e.target.value)}
-              />
-            </Field>
-            <Field label={t('检测间隔（秒）')}>
-              <Input
-                type="number"
-                min={1}
-                value={String(hcInterval)}
-                onChange={(e) => setHcInterval(Number(e.target.value))}
-              />
-            </Field>
-            <Field label={t('超时（秒）')}>
-              <Input
-                type="number"
-                min={1}
-                value={String(hcTimeout)}
-                onChange={(e) => setHcTimeout(Number(e.target.value))}
-              />
-            </Field>
-            <Field label={t('重试次数')}>
-              <Input
-                type="number"
-                min={1}
-                value={String(hcRetries)}
-                onChange={(e) => setHcRetries(Number(e.target.value))}
-              />
-            </Field>
-          </>
-        )}
-      </Modal>
+      {updateOpen && (
+        <UpdateConfigModal containerId={id || ''} restartPolicy={detail?.restartPolicy || 'no'} cpuLimit={detail?.cpuLimit || 0} memLimit={detail?.memLimit || 0} onClose={() => setUpdateOpen(false)} onDone={fetchDetail} />
+      )}
+      {hcEditOpen && (
+        <HealthCheckModal containerId={id || ''} healthcheck={detail?.healthcheck} env={detail?.env || {}} onClose={() => setHcEditOpen(false)} onDone={fetchDetail} />
+      )}
     </div>
   );
 }
