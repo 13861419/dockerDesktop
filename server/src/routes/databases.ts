@@ -22,6 +22,7 @@ import { requireAdmin, requireOperator } from '../auth';
 import { logOperation } from '../operationLog';
 import { APP_LABEL_KEY, APP_CATALOG } from '../appstore/catalog';
 import { hostShellForExec, quoteForHost } from '../platform/exec';
+import { createFrameStripper } from '../docker/logUtil';
 import {
   createDbBackup,
   listDbBackups,
@@ -170,7 +171,10 @@ async function execInContainer(containerId: string, cmd: string[], env?: Record<
   } as any);
   const stream = (await exec.start({ hijack: true, stdin: false, Tty: false })) as unknown as NodeJS.ReadableStream;
   let output = '';
-  let frameBuf = Buffer.alloc(0);
+  // 多路复用帧剥离复用 ../docker/logUtil（1.92.0 重构）
+  const feed = createFrameStripper((text) => {
+    output += text;
+  });
 
   try {
     // 等 exec 流结束，期间做超时控制
@@ -183,22 +187,6 @@ async function execInContainer(containerId: string, cmd: string[], env?: Record<
         reject(new Error('命令执行超时（15 秒）'));
       }, EXEC_TIMEOUT_MS);
       (timer as any).unref?.();
-
-      /**
-       * 将新到达的 chunk 并入滚动缓冲，剥离多路复用帧头后拼接文本
-       * @param chunk 新到达的二进制块
-       */
-      const feed = (chunk: Buffer | string) => {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        frameBuf = Buffer.concat([frameBuf, buf]);
-        // 循环剥离完整帧（8 字节头 + payload）
-        while (frameBuf.length >= 8) {
-          const payloadLen = frameBuf.readUInt32BE(4);
-          if (frameBuf.length < 8 + payloadLen) break;
-          output += frameBuf.subarray(8, 8 + payloadLen).toString('utf8');
-          frameBuf = frameBuf.subarray(8 + payloadLen);
-        }
-      };
 
       stream.on('data', (chunk: Buffer | string) => feed(chunk));
       stream.on('error', (err: Error) => {

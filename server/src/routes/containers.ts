@@ -7,7 +7,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import net from 'net';
 import { getDockerClient } from '../docker/client';
-import { stripAnsi } from '../docker/logUtil';
+import { demuxBufferToText, demuxLogFrames, demuxLogStream, stripAnsi } from '../docker/logUtil';
 import { getDb } from '../storage';
 import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
@@ -78,93 +78,9 @@ function buildMainPort(ports: Dockerode.PortMap | undefined): string {
 }
 
 /**
- * 解析 Docker 多路复用日志流（stdout+stderr 混合时的 8 字节帧头）。
- * 逐行产生字符串，通过回调对外返回。
- *
- * Docker 日志帧格式：1 字节流类型(1=stdout,2=stderr) + 3 字节保留 + 4 字节长度 + 内容
- * @param stream dockerode 返回的日志流
- * @param onLine 每行内容回调 (text, streamType)
+ * 行拆分器与日志流解复用（createLineSplitter / demuxLogStream）复用 ../docker/logUtil
+ * （1.92.0 重构：与日志聚合中心共享同一实现）
  */
-/**
- * 行拆分器：跨多次 push 拼接尚未换行的残余内容（用于流式日志按行分发）
- */
-function createLineSplitter(onLine: (line: string, streamType: number) => void) {
-  let pending = '';
-  let pendingType = 0;
-  return {
-    push(text: string, streamType: number) {
-      pendingType = streamType;
-      const combined = pending + text;
-      let start = 0;
-      for (let i = 0; i < combined.length; i++) {
-        if (combined[i] === '\n') {
-          const line = combined.slice(start, i);
-          if (line) onLine(line, pendingType);
-          start = i + 1;
-        }
-      }
-      pending = combined.slice(start);
-    },
-    end() {
-      if (pending) onLine(pending, pendingType);
-      pending = '';
-    },
-  };
-}
-
-/**
- * 解复用容器日志流（SSE 实时日志用）
- *
- * 根据容器 TTY 配置自适应：
- *  - TTY：日志为纯字节流，StringDecoder 直接 UTF-8 解码后按行分发；
- *  - 非 TTY：解析 8 字节帧头，取出各帧载荷后同样按行分发。
- * streamType: 1=stdout(0 兼容), 2=stderr。
- * @param stream dockerode 日志流
- * @param tty 容器是否为 TTY 模式
- * @param onLine 每行回调
- */
-function demuxLogStream(
-  stream: NodeJS.ReadableStream,
-  tty: boolean,
-  onLine: (text: string, streamType: number) => void
-): void {
-  const splitter = createLineSplitter(onLine);
-  if (tty) {
-    // TTY：纯字节流，UTF-8 解码后按行分发（TTY 下 stdout/stderr 合并，type 取 0）
-    const decoder = new StringDecoder('utf8');
-    stream.on('data', (chunk: Buffer) => splitter.push(decoder.write(chunk), 0));
-    stream.on('error', () => splitter.end());
-    stream.on('end', () => {
-      splitter.push(decoder.end(), 0);
-      splitter.end();
-    });
-  } else {
-    // 非 TTY：解析 8 字节帧头
-    let buffer = Buffer.alloc(0);
-    const decoder = new StringDecoder('utf8');
-    const tryParse = () => {
-      while (buffer.length >= 8) {
-        const streamType = buffer[0];
-        const payloadLen = buffer.readUInt32BE(4);
-        if (buffer.length < 8 + payloadLen) break;
-        splitter.push(decoder.write(buffer.subarray(8, 8 + payloadLen)), streamType);
-        buffer = buffer.subarray(8 + payloadLen);
-      }
-    };
-    stream.on('data', (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      tryParse();
-    });
-    stream.on('error', () => {
-      buffer = Buffer.alloc(0);
-      splitter.end();
-    });
-    stream.on('end', () => {
-      splitter.push(decoder.end(), 0);
-      splitter.end();
-    });
-  }
-}
 
 /** SSE 保活心跳间隔（毫秒） */
 const PING_INTERVAL_MS = 15000;
@@ -989,41 +905,9 @@ router.get(
 );
 
 /**
- * 将容器日志缓冲解析为纯文本。
- *
- * Docker 日志存在两种格式，需按容器 TTY 配置区分：
- *  - TTY 容器（创建默认即 TTY）：日志为纯字节流，无帧头，直接按 UTF-8 解码；
- *  - 非 TTY 容器：8 字节帧头（streamType + payloadLen）的多路复用格式。
- *
- * 解析均使用 StringDecoder，避免 UTF-8 多字节字符在帧/块边界被截断导致乱码。
- * @param buf 原始日志缓冲
- * @param tty 容器是否为 TTY 模式
- * @returns 拼接后的纯文本日志
- */
-/**
  * ANSI 转义清理复用 ../docker/logUtil 的 stripAnsi（与日志聚合中心保持一致）
+ * demuxBufferToText 已合并至 ../docker/logUtil（1.92.0 重构）
  */
-
-function demuxBufferToText(buf: Buffer | any, tty = false): string {
-  if (!buf || buf.length === 0) return '';
-  const buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
-  // TTY：纯字节流，直接 UTF-8 解码
-  if (tty) {
-    return stripAnsi(new StringDecoder('utf8').write(buffer));
-  }
-  // 非 TTY：解析多路复用帧
-  const decoder = new StringDecoder('utf8');
-  let result = '';
-  let offset = 0;
-  while (buffer.length - offset >= 8) {
-    const payloadLen = buffer.readUInt32BE(offset + 4);
-    if (buffer.length - offset < 8 + payloadLen) break;
-    result += decoder.write(buffer.subarray(offset + 8, offset + 8 + payloadLen));
-    offset += 8 + payloadLen;
-  }
-  result += decoder.end();
-  return stripAnsi(result);
-}
 
 /**
  * GET /api/containers/:id/logs/download
@@ -1200,23 +1084,8 @@ function sendInitialLines(res: Response, initial: Buffer, tty: boolean) {
     if (text && !res.writableEnded) writeEvent(res, { type: 'stdout', text });
     return;
   }
-  let buffer = initial;
-  const decoder = new StringDecoder('utf8');
-  const lines: Array<[number, string]> = [];
-  const tryParse = () => {
-    while (buffer.length >= 8) {
-      const streamType = buffer[0];
-      const payloadLen = buffer.readUInt32BE(4);
-      if (buffer.length < 8 + payloadLen) break;
-      const payload = decoder.write(buffer.subarray(8, 8 + payloadLen));
-      buffer = buffer.subarray(8 + payloadLen);
-      lines.push([streamType, payload]);
-    }
-  };
-  tryParse();
-  const tail = decoder.end();
-  if (tail) lines.push([0, tail]);
-  for (const [streamType, payload] of lines) {
+  // 帧级解析复用 logUtil（残余尾部以 streamType=0 兜底输出）
+  for (const [streamType, payload] of demuxLogFrames(initial)) {
     if (res.writableEnded) break;
     if (payload) writeEvent(res, { type: streamType === 2 ? 'stderr' : 'stdout', text: stripAnsi(payload) });
   }

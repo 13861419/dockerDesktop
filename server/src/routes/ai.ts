@@ -48,6 +48,7 @@ import {
 import type { AiProfilePublic } from '../aiProfiles';
 import { AI_PRESETS } from '../aiPresets';
 import { logOperation } from '../operationLog';
+import { demuxBufferToText } from '../docker/logUtil';
 import { requireAdmin, requireAuth } from '../auth';
 import { getDockerClient } from '../docker/client';
 import { recordAiUsage, estimateTokens, summarizeAiUsage, listAiUsageByModel, listAiUsageByDay, clearAiUsage, getMonthlyUsage, listAiUsageByDayWithCost, listAiUsageByWeek, getAiPerformanceMetrics, getAiChatStats } from '../aiUsage';
@@ -207,22 +208,12 @@ const CAPABILITIES = [
   },
 ];
 
-/** 提取日志 Buffufer 为纯文本（合并 stdout/stderr）供 AI 上下文使用 */
+/**
+ * 提取日志 Buffer 为纯文本（合并 stdout/stderr）供 AI 上下文使用
+ * demux 已合并至 ../docker/logUtil（1.92.0 重构），顺带清理 ANSI 转义序列
+ */
 function logsBufferToText(buf: Buffer | any, tty = false): string {
-  if (tty) {
-    return Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf || '');
-  }
-  let buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || '');
-  const chunks: string[] = [];
-  while (buffer.length >= 8) {
-    const payloadLen = buffer.readUInt32BE(4);
-    if (buffer.length < 8 + payloadLen) break;
-    const payload = buffer.subarray(8, 8 + payloadLen).toString('utf8');
-    chunks.push(payload);
-    buffer = buffer.subarray(8 + payloadLen);
-  }
-  if (buffer.length > 0) chunks.push(buffer.toString('utf8'));
-  return chunks.join('');
+  return demuxBufferToText(buf, tty);
 }
 
 /** 读取单个容器最近日志（截断）作为 AI 上下文 */

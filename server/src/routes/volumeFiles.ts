@@ -21,6 +21,7 @@ import { getDockerClient } from '../docker/client';
 import Dockerode from 'dockerode';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
+import { createFrameStripper } from '../docker/logUtil';
 
 const router = Router();
 
@@ -152,7 +153,10 @@ async function execInContainer(
   const stream = (await exec.start({ hijack: true, stdin: false, Tty: false })) as unknown as NodeJS.ReadableStream;
 
   let output = '';
-  let frameBuf = Buffer.alloc(0);
+  // 多路复用帧剥离复用 ../docker/logUtil（1.92.0 重构）
+  const feed = createFrameStripper((text) => {
+    output += text;
+  });
 
   await new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -164,14 +168,7 @@ async function execInContainer(
     (timer as any).unref?.();
 
     stream.on('data', (chunk: Buffer | string) => {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      frameBuf = Buffer.concat([frameBuf, buf]);
-      while (frameBuf.length >= 8) {
-        const payloadLen = frameBuf.readUInt32BE(4);
-        if (frameBuf.length < 8 + payloadLen) break;
-        output += frameBuf.subarray(8, 8 + payloadLen).toString('utf8');
-        frameBuf = frameBuf.subarray(8 + payloadLen);
-      }
+      feed(chunk);
     });
     stream.on('error', (err: Error) => {
       if (settled) return;

@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getDataDir } from '../storage';
+import { demuxToString } from '../docker/logUtil';
 
 const router = Router();
 const CACHE_NAME = 'dm-registry-cache';
@@ -39,20 +40,7 @@ async function findCache(docker: any): Promise<{ id: string; running: boolean } 
   return { id: hit.Id, running: hit.State === 'running' };
 }
 
-/** 从 docker 多路复用流中解出文本输出（stdout/stderr 合并） */
-function demuxToString(buf: Buffer): string {
-  let out = '';
-  let offset = 0;
-  while (offset + 8 <= buf.length) {
-    const len = buf.readUInt32BE(offset + 4);
-    out += buf.slice(offset + 8, offset + 8 + len).toString('utf8');
-    offset += 8 + len;
-  }
-  if (offset === 0 && buf.length) out = buf.toString('utf8');
-  return out;
-}
-
-/** 在运行中的容器内执行命令并返回合并输出 */
+/** 在运行中的容器内执行命令并返回合并输出（帧剥离复用 ../docker/logUtil） */
 async function execOutput(docker: any, containerId: string, cmd: string[], timeoutMs = 8000): Promise<string> {
   const exec = await docker.getContainer(containerId).exec.create({
     Cmd: cmd,

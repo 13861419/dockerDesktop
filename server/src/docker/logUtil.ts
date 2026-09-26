@@ -2,9 +2,13 @@
  * Docker 日志解析工具（共享，零依赖）
  *
  * 将 dockerode `container.logs()` 返回的多路复用 Buffer 解析为带流类型与时间戳的文本行，
- * 供「日志聚合中心」及 AI 日志分析等跨模块复用。区别于 containers.ts 内部私有实现，
- * 本工具更关注结构化输出（stream / ts / text），便于排序与过滤。
+ * 供「日志聚合中心」及 AI 日志分析等跨模块复用。
+ *
+ * 1.92.0 重构：合并原先散落在 containers.ts / registryCache.ts / ai.ts /
+ * databases.ts / files.ts / volumeFiles.ts 的多份 demux 私有实现，
+ * 统一在此维护：缓冲→文本、缓冲→行、流式按行分发、执行输出帧剥离等形态。
  */
+import { StringDecoder } from 'string_decoder';
 import type Dockerode from 'dockerode';
 
 /** 单行解析结果 */
@@ -128,4 +132,176 @@ const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZ
 /** 去除 ANSI 转义序列（用于终端类日志清理，含颜色码与光标控制序列） */
 export function stripAnsi(text: string): string {
   return String(text || '').replace(ANSI_RE, '');
+}
+
+/**
+ * 行拆分器：跨多次 push 拼接尚未换行的残余内容（用于流式日志按行分发）
+ */
+export function createLineSplitter(onLine: (line: string, streamType: number) => void) {
+  let pending = '';
+  let pendingType = 0;
+  return {
+    push(text: string, streamType: number) {
+      pendingType = streamType;
+      const combined = pending + text;
+      let start = 0;
+      for (let i = 0; i < combined.length; i++) {
+        if (combined[i] === '\n') {
+          const line = combined.slice(start, i);
+          if (line) onLine(line, pendingType);
+          start = i + 1;
+        }
+      }
+      pending = combined.slice(start);
+    },
+    end() {
+      if (pending) onLine(pending, pendingType);
+      pending = '';
+    },
+  };
+}
+
+/**
+ * 解复用容器日志流（SSE 实时日志用）
+ *
+ * 根据容器 TTY 配置自适应：
+ *  - TTY：日志为纯字节流，StringDecoder 直接 UTF-8 解码后按行分发；
+ *  - 非 TTY：解析 8 字节帧头，取出各帧载荷后同样按行分发。
+ * streamType: 1=stdout(0 兼容), 2=stderr。
+ * @param stream dockerode 日志流
+ * @param tty 容器是否为 TTY 模式
+ * @param onLine 每行回调
+ */
+export function demuxLogStream(
+  stream: NodeJS.ReadableStream,
+  tty: boolean,
+  onLine: (text: string, streamType: number) => void
+): void {
+  const splitter = createLineSplitter(onLine);
+  if (tty) {
+    // TTY：纯字节流，UTF-8 解码后按行分发（TTY 下 stdout/stderr 合并，type 取 0）
+    const decoder = new StringDecoder('utf8');
+    stream.on('data', (chunk: Buffer) => splitter.push(decoder.write(chunk), 0));
+    stream.on('error', () => splitter.end());
+    stream.on('end', () => {
+      splitter.push(decoder.end(), 0);
+      splitter.end();
+    });
+  } else {
+    // 非 TTY：解析 8 字节帧头
+    let buffer = Buffer.alloc(0);
+    const decoder = new StringDecoder('utf8');
+    const tryParse = () => {
+      while (buffer.length >= 8) {
+        const streamType = buffer[0];
+        const payloadLen = buffer.readUInt32BE(4);
+        if (buffer.length < 8 + payloadLen) break;
+        splitter.push(decoder.write(buffer.subarray(8, 8 + payloadLen)), streamType);
+        buffer = buffer.subarray(8 + payloadLen);
+      }
+    };
+    stream.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      tryParse();
+    });
+    stream.on('error', () => {
+      buffer = Buffer.alloc(0);
+      splitter.end();
+    });
+    stream.on('end', () => {
+      splitter.push(decoder.end(), 0);
+      splitter.end();
+    });
+  }
+}
+
+/**
+ * 将容器日志缓冲解析为纯文本。
+ *
+ * Docker 日志存在两种格式，需按容器 TTY 配置区分：
+ *  - TTY 容器（创建默认即 TTY）：日志为纯字节流，无帧头，直接按 UTF-8 解码；
+ *  - 非 TTY 容器：8 字节帧头（streamType + payloadLen）的多路复用格式。
+ *
+ * 解析均使用 StringDecoder，避免 UTF-8 多字节字符在帧/块边界被截断导致乱码。
+ * @param buf 原始日志缓冲
+ * @param tty 容器是否为 TTY 模式
+ * @returns 拼接后的纯文本日志
+ */
+export function demuxBufferToText(buf: Buffer | any, tty = false): string {
+  if (!buf || buf.length === 0) return '';
+  const buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
+  // TTY：纯字节流，直接 UTF-8 解码
+  if (tty) {
+    return stripAnsi(new StringDecoder('utf8').write(buffer));
+  }
+  // 非 TTY：解析多路复用帧
+  const decoder = new StringDecoder('utf8');
+  let result = '';
+  let offset = 0;
+  while (buffer.length - offset >= 8) {
+    const payloadLen = buffer.readUInt32BE(offset + 4);
+    if (buffer.length - offset < 8 + payloadLen) break;
+    result += decoder.write(buffer.subarray(offset + 8, offset + 8 + payloadLen));
+    offset += 8 + payloadLen;
+  }
+  result += decoder.end();
+  return stripAnsi(result);
+}
+
+/**
+ * 从 docker 多路复用流中解出文本输出（stdout/stderr 合并，自动识别无帧头纯文本）
+ * @param buf 原始输出缓冲
+ * @returns 合并后的文本（不做 ANSI 清理，由调用方按需处理）
+ */
+export function demuxToString(buf: Buffer): string {
+  let out = '';
+  let offset = 0;
+  while (offset + 8 <= buf.length) {
+    const len = buf.readUInt32BE(offset + 4);
+    out += buf.slice(offset + 8, offset + 8 + len).toString('utf8');
+    offset += 8 + len;
+  }
+  if (offset === 0 && buf.length) out = buf.toString('utf8');
+  return out;
+}
+
+/**
+ * 解析多路复用日志缓冲为帧数组（帧级，不拆行；残余经 UTF-8 解码器兜底输出）
+ * @returns [streamType, payload] 数组；残余尾部以 streamType=0 产出
+ */
+export function demuxLogFrames(buf: Buffer | any): Array<[number, string]> {
+  let buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
+  const decoder = new StringDecoder('utf8');
+  const frames: Array<[number, string]> = [];
+  while (buffer.length >= 8) {
+    const streamType = buffer[0];
+    const payloadLen = buffer.readUInt32BE(4);
+    if (buffer.length < 8 + payloadLen) break;
+    frames.push([streamType, decoder.write(buffer.subarray(8, 8 + payloadLen))]);
+    buffer = buffer.subarray(8 + payloadLen);
+  }
+  const tail = decoder.end();
+  if (tail) frames.push([0, tail]);
+  return frames;
+}
+
+/**
+ * 创建多路复用流帧剥离器（exec 命令输出等流式增量场景）
+ *
+ * 跨多次调用累积缓冲，循环剥离完整帧（8 字节头 + payload），
+ * 将各帧载荷文本经回调返回。
+ */
+export function createFrameStripper(onText: (text: string) => void): (chunk: Buffer | string) => void {
+  let frameBuf = Buffer.alloc(0);
+  return (chunk: Buffer | string) => {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    frameBuf = Buffer.concat([frameBuf, buf]);
+    // 循环剥离完整帧（8 字节头 + payload）
+    while (frameBuf.length >= 8) {
+      const payloadLen = frameBuf.readUInt32BE(4);
+      if (frameBuf.length < 8 + payloadLen) break;
+      onText(frameBuf.subarray(8, 8 + payloadLen).toString('utf8'));
+      frameBuf = frameBuf.subarray(8 + payloadLen);
+    }
+  };
 }
