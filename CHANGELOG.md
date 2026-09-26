@@ -3,6 +3,27 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added（新增）
+
+- **日志级别筛选 chips**：容器日志弹窗与 Compose 日志弹窗新增「全部 / 错误 / 警告」单选筛选组，错误与警告 chip 附带命中计数；级别命中沿用单词边界匹配（ERROR / FATAL / WARN 等），排障时一键聚焦问题行
+- **Compose 日志实时流**：「跟随刷新」由 3 秒轮询改为 SSE 增量推送（`GET /api/compose/:name/logs/stream`，`docker compose logs --follow`）——连接建立即推送尾部历史，此后日志产生即推送，延迟从秒级降到毫秒级；条数 / 时间范围 / 时间戳 / 服务筛选变化时自动经流式 URL 重连；外部项目无文件读取权限时降级提示改用手动刷新
+
+### Changed（变更）
+
+- **日志流 hook 重构与批量渲染**：新增通用 `useLogStream`（fetch + ReadableStream 解析 SSE），容器实时日志与 Compose 跟随刷新共用；日志行按 150ms 批量合并渲染，高频日志不再逐行触发 React 重渲染；重连时自动清空旧行（服务端重发 tail 历史），消除重连后的重复日志
+
+### Fixed（修复）
+
+- **日志聚合查询响应体截断**：`GET /api/logs/query` 原先 `truncated` 标志形同虚设，多容器大 tail 时全量返回最多 10 万行 JSON；现在 `total` 保留真实命中数，`lines` 只返回最近 10000 行，超出时 `truncated=true`
+- **日志索引采集防重入**：后台增量采集（每 60s 一轮）加防重入标志，容器较多、单轮耗时超过间隔时跳过本轮（返回 `busy: true`），避免两轮并发写库造成游标竞态与重复插入
+- **stripAnsi 实现统一**：`containers.ts` 本地的 ANSI 清理正则与 `logUtil.ts` 不一致（后者漏清光标控制序列与 8 位 CSI），现统一复用 `logUtil.stripAnsi` 完整正则，日志聚合中心与容器日志的清理行为保持一致
+
+### Test（测试）
+
+- `logUtil` 单测补充光标控制序列（`\u001b[2J\u001b[H`）与 8 位 CSI（`\u009b`）清理用例
+
 ## [1.91.0] - 2026-09-25
 
 ### Added（新增）

@@ -5,7 +5,7 @@
  * 每个 Compose 项目对应一个工作目录，其中包含 compose 文件。
  */
 import { Router, Request, Response } from 'express';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
@@ -1617,6 +1617,132 @@ router.post(
     const output = await runProjectCmd(ctx, cmd.join(' '), ctx.dir);
     // compose CLI 会给日志上 ANSI 颜色，非终端环境显示为乱码，统一剥除（1.89.1）
     res.json({ logs: stripAnsi(output) });
+  }),
+);
+
+/**
+ * GET /api/compose/:name/logs/stream?tail=200&since=&timestamps=&service=
+ * SSE 实时日志流（docker compose logs --follow），替代前端 3 秒轮询（1.92.0）。
+ * 连接建立即推送尾部历史，随后持续增量；客户端断开时终止子进程。
+ */
+router.get(
+  '/:name/logs/stream',
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await requireProjectCtx(req.params.name);
+    let tail = Number(req.query.tail ?? 200);
+    if (!Number.isFinite(tail) || tail < 0) tail = 200;
+    if (tail > 5000) tail = 5000;
+    // 可选 service：结构视图里按服务查看日志（与 POST /logs 校验一致）
+    const service = typeof req.query.service === 'string' ? req.query.service.trim() : '';
+    if (service && /[^\w-.]/.test(service)) {
+      return res.status(400).json({ error: '非法的 service 参数' });
+    }
+    const withTs = req.query.timestamps === 'true' || req.query.timestamps === '1';
+    const since = Number(req.query.since);
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const writeEvent = (data: unknown) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(data) + '\n\n');
+    };
+
+    // 外部项目且面板账号读不到 compose 文件时，无法直接 spawn（需 root 包装，不支持流式），降级提示
+    if (ctx.source === 'external' && !ctx.fileAccessible) {
+      writeEvent({ type: 'error', text: '外部项目无文件读取权限，暂不支持实时跟随，请使用手动刷新', stopped: true });
+      res.end();
+      return;
+    }
+
+    const cmdParts = [
+      'docker',
+      'compose',
+      composeFileFlags(ctx),
+      'logs',
+      '--follow',
+      ...(tail > 0 ? [`--tail=${tail}`] : []),
+      ...(Number.isFinite(since) && since > 0 ? [`--since=${Math.floor(since)}`] : []),
+      ...(withTs ? ['--timestamps'] : []),
+      ...(service ? [service] : []),
+    ];
+
+    // shell:true 以复用 composeFileFlags 的引号约定；POSIX 下 detached 便于整进程组终止
+    const child = spawn(cmdParts.join(' '), {
+      shell: true,
+      cwd: ctx.dir,
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+    });
+
+    let killed = false;
+    const killTree = () => {
+      if (killed) return;
+      killed = true;
+      try {
+        if (process.platform === 'win32') {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+        } else if (child.pid) {
+          try {
+            process.kill(-child.pid, 'SIGTERM');
+          } catch {
+            child.kill('SIGTERM');
+          }
+        } else {
+          child.kill('SIGTERM');
+        }
+      } catch {
+        // 忽略终止失败
+      }
+    };
+
+    let pingTimer: NodeJS.Timeout | null = null;
+
+    // stdout 按行转发为 SSE；compose CLI 的 ANSI 颜码统一剥除
+    let buf = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      buf += chunk.toString('utf8');
+      const parts = buf.split(/\r?\n/);
+      buf = parts.pop() || '';
+      for (const line of parts) {
+        if (line) writeEvent({ type: 'stdout', text: stripAnsi(line) + '\n' });
+      }
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = stripAnsi(chunk.toString('utf8')).trim();
+      if (text) writeEvent({ type: 'stderr', text: text + '\n' });
+    });
+    child.on('error', (err) => {
+      writeEvent({ type: 'error', text: '无法连接日志流: ' + (err?.message || err) });
+      if (pingTimer) clearInterval(pingTimer);
+      killTree();
+      if (!res.writableEnded) res.end();
+    });
+    child.on('close', (code) => {
+      if (pingTimer) clearInterval(pingTimer);
+      // compose logs --follow 正常退出（项目停止/无服务可跟随）：通知前端停止重连
+      writeEvent({ type: 'error', text: '日志流已结束', stopped: true });
+      void code;
+      if (!res.writableEnded) res.end();
+    });
+
+    // 客户端断开：终止 compose 子进程
+    req.on('close', () => {
+      if (pingTimer) clearInterval(pingTimer);
+      killTree();
+    });
+
+    // 每 15s 发送一次 SSE 注释行保活，避免空闲连接被中间层回收
+    pingTimer = setInterval(() => {
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        killTree();
+      }
+    }, 15_000);
+    (pingTimer as any).unref?.();
   }),
 );
 

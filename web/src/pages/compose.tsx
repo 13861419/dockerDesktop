@@ -5,7 +5,7 @@
  * 查看配置与删除项目等操作。
  */
 import { useNavigate } from 'react-router-dom';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -18,6 +18,8 @@ import { get, post, del } from '../api/client';
 import StateActions from '../components/StateActions';
 import MoreMenu, { MoreMenuItem } from '../components/MoreMenu';
 import LogViewer, { LOG_MAX_RENDER_LINES } from '../components/LogViewer';
+import LogLevelFilter, { countLogLevels, filterLogContent, LogLevelFilterValue } from '../components/LogLevelFilter';
+import { useLogStream } from '../hooks/useLogStream';
 import { useCanManage } from '../hooks/useCanManage';
 import { ComposeProject, ComposeService, ComposeTemplate, ComposeStructure } from '../types';
 import { translateNow as t } from '../i18n';
@@ -202,6 +204,27 @@ export default function ComposePage() {
   const [logSearch, setLogSearch] = useState('');
   const logPreRef = useRef<HTMLPreElement>(null);
   const [logLoading, setLogLoading] = useState(false);
+  // 级别筛选 chips（全部 / 错误 / 警告，纯前端过滤）
+  const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilterValue>('all');
+
+  // 跟随刷新（流式，1.92.0）：SSE 增量推送替代 3 秒轮询；过滤条件变化经 URL 重建自动重连
+  const streamUrl = useMemo(() => {
+    if (!logOpen || !logFollow || !logName) return null;
+    const tail = logLines > 0 ? logLines : logFull ? 0 : 200;
+    const params = new URLSearchParams();
+    params.set('tail', String(tail));
+    if (logSince > 0) params.set('since', String(Math.floor(Date.now() / 1000) - logSince));
+    if (logTs) params.set('timestamps', 'true');
+    if (logService) params.set('service', logService);
+    return `/api/compose/${encodeURIComponent(logName)}/logs/stream?${params.toString()}`;
+  }, [logOpen, logFollow, logName, logLines, logFull, logSince, logTs, logService]);
+  const stream = useLogStream(streamUrl, { maxLines: 5000 });
+  const streamText = useMemo(
+    () => stream.lines.map((l) => l.text.replace(/\n+$/, '')).join('\n'),
+    [stream.lines],
+  );
+  const streamTextRef = useRef('');
+  streamTextRef.current = streamText;
 
   // 新建项目弹窗状态
   const [createOpen, setCreateOpen] = useState(false);
@@ -1126,23 +1149,41 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     setLogFollow(false);
   }, []);
 
-  /** 跟随刷新：每 3 秒静默重拉并滚动到底部 */
-  useEffect(() => {
-    if (!logFollow || !logOpen) return;
-    const timer = setInterval(async () => {
-      await fetchLog({ quiet: true });
-      const el = logPreRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [logFollow, logOpen, fetchLog]);
+  /**
+   * 切换跟随刷新：开启时清空快照改由 SSE 重发尾部历史 + 增量；
+   * 关闭时把当前流内容固化为快照，保持视图连续
+   */
+  const toggleFollow = useCallback(() => {
+    const next = !logFollow;
+    if (next) {
+      setLogContent('');
+    } else {
+      setLogContent(streamTextRef.current);
+    }
+    setLogFollow(next);
+  }, [logFollow]);
+
+  /** 滚轮向上滚动时暂停跟随（固化的内容保持不变） */
+  const disableFollow = useCallback(() => {
+    if (!logFollow) return;
+    setLogContent(streamTextRef.current);
+    setLogFollow(false);
+  }, [logFollow]);
 
   /** 新内容到达且跟随刷新开启时滚动到底部 */
   useEffect(() => {
     if (!logFollow) return;
     const el = logPreRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [logContent, logFollow]);
+  }, [logFollow, streamText]);
+
+  // 展示内容：跟随模式取流式内容，否则取快照；级别 chips 在前端过滤
+  const displayContent = logFollow ? streamText : logContent;
+  const levelCounts = useMemo(() => countLogLevels(displayContent), [displayContent]);
+  const filteredContent = useMemo(
+    () => (logLevelFilter === 'all' ? displayContent : filterLogContent(displayContent, logLevelFilter)),
+    [displayContent, logLevelFilter],
+  );
 
   return (
     <div className="page">
@@ -1849,19 +1890,19 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
         onToggleFullscreen={() => {
           const next = !logFull;
           setLogFull(next);
-          // 放大后自动拉取全部日志，还原回当前档位（条数或最近 200 行）
-          fetchLog({ tail: next ? 0 : logLines > 0 ? logLines : 200 });
+          // 放大后自动拉取全部日志，还原回当前档位（条数或最近 200 行）；跟随模式下经流式 URL 重建生效
+          if (!logFollow) fetchLog({ tail: next ? 0 : logLines > 0 ? logLines : 200 });
         }}
         footer={
           <>
-            <Button variant="secondary" onClick={refreshLog} loading={logLoading}>
+            <Button variant="secondary" onClick={refreshLog} loading={logLoading} disabled={logFollow}>
               {t('刷新')}
             </Button>
             <Button
               variant="secondary"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(logContent);
+                  await navigator.clipboard.writeText(displayContent);
                   showToast(t('已复制'), 'success');
                 } catch {
                   showToast(t('复制失败'), 'error');
@@ -1873,7 +1914,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             <Button
               variant="secondary"
               onClick={() => {
-                const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+                const blob = new Blob([displayContent], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -1881,7 +1922,7 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                 a.click();
                 URL.revokeObjectURL(url);
               }}
-              disabled={!logContent}
+              disabled={!displayContent}
             >
               {t('下载')}
             </Button>
@@ -1900,11 +1941,11 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
                 const n = Number(v.slice(1));
                 setLogLines(n);
                 setLogSince(0);
-                fetchLog({ since: 0, tail: n });
+                if (!logFollow) fetchLog({ since: 0, tail: n });
               } else {
                 setLogLines(0);
                 setLogSince(Number(v));
-                fetchLog({ since: Number(v), tail: 0 });
+                if (!logFollow) fetchLog({ since: Number(v), tail: 0 });
               }
             }}
             style={{ width: 136 }}
@@ -1919,23 +1960,47 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
             <option value="l500">{t('最近 500 行')}</option>
             <option value="l1000">{t('最近 1000 行')}</option>
           </Select>
+          <LogLevelFilter
+            value={logLevelFilter}
+            onChange={setLogLevelFilter}
+            errorCount={levelCounts.error}
+            warnCount={levelCounts.warn}
+            labels={{ all: t('全部'), error: t('错误'), warn: t('警告') }}
+          />
           <Input
             placeholder={t('在日志中搜索…')}
             value={logSearch}
             onChange={(e) => setLogSearch(e.target.value)}
             style={{ flex: 1, minWidth: 160 }}
           />
-          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)} style={{ minWidth: 88 }}>
+          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={toggleFollow} style={{ minWidth: 88 }}>
             {logFollow ? t('跟随中') : t('跟随刷新')}
           </Button>
-          <Button variant={logTs ? 'primary' : 'secondary'} size="sm" onClick={() => { const nv = !logTs; setLogTs(nv); fetchLog({ ts: nv }); }}>
+          <Button
+            variant={logTs ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => {
+              const nv = !logTs;
+              setLogTs(nv);
+              if (!logFollow) fetchLog({ ts: nv });
+            }}
+          >
             {t('时间戳')}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setLogContent('')}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setLogContent('');
+              stream.clear();
+            }}
+          >
             {t('清空')}
           </Button>
           <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap', minWidth: 72, textAlign: 'right' }}>
-            {logSearch ? `${logContent.split('\n').filter((l) => l.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}` : `${logContent.split('\n').length - 1} ${t('行')}`}
+            {logSearch
+              ? `${displayContent.split('\n').filter((l) => l.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}`
+              : `${displayContent.split('\n').length - 1} ${t('行')}`}
           </span>
           <Button variant={logWrap ? 'primary' : 'secondary'} size="sm" onClick={() => setLogWrap((v) => !v)}>
             {t('自动换行')}
@@ -1950,19 +2015,20 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
           >
             {t('到底部')}
           </Button>
+          {logFollow && stream.error && <span style={{ fontSize: 12, color: '#e5484d' }}>{stream.error}</span>}
         </div>
-        {logLoading && !logContent ? (
+        {logLoading && !displayContent ? (
           <div className="log-empty">{t('正在拉取日志…')}</div>
         ) : (
           <LogViewer
-            content={logContent}
+            content={filteredContent}
             emptyText={t('（暂无日志）')}
             truncatedText={t('（日志较长，仅显示最近 {{count}} 行）', { count: LOG_MAX_RENDER_LINES })}
             showLineNumbers
             search={logSearch}
             wrap={logWrap}
             preRef={logPreRef}
-            onWheel={() => setLogFollow(false)}
+            onWheel={disableFollow}
           />
         )}
       </Modal>

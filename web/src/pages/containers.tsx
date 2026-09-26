@@ -29,6 +29,7 @@ import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import ComposeInferModal from '../components/ComposeInferModal';
 import { detectLogLevel } from '../utils/logLevel';
+import LogLevelFilter, { LogLevelFilterValue } from '../components/LogLevelFilter';
 import { useLang } from '../i18n';
 import './containers.less';
 
@@ -400,6 +401,17 @@ export default function ContainersPage() {
   function clearLogs() {
     setLogLines([]);
   }
+
+  // 级别筛选 chips（1.92.0）：派生计数与过滤后的行（levels 已在 loadLogs 时算好）
+  const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilterValue>('all');
+  const logLevelCounts = useMemo(
+    () => ({
+      error: logLines.filter((l) => l.level === 'error').length,
+      warn: logLines.filter((l) => l.level === 'warn').length,
+    }),
+    [logLines],
+  );
+  const shownLogLines = logLevelFilter === 'all' ? logLines : logLines.filter((l) => l.level === logLevelFilter);
 
   /**
    * 下载容器日志为文本文件（GET /api/containers/:id/logs/download）
@@ -2654,6 +2666,13 @@ export default function ContainersPage() {
             <option value="1000">{t('最近 1000 行')}</option>
             <option value="0">{t('全部')}</option>
           </Select>
+          <LogLevelFilter
+            value={logLevelFilter}
+            onChange={setLogLevelFilter}
+            errorCount={logLevelCounts.error}
+            warnCount={logLevelCounts.warn}
+            labels={{ all: t('全部'), error: t('错误'), warn: t('警告') }}
+          />
           <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
             {logFollow ? t('跟随中') : t('跟随刷新')}
           </Button>
@@ -2672,7 +2691,9 @@ export default function ContainersPage() {
             style={{ flex: 1, minWidth: 180 }}
           />
           <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap' }}>
-            {logSearch ? `${logLines.filter((l) => l.text.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}` : `${logLines.length} ${t('行')}`}
+            {logSearch
+              ? `${shownLogLines.filter((l) => l.text.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}`
+              : `${shownLogLines.length} ${t('行')}`}
           </span>
           <Button variant={logWrap ? 'primary' : 'secondary'} size="sm" onClick={() => setLogWrap((v) => !v)}>
             {t('自动换行')}
@@ -2705,12 +2726,12 @@ export default function ContainersPage() {
             wordBreak: logWrap ? 'break-all' : 'normal',
           }}
         >
-          {logLoading && logLines.length === 0 ? (
+          {logLoading && shownLogLines.length === 0 ? (
             <span style={{ color: 'var(--text-muted)' }}>{t('加载日志中…')}</span>
-          ) : logLines.length === 0 ? (
+          ) : shownLogLines.length === 0 ? (
             <span style={{ color: 'var(--text-muted)' }}>{t('暂无日志输出')}</span>
           ) : (
-            logLines.map((l, i) => {
+            shownLogLines.map((l, i) => {
               const hit = logSearch && l.text.toLowerCase().includes(logSearch.toLowerCase());
               let rendered: React.ReactNode = l.text;
               if (logSearch) {
