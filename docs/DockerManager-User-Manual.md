@@ -428,6 +428,7 @@ Click a container to open its detail page (`containerDetail`), which provides:
 10. **Operation log (new in 1.37.0)**: the "Detail" tab also matches the operation log by container name / short ID and shows the latest 10 operations on this container (time / operator / action / result), making start-stop / update / delete actions fully traceable.
 11. **File changes (new in 1.48.0)**: the "Detail" tab gains a "File changes" card (docker diff) listing files added / modified / deleted during the container's runtime, filterable by change type — useful for spotting unexpected writes or intrusion traces.
 12. **Config snapshot compare (new in 1.50.0)**: the "Detail" tab gains a "Config snapshots" card — click "Save snapshot" to record the container's current config (image / port mappings / env / volumes / restart policy / network mode / privileged), then pick any two snapshots for a field-level compare (base → target); changed fields are listed row by row with old and new values. Up to 50 snapshots are kept per container — save one before and after rebuilding a container to spot config drift.
+13. **Run command (wired up in 1.92.0)**: the toolbar "Run command" dialog executes a single non-interactive command inside the container (e.g. `ls -la /app`) and shows the combined stdout / stderr output plus the exit code; for ongoing interaction use the "Built-in Web Terminal".
 
 ![Container list](../images/containers.png)
 

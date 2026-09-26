@@ -14,6 +14,9 @@
 
 ### Changed（变更）
 
+- **前端三大页面组件拆分**：容器页（3122→1404 行）、容器详情页（3021→1908 行）、Compose 页（2339→542 行）累计抽出 34 个弹窗/面板组件——日志、结构视图、新建/编辑（含 docker run 导入、历史版本、保存模板）、资源看板（含滚动更新、漂移检测、跨引擎分发）、各确认框等全部内聚为独立组件，Compose 内置模板常量独立为共享模块；纯移动不改行为，全程 tsc + build + e2e（15 用例）与逐页冒烟验证
+- **docker 日志 demux 实现统一**：原先散落在 containers / registryCache / ai / databases / files / volumeFiles 六个路由的 7 份多路复用日志解析私有实现，全部合并至共享 `logUtil`（`demuxBufferToText` / `demuxLogStream` / `demuxLogFrames` / `createFrameStripper` / `demuxToString`）；帧解析、UTF-8 边界与 ANSI 清理行为全站一致，后续维护只改一处
+- **compose 共享工具模块**：新增 `server/src/composeUtil.ts`，项目定位（本地目录 → 容器标签反查外部项目）、多文件 `-f` 参数组装、提权读写与物理备份、版本历史记录等 15 个 helper 从路由层迁出，`routes/compose.ts` 减至 1801 行，供后续调度/自动化模块复用
 - **日志流 hook 重构与批量渲染**：新增通用 `useLogStream`（fetch + ReadableStream 解析 SSE），容器实时日志与 Compose 跟随刷新共用；日志行按 150ms 批量合并渲染，高频日志不再逐行触发 React 重渲染；重连时自动清空旧行（服务端重发 tail 历史），消除重连后的重复日志
 - **全站 gzip 压缩**：Express 增加 compression 中间件，大 JSON、CSV 导出与静态资源传输体积显著下降；SSE 流式响应自动排除，避免缓冲破坏事件推送
 - **安全响应头**：全站增加 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`（防点击劫持）、`Referrer-Policy: no-referrer` 与基础 CSP（允许内联样式，脚本仅限同源）
@@ -22,6 +25,7 @@
 
 ### Fixed（修复）
 
+- **容器详情「执行命令」死按钮**：工具栏执行命令入口的弹窗状态全文件只写不读，弹窗从未被渲染，点击始终无响应；本次接线修复并经冒烟验证可打开命令执行弹窗
 - **日志聚合查询响应体截断**：`GET /api/logs/query` 原先 `truncated` 标志形同虚设，多容器大 tail 时全量返回最多 10 万行 JSON；现在 `total` 保留真实命中数，`lines` 只返回最近 10000 行，超出时 `truncated=true`
 - **日志索引采集防重入**：后台增量采集（每 60s 一轮）加防重入标志，容器较多、单轮耗时超过间隔时跳过本轮（返回 `busy: true`），避免两轮并发写库造成游标竞态与重复插入
 - **stripAnsi 实现统一**：`containers.ts` 本地的 ANSI 清理正则与 `logUtil.ts` 不一致（后者漏清光标控制序列与 8 位 CSI），现统一复用 `logUtil.stripAnsi` 完整正则，日志聚合中心与容器日志的清理行为保持一致
