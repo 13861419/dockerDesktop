@@ -9,6 +9,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import ComposeLogModal from '../components/ComposeLogModal';
+import ComposeStructureModal from '../components/ComposeStructureModal';
 import Empty from '../components/Empty';
 import { Field, Input, Select } from '../components/Form';
 import YamlEditor from '../components/YamlEditor';
@@ -188,43 +190,8 @@ export default function ComposePage() {
   // 各项目的服务运行状态（name → compose ps 结果）
   const [statusMap, setStatusMap] = useState<Record<string, ComposeService[]>>({});
 
-  // 日志弹窗状态
-  const [logOpen, setLogOpen] = useState(false);
-  const [logName, setLogName] = useState('');
-  const [logService, setLogService] = useState('');
-  const [logFull, setLogFull] = useState(false);
-  const [logContent, setLogContent] = useState('');
-  // 日志工具栏状态（与容器日志弹窗一致）：时间范围 / 时间戳 / 跟随刷新 / 自动换行 / 搜索
-  // 条数与时间共用唯一下拉：普通视图最近 200 行，放大（全屏）自动拉取全部
-  const [logSince, setLogSince] = useState(0);
-  const [logLines, setLogLines] = useState(0);
-  const [logTs, setLogTs] = useState(false);
-  const [logFollow, setLogFollow] = useState(false);
-  const [logWrap, setLogWrap] = useState(false);
-  const [logSearch, setLogSearch] = useState('');
-  const logPreRef = useRef<HTMLPreElement>(null);
-  const [logLoading, setLogLoading] = useState(false);
-  // 级别筛选 chips（全部 / 错误 / 警告，纯前端过滤）
-  const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilterValue>('all');
-
-  // 跟随刷新（流式，1.92.0）：SSE 增量推送替代 3 秒轮询；过滤条件变化经 URL 重建自动重连
-  const streamUrl = useMemo(() => {
-    if (!logOpen || !logFollow || !logName) return null;
-    const tail = logLines > 0 ? logLines : logFull ? 0 : 200;
-    const params = new URLSearchParams();
-    params.set('tail', String(tail));
-    if (logSince > 0) params.set('since', String(Math.floor(Date.now() / 1000) - logSince));
-    if (logTs) params.set('timestamps', 'true');
-    if (logService) params.set('service', logService);
-    return `/api/compose/${encodeURIComponent(logName)}/logs/stream?${params.toString()}`;
-  }, [logOpen, logFollow, logName, logLines, logFull, logSince, logTs, logService]);
-  const stream = useLogStream(streamUrl, { maxLines: 5000 });
-  const streamText = useMemo(
-    () => stream.lines.map((l) => l.text.replace(/\n+$/, '')).join('\n'),
-    [stream.lines],
-  );
-  const streamTextRef = useRef('');
-  streamTextRef.current = streamText;
+  // 日志弹窗：仅持有目标项目/服务，快照拉取与 SSE 跟随流逻辑在 ComposeLogModal 内部（1.92.0 拆分）
+  const [logTarget, setLogTarget] = useState<{ name: string; service: string } | null>(null);
 
   // 新建项目弹窗状态
   const [createOpen, setCreateOpen] = useState(false);
@@ -317,11 +284,8 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
   const [configTitle, setConfigTitle] = useState('');
   const [configContent, setConfigContent] = useState('');
 
-  // 结构视图弹窗状态
-  const [structureOpen, setStructureOpen] = useState(false);
-  const [structureData, setStructureData] = useState<ComposeStructure | null>(null);
-  const [structureLoading, setStructureLoading] = useState(false);
-  // 服务级操作加载状态（记录正在操作的 服务名/动作）
+  // 结构视图弹窗：仅持有目标项目，数据拉取与服务操作在 ComposeStructureModal 内部（1.92.0 拆分）
+  const [structureTarget, setStructureTarget] = useState<string | null>(null);
   const [serviceOpKey, setServiceOpKey] = useState<string | null>(null);
 
   // 操作中的项目与删除确认状态（删除时额外记录是否删除数据卷）
@@ -755,73 +719,17 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     [showToast]
   );
 
-  /**
-   * 打开结构视图弹窗并拉取 Compose 配置
-   * @param project 目标项目
-   */
-  const openStructure = useCallback(
-    async (project: ComposeProject) => {
-      setStructureData(null);
-      setStructureOpen(true);
-      setStructureLoading(true);
-      try {
-        const data = await get<ComposeStructure>(projectUrl(project.name) + '/structure');
-        setStructureData({
-          name: project.name,
-          services: data?.services || [],
-          volumes: data?.volumes || [],
-          networks: data?.networks || [],
-        });
-      } catch (e: any) {
-        showToast(e?.message || t('获取 Compose 结构失败'), 'error');
-        setStructureOpen(false);
-      } finally {
-        setStructureLoading(false);
-      }
-    },
-    [showToast]
-  );
-
-  /** 关闭结构视图弹窗 */
-  const closeStructure = useCallback(() => {
-    setStructureOpen(false);
-    setStructureData(null);
-    setServiceOpKey(null);
-  }, []);
+  /** 打开结构视图弹窗（数据拉取与服务操作在 ComposeStructureModal 内部） */
+  function openStructure(project: ComposeProject) {
+    setStructureTarget(project.name);
+  }
 
   /**
    * 对单个 compose 服务执行 start / stop / restart 操作
    * @param service 服务名
    * @param action 动作标识
-   * @param successMsg 成功提示
-   */
-  const runServiceAction = useCallback(
-    async (service: string, action: string, successMsg: string) => {
-      if (!structureData) return;
-      if (!canManage) {
-        showToast(t('仅管理员可操作 Compose 服务'), 'error');
-        return;
-      }
-      const key = `${service}/${action}`;
-      setServiceOpKey(key);
-      try {
-        await post(projectUrl(structureData.name) + '/services/' + encodeURIComponent(service) + '/' + action);
-        showToast(successMsg);
-        // 操作后刷新结构数据与项目状态
-        const data = await get<ComposeStructure>(projectUrl(structureData.name) + '/structure').catch(() => structureData);
-        if (data) {
-          setStructureData(data);
-        }
-        setRefreshKey((k) => k + 1);
-      } catch (e: any) {
-        showToast(e?.message || successMsg.replace(t('成功'), t('失败')), 'error');
-      } finally {
-        setServiceOpKey(null);
-      }
-    },
-    [canManage, structureData, showToast]
-  );
-
+    * @param successMsg 成功提示
+    */
   /** 删除项目（根据 deleteVolumes 决定是否同时删除数据卷） */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -1076,114 +984,10 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
     setStopping(false);
   }, [stopTarget, stopVolumes, showToast]);
 
-  /**
-   * 拉取项目日志（tail/since/timestamps 可覆盖；quiet 用于跟随刷新不闪 loading）
-   */
-  const fetchLog = useCallback(
-    async (o?: { tail?: number; since?: number; ts?: boolean; quiet?: boolean }) => {
-      if (!logName) return;
-      const tail = o?.tail ?? (logLines > 0 ? logLines : logFull ? 0 : 200);
-      const since = o?.since ?? logSince;
-      const ts = o?.ts ?? logTs;
-      if (!o?.quiet) setLogLoading(true);
-      try {
-        const res = await post<unknown>(projectUrl(logName) + '/logs', {
-          tail,
-          ...(since > 0 ? { since: Math.floor(Date.now() / 1000) - since } : {}),
-          timestamps: ts || undefined,
-          service: logService || undefined,
-        });
-        setLogContent(
-          typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
-        );
-      } catch (e: any) {
-        if (!o?.quiet) showToast(e?.message || t('获取日志失败'), 'error');
-      } finally {
-        if (!o?.quiet) setLogLoading(false);
-      }
-    },
-    [logName, logService, logFull, logSince, logLines, logTs, showToast]
-  );
-
-  /**
-   * 打开日志弹窗并拉取最近日志（重置工具栏为默认档位）
-   * @param name 项目名
-   */
-  const openLog = useCallback(
-    async (name: string, service?: string) => {
-      setLogName(name);
-      setLogService(service || '');
-      setLogOpen(true);
-      setLogSince(0);
-      setLogTs(false);
-      setLogFollow(false);
-      setLogSearch('');
-      setLogLoading(true);
-      setLogContent('');
-      try {
-        const res = await post<unknown>(projectUrl(name) + '/logs', { tail: 200, service: service || undefined });
-        setLogContent(
-          typeof res === 'string' ? res : (res && (res as any).logs) || JSON.stringify(res)
-        );
-      } catch (e: any) {
-        setLogContent('');
-        showToast(e?.message || t('获取日志失败'), 'error');
-      } finally {
-        setLogLoading(false);
-      }
-    },
-    [showToast]
-  );
-
-  /**
-   * 刷新当前项目日志
-   */
-  const refreshLog = useCallback(() => fetchLog(), [fetchLog]);
-
-  /** 关闭日志弹窗 */
-  const closeLog = useCallback(() => {
-    setLogOpen(false);
-    setLogName('');
-    setLogService('');
-    setLogContent('');
-    setLogFollow(false);
-  }, []);
-
-  /**
-   * 切换跟随刷新：开启时清空快照改由 SSE 重发尾部历史 + 增量；
-   * 关闭时把当前流内容固化为快照，保持视图连续
-   */
-  const toggleFollow = useCallback(() => {
-    const next = !logFollow;
-    if (next) {
-      setLogContent('');
-    } else {
-      setLogContent(streamTextRef.current);
-    }
-    setLogFollow(next);
-  }, [logFollow]);
-
-  /** 滚轮向上滚动时暂停跟随（固化的内容保持不变） */
-  const disableFollow = useCallback(() => {
-    if (!logFollow) return;
-    setLogContent(streamTextRef.current);
-    setLogFollow(false);
-  }, [logFollow]);
-
-  /** 新内容到达且跟随刷新开启时滚动到底部 */
-  useEffect(() => {
-    if (!logFollow) return;
-    const el = logPreRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [logFollow, streamText]);
-
-  // 展示内容：跟随模式取流式内容，否则取快照；级别 chips 在前端过滤
-  const displayContent = logFollow ? streamText : logContent;
-  const levelCounts = useMemo(() => countLogLevels(displayContent), [displayContent]);
-  const filteredContent = useMemo(
-    () => (logLevelFilter === 'all' ? displayContent : filterLogContent(displayContent, logLevelFilter)),
-    [displayContent, logLevelFilter],
-  );
+  /** 打开日志弹窗（快照拉取与跟随流逻辑在 ComposeLogModal 内部） */
+  function openLog(name: string, service?: string) {
+    setLogTarget({ name, service: service || '' });
+  }
 
   return (
     <div className="page">
@@ -1742,296 +1546,20 @@ const [engineHints, setEngineHints] = useState<string[]>([]);
       </Modal>
 
       {/* 结构视图弹窗 */}
-      <Modal
-        open={structureOpen}
-        title={structureData ? t('{{v1}} - 结构', { v1: structureData.name }) : t('Compose 结构')}
-        onClose={closeStructure}
-        width={760}
-        footer={
-          <Button variant="secondary" onClick={closeStructure} disabled={structureLoading}>
-            {t('关闭')}
-          </Button>
-        }
-      >
-        {structureLoading ? (
-          <div className="log-empty">{t('正在解析 Compose 结构…')}</div>
-        ) : structureData ? (
-          <div className="structure">
-            <div className="structure__meta">
-              <span>
-                {t('项目：')}<b>{structureData.name}</b>
-              </span>
-              <span>
-                {t('服务：')}<b>{structureData.services.length}</b>
-              </span>
-              {structureData.volumes.length > 0 && (
-                <span>
-                  {t('卷：')}<b>{structureData.volumes.join(', ') || '-'}</b>
-                </span>
-              )}
-              {structureData.networks.length > 0 && (
-                <span>
-                  {t('网络：')}<b>{structureData.networks.join(', ') || '-'}</b>
-                </span>
-              )}
-            </div>
-            {structureData.services.length === 0 ? (
-              <Empty title={t('暂无服务')} description={t('该 Compose 项目未定义任何服务')} />
-            ) : (
-              <div className="structure__list">
-                {structureData.services.map((svc) => {
-                  const isOp = serviceOpKey && serviceOpKey.startsWith(svc.name + '/');
-                  return (
-                    <div className="structure-card" key={svc.name}>
-                      <div className="structure-card__head">
-                        <span className="structure-card__name">{svc.name}</span>
-                        <span className="structure-card__image" title={svc.image || ''}>
-                          {svc.image || t('（build 构建）')}
-                        </span>
-                        <div className="structure-card__actions">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            loading={serviceOpKey === `${svc.name}/start`}
-                            disabled={!canManage || !!isOp}
-                            onClick={() => runServiceAction(svc.name, 'start', t('{{v1}} 启动成功', { v1: svc.name }))}
-                          >
-                            {t('启动')}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            loading={serviceOpKey === `${svc.name}/stop`}
-                            disabled={!canManage || !!isOp}
-                            onClick={() => runServiceAction(svc.name, 'stop', t('{{v1}} 停止成功', { v1: svc.name }))}
-                          >
-                            {t('停止')}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            loading={serviceOpKey === `${svc.name}/restart`}
-                            disabled={!canManage || !!isOp}
-                            onClick={() => runServiceAction(svc.name, 'restart', t('{{v1}} 重启成功', { v1: svc.name }))}
-                          >
-                            {t('重启')}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openLog(structureData.name, svc.name)}
-                          >
-                            {t('日志')}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="structure-card__body">
-                        {svc.ports.length > 0 && (
-                          <div className="structure-line">
-                            <span className="structure-label">{t('端口')}</span>
-                            <span className="structure-value">
-                              {svc.ports
-                                .map((p) =>
-                                  p.published
-                                    ? `${p.published}:${p.target}/${p.protocol}`
-                                    : `${p.target}/${p.protocol}`
-                                )
-                                .join('，')}
-                            </span>
-                          </div>
-                        )}
-                        {svc.depends_on.length > 0 && (
-                          <div className="structure-line">
-                            <span className="structure-label">{t('依赖')}</span>
-                            <span className="structure-value">{svc.depends_on.join('，')}</span>
-                          </div>
-                        )}
-                        {svc.volumes.length > 0 && (
-                          <div className="structure-line">
-                            <span className="structure-label">{t('卷')}</span>
-                            <span className="structure-value">
-                              {svc.volumes
-                                .map((v) => `${v.source || ''} -> ${v.target}${v.readOnly ? t(' (只读)') : ''}`.replace(/^\s+->/, ''))
-                                .join('，')}
-                            </span>
-                          </div>
-                        )}
-                        {svc.environment.length > 0 && (
-                          <div className="structure-line">
-                            <span className="structure-label">{t('环境')}</span>
-                            <span className="structure-value">{svc.environment.join('，')}</span>
-                          </div>
-                        )}
-                        {svc.ports.length === 0 &&
-                          svc.depends_on.length === 0 &&
-                          svc.volumes.length === 0 &&
-                          svc.environment.length === 0 && (
-                            <div className="structure-line">
-                              <span className="structure-value">{t('（无额外配置）')}</span>
-                            </div>
-                          )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : null}
-      </Modal>
+      {structureTarget && (
+        <ComposeStructureModal
+          name={structureTarget}
+          onClose={() => setStructureTarget(null)}
+          onViewLog={(n, svc) => setLogTarget({ name: n, service: svc })}
+          onRefresh={() => setRefreshKey((k) => k + 1)}
+        />
+      )}
+      {logTarget && (
+        <ComposeLogModal name={logTarget.name} service={logTarget.service} onClose={() => setLogTarget(null)} />
+      )}
 
-      {/* 日志弹窗 */}
-      <Modal
-        open={logOpen}
-            title={logService ? t('{{logName}} - {{service}} 日志', { logName, service: logService }) : t('{{logName}} - 日志', { logName })}
-        onClose={closeLog}
-        width={760}
-        fullscreen={logFull}
-        onToggleFullscreen={() => {
-          const next = !logFull;
-          setLogFull(next);
-          // 放大后自动拉取全部日志，还原回当前档位（条数或最近 200 行）；跟随模式下经流式 URL 重建生效
-          if (!logFollow) fetchLog({ tail: next ? 0 : logLines > 0 ? logLines : 200 });
-        }}
-        footer={
-          <>
-            <Button variant="secondary" onClick={refreshLog} loading={logLoading} disabled={logFollow}>
-              {t('刷新')}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(displayContent);
-                  showToast(t('已复制'), 'success');
-                } catch {
-                  showToast(t('复制失败'), 'error');
-                }
-              }}
-            >
-              {t('复制')}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                const blob = new Blob([displayContent], { type: 'text/plain;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${logName || 'compose'}.log`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              disabled={!displayContent}
-            >
-              {t('下载')}
-            </Button>
-            <Button variant="secondary" onClick={closeLog}>
-              {t('关闭')}
-            </Button>
-          </>
-        }
-      >
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Select
-            value={logLines > 0 ? `l${logLines}` : String(logSince)}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v.startsWith('l')) {
-                const n = Number(v.slice(1));
-                setLogLines(n);
-                setLogSince(0);
-                if (!logFollow) fetchLog({ since: 0, tail: n });
-              } else {
-                setLogLines(0);
-                setLogSince(Number(v));
-                if (!logFollow) fetchLog({ since: Number(v), tail: 0 });
-              }
-            }}
-            style={{ width: 136 }}
-          >
-            <option value="0">{t('所有')}</option>
-            <option value="600">{t('最近 10 分钟')}</option>
-            <option value="3600">{t('最近 1 小时')}</option>
-            <option value="14400">{t('最近 4 小时')}</option>
-            <option value="86400">{t('最近 1 天')}</option>
-            <option value="l100">{t('最近 100 行')}</option>
-            <option value="l200">{t('最近 200 行')}</option>
-            <option value="l500">{t('最近 500 行')}</option>
-            <option value="l1000">{t('最近 1000 行')}</option>
-          </Select>
-          <LogLevelFilter
-            value={logLevelFilter}
-            onChange={setLogLevelFilter}
-            errorCount={levelCounts.error}
-            warnCount={levelCounts.warn}
-            labels={{ all: t('全部'), error: t('错误'), warn: t('警告') }}
-          />
-          <Input
-            placeholder={t('在日志中搜索…')}
-            value={logSearch}
-            onChange={(e) => setLogSearch(e.target.value)}
-            style={{ flex: 1, minWidth: 160 }}
-          />
-          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={toggleFollow} style={{ minWidth: 88 }}>
-            {logFollow ? t('跟随中') : t('跟随刷新')}
-          </Button>
-          <Button
-            variant={logTs ? 'primary' : 'secondary'}
-            size="sm"
-            onClick={() => {
-              const nv = !logTs;
-              setLogTs(nv);
-              if (!logFollow) fetchLog({ ts: nv });
-            }}
-          >
-            {t('时间戳')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setLogContent('');
-              stream.clear();
-            }}
-          >
-            {t('清空')}
-          </Button>
-          <span style={{ fontSize: 12, opacity: 0.7, whiteSpace: 'nowrap', minWidth: 72, textAlign: 'right' }}>
-            {logSearch
-              ? `${displayContent.split('\n').filter((l) => l.toLowerCase().includes(logSearch.toLowerCase())).length} ${t('条命中')}`
-              : `${displayContent.split('\n').length - 1} ${t('行')}`}
-          </span>
-          <Button variant={logWrap ? 'primary' : 'secondary'} size="sm" onClick={() => setLogWrap((v) => !v)}>
-            {t('自动换行')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              const el = logPreRef.current;
-              if (el) el.scrollTop = el.scrollHeight;
-            }}
-          >
-            {t('到底部')}
-          </Button>
-          {logFollow && stream.error && <span style={{ fontSize: 12, color: '#e5484d' }}>{stream.error}</span>}
-        </div>
-        {logLoading && !displayContent ? (
-          <div className="log-empty">{t('正在拉取日志…')}</div>
-        ) : (
-          <LogViewer
-            content={filteredContent}
-            emptyText={t('（暂无日志）')}
-            truncatedText={t('（日志较长，仅显示最近 {{count}} 行）', { count: LOG_MAX_RENDER_LINES })}
-            showLineNumbers
-            search={logSearch}
-            wrap={logWrap}
-            preRef={logPreRef}
-            onWheel={disableFollow}
-          />
-        )}
-      </Modal>
+
+
 
       {/* 停止（down）确认弹窗：可选择是否同时删除数据卷 */}
       <Modal
