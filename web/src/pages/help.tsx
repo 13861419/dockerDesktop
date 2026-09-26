@@ -29,7 +29,11 @@ const QUICK_STEPS: Array<{ title: string; desc: string }> = [
 const FAQ_ITEMS: FaqItem[] = [
   {
     q: t('忘记了管理员密码怎么办？'),
-    a: t('如已修改默认密码，可在服务器上停止面板后删除数据目录中的 docker-manager.db（及同目录 -wal / -shm 文件）再重启，面板会以默认账号 admin / admin888 重新初始化；操作前注意备份。'),
+    a: t('在面板宿主机本地执行找回 CLI：停止面板服务后运行 `echo "NewPass123" | node dist/cli.js reset-admin --user admin --password-stdin`，即可重置密码、清除登录锁定并在下次登录时强制改密；认证器丢失加 `--disable-totp` 关闭 2FA；仅被锁定可用 `unlock --user admin`（详见操作手册 0.11 节）。仅在无法使用 CLI 时才考虑删除 docker-manager.db 重新初始化（操作前注意备份）。'),
+  },
+  {
+    q: t('访问面板一直显示 404 是怎么回事？'),
+    a: t('若部署时设置了 ENTRANCE_PATH 安全入口，面板仅可通过 http://<主机>:<端口>/<入口路径> 访问，其余地址一律返回 404（用于隐藏面板存在性）。向管理员索要完整入口地址即可；管理员可经 NSSM 服务环境变量查看或修改该值。'),
   },
   {
     q: t('如何管理远程 Docker 引擎？'),

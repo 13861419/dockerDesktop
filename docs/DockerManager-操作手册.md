@@ -299,6 +299,31 @@ journalctl -u docker-manager -f
 
 备份数据只需复制整个数据目录即可。
 
+### 0.11 安全入口与账号找回
+
+**安全入口（隐藏路径，可选）**：公网部署时建议设置环境变量 `ENTRANCE_PATH`（如 `/my-panel-9x7`），隐藏面板登录入口：
+
+- 设置后，只有访问 `http://<主机>:<端口>/my-panel-9x7` 才会进入面板（自动签发 30 天有效的浏览器凭证 Cookie）；其余所有地址（含登录页与未知 API）一律返回 404，公网完全无法察觉面板的存在
+- 建议路径长度 ≥ 12 字符（这是"隐藏"而非"鉴权"，路径熵即安全性）；浏览器凭证由数据目录密钥派生，面板重启后依然有效
+- 机器对机器入口不受影响：`/api/health`（存活探测）、`/metrics`、`/api/webhook`、`/api/mcp`、edge agent 下载保持可达（均有各自的鉴权/开关）
+- Windows 服务（NSSM）配置示例：`nssm set DockerManager AppEnvironmentExtra ENTRANCE_PATH=/my-panel-9x7`，然后重启服务；不设置该变量时行为与旧版完全一致
+- 边界说明：容器终端等 WebSocket 端点由自身会话 Token 鉴权，不经过该入口门
+
+**管理员找回 CLI**：当管理员忘记密码、连续失败被锁定或 2FA 认证器设备丢失时，在面板宿主机本地执行（先停止面板服务）：
+
+```bash
+# 查看用户 / 角色 / 2FA / 锁定状态
+node dist/cli.js list-users
+
+# 仅清除登录锁定
+node dist/cli.js unlock --user admin
+
+# 重置密码（下次登录强制改密）；--disable-totp 同时关闭 2FA（认证器丢失时）
+echo "NewPass123" | node dist/cli.js reset-admin --user admin --password-stdin
+```
+
+说明：密码也可交互式隐藏输入（省略 `--password-stdin`）；CLI 仅应在宿主机本地执行，所有操作写入操作日志留痕；Windows 服务部署时将 `dist/cli.js` 替换为完整安装路径（如 `C:\Program Files\DockerManager\server\dist\cli.js`）。
+
 ---
 
 ## 1. 登录与使用准备
@@ -1096,7 +1121,8 @@ Git 应用源（1.55.0，仅管理员）：
 | --- | --- |
 | 提示"无法连接 Docker 引擎" | 确认 Docker Desktop 已启动；必要时设置环境变量 `DOCKER_HOST` 指向可用端点。 |
 | 镜像搜索失败（502 / 无法搜索） | 国内多数镜像加速站只代理拉取、不实现 Docker Hub 的搜索接口。在 **镜像中心 → 镜像源 → 搜索源** 填入支持搜索的源（如 `https://docker-0.unsee.tech`，备用 `https://docker.tbap.top`）；仍不可用可直接点选"常用镜像"或用已知镜像名拉取。 |
-| 忘记管理密码 | 停止服务，删除 `data/docker-manager.db`（连同 `-wal` / `-shm` 文件），重启后以默认 `admin` / `admin888` 重新初始化。 |
+| 忘记管理密码 | 停止服务后执行 `echo "NewPass123" \| node dist/cli.js reset-admin --user admin --password-stdin` 重置密码并清除锁定（见 0.11 节）；仅账号被锁定时用 `unlock --user admin`。仅在无法使用 CLI 时才考虑删除 `data/docker-manager.db`（连同 `-wal` / `-shm` 文件）重新初始化。 |
+| 访问面板一直显示 404 | 若设置了 `ENTRANCE_PATH` 安全入口，须访问 `http://<主机>:<端口>/<入口路径>` 才能进入面板；确认 NSSM 服务环境变量中的路径值，或临时移除该变量重启服务恢复。 |
 | 备份 / 迁移数据 | 复制整个 `data/` 目录即可（核心为 `docker-manager.db`）。 |
 | 登录按钮为何显示"登 录" | 按钮文字为「登 录」（带空格），为正常显示，输入账号密码后点击即可。 |
 | Linux 安装后无法连接 Docker | 确保 `dockerman` 用户已加入 docker 组（`sudo usermod -aG docker dockerman`），并重启服务。 |

@@ -7,6 +7,9 @@
 
 ### Added（新增）
 
+- **安全入口（隐藏路径）**：新增 `ENTRANCE_PATH` 环境变量（如 `/my-panel-9x7`），设置后仅可通过秘密路径进入面板（签发 HttpOnly 凭证 Cookie），其余所有请求（含登录页与未知 API）一律返回与真实 404 无差别的响应，公网不再泄露面板存在性；机器入口（health / metrics / webhook / MCP / edge agent）保持豁免，Cookie 凭证由数据目录密钥派生、重启后依然有效；未设置时行为与旧版完全一致（默认关闭，向后兼容）
+- **管理员找回 CLI**：新增 `node dist/cli.js` 运维命令——`reset-admin`（重置密码 + 清除登录锁定 + 下次登录强制改密，`--disable-totp` 可在认证器设备丢失时关闭 2FA）、`unlock`（仅清除锁定）、`list-users`（用户 / 角色 / 2FA / 锁定状态一览）；密码支持管道输入（`--password-stdin`，防 shell history 泄露）或隐藏回显交互输入，所有操作写入操作日志留痕；须在面板宿主机本地执行（建议先停服务）
+- **安全漏洞披露政策**：新增 `SECURITY.md`——支持版本、私密报告渠道（GitHub Security Advisory）、响应时限承诺与范围界定（明确暴力破解默认口令、需宿主机执行权的攻击不在范围），README 功能列表同步链接
 - **日志级别筛选 chips**：容器日志弹窗与 Compose 日志弹窗新增「全部 / 错误 / 警告」单选筛选组，错误与警告 chip 附带命中计数；级别命中沿用单词边界匹配（ERROR / FATAL / WARN 等），排障时一键聚焦问题行
 - **Compose 日志实时流**：「跟随刷新」由 3 秒轮询改为 SSE 增量推送（`GET /api/compose/:name/logs/stream`，`docker compose logs --follow`）——连接建立即推送尾部历史，此后日志产生即推送，延迟从秒级降到毫秒级；条数 / 时间范围 / 时间戳 / 服务筛选变化时自动经流式 URL 重连；外部项目无文件读取权限时降级提示改用手动刷新
 - **容器日志弹窗跟随刷新改 SSE**：容器日志弹窗「跟随刷新」同步切换为 SSE 增量推送（`GET /api/containers/:id/logs/stream` 新增 `since` / `timestamps` 参数），替代 3 秒全量轮询；滚轮向上滚动或关闭跟随时自动固化当前流内容为快照，视图连续不闪跳
@@ -32,6 +35,8 @@
 
 ### Test（测试）
 
+- 新增 `entrance.test.ts`（5 例）：入口未设置直通、未持凭证 404、机器入口豁免、秘密路径签发 Cookie 与持凭证放行、篡改 Cookie 拦截、完整 app 集成（`/api/auth/me` 未持凭证 404 → 持凭证到鉴权层 401）
+- 新增 `cli-recovery.test.ts`（6 例）：reset-admin 重置密码与强制改密标记、--disable-totp 关闭 2FA、unlock 清除持久化锁定、用户不存在返回 1、弱密码拒绝且原密码不变、list-users 正常退出
 - `logUtil` 单测补充光标控制序列（`\u001b[2J\u001b[H`）与 8 位 CSI（`\u009b`）清理用例
 - 新增 `e2e/logs.spec.ts`：Compose 与容器日志弹窗的级别 chips 可见性、「跟随刷新」建立 SSE 连接（/logs/stream 200）、流式内容非空断言
 

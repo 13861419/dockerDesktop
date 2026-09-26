@@ -285,6 +285,31 @@ journalctl -u docker-manager -f
 
 To back up, copy the entire data directory.
 
+### 0.11 Security Entrance & Account Recovery
+
+**Security entrance (hidden path, optional)**: for public-facing deployments set the environment variable `ENTRANCE_PATH` (e.g. `/my-panel-9x7`) to hide the panel login:
+
+- Once set, the panel is only reachable via `http://<host>:<port>/my-panel-9x7` (a 30-day HttpOnly credential cookie is issued automatically). Every other address — including the login page and unknown APIs — returns a plain 404 indistinguishable from a real one, so the panel's existence is not revealed.
+- Use a path of at least 12 characters (this is "obscurity", not authentication — path entropy is the safety margin). The browser credential is derived from a key in the data directory and survives panel restarts.
+- Machine-to-machine endpoints are unaffected: `/api/health` (liveness), `/metrics`, `/api/webhook`, `/api/mcp` and the edge agent download remain reachable (each has its own auth/switch).
+- Windows service (NSSM) example: `nssm set DockerManager AppEnvironmentExtra ENTRANCE_PATH=/my-panel-9x7`, then restart the service. Without the variable the panel behaves exactly as before (off by default, backward compatible).
+- Boundary note: WebSocket endpoints such as container terminals are authenticated by their own session tokens and do not pass through this gate.
+
+**Admin recovery CLI**: when an admin forgets the password, gets locked out after repeated failures, or loses the 2FA device, run locally on the panel host (stop the service first):
+
+```bash
+# List users / roles / 2FA / lock status
+node dist/cli.js list-users
+
+# Clear login lockout only
+node dist/cli.js unlock --user admin
+
+# Reset password (forced change on next login); --disable-totp also turns off 2FA (lost authenticator)
+echo "NewPass123" | node dist/cli.js reset-admin --user admin --password-stdin
+```
+
+Notes: omit `--password-stdin` for a hidden interactive prompt; run the CLI only on the panel host; all operations are recorded in the operation log. For Windows service installs replace `dist/cli.js` with the full install path (e.g. `C:\Program Files\DockerManager\server\dist\cli.js`).
+
 ---
 
 ## 1. Login & Getting Started
@@ -1076,7 +1101,8 @@ Git app sources (1.55.0, admins only):
 | --- | --- |
 | "Cannot connect to Docker engine" | Make sure Docker Desktop is running; if needed set `DOCKER_HOST` to a reachable endpoint. |
 | Image search fails (502 / unavailable) | Most mirror accelerators only proxy pulls, not Docker Hub search. In **Image Hub → Sources → Search source** enter a search-capable source (e.g. `https://docker-0.unsee.tech`, fallback `https://docker.tbap.top`). If still failing, use "Common images" or pull a known image name. |
-| Forgot the admin password | Stop the service, delete `data/docker-manager.db` (plus `-wal` / `-shm` files), restart; defaults (`admin` / `admin888`) are re-initialized. |
+| Forgot the admin password | Stop the service and run `echo "NewPass123" \| node dist/cli.js reset-admin --user admin --password-stdin` to reset the password and clear the lockout (see section 0.11). If the account is only locked out, use `unlock --user admin`. Only delete `data/docker-manager.db` (plus `-wal` / `-shm` files) to re-initialize when the CLI is unavailable. |
+| Panel always returns 404 | If `ENTRANCE_PATH` is set, the panel is only reachable at `http://<host>:<port>/<entrance path>`. Check the NSSM service environment variable for the path value, or temporarily remove the variable and restart the service to restore access. |
 | Backup / migrate data | Copy the whole `data/` directory (core file `docker-manager.db`). |
 | Why does the login button read "登 录" | The button text is "登 录" (with a space) — normal. Enter credentials and click it to log in. |
 | Cannot connect after Linux install | Ensure the `dockerman` user is in the docker group: `sudo usermod -aG docker dockerman`, then restart the service. |
