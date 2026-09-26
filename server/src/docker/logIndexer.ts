@@ -167,10 +167,19 @@ export function queryLogHistory(opts: {
   }
   const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
-  const total = Number((db.prepare(`SELECT COUNT(*) AS n FROM container_log_index ${where}`).get(...params) as any).n);
+  // 先取 limit+1 行：未取满说明总数 <= limit，直接免掉一次全表 COUNT（1.92.0）
   const rows = db
-    .prepare(`SELECT ts, container_name, stream, text FROM container_log_index ${where} ORDER BY ts ASC, id ASC LIMIT ?`)
-    .all(...params, limit);
+    .prepare(
+      `SELECT ts, container_name, stream, text FROM container_log_index ${where} ORDER BY ts ASC, id ASC LIMIT ?`,
+    )
+    .all(...params, limit + 1);
+  let total: number;
+  if (rows.length <= limit) {
+    total = rows.length;
+  } else {
+    total = Number((db.prepare(`SELECT COUNT(*) AS n FROM container_log_index ${where}`).get(...params) as any).n);
+    rows.length = limit;
+  }
 
   // 各容器命中分布（Top 10），便于定位“哪个容器在刷错”
   let distribution: Array<{ container: string; count: number }> = [];

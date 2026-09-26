@@ -7,7 +7,7 @@
  *  - 终端：容器内 Web 终端（需容器内置 shell）
  *  - 资源监控：CPU / 内存 / 网络实时统计与曲线
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { get, del, post, download } from '../api/client';
 import { isAdmin } from '../api/auth';
@@ -24,6 +24,8 @@ import LineChart from '../components/LineChart';
 import ContainerTerminal from '../components/ContainerTerminal';
 import FileExplorer from '../components/FileExplorer';
 import { useContainerLogs } from '../hooks/useContainerLogs';
+import { detectLogLevel } from '../utils/logLevel';
+import LogLevelFilter, { LogLevelFilterValue } from '../components/LogLevelFilter';
 import { useToast } from '../components/Toast';
 import { ContainerPortConflicts, ContainerListItem } from '../types';
 import { useLang, translateNow } from '../i18n';
@@ -242,6 +244,21 @@ export default function ContainerDetailPage() {
     tail: 200,
     autoStart: false,
   });
+
+  // 级别筛选 chips（1.92.0）：全部 / 错误 / 警告，纯前端过滤
+  const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilterValue>('all');
+  const leveledLines = useMemo(
+    () => lines.map((l) => ({ ...l, level: detectLogLevel(l.text) })),
+    [lines],
+  );
+  const logLevelCounts = useMemo(
+    () => ({
+      error: leveledLines.filter((l) => l.level === 'error').length,
+      warn: leveledLines.filter((l) => l.level === 'warn').length,
+    }),
+    [leveledLines],
+  );
+  const shownLines = logLevelFilter === 'all' ? leveledLines : leveledLines.filter((l) => l.level === logLevelFilter);
 
   // 日志滚动相关
   const logBoxRef = useRef<HTMLDivElement>(null);
@@ -2189,6 +2206,13 @@ export default function ContainerDetailPage() {
                   {error && <span className="log-error">（{error}）</span>}
                 </div>
                 <div className="log-toolbar__actions">
+                  <LogLevelFilter
+                    value={logLevelFilter}
+                    onChange={setLogLevelFilter}
+                    errorCount={logLevelCounts.error}
+                    warnCount={logLevelCounts.warn}
+                    labels={{ all: t('全部'), error: t('错误'), warn: t('警告') }}
+                  />
                   <label className="log-check">
                     <input
                       type="checkbox"
@@ -2218,13 +2242,21 @@ export default function ContainerDetailPage() {
                 </div>
               </div>
               <div className="log-box" ref={logBoxRef} onScroll={onLogScroll}>
-                {lines.length === 0 ? (
+                {shownLines.length === 0 ? (
                   <div className="log-empty">{t('暂无日志，点击「连接」开始拉取实时日志')}</div>
                 ) : (
-                  lines.map((l) => (
+                  shownLines.map((l) => (
                     <div
                       key={l.id}
                       className={`log-line ${l.type === 'stderr' ? 'log-line--stderr' : ''}`}
+                      style={{
+                        color:
+                          l.level === 'error'
+                            ? 'var(--danger, #ff6b6b)'
+                            : l.level === 'warn'
+                              ? 'var(--warning, #e6b450)'
+                              : undefined,
+                      }}
                     >
                       {l.text}
                     </div>

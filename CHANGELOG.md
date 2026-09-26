@@ -9,10 +9,15 @@
 
 - **日志级别筛选 chips**：容器日志弹窗与 Compose 日志弹窗新增「全部 / 错误 / 警告」单选筛选组，错误与警告 chip 附带命中计数；级别命中沿用单词边界匹配（ERROR / FATAL / WARN 等），排障时一键聚焦问题行
 - **Compose 日志实时流**：「跟随刷新」由 3 秒轮询改为 SSE 增量推送（`GET /api/compose/:name/logs/stream`，`docker compose logs --follow`）——连接建立即推送尾部历史，此后日志产生即推送，延迟从秒级降到毫秒级；条数 / 时间范围 / 时间戳 / 服务筛选变化时自动经流式 URL 重连；外部项目无文件读取权限时降级提示改用手动刷新
+- **容器日志弹窗跟随刷新改 SSE**：容器日志弹窗「跟随刷新」同步切换为 SSE 增量推送（`GET /api/containers/:id/logs/stream` 新增 `since` / `timestamps` 参数），替代 3 秒全量轮询；滚轮向上滚动或关闭跟随时自动固化当前流内容为快照，视图连续不闪跳
+- **容器详情实时日志级别筛选与着色**：容器详情页「实时日志」Tab 补齐级别筛选 chips（全部 / 错误 / 警告，含命中计数）与错误红 / 警告黄按行着色，与其他日志视图体验一致
 
 ### Changed（变更）
 
 - **日志流 hook 重构与批量渲染**：新增通用 `useLogStream`（fetch + ReadableStream 解析 SSE），容器实时日志与 Compose 跟随刷新共用；日志行按 150ms 批量合并渲染，高频日志不再逐行触发 React 重渲染；重连时自动清空旧行（服务端重发 tail 历史），消除重连后的重复日志
+- **全站 gzip 压缩**：Express 增加 compression 中间件，大 JSON、CSV 导出与静态资源传输体积显著下降；SSE 流式响应自动排除，避免缓冲破坏事件推送
+- **安全响应头**：全站增加 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`（防点击劫持）、`Referrer-Policy: no-referrer` 与基础 CSP（允许内联样式，脚本仅限同源）
+- **日志历史查询免全表计数**：日志索引查询改为先取 limit+1 行，未取满时直接以行数作为总数并跳过 `COUNT(*)` 全表扫描；仅在结果被截断时才回退精确计数，常规查询开销减半
 
 ### Fixed（修复）
 
@@ -23,6 +28,7 @@
 ### Test（测试）
 
 - `logUtil` 单测补充光标控制序列（`\u001b[2J\u001b[H`）与 8 位 CSI（`\u009b`）清理用例
+- 新增 `e2e/logs.spec.ts`：Compose 与容器日志弹窗的级别 chips 可见性、「跟随刷新」建立 SSE 连接（/logs/stream 200）、流式内容非空断言
 
 ## [1.91.0] - 2026-09-25
 

@@ -30,6 +30,7 @@ import { useToast } from '../components/Toast';
 import ComposeInferModal from '../components/ComposeInferModal';
 import { detectLogLevel } from '../utils/logLevel';
 import LogLevelFilter, { LogLevelFilterValue } from '../components/LogLevelFilter';
+import { useLogStream } from '../hooks/useLogStream';
 import { useLang } from '../i18n';
 import './containers.less';
 
@@ -249,6 +250,24 @@ export default function ContainersPage() {
   const [logTs, setLogTs] = useState(false);
   const logScrollRef = useRef<HTMLDivElement>(null);
 
+  // 跟随模式（1.92.0）：SSE 增量推送替代 3 秒轮询；条数/时间范围/时间戳变化经流式 URL 重建自动重连
+  const streamUrl = useMemo(() => {
+    if (!logTarget || !logFollow) return null;
+    const params = new URLSearchParams();
+    params.set('tail', String(logTail));
+    if (logSince > 0) params.set('since', String(Math.floor(Date.now() / 1000) - logSince));
+    if (logTs) params.set('timestamps', 'true');
+    return `/api/containers/${encodeURIComponent(logTarget.id)}/logs/stream?${params.toString()}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logTarget, logFollow, logTail, logSince, logTs]);
+  const stream = useLogStream(streamUrl, { maxLines: 5000 });
+  const streamLines = useMemo(
+    () => stream.lines.map((l) => ({ text: l.text.replace(/\n+$/, ''), level: detectLogLevel(l.text) })),
+    [stream.lines],
+  );
+  const streamTextRef = useRef('');
+  streamTextRef.current = streamLines.map((l) => l.text).join('\n');
+
   // 创建表单端口占用检测结果（key 为端口行 index）
   const [portChecks, setPortChecks] = useState<Record<number, PortCheckResult>>({});
   // 某行端口是否正在检测
@@ -310,24 +329,30 @@ export default function ContainersPage() {
     setLogFollow(false);
   }
 
-  /** 跟随模式：每 3 秒重新拉取并滚动到底部 */
-  useEffect(() => {
-    if (!logFollow || !logTarget) return;
-    const timer = setInterval(async () => {
-      if (!logLoading) await loadLogs(logTarget.id, logTail, logSince, logTs);
-      const el = logScrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, 3000);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logFollow, logTarget, logTail, logSince, logTs]);
+  /** 切换跟随：开启走 SSE 增量流；关闭时把当前流内容固化为快照，保持视图连续 */
+  function toggleFollow() {
+    const next = !logFollow;
+    if (next) {
+      setLogLines([]);
+    } else {
+      setLogLines(streamTextRef.current.split('\n').map((t) => ({ text: t, level: detectLogLevel(t) })));
+    }
+    setLogFollow(next);
+  }
 
-  /** 新日志到达且跟随模式开启时滚动到底部 */
+  /** 滚轮向上滚动时退出跟随（固化当前流内容） */
+  function disableFollow() {
+    if (!logFollow) return;
+    setLogLines(streamTextRef.current.split('\n').map((t) => ({ text: t, level: detectLogLevel(t) })));
+    setLogFollow(false);
+  }
+
+  /** 跟随模式开启时自动滚动到底部（流式批量更新触发） */
   useEffect(() => {
     if (!logFollow) return;
     const el = logScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [logLines, logFollow]);
+  }, [logFollow, streamLines]);
 
   /** 复制全部日志到剪贴板 */
   async function copyLogs() {
@@ -379,14 +404,15 @@ export default function ContainersPage() {
    */
   async function handleLogTailChange(tail: number) {
     if (!logTarget) return;
-    await loadLogs(logTarget.id, tail);
+    setLogTail(tail);
+    if (!logFollow) await loadLogs(logTarget.id, tail);
   }
 
   /** 切换时间范围过滤（秒，0 = 所有）后重新拉取 */
   async function handleLogSinceChange(since: number) {
     if (!logTarget) return;
     setLogSince(since);
-    await loadLogs(logTarget.id, logTail, since, logTs);
+    if (!logFollow) await loadLogs(logTarget.id, logTail, since, logTs);
   }
 
   /** 切换时间戳显示后重新拉取 */
@@ -394,24 +420,26 @@ export default function ContainersPage() {
     if (!logTarget) return;
     const next = !logTs;
     setLogTs(next);
-    await loadLogs(logTarget.id, logTail, logSince, next);
+    if (!logFollow) await loadLogs(logTarget.id, logTail, logSince, next);
   }
 
-  /** 清空当前显示的日志（仅清视图；追踪开启时下轮拉取会重新填充） */
+  /** 清空当前显示的日志（仅清视图；跟随模式下 SSE 尾部历史会在重连后重发） */
   function clearLogs() {
     setLogLines([]);
+    stream.clear();
   }
 
-  // 级别筛选 chips（1.92.0）：派生计数与过滤后的行（levels 已在 loadLogs 时算好）
+  // 级别筛选 chips（1.92.0）：派生计数与过滤后的行（levels 已在 loadLogs / 流式映射时算好）
   const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilterValue>('all');
+  const baseLines = logFollow ? streamLines : logLines;
   const logLevelCounts = useMemo(
     () => ({
-      error: logLines.filter((l) => l.level === 'error').length,
-      warn: logLines.filter((l) => l.level === 'warn').length,
+      error: baseLines.filter((l) => l.level === 'error').length,
+      warn: baseLines.filter((l) => l.level === 'warn').length,
     }),
-    [logLines],
+    [baseLines],
   );
-  const shownLogLines = logLevelFilter === 'all' ? logLines : logLines.filter((l) => l.level === logLevelFilter);
+  const shownLogLines = logLevelFilter === 'all' ? baseLines : baseLines.filter((l) => l.level === logLevelFilter);
 
   /**
    * 下载容器日志为文本文件（GET /api/containers/:id/logs/download）
@@ -2636,7 +2664,7 @@ export default function ContainersPage() {
         onClose={closeLogs}
         footer={
           <>
-            <Button variant="secondary" onClick={reloadLogs} loading={logLoading}>
+            <Button variant="secondary" onClick={reloadLogs} loading={logLoading} disabled={logFollow}>
               {t('刷新')}
             </Button>
             <Button variant="secondary" onClick={copyLogs}>
@@ -2673,7 +2701,7 @@ export default function ContainersPage() {
             warnCount={logLevelCounts.warn}
             labels={{ all: t('全部'), error: t('错误'), warn: t('警告') }}
           />
-          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={() => setLogFollow((v) => !v)}>
+          <Button variant={logFollow ? 'primary' : 'secondary'} size="sm" onClick={toggleFollow}>
             {logFollow ? t('跟随中') : t('跟随刷新')}
           </Button>
           <Button variant={logTs ? 'primary' : 'secondary'} size="sm" onClick={handleLogTsToggle}>
@@ -2682,6 +2710,7 @@ export default function ContainersPage() {
           <Button variant="secondary" size="sm" onClick={clearLogs}>
             {t('清空')}
           </Button>
+          {logFollow && stream.error && <span style={{ fontSize: 12, color: '#e5484d' }}>{stream.error}</span>}
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <Input
@@ -2712,7 +2741,7 @@ export default function ContainersPage() {
         <div
           ref={logScrollRef}
           className="containers__log-scroll"
-          onWheel={() => setLogFollow(false)}
+          onWheel={disableFollow}
           style={{
             background: 'var(--bg-code, #1e1e1e)',
             color: 'var(--text-code, #d4d4d4)',

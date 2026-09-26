@@ -7,6 +7,7 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
 
@@ -80,6 +81,29 @@ const app = express();
 
 // 允许跨域访问（前后端分离开发时）
 app.use(cors());
+
+// 安全响应头（1.92.0）：防 MIME 嗅探 / 点击劫持 / referrer 泄漏；CSP 允许内联样式（前端大量 style 属性）
+app.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; font-src 'self' data:",
+  );
+  next();
+});
+
+// gzip 压缩（1.92.0）：大 JSON / CSV 导出 / 静态资源体积显著下降；SSE 流不压缩（避免缓冲破坏事件推送）
+app.use(
+  compression({
+    filter: (req, res) => {
+      const type = String(res.getHeader('Content-Type') || '');
+      if (type.includes('event-stream')) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 // JSON 请求体解析（verify 回调暂存原始字节，供 Webhook HMAC 签名校验使用）
 app.use(

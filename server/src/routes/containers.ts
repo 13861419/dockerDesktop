@@ -1069,6 +1069,9 @@ router.get(
     const container = docker.getContainer(req.params.id);
     const tail = Number(req.query.tail || '100');
     const follow = req.query.follow !== 'false';
+    // 可选过滤（1.92.0）：since（Unix 秒，仅作用于尾部历史）/ timestamps（历史与增量均附带）
+    const withTs = req.query.timestamps === 'true' || req.query.timestamps === '1';
+    const since = Number(req.query.since);
 
     // SSE 头
     res.writeHead(200, {
@@ -1090,7 +1093,13 @@ router.get(
     // 先取历史日志（尾部）
     let initial: any = Buffer.alloc(0);
     try {
-      initial = await container.logs({ stdout: true, stderr: true, tail });
+      initial = await container.logs({
+        stdout: true,
+        stderr: true,
+        tail,
+        ...(Number.isFinite(since) && since > 0 ? { since } : {}),
+        ...(withTs ? { timestamps: true } : {}),
+      });
     } catch {
       initial = Buffer.alloc(0);
     }
@@ -1146,9 +1155,9 @@ router.get(
       return;
     }
 
-    // 订阅持续日志流
+    // 订阅持续日志流（不带 since——从当前增量开始，避免与尾部历史重复）
     try {
-      stream = await container.logs({ stdout: true, stderr: true, follow: true });
+      stream = await container.logs({ stdout: true, stderr: true, follow: true, ...(withTs ? { timestamps: true } : {}) });
     } catch (err) {
       writeEvent(res, { type: 'error', text: '无法连接日志流: ' + (err as Error).message });
       cleanup();
