@@ -14,7 +14,7 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
-import { Field, Input, Select } from '../components/Form';
+import { Field, Input, Select, TextArea } from '../components/Form';
 import {
   EngineAggregate,
   EngineAggregateResponse,
@@ -32,6 +32,10 @@ interface Engine {
   endpoint: string;
   isCurrent: boolean;
   online?: boolean;
+  /** SSH 引擎（ssh:// 端点） */
+  isSsh?: boolean;
+  /** SSH 凭证是否已配置（不回传明文） */
+  hasCredential?: boolean;
 }
 
 /** 跨引擎批量清理单台结果（1.39.0） */
@@ -121,6 +125,9 @@ export default function EnginesPage() {
   const [editing, setEditing] = useState<Engine | null>(null);
   const [name, setName] = useState('');
   const [endpoint, setEndpoint] = useState('');
+  const [sshPassword, setSshPassword] = useState('');
+  const [sshKey, setSshKey] = useState('');
+  const [sshPassphrase, setSshPassphrase] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FormError>({});
 
@@ -180,6 +187,9 @@ export default function EnginesPage() {
     setEditing(null);
     setName('');
     setEndpoint('');
+    setSshPassword('');
+    setSshKey('');
+    setSshPassphrase('');
     setErrors({});
     setModalOpen(true);
   }, []);
@@ -196,6 +206,9 @@ export default function EnginesPage() {
     setEditing(engine);
     setName(engine.name);
     setEndpoint(engine.endpoint);
+    setSshPassword('');
+    setSshKey('');
+    setSshPassphrase('');
     setErrors({});
     setModalOpen(true);
   }, [canManage, showToast]);
@@ -210,15 +223,31 @@ export default function EnginesPage() {
     setErrors(err);
     if (Object.keys(err).length) return;
 
+    const isSsh = endpoint.trim().toLowerCase().startsWith('ssh://');
+    // SSH 端点附带凭证：密码与私钥二选一，填了私钥可再加解密口令
+    const cred: Record<string, string> = {};
+    if (isSsh) {
+      if (sshPassword.trim()) cred.password = sshPassword.trim();
+      if (sshKey.trim()) {
+        cred.privateKey = sshKey;
+        if (sshPassphrase.trim()) cred.passphrase = sshPassphrase;
+      }
+    }
+
     setSaving(true);
     try {
       if (editing) {
-        await put(`/api/engines/${editing.id}`, { name: name.trim(), endpoint: endpoint.trim() });
+        await put(`/api/engines/${editing.id}`, {
+          name: name.trim(),
+          endpoint: endpoint.trim(),
+          ...cred,
+        });
         showToast(t('引擎已更新'));
       } else {
         const data = await post<{ ok: boolean; isCurrent: boolean }>('/api/engines', {
           name: name.trim(),
           endpoint: endpoint.trim(),
+          ...cred,
         });
         showToast(t('引擎已添加{{v1}}', { v1: data?.isCurrent ? t('（已设为当前）') : '' }));
       }
@@ -229,7 +258,7 @@ export default function EnginesPage() {
     } finally {
       setSaving(false);
     }
-  }, [canManage, editing, name, endpoint, load, showToast]);
+  }, [canManage, editing, name, endpoint, sshPassword, sshKey, sshPassphrase, load, showToast]);
 
   /**
    * 切换当前引擎
@@ -542,13 +571,21 @@ export default function EnginesPage() {
             <tbody>
               {engines.map((e) => (
                 <tr key={e.id}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <strong>{e.name}</strong>
-                      {e.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
-                    </div>
-                  </td>
-<td className="en-endpoint">{e.endpoint}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <strong>{e.name}</strong>
+                        {e.isCurrent && <span className="en-badge en-badge--current">{t('当前')}</span>}
+                        {e.isSsh && (
+                          <span
+                            className={`en-badge ${e.hasCredential ? 'en-badge--current' : 'en-badge--default'}`}
+                            title={e.hasCredential ? t('SSH 凭证已配置') : t('SSH 凭证未配置')}
+                          >
+                            SSH
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="en-endpoint">{e.endpoint}</td>
 <td>
   <span
     className={`en-badge ${e.online ? 'en-badge--current' : 'en-badge--default'}`}
@@ -627,7 +664,7 @@ export default function EnginesPage() {
           label={t('端点地址')}
           required
           error={errors.endpoint}
-          hint="npipe:////./pipe/dockerDesktopLinuxEngine · tcp://host:2375 · unix:///var/run/docker.sock"
+          hint="npipe:////./pipe/dockerDesktopLinuxEngine · tcp://host:2375 · unix:///var/run/docker.sock · ssh://user@host:22"
         >
           <Input
             value={endpoint}
@@ -637,6 +674,39 @@ export default function EnginesPage() {
             disabled={!canManage}
           />
         </Field>
+        {endpoint.trim().toLowerCase().startsWith('ssh://') && (
+          <>
+            <Field
+              label={t('SSH 密码')}
+              hint={t('密码与私钥二选一；要求远程主机已安装 socat 或 nc（用于转发 docker.sock）')}
+            >
+              <Input
+                type="password"
+                value={sshPassword}
+                placeholder={t('留空则使用下方私钥认证')}
+                onChange={(e) => setSshPassword(e.target.value)}
+                disabled={!canManage}
+              />
+            </Field>
+            <Field label={t('SSH 私钥')}>
+              <TextArea
+                value={sshKey}
+                placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----'}
+                rows={4}
+                onChange={(e) => setSshKey(e.target.value)}
+                disabled={!canManage}
+              />
+            </Field>
+            <Field label={t('私钥口令（可选）')}>
+              <Input
+                type="password"
+                value={sshPassphrase}
+                onChange={(e) => setSshPassphrase(e.target.value)}
+                disabled={!canManage}
+              />
+            </Field>
+          </>
+        )}
       </Modal>
 
       {/* 删除确认 */}

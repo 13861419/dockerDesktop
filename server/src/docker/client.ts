@@ -13,6 +13,7 @@ import os from 'os';
 import path from 'path';
 import { isWindows, isLinux, getPlatform } from '../platform/detect';
 import { getDb } from '../storage';
+import { isSshEndpoint, testSshEndpoint, getSshDocker, loadEngineCredential } from './sshDocker';
 
 /**
  * 常见 Docker 访问端点的探测顺序，按平台优先级排列
@@ -144,11 +145,17 @@ export function resetDockerCache(): void {
 
 /**
  * 校验某个 Docker 引擎端点是否可连通（用于引擎新增/更新前测试）
- * @param endpoint 待校验端点（npipe:// / tcp:// / unix://）
+ * SSH 端点（ssh://）需传入凭证，经 SSH 通道探测
+ * @param endpoint 待校验端点（npipe:// / unix:// / tcp:// 或 ssh://）
+ * @param cred SSH 凭证（仅 ssh:// 端点需要）
  * @returns 可连通返回 true，否则 false
  */
-export async function testEngineEndpoint(endpoint: string): Promise<boolean> {
+export async function testEngineEndpoint(endpoint: string, cred?: { password?: string; privateKey?: string; passphrase?: string }): Promise<boolean> {
   try {
+    if (isSshEndpoint(endpoint)) {
+      const r = await testSshEndpoint(endpoint, cred);
+      return r.ok;
+    }
     const docker = new Dockerode(resolveEndpoint(endpoint));
     await docker.ping();
     return true;
@@ -182,7 +189,12 @@ export async function getDockerClient(): Promise<Dockerode> {
     const key = 'engine:' + current;
     if (key !== cachedCurrentKey || !cachedCurrentDocker) {
       cachedCurrentKey = key;
-      cachedCurrentDocker = new Dockerode(resolveEndpoint(current));
+      // SSH 引擎：走 ssh2 通道（本地回环 bridge 转发远程 docker.sock）
+      if (isSshEndpoint(current)) {
+        cachedCurrentDocker = await getSshDocker(current, loadEngineCredential(current));
+      } else {
+        cachedCurrentDocker = new Dockerode(resolveEndpoint(current));
+      }
     }
     return cachedCurrentDocker;
   }

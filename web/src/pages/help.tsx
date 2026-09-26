@@ -37,7 +37,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: t('如何管理远程 Docker 引擎？'),
-    a: t('「Docker 引擎」页（管理员）新增端点（npipe://、unix://、tcp:// 均可），切换当前引擎后容器、镜像、监控、事件流等全部能力自动切到新引擎；「聚合」「端口地图」「网络拓扑」支持跨引擎汇总。'),
+    a: t('「Docker 引擎」页（管理员）新增端点（npipe://、unix://、tcp:// 均可），切换当前引擎后容器、镜像、监控、事件流等全部能力自动切到新引擎；「聚合」「端口地图」「网络拓扑」支持跨引擎汇总。也可填 ssh://user@host 端点（1.93.0）经 SSH 通道纳管远程 Docker，无需暴露端口，凭证支持密码或私钥（加密存储，远程主机需已安装 socat 或 nc）。'),
   },
   {
     q: t('远程主机在 NAT / 防火墙后无法暴露 Docker 端口怎么办？'),
@@ -196,7 +196,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/files', name: t('文件管理'), desc: t('容器文件浏览与传输') },
   { path: '/hostfiles', name: t('宿主机文件'), desc: t('宿主机文件管理') },
   { path: '/hostterminal', name: t('宿主机终端'), desc: t('宿主机 Shell；Linux 低权限服务下自动经 Docker 助手容器提权到 root，缺助手镜像时自动拉取 alpine（1.74.5）') },
-  { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；跨引擎批量清理（容器/镜像/卷/网络，按年龄过滤，支持预览，1.41.0），可建跨引擎清理计划任务（1.42.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
+  { path: '/engines', name: t('Docker 引擎'), desc: t('多引擎管理与切换；SSH 远程引擎 ssh://user@host（1.93.0，经 SSH 通道转发 docker.sock，零端口暴露，凭证加密存储）；跨引擎批量清理（容器/镜像/卷/网络，按年龄过滤，支持预览，1.41.0），可建跨引擎清理计划任务（1.42.0）；内置 pull-through 镜像拉取缓存（registry:2，端口 5060，1.34.0）') },
   { path: '/cloudbackup', name: t('云端备份'), desc: t('S3 / OSS / WebDAV 远程备份') },
   { path: '/certs', name: t('SSL 证书'), desc: t('Let’s Encrypt 自动签发与到期续期（http-01 / 通配符 DNS-01）；证书文件可直接用于站点反代') },
   { path: '/automations', name: t('事件自动化'), desc: t('订阅 Docker 事件（容器退出 / OOM / 健康检查异常等）自动执行重启、停止、启动或 Webhook 动作，带冷却期与触发留档；触发记录按 事件匹配 → 冷却检查 → 执行动作 节点流展示（1.61.0 / 1.68.0）') },

@@ -7,8 +7,9 @@
  */
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { getDb } from '../storage';
+import { getDb, encryptSecret } from '../storage';
 import { resetDockerCache, testEngineEndpoint, getDockerClientForEndpoint } from '../docker/client';
+import { isSshEndpoint, closeSshBridge, closeAllSshBridges, loadEngineCredential, getSshDocker } from '../docker/sshDocker';
 import { restartEventMonitor } from '../docker/events';
 import { resetMonitorState } from '../docker/monitor';
 import { resetContainerMetricsState } from '../docker/containerMetrics';
@@ -56,7 +57,8 @@ function normalizeEndpoint(endpoint: string): string {
   if (
     e.startsWith('npipe://') ||
     e.startsWith('unix://') ||
-    e.startsWith('tcp://')
+    e.startsWith('tcp://') ||
+    e.startsWith('ssh://')
   ) {
     return e;
   }
@@ -65,6 +67,42 @@ function normalizeEndpoint(endpoint: string): string {
     return 'npipe://' + e.replace(/\\/g, '/');
   }
   return e;
+}
+
+/**
+ * 提取请求中的 SSH 凭证（password / privateKey / passphrase 任一非空即视为提供了凭证）
+ * @param body 请求体
+ */
+function extractCredential(body: any): { password?: string; privateKey?: string; passphrase?: string } | undefined {
+  const password = String(body?.password || '').trim();
+  const privateKey = String(body?.privateKey || '').trim();
+  const passphrase = String(body?.passphrase || '').trim();
+  if (!password && !privateKey && !passphrase) return undefined;
+  return { password: password || undefined, privateKey: privateKey || undefined, passphrase: passphrase || undefined };
+}
+
+/**
+ * 加密序列化 SSH 凭证（存入 cred_encrypted 列）
+ * @param cred SSH 凭证
+ */
+function serializeCredential(cred?: { password?: string; privateKey?: string; passphrase?: string }): string | null {
+  if (!cred) return null;
+  if (!cred.password && !cred.privateKey && !cred.passphrase) return null;
+  return encryptSecret(JSON.stringify(cred));
+}
+
+/**
+ * 读取某引擎已存的加密凭证列（未设置返回 null）
+ * @param d 数据库句柄
+ * @param id 引擎 ID
+ */
+function getCredColumn(d: any, id: string): string | null {
+  try {
+    const r = d.prepare('SELECT cred_encrypted FROM docker_engines WHERE id = ?').get(id) as { cred_encrypted: string | null } | undefined;
+    return r?.cred_encrypted ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -85,7 +123,7 @@ router.get(
   '/',
   asyncHandler(async (_req: Request, res: Response) => {
     const d = getDb();
-    const rows = d.prepare('SELECT id, name, endpoint, is_current, created_at, updated_at FROM docker_engines ORDER BY created_at').all() as any[];
+    const rows = d.prepare('SELECT id, name, endpoint, is_current, created_at, updated_at, cred_encrypted FROM docker_engines ORDER BY created_at').all() as any[];
     // 健康探测（1.45.0）：逐引擎并发 ping（3 秒超时），列表返回 online 标记
     const engines = await Promise.all(
       rows.map(async (r) => {
@@ -94,15 +132,24 @@ router.get(
           online = true; // 本机引擎
         } else {
           try {
+            const cred = isSshEndpoint(r.endpoint) ? loadEngineCredential(r.endpoint) : undefined;
             online = await Promise.race([
-              testEngineEndpoint(r.endpoint),
+              testEngineEndpoint(r.endpoint, cred),
               new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000)),
             ]);
           } catch {
             online = false;
           }
         }
-        return { id: r.id, name: r.name, endpoint: r.endpoint, isCurrent: !!r.is_current, online };
+        return {
+          id: r.id,
+          name: r.name,
+          endpoint: r.endpoint,
+          isCurrent: !!r.is_current,
+          online,
+          isSsh: isSshEndpoint(r.endpoint),
+          hasCredential: isSshEndpoint(r.endpoint) ? !!r.cred_encrypted : undefined,
+        };
       }),
     );
     res.json({ engines });
@@ -118,24 +165,25 @@ router.get(
 router.post(
   '/',
   requireAdmin,
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req, res) => {
     const name = assertName(req.body?.name);
     const endpoint = normalizeEndpoint(req.body?.endpoint);
+    const cred = extractCredential(req.body);
 
     const d = getDb();
     const count = (d.prepare('SELECT count(*) AS c FROM docker_engines').get() as { c: number }).c;
 
-    const ok = await testEngineEndpoint(endpoint);
+    const ok = await testEngineEndpoint(endpoint, cred);
     if (!ok) {
-      return res.status(400).json({ error: '无法连接该 Docker 端点，请检查地址与协议' });
+      return res.status(400).json({ error: isSshEndpoint(endpoint) ? '无法连接该 SSH 端点，请检查地址、账号与凭证' : '无法连接该 Docker 端点，请检查地址与协议' });
     }
 
     const id = crypto.randomUUID();
     const now = Date.now();
     const isCurrent = count === 0 ? 1 : 0;
     d.prepare(
-      'INSERT INTO docker_engines (id, name, endpoint, is_current, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(id, name, endpoint, isCurrent, now, now);
+      'INSERT INTO docker_engines (id, name, endpoint, is_current, created_at, updated_at, cred_encrypted) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(id, name, endpoint, isCurrent, now, now, serializeCredential(cred));
 
     if (isCurrent) resetDockerCache();
     logOperation(res.locals.username, '新增Docker引擎', '引擎', name, isCurrent ? '(设为当前)' : undefined);
@@ -162,16 +210,24 @@ router.put(
     let endpoint = row.endpoint;
     if (req.body?.endpoint !== undefined && String(req.body.endpoint).trim() !== row.endpoint) {
       endpoint = normalizeEndpoint(req.body.endpoint);
-      const ok = await testEngineEndpoint(endpoint);
-      if (!ok) return res.status(400).json({ error: '无法连接该 Docker 端点，请检查地址与协议' });
+      const ok = await testEngineEndpoint(endpoint, extractCredential(req.body));
+      if (!ok) return res.status(400).json({ error: isSshEndpoint(endpoint) ? '无法连接该 SSH 端点，请检查地址、账号与凭证' : '无法连接该 Docker 端点，请检查地址与协议' });
     }
 
-    d.prepare('UPDATE docker_engines SET name = ?, endpoint = ?, updated_at = ? WHERE id = ?').run(
+    // SSH 凭证：请求体提供了凭证字段就覆盖；否则保留已存凭证
+    const cred = extractCredential(req.body);
+    const credEncrypted = cred ? serializeCredential(cred) : getCredColumn(d, id);
+
+    d.prepare('UPDATE docker_engines SET name = ?, endpoint = ?, updated_at = ?, cred_encrypted = ? WHERE id = ?').run(
       name,
       endpoint,
       Date.now(),
+      credEncrypted,
       id,
     );
+
+    // 端点变更时关闭旧 SSH bridge（如有）
+    if (row.endpoint !== endpoint) closeSshBridge(row.endpoint);
 
     // 若更新的是当前引擎，需清缓存使新端点生效
     if (row.is_current) {
@@ -203,6 +259,7 @@ router.delete(
       return res.status(400).json({ error: '不能删除当前使用的引擎，请先切换到其他引擎' });
     }
     d.prepare('DELETE FROM docker_engines WHERE id = ?').run(id);
+    closeSshBridge(row.endpoint);
     logOperation(res.locals.username, '删除Docker引擎', '引擎', row.name);
     res.json({ ok: true });
   }),
@@ -223,8 +280,14 @@ router.post(
 
     // 验证引擎可连
     const full = d.prepare('SELECT endpoint FROM docker_engines WHERE id = ?').get(id) as { endpoint: string };
-    const ok = await testEngineEndpoint(full.endpoint);
+    const ok = await testEngineEndpoint(full.endpoint, isSshEndpoint(full.endpoint) ? loadEngineCredential(full.endpoint) : undefined);
     if (!ok) return res.status(400).json({ error: '该引擎当前不可达，无法切换' });
+
+    // 关闭旧当前引擎的 SSH bridge（如有），避免空闲连接残留
+    const oldCurrent = d.prepare('SELECT endpoint FROM docker_engines WHERE is_current = 1').get() as { endpoint: string } | undefined;
+    if (oldCurrent?.endpoint && isSshEndpoint(oldCurrent.endpoint) && oldCurrent.endpoint !== full.endpoint) {
+      closeSshBridge(oldCurrent.endpoint);
+    }
 
     const now = Date.now();
     d.prepare('UPDATE docker_engines SET is_current = 0, updated_at = ? WHERE is_current = 1').run(now);
@@ -292,7 +355,10 @@ router.post(
       }
       const out: any = { engineId: id, name: row.name, endpoint: row.endpoint, ok: true, prunedContainers: 0, prunedImages: 0, prunedVolumes: 0, prunedNetworks: 0, detail: '', preview: [] as string[] };
       try {
-        const client = getDockerClientForEndpoint(row.endpoint);
+        // SSH 引擎经 SSH bridge 获取客户端；其余走端点直连
+        const client = isSshEndpoint(row.endpoint)
+          ? await getSshDocker(row.endpoint, loadEngineCredential(row.endpoint))
+          : getDockerClientForEndpoint(row.endpoint);
         const opts: any = filters ? { filters } : {};
         const skipped: string[] = [];
         if (dryRun) {

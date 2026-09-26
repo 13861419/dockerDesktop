@@ -21,7 +21,7 @@
 - **计划任务**：定时任务（周期 / 依存的容器操作、定时安全基线扫描并推送违规变更告警等）管理；执行历史失败记录**一键重跑**（1.49.0）；**执行节点化**——每节点独立输出与耗时（Coze 风格节点流，1.66.0）；**链式编排**（成功后触发下游任务，防环检测）与**带参执行**（{{占位符}} 替换，1.84.0）
 - **文件管理**：容器内文件浏览 / 上传 / 下载 / 编辑
 - **宿主机文件 / 终端**：宿主机文件浏览与远程终端（xterm）
-- **Docker 引擎**：多 Docker 引擎端点管理（新增 / 编辑 / 设为当前 / 删除）
+- **Docker 引擎**：多 Docker 引擎端点管理（新增 / 编辑 / 设为当前 / 删除）；**SSH 远程引擎（1.93.0）**——`ssh://user@host:22` 端点经 SSH 通道免暴露端口管理远程 Docker（远程执行 socat/nc 转发 docker.sock，凭证密码或私钥 AES-256-GCM 加密存储），切换后全部容器 / 镜像 / Compose 等功能无缝作用于远程主机
 - **数据库可视化**：容器数据库 / Redis 的可视化查询与信息查看（只读保护）；表数据一键导出 CSV（上限 5 万行，1.46.0）；SQL 查询历史与收藏（最近 100 条自动留痕、常用查询收藏一键填入，1.48.0）
 - **Compose 项目纳管（1.50.0）**：除面板自建项目外，自动发现宿主机上其他方式创建的 Compose 项目（手动 `docker compose up` / 第三方工具），同样支持编辑 compose 文件并 `up -d` 生效、服务状态 / 日志 / 资源查看；删除外部项目仅下线容器保留文件；编辑器支持全屏放大（1.52.0）与版本历史回退（每次保存自动记录上一版，保留最近 20 条）；**多选批量删除（1.89.0）**——勾选列 + 全选一次删除多个项目（可同时删数据卷），含外部项目时需显式确认防误下线；**外部项目全量修复与提权读写（1.90.0）**——配置 / 结构 / 启停 / 日志 / 滚动更新 / 漂移等 16 个接口统一按容器标签反查项目解析，root 属主文件经 Docker 助手容器提权读写；**多文件编排关联与切换编辑（1.90.0）**——`-f` 多文件全量关联展示，命令按标签顺序全量带 `-f` 与启动状态严格一致，编辑弹窗可切换目标文件（文件白名单校验）；保存前自动物理备份原文件到 `backups/compose-files/`（每项目保留 5 份）；日志弹窗一键放大全屏、结构视图服务级日志、ANSI 颜色转义剥离防乱码、状态单接口批量加载；**日志弹窗工具栏与容器页一致（1.91.0）**——过滤 / 条数 / 跟随刷新 / 时间戳 / 清空 / 复制 / 下载 / 搜索高亮 / 行号；**跟随刷新改 SSE 实时流 + 级别筛选 chips（1.92.0）**——日志产生即推送（`docker compose logs --follow`），筛选变化自动重连
 - **备份恢复**：DATA / Compose / 卷 / 站点备份恢复中心；支持将备份文件**上传到云端**（S3 / OSS / WebDAV）；数据库恢复前自动执行 SQLite 完整性校验（quick_check，1.45.0）；**备份覆盖率体检**（盘点 Compose 项目 / 命名卷 / 数据库实例的备份覆盖状态，未覆盖对象一目了然，1.48.0）
@@ -117,7 +117,8 @@ brew install docker-manager
 | `cron_tasks` / `cron_task_logs` | 计划任务定义与执行日志            | `server/src/routes/tasks.ts`     |
 | `appstore_instances` / `appstore_app_params` | 应用商店已安装实例与应用参数 | `server/src/appstore/`           |
 | `database_instances` | 数据库 / Redis 可视化实例定义            | `server/src/routes/databases.ts` |
-| `docker_engines`     | 多 Docker 引擎端点配置                | `server/src/routes/engines.ts`   |
+| `docker_engines`     | 多 Docker 引擎端点配置（含 SSH 凭证密文列） | `server/src/routes/engines.ts`   |
+| `container_recycle`  | 已删除容器配置快照（回收站，最多 100 条） | `server/src/recycle.ts`          |
 | `cloud_targets`      | 云端备份目标（S3 / OSS / WebDAV）    | `server/src/routes/cloud.ts`     |
 | `sites`              | 站点反代配置                          | `server/src/routes/sites.ts`     |
 | `backups`            | 备份记录（DATA / Compose / 卷 / 站点） | `server/src/backup/manager.ts`  |

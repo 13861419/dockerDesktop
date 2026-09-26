@@ -709,6 +709,7 @@ Menu: **Docker Engines** (`/engines`, admin only)
 
 - Manage multiple Docker engine endpoints (local or remote).
 - **New engine**: enter an endpoint (`npipe://` / `tcp://` / `unix://`, e.g. `tcp://192.168.1.10:2375`).
+- **SSH remote engines (1.93.0)**: enter `ssh://user@host:22` to bring a remote host's Docker under panel management — the panel runs `socat` (fallback `nc`) over SSH to forward `/var/run/docker.sock`, so **no exposed 2375 port or TLS setup is needed on the remote host**. Credentials: password or private key (+ optional passphrase), stored AES-256-GCM encrypted (the list only shows whether a credential exists, never the secret); SSH engines get an `SSH` badge (green = credential configured). The remote host must have socat or nc installed. Once switched to, all features (containers / images / Compose / monitoring…) behave exactly like a local engine.
 - **Edit / Delete** existing endpoints.
 - **Set current** — switch the active engine.
 - Endpoints are auto-detected and validated.

@@ -1299,6 +1299,12 @@ function createTables(): void {
   } catch {
     // 表已存在则忽略
   }
+  // 迁移：SSH 引擎凭证（加密 JSON，NULL=无凭证）（1.93.0）
+  try {
+    d.exec('ALTER TABLE docker_engines ADD COLUMN cred_encrypted TEXT');
+  } catch {
+    // 列已存在则忽略
+  }
   // 迁移：为 cron_tasks 补充 Git 私有仓库凭证列（加密 JSON，NULL=无凭证）
   try {
     d.exec('ALTER TABLE cron_tasks ADD COLUMN git_cred_encrypted TEXT');
