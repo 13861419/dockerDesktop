@@ -18,6 +18,9 @@ import { allowlistFilterFor } from '../containerAuth';
 
 const router = Router();
 
+/** 单次查询返回行数上限（超出仅返回最近若干行，total 不受影响） */
+const MAX_RETURN_LINES = 10000;
+
 function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
   return (req: Request, res: Response) => {
     fn(req, res).catch((err: any) => {
@@ -135,7 +138,12 @@ router.get(
       })
       .map(({ __i, ...l }) => l);
 
-    res.json({ lines, total: lines.length, truncated: lines.length > 10000, matched: keyword ? lines.length > 0 : true });
+    // 响应体截断：total 保留真实命中数，lines 只返回最近 MAX_RETURN_LINES 行
+    const total = lines.length;
+    const truncated = total > MAX_RETURN_LINES;
+    if (truncated) lines = lines.slice(-MAX_RETURN_LINES);
+
+    res.json({ lines, total, truncated, matched: keyword ? total > 0 : true });
   }),
 );
 

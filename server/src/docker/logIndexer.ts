@@ -17,6 +17,8 @@ import { getSetting } from '../settings';
 /** 采集循环句柄 */
 let sweepTimer: ReturnType<typeof setInterval> | null = null;
 let pruneTimer: ReturnType<typeof setInterval> | null = null;
+/** 防重入标志：容器多时一轮串行拉取可能超过 60s 间隔，避免两轮并发写库 */
+let sweeping = false;
 
 /** 总行数上限（超出丢最旧） */
 const MAX_ROWS = 1_000_000;
@@ -33,10 +35,20 @@ function retentionDays(): number {
 
 /**
  * 执行一轮增量采集
- * @returns { scanned, inserted, skipped } 统计
+ * @returns { scanned, inserted, skipped, busy } 统计（busy=true 表示上一轮仍在进行，本轮跳过）
  */
-export async function runLogIndexSweep(): Promise<{ scanned: number; inserted: number; skipped: number }> {
+export async function runLogIndexSweep(): Promise<{ scanned: number; inserted: number; skipped: number; busy?: boolean }> {
   if (!isIndexEnabled()) return { scanned: 0, inserted: 0, skipped: 0 };
+  if (sweeping) return { scanned: 0, inserted: 0, skipped: 0, busy: true };
+  sweeping = true;
+  try {
+    return await sweepOnce();
+  } finally {
+    sweeping = false;
+  }
+}
+
+async function sweepOnce(): Promise<{ scanned: number; inserted: number; skipped: number }> {
   const docker = await getDockerClient();
   const running = (await docker.listContainers({ all: false }).catch(() => [])) as any[];
 

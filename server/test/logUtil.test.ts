@@ -49,3 +49,8 @@ test('stripAnsi 去除 ANSI 颜色码', () => {
   assert.strictEqual(stripAnsi('\u001b[31mred\u001b[0m'), 'red');
   assert.strictEqual(stripAnsi('plain'), 'plain');
 });
+
+test('stripAnsi 去除光标控制序列与 8 位 CSI', () => {
+  assert.strictEqual(stripAnsi('\u001b[2J\u001b[Hclear'), 'clear');
+  assert.strictEqual(stripAnsi('\u009b[31mred'), 'red');
+});

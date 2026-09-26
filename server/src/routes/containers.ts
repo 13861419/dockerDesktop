@@ -7,6 +7,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import net from 'net';
 import { getDockerClient } from '../docker/client';
+import { stripAnsi } from '../docker/logUtil';
 import { getDb } from '../storage';
 import { parseStats, ParsedStats } from '../docker/stats';
 import { getContainerMetricsHistory } from '../docker/containerMetrics';
@@ -1000,18 +1001,8 @@ router.get(
  * @returns 拼接后的纯文本日志
  */
 /**
- * ANSI 转义序列正则（SGR 颜色 / 样式码等，用于彩色日志输出）
+ * ANSI 转义清理复用 ../docker/logUtil 的 stripAnsi（与日志聚合中心保持一致）
  */
-const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-
-/**
- * 剥离 ANSI 转义序列，返回纯文本（避免容器彩色日志在面板中显示为乱码）
- * @param s 原始字符串
- * @returns 去除 ANSI 控制序列后的纯文本
- */
-function stripAnsi(s: string): string {
-  return String(s).replace(ANSI_RE, '');
-}
 
 function demuxBufferToText(buf: Buffer | any, tty = false): string {
   if (!buf || buf.length === 0) return '';

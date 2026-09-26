@@ -120,7 +120,12 @@ export async function fetchContainerLogLines(
   return { name, lines };
 }
 
-/** 去除 ANSI 转义序列（用于终端类日志清理） */
+/**
+ * ANSI 转义序列正则（SGR 颜色 / 光标控制等，含 8 位 CSI 引导符 \u009b）
+ */
+const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+
+/** 去除 ANSI 转义序列（用于终端类日志清理，含颜色码与光标控制序列） */
 export function stripAnsi(text: string): string {
-  return String(text || '').replace(/\u001b\[[0-9;]*m/g, '');
+  return String(text || '').replace(ANSI_RE, '');
 }
