@@ -37,7 +37,7 @@ interface UserRow {
  * @param password 明文密码
  * @param salt 盐值
  */
-function hashPassword(password: string, salt: string): string {
+export function hashPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 32).toString('hex');
 }
 
