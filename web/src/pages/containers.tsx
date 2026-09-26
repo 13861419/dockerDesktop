@@ -11,7 +11,6 @@ import { canOperate } from '../api/auth';
 import {
   ContainerListItem,
   ContainerPortConflicts,
-  ContainerTransferResult,
   EngineListItem,
   EngineListResponse,
   ImageItem,
@@ -28,6 +27,12 @@ import { Field, Input, Select } from '../components/Form';
 import { PageLoading } from '../components/Loading';
 import { useToast } from '../components/Toast';
 import ComposeInferModal from '../components/ComposeInferModal';
+import RenameContainerModal from '../components/RenameContainerModal';
+import CloneContainerModal from '../components/CloneContainerModal';
+import MigrateContainerModal, { type MigrateTarget } from '../components/MigrateContainerModal';
+import EditImageModal from '../components/EditImageModal';
+import BatchResourceModal from '../components/BatchResourceModal';
+import PruneModal from '../components/PruneModal';
 import CreateContainerModal, { type CreateSeed } from '../components/CreateContainerModal';
 import ContainerLogModal from '../components/ContainerLogModal';
 import { useLang } from '../i18n';
@@ -53,12 +58,6 @@ interface DeleteTarget {
   name: string;
 }
 
-/** 跨引擎迁移弹窗中的目标容器源信息（源容器 = 容器所在引擎） */
-interface MigrateTarget {
-  id: string;
-  name: string;
-  image: string;
-}
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
@@ -97,45 +96,22 @@ export default function ContainersPage() {
   const [groupActionKey, setGroupActionKey] = useState<string | null>(null);
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
-  // 批量「编辑资源」弹窗状态：CPU 核数 / 内存 GB（留空=不修改），loading 控制提交中
-  const [batchEditOpen, setBatchEditOpen] = useState(false);
-  const [batchEditCpu, setBatchEditCpu] = useState('');
-  const [batchEditMem, setBatchEditMem] = useState('');
-  const [batchEditLoading, setBatchEditLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
-  // 重命名弹窗状态
-  const [renameTarget, setRenameTarget] = useState<DeleteTarget | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [renaming, setRenaming] = useState(false);
-  // 克隆弹窗状态
-  const [cloneOpen, setCloneOpen] = useState(false);
-  const [cloneTarget, setCloneTarget] = useState<DeleteTarget | null>(null);
-  const [cloneValue, setCloneValue] = useState('');
-  const [cloning, setCloning] = useState(false);
-  // 跨引擎迁移弹窗状态
+  // 重命名 / 克隆 / 迁移弹窗：仅持有目标容器，逻辑在各自 Modal 组件内部（1.92.0 拆分）
+  const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null);
+  const [cloneTarget, setCloneTarget] = useState<{ id: string; name: string } | null>(null);
   const [migrateTarget, setMigrateTarget] = useState<MigrateTarget | null>(null);
   // 引擎列表（来自 GET /api/engines，含当前引擎与其它引擎）
   const [engineList, setEngineList] = useState<EngineListItem[]>([]);
-  // 迁移弹窗中选中的目标引擎 id
-  const [migrateTargetId, setMigrateTargetId] = useState('');
-  // 目标容器名（留空自动沿用原名）
-  const [migrateName, setMigrateName] = useState('');
-  // 「迁移后启动」开关（默认开启）
-  const [migrateStart, setMigrateStart] = useState(true);
-  // 迁移提交是否进行中
-  const [migrating, setMigrating] = useState(false);
-  // 单独记录"正在迁移"的容器 id，用于该行迁移按钮独立 loading
-  const [, setMigratingId] = useState('');
-  // 迁移完成后的结果展示（成功时包含 name / imageTransferred / note 等）
-  const [migrateResult, setMigrateResult] = useState<ContainerTransferResult | null>(null);
   // 宿主机端口占用冲突映射（HostPort -> 容器列表）
   const [portConflicts, setPortConflicts] = useState<ContainerPortConflicts>({});
   // 容器实时资源统计（containerId -> {cpuPercent, memory}），轮询更新
   const [statsMap, setStatsMap] = useState<Record<string, ContainerStat>>({});
-  // 清理未使用资源弹窗状态
+  // 清理未使用资源：仅持有开关，逻辑在 PruneModal 内部（1.92.0 拆分）
   const [pruneOpen, setPruneOpen] = useState(false);
-  const [pruning, setPruning] = useState(false);
+  // 批量编辑资源弹窗开关（CPU / 内存表单逻辑在 BatchResourceModal 内部）
+  const [batchEditOpen, setBatchEditOpen] = useState(false);
 
   // 创建容器弹窗：仅持有打开意图，表单/模板/端口检测逻辑在 CreateContainerModal 内部（1.92.0 拆分）
   const [createSeed, setCreateSeed] = useState<CreateSeed | null>(null);
@@ -145,16 +121,8 @@ export default function ContainersPage() {
   // 日志查看弹窗：仅持有目标容器，内容与交互逻辑在 ContainerLogModal 内部（1.92.0 拆分）
   const [logTarget, setLogTarget] = useState<{ id: string; name: string } | null>(null);
 
-  // 编辑镜像弹窗状态
-  const [editImageOpen, setEditImageOpen] = useState(false);
-  const [editImageTarget, setEditImageTarget] = useState<DeleteTarget | null>(null);
-  const [editImageValue, setEditImageValue] = useState('');
-  const [editImageSaving, setEditImageSaving] = useState(false);
-  // 可用镜像下拉选项（本地镜像标签列表）
-  const [imageList, setImageList] = useState<string[]>([]);
-  // 可搜索下拉：过滤关键字 与 面板展开状态
-  const [editImageSearch, setEditImageSearch] = useState('');
-  const [editImageDropdownOpen, setEditImageDropdownOpen] = useState(false);
+  // 编辑镜像弹窗：仅持有目标容器，可搜索下拉与提交逻辑在 EditImageModal 内部（1.92.0 拆分）
+  const [editImageTarget, setEditImageTarget] = useState<{ id: string; name: string; image: string } | null>(null);
 
   /**
    * 拉取容器列表
@@ -513,86 +481,22 @@ export default function ContainersPage() {
     }
   }
 
-  /** 打开重命名弹窗，以当前名称初始化输入框 */
+  /** 打开重命名弹窗（输入与提交逻辑在 RenameContainerModal 内部） */
   function openRename(id: string, name: string) {
     if (!canDelete) {
       showToast(t('仅管理员可重命名容器'), 'error');
       return;
     }
     setRenameTarget({ id, name });
-    setRenameValue(name);
   }
 
-  /** 执行重命名（确认后调用后端接口） */
-  async function confirmRename() {
-    if (!renameTarget) return;
-    if (!canDelete) {
-      showToast(t('仅管理员可重命名容器'), 'error');
-      setRenameTarget(null);
-      return;
-    }
-    const newName = renameValue.trim();
-    // 名称必填与未变更校验
-    if (!newName) {
-      showToast(t('新名称不能为空'), 'error');
-      return;
-    }
-    if (newName === renameTarget.name) {
-      showToast(t('名称未发生变化'), 'error');
-      return;
-    }
-    setRenaming(true);
-    try {
-      await post(`/api/containers/${renameTarget.id}/rename`, { name: newName });
-      showToast(t('已重命名为 {{newName}}', { newName }));
-      setRenameTarget(null);
-      load();
-      loadPortConflicts();
-    } catch (e: any) {
-      showToast(t('重命名失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setRenaming(false);
-    }
-  }
-
-  /** 打开克隆弹窗，预填 <原名>-clone 作为新名称 */
+  /** 打开克隆弹窗（输入与提交逻辑在 CloneContainerModal 内部） */
   function openClone(id: string, name: string) {
     if (!canDelete) {
       showToast(t('仅管理员可克隆容器'), 'error');
       return;
     }
     setCloneTarget({ id, name });
-    setCloneValue(`${name}-clone`);
-    setCloneOpen(true);
-  }
-
-  /** 执行克隆（确认后调用后端接口） */
-  async function confirmClone() {
-    if (!cloneTarget) return;
-    if (!canDelete) {
-      showToast(t('仅管理员可克隆容器'), 'error');
-      setCloneTarget(null);
-      return;
-    }
-    const newName = cloneValue.trim();
-    // 名称必填校验
-    if (!newName) {
-      showToast(t('新名称不能为空'), 'error');
-      return;
-    }
-    setCloning(true);
-    try {
-      const res = await post<any>(`/api/containers/${cloneTarget.id}/clone`, { name: newName });
-      const clonedName = res?.name || newName;
-      showToast(t('已克隆为 {{clonedName}}', { clonedName }));
-      setCloneTarget(null);
-      load();
-      loadPortConflicts();
-    } catch (e: any) {
-      showToast(t('克隆失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setCloning(false);
-    }
   }
 
   /** 当前引擎（容器所在引擎，作为迁移源引擎） */
@@ -603,7 +507,7 @@ export default function ContainersPage() {
   const hasMigrateTarget = otherEngines.length >= 1;
 
   /**
-   * 打开跨引擎迁移弹窗：记录源容器信息，预填充迁移选项并刷新引擎列表。
+   * 打开跨引擎迁移弹窗：记录源容器信息并刷新引擎列表（表单逻辑在 MigrateContainerModal 内部）。
    * @param c 要迁移的容器
    */
   async function openMigrate(c: ContainerListItem) {
@@ -613,157 +517,18 @@ export default function ContainersPage() {
     }
     const name = displayName(c);
     setMigrateTarget({ id: c.Id, name, image: c.Image || '' });
-    setMigrateName('');
-    setMigrateStart(true);
-    setMigrateResult(null);
-    setMigrating(false);
-    setMigratingId('');
     // 打开弹窗时重新拉取引擎列表，保证目标引擎候选最新
     try {
       const res = await get<EngineListResponse>('/api/engines');
-      const list = res?.engines || [];
-      setEngineList(list);
-      // 默认选择第一个非当前引擎作为目标
-      const cur = list.find((e) => e.isCurrent);
-      const others = list.filter((e) => e.id !== cur?.id);
-      setMigrateTargetId(others[0]?.id || '');
+      setEngineList(res?.engines || []);
     } catch (e: any) {
       showToast(e?.message || t('加载引擎列表失败'), 'error');
     }
   }
 
-  /**
-   * 提交跨引擎迁移请求（POST /api/transfer/container）。
-   * 校验目标引擎合法后发起，成功展示结果并提示可到目标引擎查看，失败 toast 展示 error。
-   */
-  async function confirmMigrate() {
-    if (!migrateTarget) return;
-    if (!canDelete) {
-      showToast(t('仅管理员或运维人员可迁移容器'), 'error');
-      setMigrateTarget(null);
-      return;
-    }
-    if (!currentEngine?.id) {
-      showToast(t('无法识别当前引擎'), 'error');
-      return;
-    }
-    if (!migrateTargetId) {
-      showToast(t('请选择目标引擎'), 'error');
-      return;
-    }
-    if (migrateTargetId === currentEngine.id) {
-      showToast(t('源引擎与目标引擎不能相同'), 'error');
-      return;
-    }
-    setMigrating(true);
-    setMigratingId(migrateTarget.id);
-    try {
-      const res = await post<ContainerTransferResult>('/api/transfer/container', {
-        containerId: migrateTarget.id,
-        sourceEngineId: currentEngine.id,
-        targetEngineId: migrateTargetId,
-        newName: migrateName.trim() || undefined,
-        start: migrateStart,
-      });
-      if (!res?.ok) {
-        throw new Error(res?.error || t('容器迁移失败'));
-      }
-      // 成功：toast 提示并展示结果
-      setMigrateResult(res);
-      const startedText = res.started ? t('并已启动') : res.started === false ? t('（未启动）') : '';
-      showToast(t('容器已迁移至目标引擎{{startedText}}', { startedText }));
-      load();
-    } catch (e: any) {
-      showToast(e?.message || t('容器迁移失败'), 'error');
-    } finally {
-      setMigrating(false);
-      setMigratingId('');
-    }
-  }
-
-  /**
-   * 拉取本地镜像标签列表，用于"编辑镜像"弹窗的可选镜像下拉
-   */
-  const loadImageOptions = useCallback(async () => {
-    try {
-      const res = await get<ImageItem[]>('/api/images');
-      const tags = (res || [])
-        .flatMap((img) => img.RepoTags || [])
-        .filter((t) => t && !t.startsWith('<none>'))
-        .sort((a, b) => a.localeCompare(b));
-      setImageList(tags);
-    } catch {
-      // 拉取镜像列表失败不阻塞，弹窗内仍可手动输入
-      setImageList([]);
-    }
-  }, []);
-
-  /**
-   * 打开编辑镜像弹窗：预填当前镜像，并刷新可选镜像列表
-   * @param id 容器 ID
-   * @param name 容器名
-   * @param currentImage 当前镜像
-   */
+  /** 打开编辑镜像弹窗（可搜索下拉与提交逻辑在 EditImageModal 内部） */
   function openEditImage(id: string, name: string, currentImage: string) {
-    setEditImageTarget({ id, name });
-    setEditImageValue(currentImage);
-    setEditImageSearch('');
-    setEditImageDropdownOpen(false);
-    setEditImageOpen(true);
-    loadImageOptions();
-  }
-
-  /**
-   * 按关键字过滤镜像下拉选项（不区分大小写）
-   * @returns 过滤后的镜像列表
-   */
-  function filteredImageOptions(): string[] {
-    const kw = editImageSearch.trim().toLowerCase();
-    const base = imageList.includes(editImageValue) ? imageList : [editImageValue, ...imageList];
-    const unique = Array.from(new Set(base)).filter(Boolean);
-    if (!kw) return unique;
-    return unique.filter((t) => t.toLowerCase().includes(kw));
-  }
-
-  /**
-   * 从下拉列表中选择一个镜像：填入并以它作为当前选择，收起面板并清空过滤词
-   * @param image 选中的镜像
-   */
-  function chooseEditImage(image: string) {
-    setEditImageValue(image);
-    setEditImageSearch('');
-    setEditImageDropdownOpen(false);
-  }
-
-  /**
-   * 提交替换镜像：基于现有容器重建，仅替换镜像，其余配置（端口、挂载、网络、环境变量等）保留
-   */
-  async function confirmEditImage() {
-    if (!editImageTarget) return;
-    if (!canDelete) {
-      showToast(t('仅管理员可替换容器镜像'), 'error');
-      setEditImageTarget(null);
-      setEditImageOpen(false);
-      return;
-    }
-    const newImage = editImageValue.trim();
-    // 镜像必填校验
-    if (!newImage) {
-      showToast(t('请填写或选择新镜像'), 'error');
-      return;
-    }
-    setEditImageSaving(true);
-    try {
-      await post(`/api/containers/${editImageTarget.id}/recreate`, { image: newImage });
-      showToast(t('已替换镜像为 {{newImage}}', { newImage }));
-      setEditImageOpen(false);
-      load();
-      loadPortConflicts();
-    } catch (e: any) {
-      showToast(t('替换镜像失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setEditImageSaving(false);
-    }
+    setEditImageTarget({ id, name, image: currentImage });
   }
 
   /** 暂停容器 */
@@ -973,106 +738,6 @@ export default function ContainersPage() {
     load();
   }
 
-  /**
-   * 批量在线更新选中容器的资源限制（CPU / 内存）。
-   * 留空的字段不传，表示不修改；填值则完成单位换算（CPU 核数 -> 纳核，内存 GB -> 字节）。
-   * 调用 POST /api/containers/batch/update 后按 success/fail 提示并刷新列表。
-   */
-  async function confirmBatchEdit() {
-    if (selectedIds.length === 0) return;
-    if (!canDelete) {
-      showToast(t('仅管理员或运维人员可编辑资源限制'), 'error');
-      setBatchEditOpen(false);
-      return;
-    }
-    const body: Record<string, unknown> = { ids: selectedIds };
-    // CPU：留空表示不修改；填 0 表示取消限制；否则核数转纳核
-    if (batchEditCpu.trim() !== '') {
-      const cpus = parseFloat(batchEditCpu);
-      if (isNaN(cpus) || cpus < 0) {
-        showToast(t('请输入有效的 CPU 核数（如 1 或 1.5）'), 'error');
-        return;
-      }
-      body.cpuLimit = Math.round(cpus * 1e9);
-    }
-    // 内存：留空表示不修改；填 0 表示取消限制；否则 GB 转字节
-    if (batchEditMem.trim() !== '') {
-      const gb = parseFloat(batchEditMem);
-      if (isNaN(gb) || gb < 0) {
-        showToast(t('请输入有效的内存大小（GB，如 2）'), 'error');
-        return;
-      }
-      body.memLimit = Math.round(gb * 1024 * 1024 * 1024);
-    }
-    // 至少需填写一项，否则无任何可更新内容
-    if (body.cpuLimit === undefined && body.memLimit === undefined) {
-      showToast(t('请至少填写 CPU 或内存限制其一'), 'error');
-      return;
-    }
-    setBatchEditLoading(true);
-    try {
-      const r = await post<{ success: number; fail: number }>('/api/containers/batch/update', body);
-      const success = r?.success ?? 0;
-      const fail = r?.fail ?? 0;
-      setBatchEditOpen(false);
-      setSelectedIds([]);
-      if (fail === 0) {
-        showToast(t('已更新 {{success}} 个容器的资源限制', { success }));
-      } else if (success === 0) {
-        showToast(t('更新失败 {{fail}} 个容器', { fail }), 'error');
-      } else {
-        showToast(t('更新成功 {{success}} 个，失败 {{fail}} 个容器', { success, fail }), 'info');
-      }
-      load();
-    } catch (e: any) {
-      showToast(t('批量更新失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setBatchEditLoading(false);
-    }
-  }
-
-  /**
-   * 清理未使用资源（悬空镜像 / 未使用网络 / 未使用卷 / build cache）。
-   * 仅清理未使用资源，不会删除任何运行中的容器。
-   */
-  async function confirmPrune() {
-    if (!canDelete) {
-      showToast(t('仅管理员可清理未使用资源'), 'error');
-      setPruneOpen(false);
-      return;
-    }
-    setPruning(true);
-    try {
-      const res = await post<any>('/api/system/prune', {
-        images: true,
-        containers: true,
-        networks: true,
-        volumes: true,
-        buildCache: true,
-      });
-      const space = formatSpace(res?.totalSpace);
-      showToast(t('清理完成，释放空间 {{space}}', { space }));
-      setPruneOpen(false);
-      load();
-    } catch (e: any) {
-      showToast(t('清理失败：{{v1}}', { v1: e?.message || t('未知错误') }), 'error');
-    } finally {
-      setPruning(false);
-    }
-  }
-
-  /** 字节数格式化为可读大小 */
-  function formatSpace(bytes?: number): string {
-    if (!bytes || bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let i = 0;
-    let n = bytes;
-    while (n >= 1024 && i < units.length - 1) {
-      n /= 1024;
-      i += 1;
-    }
-    return `${n.toFixed(1)} ${units[i]}`;
-  }
   /** 打开创建容器弹窗（空白表单） */
   function openCreate() {
     if (!canDelete) {
@@ -1401,8 +1066,6 @@ export default function ContainersPage() {
                     showToast(t('仅管理员或运维人员可编辑资源限制'), 'error');
                     return;
                   }
-                  setBatchEditCpu('');
-                  setBatchEditMem('');
                   setBatchEditOpen(true);
                 }}
                 disabled={!canDelete}
@@ -1676,302 +1339,24 @@ export default function ContainersPage() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* 重命名容器弹窗 */}
-      <Modal
-        open={!!renameTarget}
-        title={t('重命名容器')}
-        onClose={() => !renaming && setRenameTarget(null)}
-        width={440}
-        footer={
-          <div className="create-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setRenameTarget(null)} disabled={renaming}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={renaming} onClick={confirmRename}>
-              {t('重命名')}
-            </Button>
-          </div>
-        }
-      >
-        <Field label={t('新名称')} required hint={t('修改后立即生效')}>
-          <Input
-            placeholder={t('新容器名称')}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            autoFocus
-            disabled={renaming}
-          />
-        </Field>
-      </Modal>
-
-      {/* 克隆容器弹窗 */}
-      <Modal
-        open={cloneOpen}
-        title={t('克隆容器')}
-        onClose={() => !cloning && setCloneOpen(false)}
-        width={440}
-        footer={
-          <div className="create-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setCloneOpen(false)} disabled={cloning}>
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={cloning} onClick={confirmClone}>
-              {t('克隆')}
-            </Button>
-          </div>
-        }
-      >
-        <Field label={t('新名称')} required hint={t('将基于「{{v1}}」复制配置并创建新容器，原容器保留', { v1: cloneTarget?.name || '' })}>
-          <Input
-            placeholder={t('新容器名称')}
-            value={cloneValue}
-            onChange={(e) => setCloneValue(e.target.value)}
-            autoFocus
-            disabled={cloning}
-          />
-        </Field>
-      </Modal>
-
-      {/* 跨引擎迁移容器弹窗 */}
-      <Modal
-        open={!!migrateTarget}
-        title={t('跨引擎迁移容器')}
-        onClose={() => !migrating && setMigrateTarget(null)}
-        width={520}
-        footer={
-          <div className="create-modal__footer">
-            <Button variant="ghost" size="md" onClick={() => setMigrateTarget(null)} disabled={migrating}>
-              {t('关闭')}
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              loading={migrating}
-              onClick={confirmMigrate}
-              disabled={!hasMigrateTarget}
-            >
-              {t('迁移')}
-            </Button>
-          </div>
-        }
-      >
-        {migrateTarget && (
-          <>
-            {/* 源信息（只读展示） */}
-            <div className="migrate-modal__source">
-              <div className="migrate-modal__source-row">
-                <span className="migrate-modal__source-label">{t('容器名')}</span>
-                <span className="migrate-modal__source-value" title={migrateTarget.name}>
-                  {migrateTarget.name}
-                </span>
-              </div>
-              <div className="migrate-modal__source-row">
-                <span className="migrate-modal__source-label">{t('镜像')}</span>
-                <span className="migrate-modal__source-value" title={migrateTarget.image}>
-                  {migrateTarget.image || '-'}
-                </span>
-              </div>
-              <div className="migrate-modal__source-row">
-                <span className="migrate-modal__source-label">{t('源引擎')}</span>
-                <span className="migrate-modal__source-value">
-                  {currentEngine?.name || t('（无法识别当前引擎）')}
-                </span>
-              </div>
-            </div>
-
-            <Field label={t('目标引擎')} required hint={t('将容器迁移到此引擎；需为当前引擎以外的其它引擎')}>
-              <Select
-                value={migrateTargetId}
-                onChange={(e) => setMigrateTargetId(e.target.value)}
-                disabled={migrating}
-              >
-                <option value="" disabled>
-                  {hasMigrateTarget ? t('请选择目标引擎') : t('无其它可用引擎')}
-                </option>
-                {otherEngines.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            <Field label={t('目标容器名')} hint={t('可选，留空时自动沿用原容器名')}>
-              <Input
-                placeholder={t('留空沿用原名')}
-                value={migrateName}
-                onChange={(e) => setMigrateName(e.target.value)}
-                disabled={migrating}
-              />
-            </Field>
-
-            <Field label={t('迁移后启动')}>
-              <label className="create-modal__tty">
-                <input
-                  type="checkbox"
-                  checked={migrateStart}
-                  onChange={(e) => setMigrateStart(e.target.checked)}
-                  disabled={migrating}
-                />
-                {t('迁移完成后自动启动目标容器')}
-              </label>
-            </Field>
-
-            {/* 迁移结果展示 */}
-            {migrateResult && (
-              <div className="migrate-modal__result">
-                <div className="migrate-modal__result-title">{t('迁移成功')}</div>
-                <div className="migrate-modal__result-row">
-                  {t('目标容器：')}{migrateResult.name || migrateTarget.name}
-                  {migrateResult.id ? `（${migrateResult.id.slice(0, 12)}）` : ''}
-                </div>
-                <div className="migrate-modal__result-row">
-                  {t('镜像是否已传输：')}
-                  {migrateResult.imageTransferred ? t('是') : t('否')}
-                </div>
-                {migrateResult.started === true && (
-                  <div className="migrate-modal__result-row">{t('启动状态：已启动')}</div>
-                )}
-                {migrateResult.started === false && (
-                  <div className="migrate-modal__result-row">{t('启动状态：未启动')}</div>
-                )}
-                {migrateResult.startError && (
-                  <div className="migrate-modal__result-note">{t('启动错误：{{msg}}', { msg: migrateResult.startError })}</div>
-                )}
-                {migrateResult.warning && (
-                  <div className="migrate-modal__result-note">{t('警告：{{msg}}', { msg: migrateResult.warning })}</div>
-                )}
-                {migrateResult.note && (
-                  <div className="migrate-modal__result-note">{t('备注：{{msg}}', { msg: migrateResult.note })}</div>
-                )}
-                <div className="migrate-modal__result-tip">
-                  {t('可在目标引擎的容器列表中查看该容器。')}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </Modal>
-
-      {/* 编辑镜像弹窗（替换容器使用的镜像） */}
-      <Modal
-        open={editImageOpen}
-        title={t('编辑镜像')}
-        onClose={() => !editImageSaving && setEditImageOpen(false)}
-        width={600}
-        footer={
-          <div className="create-modal__footer">
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setEditImageOpen(false)}
-              disabled={editImageSaving}
-            >
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={editImageSaving} onClick={confirmEditImage}>
-              {t('替换镜像')}
-            </Button>
-          </div>
-        }
-      >
-        <Field
-          label={t('容器「{{v1}}」当前镜像', { v1: editImageTarget?.name || '' })}
-          hint={t('替换镜像将基于现有容器重建，仅替换镜像，端口、挂载、网络、环境变量等配置保留；重建会导致容器短暂中断，容器 ID 会改变。')}
-        >
-          <div className="edit-image__current" title={editImageValue}>
-            {editImageValue || '-'}
-          </div>
-        </Field>
-        <Field label={t('替换为以下镜像')} required>
-          <div className="edit-image__picker">
-            <Input
-              className="edit-image__input"
-              placeholder={t('输入关键字过滤或直接填写镜像名，如 nginx:latest')}
-              value={editImageValue}
-              onChange={(e) => {
-                const v = e.target.value;
-                setEditImageValue(v);
-                setEditImageSearch(v);
-                setEditImageDropdownOpen(true);
-              }}
-              onFocus={() => setEditImageDropdownOpen(true)}
-              onBlur={() => setEditImageDropdownOpen(false)}
-              disabled={editImageSaving}
-            />
-            {editImageDropdownOpen && (
-              <div className="edit-image__dropdown">
-                {filteredImageOptions().length === 0 ? (
-                  <div className="edit-image__dropdown-empty">{t('无匹配的本地镜像，可继续手动输入')}</div>
-                ) : (
-                  filteredImageOptions().map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      className={`edit-image__option ${t === editImageValue ? 'edit-image__option--active' : ''}`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => chooseEditImage(t)}
-                    >
-                      {t}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </Field>
-      </Modal>
-
-      {/* 批量编辑资源弹窗（CPU / 内存限制，对应 docker update） */}
-      <Modal
+      {renameTarget && (
+        <RenameContainerModal target={renameTarget} onClose={() => setRenameTarget(null)} onDone={() => { load(); loadPortConflicts(); }} />
+      )}
+      {cloneTarget && (
+        <CloneContainerModal target={cloneTarget} onClose={() => setCloneTarget(null)} onDone={() => { load(); loadPortConflicts(); }} />
+      )}
+      {migrateTarget && (
+        <MigrateContainerModal target={migrateTarget} engines={engineList} onClose={() => setMigrateTarget(null)} onDone={load} />
+      )}
+      {editImageTarget && (
+        <EditImageModal target={editImageTarget} onClose={() => setEditImageTarget(null)} onDone={() => { load(); loadPortConflicts(); }} />
+      )}
+      <BatchResourceModal
         open={batchEditOpen}
-        title={t('批量编辑资源限制')}
-        onClose={() => !batchEditLoading && setBatchEditOpen(false)}
-        width={520}
-        footer={
-          <div className="create-modal__footer">
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setBatchEditOpen(false)}
-              disabled={batchEditLoading}
-            >
-              {t('取消')}
-            </Button>
-            <Button variant="primary" size="md" loading={batchEditLoading} onClick={confirmBatchEdit}>
-              {t('保存')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="batch-edit__tip">
-          {t('将为选中的 {{n}} 个容器在线更新资源限制，无需重建、不中断运行。留空的字段将保持现状。', { n: selectedIds.length })}
-        </div>
-        <div className="create-modal__grid">
-          <Field label={t('CPU 限制（核数，留空不修改；填 0 取消限制）')} hint={t('如 1 或 1.5')}>
-            <Input
-              type="number"
-              min={0}
-              step="0.1"
-              placeholder={t('如 1 或 1.5')}
-              value={batchEditCpu}
-              onChange={(e) => setBatchEditCpu(e.target.value)}
-              disabled={batchEditLoading}
-            />
-          </Field>
-          <Field label={t('内存限制（GB，留空不修改；填 0 取消限制）')} hint={t('如 2')}>
-            <Input
-              type="number"
-              min={0}
-              step="0.5"
-              placeholder={t('如 2')}
-              value={batchEditMem}
-              onChange={(e) => setBatchEditMem(e.target.value)}
-              disabled={batchEditLoading}
-            />
-          </Field>
-        </div>
-      </Modal>
+        ids={selectedIds}
+        onClose={() => setBatchEditOpen(false)}
+        onDone={() => { setSelectedIds([]); load(); }}
+      />
 
       {/* 批量操作确认对话框 */}
       <ConfirmDialog
@@ -1985,17 +1370,7 @@ export default function ContainersPage() {
         onCancel={() => setBatchAction(null)}
       />
 
-      {/* 清理未使用资源确认对话框 */}
-      <ConfirmDialog
-        open={pruneOpen}
-        title={t('清理未使用资源')}
-        message={t('将清理未使用的镜像、已停止的容器、未使用的数据卷与网络、以及构建缓存。此操作不可撤销，但不会影响处于运行中的容器。')}
-        confirmText={t('清理')}
-        danger
-        loading={pruning}
-        onConfirm={confirmPrune}
-        onCancel={() => setPruneOpen(false)}
-      />
+      <PruneModal open={pruneOpen} onClose={() => setPruneOpen(false)} onDone={load} />
 
       {/* 导入配置文件（隐藏 input，由「导入配置」按钮触发） */}
       <input
