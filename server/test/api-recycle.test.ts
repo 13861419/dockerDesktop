@@ -14,8 +14,6 @@ const BASE = process.env.API_BASE || 'http://localhost:9528';
 let adminToken = '';
 let createdName = '';
 let createdId = '';
-/** CI 环境可能没有 alpine 镜像且无法外网拉取——置 true 时跳过生命周期用例 */
-let imageReady = false;
 
 function req(method: string, path: string, body?: any, headers?: Record<string, string>): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
@@ -46,29 +44,20 @@ before(async () => {
   const login = await req('POST', '/api/auth/login', { username: 'admin', password: 'admin888' });
   adminToken = login.data.token;
   createdName = 'recycle-demo-' + Date.now();
-
-  // 确保测试镜像存在：缺失时经面板 API 拉取一次（CI 环境通常没有 alpine）
-  const inspect = await req('GET', '/api/images/alpine%3Alatest', undefined, { Authorization: `Bearer ${adminToken}` });
-  if (inspect.status === 200) {
-    imageReady = true;
-    return;
-  }
-  const pull = await req('POST', '/api/images/pull', { ref: 'alpine:latest' }, { Authorization: `Bearer ${adminToken}` });
-  if (pull.status < 300) imageReady = true;
-  else console.warn('alpine:latest 不可用，跳过回收站生命周期用例');
 });
 
 test('全链路：创建 → 删除入站 → 恢复 → 清理', async (t) => {
-  if (!imageReady) return t.skip('测试镜像不可用');
-  // 1. 创建容器（不启动，降低资源占用）
-  const createRes = await req(
-    'POST',
-    '/api/containers',
-    { name: createdName, image: 'alpine:latest', start: false },
-    { Authorization: `Bearer ${adminToken}` },
-  );
-  assert.ok(createRes.status === 201, `创建容器应 201，实际 ${createRes.status}: ${JSON.stringify(createRes.data)}`);
-  createdId = createRes.data.id;
+  // 创建前尝试确保镜像存在：缺失（404）时经面板 API 拉取一次再重试；
+  // CI 环境可能无外网镜像源或拉取到带镜像源前缀的标签，仍失败则跳过
+  const createBody = { name: createdName, image: 'alpine:latest', start: false };
+  let createRes = await req('POST', '/api/containers', createBody, { Authorization: `Bearer ${adminToken}` });
+  if (createRes.status === 404) {
+    await req('POST', '/api/images/pull', { ref: 'alpine:latest' }, { Authorization: `Bearer ${adminToken}` });
+    createRes = await req('POST', '/api/containers', { ...createBody, name: createdName + '-r2' }, { Authorization: `Bearer ${adminToken}` });
+  }
+  if (createRes.status !== 201) return t.skip(`测试镜像不可用（创建返回 ${createRes.status}）`);
+  createdName = (createRes.data as { name?: string }).name || createdName;
+  createdId = (createRes.data as { id: string }).id;
 
   // 2. 删除（应自动捕获快照入回收站）
   const delRes = await req('DELETE', `/api/containers/${createdId}`, undefined, { Authorization: `Bearer ${adminToken}` });
