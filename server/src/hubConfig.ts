@@ -6,6 +6,7 @@
  * 数据文件位于 <项目根>/data/docker-manager.db（单一 SQLite 文件）。
  */
 import { getDb } from './storage';
+import type Dockerode from 'dockerode';
 
 /** 单个镜像源条目 */
 export interface HubSource {
@@ -105,6 +106,34 @@ function loadSources(): HubSource[] {
  */
 export function listSources(): HubSource[] {
   return loadSources();
+}
+
+/**
+ * 拉取候选源排序（纯函数，供测试）：显式指定源最优先，其次默认源，
+ * 再其余启用源保持原有顺序，最后回退官方直连（空串）
+ * @param explicit 显式指定的源主机（可空）
+ * @param enabled 全部启用源（原列表顺序）
+ * @returns 去重后的候选源主机列表（含末尾直连回退）
+ */
+export function orderPullCandidates(explicit: string | undefined, enabled: HubSource[]): string[] {
+  const raw = explicit ? [explicit, ...enabled.map((s) => s.host)] : [...enabled.map((s) => s.host), ''];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const h of rawCands(raw)) {
+    const host = hostnameOf(h);
+    if (seen.has(host)) continue;
+    seen.add(host);
+    out.push(h);
+  }
+  return out;
+
+  /** 显式源之后：默认源优先，其余保持原顺序 */
+  function rawCands(list: string[]): string[] {
+    if (explicit) return list;
+    const def = enabled.find((s) => s.isDefault);
+    const rest = enabled.filter((s) => !s.isDefault).map((s) => s.host);
+    return def ? [def.host, ...rest, ''] : [...rest, ''];
+  }
 }
 
 /**
@@ -373,6 +402,66 @@ export function setSearchSource(host: string): void {
 export function getDefaultSource(): HubSource | undefined {
   const list = loadSources();
   return list.find((s) => s.isDefault && s.enabled) || list.find((s) => s.enabled);
+}
+
+/** 单次拉取尝试的记录（用于失败诊断与响应返回） */
+export interface PullAttempt {
+  source: string;
+  error?: string;
+}
+
+/** 拉取 failover 结果 */
+export interface PullFailoverResult {
+  /** 实际使用的源主机（''=官方直连） */
+  usedSource: string;
+  /** 实际拉取引用（可能带镜像源前缀） */
+  pullRef: string;
+  /** 各候选源尝试记录（按尝试顺序） */
+  attempts: PullAttempt[];
+}
+
+/**
+ * 带镜像源自动切换的镜像拉取：
+ * 候选顺序（orderPullCandidates）：显式指定源 → 默认源 → 其余启用源 → 官方直连，
+ * 任一候选拉取成功立即返回；全部失败抛出最后一个错误（附各源失败原因）。
+ * @param docker dockerode 实例
+ * @param ref 原始镜像引用（如 nginx:latest）
+ * @param opts explicitSource 显式指定源（可空）；auth 官方直连认证；onProgress 进度回调
+ */
+export async function pullWithFailover(
+  docker: Dockerode,
+  ref: string,
+  opts?: { explicitSource?: string; auth?: any; onProgress?: (ev: any) => void },
+): Promise<PullFailoverResult> {
+  const candidates = orderPullCandidates(opts?.explicitSource, listSources().filter((s) => s.enabled));
+  const attempts: PullAttempt[] = [];
+  let lastErr: any = null;
+  for (const src of candidates) {
+    const pullRef = buildPullRef(ref, src);
+    try {
+      const stream = await docker.pull(pullRef, {
+        authconfig: !src && opts?.auth && (opts.auth.username || opts.auth.password) ? opts.auth : undefined,
+      });
+      await new Promise<void>((resolve, reject) => {
+        docker.modem.followProgress(
+          stream,
+          (err: any) => (err ? reject(err) : resolve()),
+          (event: any) => opts?.onProgress?.(event),
+        );
+      });
+      return { usedSource: src, pullRef, attempts };
+    } catch (e: any) {
+      attempts.push({ source: src || 'docker.io', error: String(e?.message || e || '').slice(0, 200) });
+      lastErr = e;
+    }
+  }
+  const detail =
+    attempts.length > 0
+      ? `（已尝试 ${attempts.length} 个源：${attempts.map((a) => `${a.source}: ${a.error}`).join('；')}）`
+      : '';
+  throw Object.assign(new Error(`${lastErr?.message || '镜像拉取失败'}${detail}`.replace(/\s+/g, ' ').trim()), {
+    attempts,
+  });
 }
 
 /**

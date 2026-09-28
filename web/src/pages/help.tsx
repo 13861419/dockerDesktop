@@ -183,7 +183,7 @@ const FEATURE_INDEX: Array<{ path: string; name: string; desc: string }> = [
   { path: '/assistant', name: t('AI 助手'), desc: t('对话、知识库、巡检、告警诊断、周报、用量治理') },
   { path: '/images', name: t('镜像'), desc: t('列表、搜索、拉取（多源容灾）、导出、层分析、漏洞扫描、镜像信任锁定（sha256 摘要漂移检测，锁定后自动更新拦截不一致镜像）') },
   { path: '/build', name: t('构建镜像'), desc: t('在线构建（SSE 实时日志）、层热力图、时长对比') },
-  { path: '/hub', name: t('镜像中心'), desc: t('镜像源管理与加速配置') },
+  { path: '/hub', name: t('镜像中心'), desc: t('Docker Hub 在线搜索与标签浏览；镜像源管理与加速配置；拉取失败自动换源（默认源 → 启用源 → 官方直连，1.93.0）；全源测速后按延迟一键排序（1.93.0）') },
     { path: '/volumes', name: t('数据卷'), desc: t('列表、克隆、导出 tar、标签过滤；清理未使用卷默认仅删匿名卷，命名卷需用「清理全部」或单独删除') },
   { path: '/storage', name: t('存储'), desc: t('Docker 磁盘占用与宿主机分区使用率') },
   { path: '/networks', name: t('网络'), desc: t('网络管理与清理；连通性诊断：源容器 → 目标容器 DNS / TCP / 宿主机端口三项检查（1.48.0）') },

@@ -12,7 +12,6 @@ import {
   addSource,
   removeSource,
   setSourceEnabled,
-  buildPullRef,
   searchHubRepos,
   getSearchSource,
   setSearchSource,
@@ -20,6 +19,7 @@ import {
   setDefaultSource,
   reorderSources,
   testSourceHealth,
+  pullWithFailover,
 } from '../hubConfig';
 import { requireAdmin } from '../auth';
 
@@ -125,8 +125,8 @@ router.get(
  * POST /api/hub/pull
  * 拉取指定镜像引用（复用 docker.pull + followProgress 完成等待）
  * body: { ref: "library/nginx:latest", source?: "https://docker.xuanyuan.me" }
- * 当指定镜像源 source 时，会把镜像引用加上该源的主机前缀后再拉取，
- * 即请求发往镜像加速源（由源反代到 Docker Hub），适用于官方 Docker Hub 访问不稳的场景。
+ * 带镜像源自动切换（1.93.0）：显式指定源时先试该源，未指定则按 默认源 → 其余启用源 → 官方直连
+ * 顺序逐个尝试，单个源被限流(429)或不可用时自动切换，响应返回实际使用的源 usedSource。
  */
 router.post(
   '/pull',
@@ -139,19 +139,12 @@ router.post(
     }
     const auth = req.body?.auth || {};
 
-    // 计算实际拉取引用：若指定镜像源则拼上源主机前缀（共享 buildPullRef 处理素材/官方前缀）
-    const source = req.body?.source;
-    const pullRef = buildPullRef(ref, source);
-
-    const stream = await docker.pull(pullRef, {
-      authconfig:
-        !source && (auth.username || auth.password) ? auth : undefined,
+    const result = await pullWithFailover(docker, ref, {
+      explicitSource: req.body?.source,
+      auth,
     });
-    // 收集拉取进度，等待完成
-    await new Promise<void>((resolve, reject) => {
-      docker.modem.followProgress(stream, (err: any) => (err ? reject(err) : resolve()));
-    });
-    res.json({ ok: true, ref: pullRef });
+    logOperation(res.locals.username, '拉取镜像', 'image', ref, `源: ${result.usedSource || 'docker.io'}`);
+    res.json({ ok: true, ref: result.pullRef, source: result.usedSource || 'docker.io', attempts: result.attempts });
   }),
 );
 

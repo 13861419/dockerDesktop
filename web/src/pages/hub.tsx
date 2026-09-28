@@ -389,6 +389,34 @@ export default function HubPage() {
   }, [showToast]);
 
   /**
+   * 按测速结果排序镜像源：可达的按延迟升序排前，未测试/不可达保持原相对顺序在后；
+   * 排序结果经 /sources/reorder 持久化（1.93.0）
+   */
+  const handleSortByLatency = useCallback(async () => {
+    if (!canManage) {
+      showToast(t('仅管理员可调整顺序'), 'error');
+      return;
+    }
+    const tested = sources.filter((s) => healthMap[s.id]?.reachable);
+    if (tested.length === 0) {
+      showToast(t('请先测试镜像源连通性'), 'error');
+      return;
+    }
+    const lat = (id: string) => healthMap[id]?.latencyMs ?? Number.MAX_SAFE_INTEGER;
+    const sortedIds = [
+      ...tested.sort((a, b) => lat(a.id) - lat(b.id)).map((s) => s.id),
+      ...sources.filter((s) => !tested.includes(s)).map((s) => s.id),
+    ];
+    try {
+      await post('/api/hub/sources/reorder', { ids: sortedIds });
+      await loadSources();
+      showToast(t('已按延迟排序并保存'));
+    } catch (e: any) {
+      showToast(e?.message || t('排序失败'), 'error');
+    }
+  }, [canManage, sources, healthMap, loadSources, showToast]);
+
+  /**
    * 调整镜像源顺序：把 s 移动到 delta 指定的方向（-1 上移 / +1 下移）
    * @param s 目标镜像源
    * @param delta 移动方向
@@ -534,8 +562,9 @@ export default function HubPage() {
     const ref = `${pullTarget.full_name}:${tag}`;
     setPulling(true);
     try {
-      await post('/api/hub/pull', { ref, source: pullSource || undefined });
-      showToast(t('镜像 {{ref}} 拉取成功', { ref }));
+      const data = await post<{ source: string }>('/api/hub/pull', { ref, source: pullSource || undefined });
+      const via = data?.source && data.source !== 'docker.io' ? t('（经镜像源 {{v1}}）', { v1: data.source }) : '';
+      showToast(t('镜像 {{ref}} 拉取成功{{v1}}', { ref, v1: via }));
       setPullTarget(null);
     } catch (e: any) {
       showToast(e?.message || t('镜像拉取失败'), 'error');
@@ -771,7 +800,7 @@ export default function HubPage() {
               value={pullSource}
               onChange={(e) => setPullSource(e.target.value)}
             >
-              <option value="">{t('官方 Docker Hub')}</option>
+              <option value="">{t('自动（默认源优先，失败自动切换）')}</option>
               {sources
                 .filter((s) => s.enabled !== false)
                 .map((s) => (
@@ -827,6 +856,14 @@ export default function HubPage() {
               onClick={handleTestAll}
             >
               {t('测试全部')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canManage || sources.length === 0}
+              onClick={handleSortByLatency}
+            >
+              {t('按延迟排序')}
             </Button>
           </div>
 

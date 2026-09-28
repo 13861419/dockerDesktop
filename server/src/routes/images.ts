@@ -7,7 +7,7 @@ import { Router, Request, Response } from 'express';
 import express from 'express';
 import { Readable } from 'stream';
 import { getDockerClient } from '../docker/client';
-import { buildPullRef, listSources, searchHubRepos } from '../hubConfig';
+import { pullWithFailover, searchHubRepos } from '../hubConfig';
 import { getPullTime, recordPullTime } from '../imagePullHistory';
 import { logOperation } from '../operationLog';
 import { requireAdmin, requireAuth, requireOperator } from '../auth';
@@ -670,7 +670,8 @@ router.get(
  * POST /api/images/pull
  * 拉取镜像
  * body: { ref: "nginx:latest", source?: "https://docker.xuanyuan.me", auth?: {username,password,serveraddress} }
- * 未传 source 时，若配置了默认启用镜像源，则自动使用该镜像源加速拉取。
+ * 带镜像源自动切换（1.93.0）：显式源优先，其后 默认源 → 其余启用源 → 官方直连，
+ * 单个源被限流(429)或不可用时自动切换下一个，显著提升拉取成功率。
  */
 router.post(
   '/pull',
@@ -684,64 +685,23 @@ router.post(
     const auth = req.body?.auth || {};
     const explicit = req.body?.source;
 
-    // 候选镜像源顺序：显式指定的源优先，其后追加其余启用镜像源；
-    // 未指定时则遍历全部启用镜像源。这样单个源被限流(429)或不可用时，
-    // 自动切换下一个启用镜像源重试，显著提升拉取成功率。
-    const enabledHosts = (listSources() || [])
-      .filter((s) => s.enabled)
-      .map((s) => s.host)
-      .filter(Boolean) as string[];
-    const rawCands = explicit ? [explicit, ...enabledHosts] : enabledHosts;
-    if (rawCands.length === 0) {
-      rawCands.push(''); // 无任何启用镜像源时，回退官方 Docker 仓库
-    }
-    const seen = new Set<string>();
-    const cands = rawCands.filter((s) => {
-      if (seen.has(s)) return false;
-      seen.add(s);
-      return true;
+    const progress: any[] = [];
+    const result = await pullWithFailover(docker, ref, {
+      explicitSource: explicit,
+      auth,
+      onProgress: (ev: any) => progress.push(ev),
     });
 
-    let lastErr: any = null;
-    for (const src of cands) {
-      const pullRef = buildPullRef(ref, src);
-      try {
-        const stream = await docker.pull(pullRef, {
-          authconfig: !src && (auth.username || auth.password) ? auth : undefined,
-        });
-        const progress: any[] = [];
-        await new Promise<void>((resolve, reject) => {
-          docker.modem.followProgress(
-            stream,
-            (err: any) => (err ? reject(err) : resolve()),
-            (event: any) => {
-              progress.push(event);
-            },
-          );
-        });
-        // 拉取成功后，记录该镜像的本地拉取时间（用于"拉取时间"列展示）
-        // pullRef 可能带镜像源主机前缀或 library/ 前缀，借助 engine 解析出本地镜像 Id
-        try {
-          const inspected: any = await docker.getImage(pullRef).inspect();
-          if (inspected?.Id) recordPullTime(inspected.Id);
-        } catch {
-          // 获取镜像 Id 失败不影响拉取结果
-        }
-        logOperation(res.locals.username, '拉取镜像', 'image', ref, `源: ${src || 'docker.io'}`);
-        return res.json({ ok: true, ref: pullRef, source: src || 'docker.io', progress });
-      } catch (e: any) {
-        // 当前镜像源失败（如 429 限流/网络/镜像不存在），尝试下一个启用源
-        lastErr = e;
-      }
+    // 拉取成功后，记录该镜像的本地拉取时间（用于"拉取时间"列展示）
+    // pullRef 可能带镜像源主机前缀或 library/ 前缀，借助 engine 解析出本地镜像 Id
+    try {
+      const inspected: any = await docker.getImage(result.pullRef).inspect();
+      if (inspected?.Id) recordPullTime(inspected.Id);
+    } catch {
+      // 获取镜像 Id 失败不影响拉取结果
     }
-    const msg =
-      typeof lastErr?.message === 'string'
-        ? lastErr.message.replace(/\s+/g, ' ')
-        : '镜像拉取失败';
-    logOperation(res.locals.username, '拉取镜像', 'image', ref, `失败: ${msg}`, false);
-    return res.status(500).json({
-      error: `镜像拉取失败（已尝试 ${cands.length} 个镜像源）：${msg}`,
-    });
+    logOperation(res.locals.username, '拉取镜像', 'image', ref, `源: ${result.usedSource || 'docker.io'}`);
+    return res.json({ ok: true, ref: result.pullRef, source: result.usedSource || 'docker.io', progress });
   }),
 );
 

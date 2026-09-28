@@ -812,6 +812,8 @@ Menu: **Image Hub** (`/hub`)
 
 - View / configure **Docker mirror sources** (built-in defaults such as Xuanyuan, 1ms).
 - **Search source**: used to search Docker Hub online. Replace if the default doesn't support search (see FAQ).
+- **Test all & sort by latency (1.93.0)**: "Test All" probes all enabled sources concurrently for reachability and latency; "Sort by latency" re-orders them by test result (reachable first, lowest latency first) and persists the order, so slow mirrors no longer sit at the top wasting time.
+- **Automatic mirror failover (1.93.0)**: image pulls (both Image Hub and Images page) retry through the default mirror → other enabled mirrors → official Docker Hub in order; when a mirror is rate-limited (429) or unreachable the next one is used transparently, and the success toast shows which mirror actually served the pull. Per-mirror failure reasons are kept for diagnostics.
 
 ### 18.2 Online Search & Quick Pull
 
