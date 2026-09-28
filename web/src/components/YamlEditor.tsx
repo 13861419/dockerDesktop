@@ -141,6 +141,10 @@ export default function YamlEditor({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const lineCount = value.split('\n').length;
+  // 编辑器可视高度固定为 rows 行；内容更高时容器内部滚动（1.92.0 修复：textarea 高度跟随内容，
+  // 此前固定 rows 高且 overflow hidden，超出部分被裁剪——长文件无法编辑也无法滚动查看）
+  const bodyHeight = rows * LINE_H + 16;
+  const contentHeight = Math.max(lineCount, rows) * LINE_H + 16;
   // 内容为空且无占位时，pre 渲染单个空格避免塌陷
   const html = useMemo(() => {
     if (!value) {
@@ -158,7 +162,7 @@ export default function YamlEditor({
 
   return (
     <div className={`yaml-editor${disabled ? ' yaml-editor--disabled' : ''}`}>
-      <div className="yaml-editor__body">
+      <div className="yaml-editor__body" style={{ height: bodyHeight }}>
         <div className="yaml-editor__gutter" ref={gutterRef} aria-hidden="true">
           {Array.from({ length: lineCount }, (_, i) => (
             <div
@@ -174,7 +178,7 @@ export default function YamlEditor({
           <pre className="yaml-editor__pre" dangerouslySetInnerHTML={{ __html: html }} />
           <textarea
             className="yaml-editor__ta"
-            style={{ height: rows * LINE_H + 16 }}
+            style={{ height: contentHeight }}
             value={value}
             onChange={(e) => onChange?.(e.target.value)}
             readOnly={readOnly}
