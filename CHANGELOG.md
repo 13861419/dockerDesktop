@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.93.0] - 2026-09-28
+
+### Fixed（修复）
+
+- **发布包版本号与根版本号脱节**：打包脚本原样复制 server 工区 package.json，根版本号升级后发布包内仍为旧版本号——面板自报版本读取该文件，导致升级成功后仍显示旧版本并永久提示有新版本；现在打包时以根 package.json 版本号覆写发布包内版本，server 工作区版本号同步升级
+- **Windows 一键升级脚本被 NSSM 进程树清理连坐**：面板自退出触发服务重启时，detached 拉起的升级脚本被一并终止，升级静默无效果（结果文件从未生成）；现升级脚本改由计划任务（SYSTEM + HIGHEST）拉起，与面板进程树解耦，确保停服 → 备份 → 覆盖 → 重启 → 健康检查全流程可完成；`timeout` 计时改用 `ping` 适配非交互会话
+- **YAML 编辑器长文件裁剪不可编辑**：编辑区 textarea 高度固定为 rows 行且 `overflow: hidden`，超过可视行数的配置文件（如外部项目的长 docker-compose.yml）被裁剪——无法编辑后半部分内容、点放大后编辑器无滚动条看不到全部配置；现在 textarea 高度跟随内容行数，编辑器容器限高（普通 18 行 / 全屏 40 行）内部滚动，行号栏同步滚动，全文件可编辑可查看
+- **Compose 日志 stdout maxBuffer 溢出**：compose 命令统一执行通道 maxBuffer 从 10MB 提升到 64MB——多容器项目（尤其选择全部行数或时间范围过滤触发全量日志时）`docker compose logs` 输出超过旧上限，打开日志弹窗直接报 "stdout maxBuffer length exceeded"
+
 ## [1.92.0] - 2026-09-28
 
 ### Added（新增）
@@ -37,10 +46,6 @@
 - **日志索引采集防重入**：后台增量采集（每 60s 一轮）加防重入标志，容器较多、单轮耗时超过间隔时跳过本轮（返回 `busy: true`），避免两轮并发写库造成游标竞态与重复插入
 - **stripAnsi 实现统一**：`containers.ts` 本地的 ANSI 清理正则与 `logUtil.ts` 不一致（后者漏清光标控制序列与 8 位 CSI），现统一复用 `logUtil.stripAnsi` 完整正则，日志聚合中心与容器日志的清理行为保持一致
 - **SSE 日志流响应头延迟下发**：容器与 Compose 日志流路由 `writeHead` 后缺少 `flushHeaders()`，Node 将响应头缓冲至首次写入——零输出容器的日志流要等 15s 心跳首包才下发响应头，前端「跟随刷新」表现为 15 秒空转（e2e `waitForResponse` 15s 超时必败）；现连接建立即 flush 响应头，安静容器打开日志流即时就绪
-- **发布包版本号与根版本号脱节**：打包脚本原样复制 server 工作区 package.json，根版本号升级后发布包内仍为旧版本号——面板自报版本读取该文件，导致升级成功后仍显示旧版本并永久提示有新版本；现在打包时以根 package.json 版本号覆写发布包内版本，server 工作区版本号同步升级
-- **Windows 一键升级脚本被 NSSM 进程树清理连坐**：面板自退出触发服务重启时，detached 拉起的升级脚本被一并终止，升级静默无效果（结果文件从未生成）；现升级脚本改由计划任务（SYSTEM + HIGHEST）拉起，与面板进程树解耦，确保停服 → 备份 → 覆盖 → 重启 → 健康检查全流程可完成；`timeout` 计时改用 `ping` 适配非交互会话
-- **YAML 编辑器长文件裁剪不可编辑**：编辑区 textarea 高度固定为 rows 行且 `overflow: hidden`，超过可视行数的配置文件（如外部项目的长 docker-compose.yml）被裁剪——无法编辑后半部分内容、点放大后编辑器无滚动条看不到全部配置；现在 textarea 高度跟随内容行数，编辑器容器限高（普通 18 行 / 全屏 40 行）内部滚动，行号栏同步滚动，全文件可编辑可查看
-- **Compose 日志 stdout maxBuffer 溢出**：compose 命令统一执行通道 maxBuffer 从 10MB 提升到 64MB——多容器项目（尤其选择全部行数或时间范围过滤触发全量日志时）`docker compose logs` 输出超过旧上限，打开日志弹窗直接报 "stdout maxBuffer length exceeded"
 
 ### Test（测试）
 
