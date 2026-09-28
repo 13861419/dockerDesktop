@@ -28,6 +28,7 @@ import {
   mapContainerToStatus,
   AppStatus,
 } from '../appstore/status';
+import { parseImportPayload } from '../appstore/import';
 import { pullWithFailover } from '../docker/pull';
 import { logOperation } from '../operationLog';
 import { requireAdmin } from '../auth';
@@ -752,6 +753,61 @@ router.delete(
     getDb().prepare('DELETE FROM appstore_custom_apps WHERE id = ?').run(id);
     logOperation(res.locals.username, '删除自定义应用', 'app', id);
     res.json({ ok: true });
+  }),
+);
+
+// ============ 第三方格式导入（1.93.0）============
+
+/**
+ * POST /api/appstore/import
+ * 导入第三方应用商店格式（CasaOS JSON / 1Panel data.yml + docker-compose.yml / 通用 compose），
+ * 解析成功后逐条写入 appstore_custom_apps 表。
+ * body: { payload?: string, dataYml?: string, composeYml?: string }
+ */
+router.post(
+  '/import',
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const payload = typeof req.body?.payload === 'string' ? req.body.payload : '';
+    const dataYml = typeof req.body?.dataYml === 'string' ? req.body.dataYml : '';
+    const composeYml = typeof req.body?.composeYml === 'string' ? req.body.composeYml : '';
+    const result = parseImportPayload(payload, dataYml, composeYml);
+
+    const imported: Array<{ id: string; name: string }> = [];
+    for (const app of result.apps) {
+      try {
+        const id = genCustomAppId();
+        const now = Date.now();
+        getDb()
+          .prepare(
+            `INSERT INTO appstore_custom_apps
+              (id, name, description, category, image, icon, ports, env, volumes, tags, compose, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            id,
+            app.name,
+            app.description ?? '',
+            app.category ?? '导入',
+            app.image ?? '',
+            app.icon ?? '📦',
+            JSON.stringify(app.ports ?? []),
+            JSON.stringify(app.env ?? []),
+            JSON.stringify(app.volumes ?? []),
+            JSON.stringify(app.tags ?? []),
+            app.compose ? JSON.stringify(app.compose) : null,
+            now,
+            now,
+          );
+        imported.push({ id, name: app.name });
+      } catch (e: any) {
+        result.failures.push({ index: result.apps.indexOf(app), name: app.name, reason: e?.message || '写入失败' });
+      }
+    }
+    if (imported.length > 0) {
+      logOperation(res.locals.username, '导入第三方应用', 'app', result.format, `${imported.length} 个`);
+    }
+    res.json({ format: result.format, imported, failures: result.failures });
   }),
 );
 

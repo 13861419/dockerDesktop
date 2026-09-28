@@ -9,7 +9,7 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { Field, Input, Select } from '../components/Form';
+import { Field, Input, Select, TextArea } from '../components/Form';
 import Empty from '../components/Empty';
 import { SkeletonRows } from '../components/Loading';
 import { useToast } from '../components/Toast';
@@ -135,6 +135,12 @@ export default function AppStorePage() {
   const [deleteTarget, setDeleteTarget] = useState<AppStoreItem | null>(null);
   // 删除是否进行中
   const [deleting, setDeleting] = useState(false);
+  // 第三方格式导入弹窗（1.93.0：CasaOS / 1Panel / 通用 compose）
+  const [importOpen, setImportOpen] = useState(false);
+  const [importPayload, setImportPayload] = useState('');
+  const [importDataYml, setImportDataYml] = useState('');
+  const [importComposeYml, setImportComposeYml] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
   // Git 应用源管理弹窗是否打开
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   // Git 应用源列表
@@ -839,6 +845,43 @@ export default function AppStorePage() {
     }
   }, [canManage, deleteTarget, showToast]);
 
+  /**
+   * 提交第三方格式导入（CasaOS / 1Panel / 通用 compose，1.93.0）
+   */
+  const handleImport = useCallback(async () => {
+    if (!canManage) {
+      showToast(t('仅管理员可导入应用'), 'error');
+      return;
+    }
+    if (!importPayload.trim() && !importDataYml.trim() && !importComposeYml.trim()) {
+      showToast(t('请先粘贴应用清单内容'), 'error');
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const data = await post<{ format: string; imported: Array<{ id: string; name: string }>; failures: Array<{ index: number; name: string; reason: string }> }>(
+        '/api/appstore/import',
+        { payload: importPayload, dataYml: importDataYml, composeYml: importComposeYml },
+      );
+      const okCount = data?.imported?.length || 0;
+      const failCount = data?.failures?.length || 0;
+      if (okCount === 0) {
+        showToast(t('导入失败：{{v1}}', { v1: data?.failures?.[0]?.reason || t('内容无法识别') }), 'error');
+      } else {
+        showToast(t('成功导入 {{v1}} 个应用{{v2}}', { v1: okCount, v2: failCount ? `，${failCount} 个失败` : '' }));
+        setImportOpen(false);
+        setImportPayload('');
+        setImportDataYml('');
+        setImportComposeYml('');
+        setRefreshKey((k) => k + 1);
+      }
+    } catch (e: any) {
+      showToast(e?.message || t('导入失败'), 'error');
+    } finally {
+      setImportBusy(false);
+    }
+  }, [canManage, importPayload, importDataYml, importComposeYml, showToast]);
+
   /** 渲染应用端口信息 */
   const renderPortInfo = (app: AppStoreItem) => {
     if (app.port) return app.port;
@@ -1102,6 +1145,11 @@ export default function AppStorePage() {
                 {t('新增自定义应用')}
               </Button>
             )}
+            {canManage && (
+              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+                {t('导入')}
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
               {t('刷新')}
             </Button>
@@ -1288,6 +1336,52 @@ export default function AppStorePage() {
           customVolumes={customVolumes}
           setCustomVolumes={setCustomVolumes}
         />
+      </Modal>
+
+      {/* 第三方格式导入弹窗（CasaOS / 1Panel / 通用 compose） */}
+      <Modal
+        open={importOpen}
+        title={t('导入第三方应用')}
+        onClose={() => !importBusy && setImportOpen(false)}
+        width={640}
+        footer={
+          <div className="appstore-install__footer">
+            <Button variant="ghost" size="md" onClick={() => setImportOpen(false)} disabled={importBusy}>
+              {t('取消')}
+            </Button>
+            <Button variant="primary" size="md" loading={importBusy} onClick={handleImport}>
+              {t('解析并导入')}
+            </Button>
+          </div>
+        }
+      >
+        <Field
+          label={t('应用清单 / CasaOS JSON')}
+          hint={t('CasaOS 应用清单 JSON（单个或数组）；识别失败时可尝试仅粘贴 docker-compose.yml')}
+        >
+          <TextArea
+            value={importPayload}
+            rows={8}
+            placeholder={'{\n  "title": "AdGuard Home",\n  "image": "adguard/adguardhome",\n  ...\n}\n\n或直接粘贴 docker-compose.yml'}
+            onChange={(e) => setImportPayload(e.target.value)}
+          />
+        </Field>
+        <Field label={t('1Panel data.yml（可选）')}>
+          <TextArea
+            value={importDataYml}
+            rows={4}
+            placeholder={'name: WordPress\ncategory: Blog'}
+            onChange={(e) => setImportDataYml(e.target.value)}
+          />
+        </Field>
+        <Field label={t('1Panel docker-compose.yml（可选）')} hint={t('{{ .Values.x }} 模板参数将转为可覆盖的环境变量 ${X}')}>
+          <TextArea
+            value={importComposeYml}
+            rows={8}
+            placeholder={'services:\n  app:\n    image: nginx:{{ .Values.version }}\n    ports:\n      - "{{ .Values.port }}:80"'}
+            onChange={(e) => setImportComposeYml(e.target.value)}
+          />
+        </Field>
       </Modal>
 
       {/* 卸载确认框 */}
