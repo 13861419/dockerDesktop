@@ -49,7 +49,9 @@ export function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) 
  */
 export async function runCmd(cmd: string, cwd: string): Promise<string> {
   try {
-    const { stdout } = await execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
+    // 64MB：compose logs（多容器全量 tail=0）等场景输出可达数十 MB，默认 1MB 与旧值 10MB 均会
+    // 以 "stdout maxBuffer length exceeded" 报错（1.92.0 修复）
+    const { stdout } = await execAsync(cmd, { cwd, maxBuffer: 64 * 1024 * 1024 });
     return stdout;
   } catch (err: any) {
     const detail = err?.stderr || err?.message || '命令执行失败';

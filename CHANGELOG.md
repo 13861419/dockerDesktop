@@ -40,6 +40,7 @@
 - **发布包版本号与根版本号脱节**：打包脚本原样复制 server 工作区 package.json，根版本号升级后发布包内仍为旧版本号——面板自报版本读取该文件，导致升级成功后仍显示旧版本并永久提示有新版本；现在打包时以根 package.json 版本号覆写发布包内版本，server 工作区版本号同步升级
 - **Windows 一键升级脚本被 NSSM 进程树清理连坐**：面板自退出触发服务重启时，detached 拉起的升级脚本被一并终止，升级静默无效果（结果文件从未生成）；现升级脚本改由计划任务（SYSTEM + HIGHEST）拉起，与面板进程树解耦，确保停服 → 备份 → 覆盖 → 重启 → 健康检查全流程可完成；`timeout` 计时改用 `ping` 适配非交互会话
 - **YAML 编辑器长文件裁剪不可编辑**：编辑区 textarea 高度固定为 rows 行且 `overflow: hidden`，超过可视行数的配置文件（如外部项目的长 docker-compose.yml）被裁剪——无法编辑后半部分内容、点放大后编辑器无滚动条看不到全部配置；现在 textarea 高度跟随内容行数，编辑器容器限高（普通 18 行 / 全屏 40 行）内部滚动，行号栏同步滚动，全文件可编辑可查看
+- **Compose 日志 stdout maxBuffer 溢出**：compose 命令统一执行通道 maxBuffer 从 10MB 提升到 64MB——多容器项目（尤其选择全部行数或时间范围过滤触发全量日志时）`docker compose logs` 输出超过旧上限，打开日志弹窗直接报 "stdout maxBuffer length exceeded"
 
 ### Test（测试）
 
