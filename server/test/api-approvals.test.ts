@@ -18,7 +18,10 @@ import http from 'http';
 const BASE = process.env.API_BASE || 'http://localhost:9528';
 let adminToken = '';
 let operatorToken = '';
+let directDb = false;
 const OP_USER = 'approval-test-op';
+
+const DB_CANARY_TARGET = '__approval-db-canary__';
 
 function req(method: string, path: string, body?: any, token = adminToken): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
@@ -55,6 +58,19 @@ before(async () => {
   const opLogin = await req('POST', '/api/auth/login', { username: OP_USER, password: 'op-test-8888' });
   operatorToken = opLogin.data.token;
   assert.ok(operatorToken, 'operator 登录失败');
+
+  // 环境自检：直连 DB 写入 canary 并经 API 读回——判断测试进程与后端服务是否共用同一数据文件
+  // （对生产部署的 9528 运行时两者可能各持一份库，依赖直连 SQL 的用例需跳过而非误报失败）
+  const canaryDb = await openTestDb();
+  await retryDb(() => canaryDb.prepare(
+    "INSERT INTO approvals (username, action_type, target, payload, status, reason, created_at, levels) VALUES ('__canary__', 'container.delete', ?, '{}', 'pending', 'canary', ?, '')",
+  ).run(DB_CANARY_TARGET, Date.now()));
+  canaryDb.close();
+  const probe = await req('GET', '/api/approvals', undefined, adminToken);
+  directDb = (probe.data.items || []).some((x: any) => x.target === DB_CANARY_TARGET);
+  const cleanupDb = await openTestDb();
+  await retryDb(() => cleanupDb.prepare('DELETE FROM approvals WHERE target = ?').run(DB_CANARY_TARGET));
+  cleanupDb.close();
 });
 
 // 直连 DB 写操作：并行测试下 dev server 持有连接，偶发瞬时锁冲突 —— 带重试
@@ -184,7 +200,11 @@ test('审批流开启时批量删除转为待审批，不直接执行', async ()
   assert.ok(row.target_label.length > 0);
 });
 
-test('待审批超过 TTL 自动过期（approvals.ttlHours）', async () => {
+test('待审批超过 TTL 自动过期（approvals.ttlHours）', async (t) => {
+  if (!directDb) {
+    t.skip('测试进程与后端服务使用不同数据文件，无法直连回填 created_at（对生产部署服务运行时的预期行为）');
+    return;
+  }
   // 清理历史运行残留的同目标记录，避免去重逻辑干扰本用例
   const db = await openTestDb();
   await retryDb(() => db.prepare("DELETE FROM approvals WHERE target = 'ttl-test-target'").run());
@@ -279,7 +299,11 @@ test('批量批准：多条审批逐条处理并返回成功/失败计数', asyn
   assert.strictEqual(empty.status, 400);
 });
 
-test('AI 高危操作执行转管理员审批：202 + gated + 批准后回写结果', async () => {
+test('AI 高危操作执行转管理员审批：202 + gated + 批准后回写结果', async (t) => {
+  if (!directDb) {
+    t.skip('测试进程与后端服务使用不同数据文件，直插 ai_actions 对后端不可见');
+    return;
+  }
   // 插入一条 operator 的已批准 AI 删除容器操作
   const { DatabaseSync } = await import('node:sqlite');
   const path = await import('node:path');

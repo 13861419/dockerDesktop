@@ -3,7 +3,7 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.92.0] - 2026-09-28
 
 ### Added（新增）
 
@@ -47,6 +47,7 @@
 - 新增 `api-recycle.test.ts`（2 例）：创建 → 删除入站 → 回收站列表校验 → 恢复 → 容器存在 → 清理的全链路集成；恢复不存在记录返回 404
 - `logUtil` 单测补充光标控制序列（`\u001b[2J\u001b[H`）与 8 位 CSI（`\u009b`）清理用例
 - 新增 `e2e/logs.spec.ts`：Compose 与容器日志弹窗的级别 chips 可见性、「跟随刷新」建立 SSE 连接（/logs/stream 200）、流式内容非空断言
+- `api-approvals.test.ts` 环境自检（canary 探测）：before() 直连写 canary 并经 API 读回，判定测试进程与后端是否共用同一数据文件；对生产部署服务（独立数据目录）运行时，依赖直连 SQL 的 TTL 回填与 ai_actions 直插两例自动跳过并注明原因，不再误报失败
 
 ## [1.91.0] - 2026-09-25
 
