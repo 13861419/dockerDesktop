@@ -89,7 +89,11 @@ function main() {
   const releaseServer = path.join(RELEASE, 'server');
   copyDir(serverDist, path.join(releaseServer, 'dist'));
   fs.mkdirSync(releaseServer, { recursive: true });
-  fs.copyFileSync(path.join(SERVER_DIR, 'package.json'), path.join(releaseServer, 'package.json'));
+  // 面板自报版本读取 server/package.json——打包时以根版本号为准（1.92.0 起修复：发布包版本号与根版本号脱节会导致升级后仍提示有新版本）
+  const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const serverPkg = JSON.parse(fs.readFileSync(path.join(SERVER_DIR, 'package.json'), 'utf8'));
+  serverPkg.version = rootPkg.version;
+  fs.writeFileSync(path.join(releaseServer, 'package.json'), JSON.stringify(serverPkg, null, 2) + '\n');
   run('npm install --omit=dev', releaseServer);
 
   // 复制前端静态资源为 static/

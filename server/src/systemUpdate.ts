@@ -10,7 +10,7 @@
  * 下载对应产物并校验 sha256，生成升级脚本（停服务 → 覆盖/安装 → 起服务）后
  * 以 detached 方式拉起并自退出。用户数据目录与安装目录分离，升级不丢数据。
  */
-import { execSync, spawn } from 'child_process';
+import { execSync, spawn, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
@@ -304,6 +304,9 @@ function stagingDir(): string {
   return dir;
 }
 
+/** Windows 一键升级用计划任务名（1.92.0：脚本经计划任务拉起，与面板进程树解耦） */
+export const WIN_UPDATER_TASK = 'DockerManagerUpdater';
+
 /** 生成 Windows 服务版升级脚本内容（1.73.0 A/B 备份 + 健康检查 + 失败自动回滚；1.74.1 修复引号与锁定文件问题） */
 export function buildWindowsBat(installDir: string, zipPath: string, staging: string, port: number): string {
   const nssm = path.join(installDir, 'nssm.exe');
@@ -314,9 +317,11 @@ export function buildWindowsBat(installDir: string, zipPath: string, staging: st
   return [
     '@echo off',
     'rem DockerManager 一键升级脚本（由面板生成，1.73.0 起带自动回滚）',
-    'timeout /t 2 /nobreak >nul',
+    // 计划任务在非交互会话运行：timeout 依赖交互式控制台会报错，用 ping 计时替代
+    'ping -n 3 127.0.0.1 >nul',
+    'schtasks /delete /tn DockerManagerUpdater /f >nul 2>&1',
     `"${nssm}" stop DockerManager`,
-    'timeout /t 3 /nobreak >nul',
+    'ping -n 4 127.0.0.1 >nul',
     // A/B 备份：程序文件复制到 <install>_prev（data / logs 为运行期数据，升级不动、无需备份）
     `robocopy "${installDir}" "${prev}" /E /XD "${path.join(installDir, 'data')}" "${path.join(installDir, 'logs')}" /R:2 /W:3 /NFL /NDL /NJH /NJS /NP`,
     `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${path.join(staging, 'extract')}' -Force"`,
@@ -577,11 +582,26 @@ export async function applyUpdate(currentVersion: string): Promise<ApplyResult> 
   if (type === 'windows-service') {
     const installDir = path.resolve(process.cwd(), '..');
     script = writeWindowsUpdater(staging, pkgPath, installDir);
-    spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    // 经计划任务（SYSTEM + HIGHEST）拉起（1.92.0 修复）：面板自退出后 NSSM 重启会
+    // 清理整棵进程树，detached 子进程被连坐杀死，升级脚本从未执行（静默无效果）。
+    // 计划任务在 SCM 独立会话运行，不受面板退出影响。
+    const taskName = WIN_UPDATER_TASK;
+    const fire = new Date(Date.now() + 60_000);
+    const hhmm = `${String(fire.getHours()).padStart(2, '0')}:${String(fire.getMinutes()).padStart(2, '0')}`;
+    const create = spawnSync(
+      'schtasks.exe',
+      ['/create', '/f', '/tn', taskName, '/tr', `cmd.exe /c "${script}"`, '/sc', 'once', '/st', hhmm, '/ru', 'SYSTEM', '/rl', 'HIGHEST'],
+      { windowsHide: true, timeout: 15_000 },
+    );
+    if (create.status !== 0) {
+      throw new Error(`创建升级计划任务失败（${String(create.stderr || create.stdout || '').trim()}）。可手动执行升级脚本：${script}`);
+    }
+    const run = spawn('schtasks.exe', ['/run', '/tn', taskName], { stdio: 'ignore', windowsHide: true }).unref();
+    void run;
     return {
       asset: asset.name,
       script,
-      message: `更新包 ${asset.name} 已下载并校验通过，正在执行升级，服务将重启`,
+      message: `更新包 ${asset.name} 已下载并校验通过，升级已由计划任务接管，服务将重启`,
     };
   }
 
