@@ -28,7 +28,6 @@ jobs:
   ai-review:
     name: ai-review
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Guard — 未配置 API Key 时优雅跳过
         id: guard
@@ -118,18 +117,28 @@ jobs:
           gh pr comment "$PR_NUMBER" --body "🤖 AI 审查进行中……" > /dev/null
           COMMENT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --jq '.[-1].id')"
 
-          # ---- 调用 OpenAI 兼容接口 ----
-          REVIEW="$(curl -sf --max-time 300 -X POST \
+          # ---- 调用 OpenAI 兼容接口，捕获状态码与错误体便于排障 ----
+          RESPONSE_FILE=/tmp/ai-response.json
+          HTTP_STATUS="$(curl -s --max-time 300 -o "$RESPONSE_FILE" -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${AI_API_KEY}" \
             -H "Content-Type: application/json" \
             -d @/tmp/ai-review-payload.json \
-            "${BASE_URL%/}/chat/completions" 2>/dev/null | jq -r '.choices[0].message.content // empty' || true)"
+            "${BASE_URL%/}/chat/completions" 2>/dev/null || echo "curl_failed")"
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            ERR_SNIPPET="$(head -c 300 "$RESPONSE_FILE" 2>/dev/null || echo '无响应体')"
+            echo "::error::AI 接口调用失败：HTTP ${HTTP_STATUS} — ${ERR_SNIPPET}（BASE_URL=${BASE_URL}, MODEL=${MODEL}）"
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+              -f body="🤖 AI 审查：❌ 接口调用失败 HTTP \`${HTTP_STATUS}\`，请检查 AI_API_KEY / AI_BASE_URL / AI_MODEL 配置（详细错误见 Actions 日志）" > /dev/null
+            exit 1
+          fi
 
           # ---- 回填正式审查结果 ----
+          REVIEW="$(jq -r '.choices[0].message.content // empty' "$RESPONSE_FILE")"
           if [ -n "$REVIEW" ]; then
             gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
               -f body="$REVIEW" > /dev/null
           else
             gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
-              -f body="🤖 AI 审查：❌ 接口调用失败，请检查 AI_API_KEY / AI_BASE_URL / AI_MODEL 配置" > /dev/null
+              -f body="🤖 AI 审查：❌ 接口返回 200 但无审查内容，请确认 AI_MODEL 名称正确" > /dev/null
           fi
