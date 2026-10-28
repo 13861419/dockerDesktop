@@ -27,7 +27,7 @@ npm run docs:check   # 图片死链检查（0 缺失为通过）；CI 的 docs j
 - 提 PR 前固定自验证：`npm run test:server:unit` + 类型检查；证据先行，不许"声称完成"。
 - PR 模板三栏（Testing / Risk / How to revert）必填；审查轮次上限 3 轮，超轮退回重新考虑方案。
 - 触碰 Deep 档区域（见 REVIEW.md）的 diff，合并前必须获得 Code Owners 人工批准，代理批准不算数。
-- **AI 审查自动化**（`.github/workflows/ai-review.yml`）：PR 打开/推送新提交时自动运行，按 REVIEW.md 标准输出分级发现（Important / Nit / Pre-existing），发现须逐条回应（修复或带理由关闭）；该 job 为建议性质不阻塞合并，人类批准才是合并闸门。调用 OpenAI 兼容接口（DeepSeek/GLM/Qwen/中转站均可），**运行在自托管 runner（本机）上**——因中转站接口不对 GitHub 托管 runner 开放；需本机注册 runner 且 git/node ≥ 18 可用，仓库 Secrets 配置 `AI_API_KEY`，可选 Variables：`AI_BASE_URL`（接口基地址）、`AI_MODEL`（模型名，默认 deepseek-chat）。审查逻辑见 `.github/scripts/ai-review.js`。
+- **AI 审查自动化**（`.github/workflows/ai-review.yml`）：PR 打开/推送新提交时自动运行，按 REVIEW.md 标准输出分级发现（Important / Nit / Pre-existing），发现须逐条回应（修复或带理由关闭）；该 job 为建议性质不阻塞合并，人类批准才是合并闸门。调用 OpenAI 兼容接口（DeepSeek/GLM/Qwen/中转站均可），**运行在自托管 runner（本机）上**——因中转站接口不对 GitHub 托管 runner 开放；需本机注册 runner 且 git/node ≥ 18 可用，仓库 Secrets 配置 `AI_API_KEY`，可选 Variables：`AI_BASE_URL`（接口基地址）、`AI_MODEL`（模型名，默认 deepseek-chat）。审查逻辑见 `.github/scripts/ai-review.js`；runner 安装与新电脑接入步骤见 `docs/self-hosted-runner-setup.md`。
 - 触碰 Deep 档区域（见 REVIEW.md）的 diff，合并前必须获得 Code Owners 人工批准，代理批准不算数。
 
 ## 项目关键约定
