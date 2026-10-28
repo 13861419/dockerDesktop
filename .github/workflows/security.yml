@@ -1,0 +1,73 @@
+# ============================================================
+#  Security Review — 第 3 层：安全审查自动化
+#  触发条件: Pull Request + 每周一 02:00 UTC 全量历史扫描
+#  三条扫描线（按误报代价分级，避免噪音阻塞开发）：
+#    1. secrets-scan  — gitleaks 密钥泄漏扫描（🔴 阻塞：红色 = 立即处理）
+#    2. deps-audit    — 生产依赖高危漏洞审计（🟡 建议性：汇总到 Job Summary）
+#    3. sast-semgrep  — Semgrep 静态安全分析（🟡 建议性：持续观察后可转阻塞）
+#  运行位置: GitHub 托管 runner（无需访问内网中转站）
+#  原则: 密钥泄漏零容忍；漏洞类发现先观察噪音水平再决定是否升级为阻塞
+# ============================================================
+name: Security Review
+
+on:
+  pull_request:
+  schedule:
+    - cron: '0 2 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+jobs:
+  secrets-scan:
+    name: secrets-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks 密钥泄漏扫描
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deps-audit:
+    name: deps-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - name: 生产依赖高危漏洞审计（建议性）
+        run: |
+          npm audit --omit=dev --audit-level=high --json > /tmp/audit.json || true
+          node -e "
+            const fs = require('fs');
+            const a = JSON.parse(fs.readFileSync('/tmp/audit.json', 'utf8'));
+            const v = a.vulnerabilities ? Object.values(a.vulnerabilities) : [];
+            const hi = v.filter(x => ['high', 'critical'].includes(x.severity));
+            console.log('## 生产依赖高危/严重漏洞：' + hi.length + ' 个');
+            console.log(hi.length ? hi.map(x => '- **' + x.name + '** (' + x.severity + '): ' + (x.title || '')) .join('\n') : '✅ 未发现');
+          " >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "审计结果解析失败，查看 /tmp/audit.json"
+          # 建议性：不阻塞合并；噪声水平稳定后可去掉下一行转为阻塞
+          true
+
+  sast-semgrep:
+    name: sast-semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v5
+      - name: Semgrep 静态安全分析（建议性）
+        run: |
+          semgrep scan --config p/ci --metrics=off --quiet > /tmp/semgrep.txt 2>&1 || true
+          {
+            echo '## Semgrep 发现（建议性，不阻塞）'
+            echo '```'
+            tail -n 80 /tmp/semgrep.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+          true
