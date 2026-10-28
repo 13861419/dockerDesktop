@@ -1,5 +1,4 @@
-// security-test-sample.js - 故意放置的假密钥（AWS 官方文档公开示例），验证 gitleaks 后删除
-const AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";
-const AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-const GITHUB_TOKEN = "ghp_" + "x".repeat(36);
-module.exports = { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, GITHUB_TOKEN };
+// security-test-sample.js - 故意放置的随机伪造密钥（非真实凭据），验证 gitleaks 后删除
+const apiKey = "sk-live-9f8b7c6d5e4a3f2b1c0d9e8f7a6b5c4d";
+const dbPassword = "4f9d2e8b1c7a6f3e5d0b8a2c9e7f4a6d";
+module.exports = { apiKey, dbPassword };
