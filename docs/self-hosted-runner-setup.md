@@ -121,9 +121,11 @@ mkdir actions-runner && cd actions-runner
 | job 一直排队（Queued） | runner 未在线 | 启动 `run.cmd` 或检查服务状态 |
 | job 绿色但 PR 无审查评论 | `AI_API_KEY` 为空，脚本优雅跳过 | 按 §5 配置 Secret；看 Actions 日志有 notice |
 | HTTP 000 / curl_failed | runner 在海外托管机器上跑（未用自托管） | 确认 workflow 为 `runs-on: self-hosted` |
+| checkout 报 `schannel: SSL/TLS handshake failed` | 本机到 github.com 的网络瞬时抖动（国内常见） | 偶发直接 Re-run 即可；频繁出现检查代理/网络 |
 | Re-run 跑的还是旧逻辑 | 旧 run 固定旧版 workflow 文件 | 把最新 main 合并进 PR 分支后再触发（**改 workflow 后必踩**） |
 | 接口返回 200 但无审查内容 | 模型名不对或 max_tokens 不够 | 核对 `AI_MODEL` |
 | Key 无效（401 Invalid token） | Secret 里的 Key 错误/过期 | 重新 `gh secret set AI_API_KEY` |
+| push 被拒：GITHUB PUSH PROTECTION | 推送内容含疑似真实密钥（GitHub 原生推送保护） | 这是**正常防线**：若是误报走页面允许链接；是真 Key 立即撤销并换新 |
 
 ---
 
