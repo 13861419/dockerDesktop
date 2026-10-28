@@ -21,6 +21,13 @@
 npm run docs:check   # 图片死链检查（0 缺失为通过）；CI 的 docs job 同样执行
 ```
 
+## 代码审查（提交 PR 前必读）
+
+- 根目录 `REVIEW.md` 是审查章程：高风险区清单（认证凭据 / 命令执行 / 主机文件 / 防火墙站点 / schema / 打包升级）、审查强度分档（Quick/Standard/Deep）、Nit 限制、findings 分级。
+- 提 PR 前固定自验证：`npm run test:server:unit` + 类型检查；证据先行，不许"声称完成"。
+- PR 模板三栏（Testing / Risk / How to revert）必填；审查轮次上限 3 轮，超轮退回重新考虑方案。
+- 触碰 Deep 档区域（见 REVIEW.md）的 diff，合并前必须获得 Code Owners 人工批准，代理批准不算数。
+
 ## 项目关键约定
 
 - **文本文件编辑禁用 PowerShell `Get-Content`/`Set-Content`**（会损坏 UTF-8 中文，产生乱码）；一律使用 edit 工具或 node 脚本文件。`powershell -File` 执行含中文的 `.ps1` 需带 UTF-8 BOM。

@@ -1,0 +1,36 @@
+# 默认所有者：所有路径的变更需仓库所有者批准
+* @13861419
+
+# 高风险区：永远需要人工审查（见 REVIEW.md）
+# 认证、凭据与会话
+/server/src/auth.ts @13861419
+/server/src/routes/auth.ts @13861419
+/server/src/routes/creds.ts @13861419
+
+# 命令执行与审批边界
+/server/src/routes/hostTerminal.ts @13861419
+/server/src/routes/compose.ts @13861419
+/server/src/routes/containers.ts @13861419
+/server/src/aiActionExecutor.ts @13861419
+/server/src/routes/approvals.ts @13861419
+
+# 主机文件与路径解析
+/server/src/routes/files.ts @13861419
+/server/src/routes/hostFiles.ts @13861419
+
+# 防火墙 / 站点 / 证书 / 引擎
+/server/src/routes/firewall.ts @13861419
+/server/src/routes/certs.ts @13861419
+/server/src/routes/engines.ts @13861419
+
+# 配置导入导出与备份
+/server/src/routes/configTransfer.ts @13861419
+/server/src/routes/backups.ts @13861419
+
+# 打包与升级
+/packaging/ @13861419
+
+# CI 与协作约定
+/.github/workflows/ @13861419
+/AGENTS.md @13861419
+/REVIEW.md @13861419
