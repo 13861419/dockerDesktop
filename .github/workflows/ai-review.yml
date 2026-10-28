@@ -2,10 +2,13 @@
 #  AI Review — 第 2 层：每个 PR 自动 AI 代码审查
 #  触发条件: PR 打开 / 新提交推送
 #  行为:
-#    - 按 REVIEW.md 章程审查 diff（高风险区优先），发现按
-#      Important / Nit / Pre-existing 分级，附文件+行号证据
+#    - 按 REVIEW.md 章程审查 diff，发现按 Important / Nit / Pre-existing
+#      分级，附文件+行号证据，以 PR 评论形式输出
 #    - 审查发现为建议性质，不阻塞合并；合并仍由人类批准把关（第 5 层）
-#  前置条件: 仓库 Secrets 配置 ANTHROPIC_API_KEY（可选 ANTHROPIC_BASE_URL 走中转站）
+#  前置条件（仓库 Settings → Secrets and variables → Actions）:
+#    Secret   AI_API_KEY   — OpenAI 兼容接口的 API Key（DeepSeek/GLM/Qwen/Kimi/中转站均可）
+#    Variable AI_BASE_URL  — 可选，接口基地址（默认 https://api.deepseek.com）
+#    Variable AI_MODEL     — 可选，模型名（默认 deepseek-chat）
 # ============================================================
 name: AI Review
 
@@ -16,7 +19,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 concurrency:
   group: ai-review-${{ github.event.pull_request.number }}
@@ -26,13 +28,14 @@ jobs:
   ai-review:
     name: ai-review
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Guard — 未配置 API Key 时优雅跳过
         id: guard
         run: |
-          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+          if [ -z "${{ secrets.AI_API_KEY }}" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::未配置 ANTHROPIC_API_KEY，跳过 AI 审查。添加路径：Settings → Secrets and variables → Actions"
+            echo "::notice::未配置 AI_API_KEY，跳过 AI 审查。添加路径：Settings → Secrets and variables → Actions"
           fi
 
       - uses: actions/checkout@v5
@@ -42,33 +45,91 @@ jobs:
 
       - name: AI 审查（按 REVIEW.md 标准）
         if: steps.guard.outputs.skip != 'true'
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # 可选：走中转站时在仓库 Variables 配置 ANTHROPIC_BASE_URL
-          # anthropic_base_url: ${{ vars.ANTHROPIC_BASE_URL }}
-          direct_prompt: |
-            你是本仓库的 AI 代码审查器。开始前先阅读根目录 REVIEW.md（审查章程）与
-            AGENTS.md（项目约定），再审查本 PR 的完整 diff（可用仓库内工具核对上下文）。
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ vars.AI_BASE_URL }}
+          AI_MODEL: ${{ vars.AI_MODEL }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          BASE_URL="${AI_BASE_URL:-https://api.deepseek.com}"
+          MODEL="${AI_MODEL:-deepseek-chat}"
 
-            优先级明文：先抓真 bug，其次减少审查轮数。
+          # ---- 取 diff，保护 token 预算 ----
+          git fetch origin "$BASE_REF" --quiet
+          DIFF="$(git diff "origin/${BASE_REF}...HEAD")"
+          if [ -z "$DIFF" ]; then
+            gh pr comment "$PR_NUMBER" --body "🤖 AI 审查：✅ 无代码 diff（纯分支同步），跳过审查。"
+            exit 0
+          fi
+          if [ ${#DIFF} -gt 60000 ]; then
+            DIFF="${DIFF:0:60000}
+          ...（diff 超过 60000 字符已截断，请结合本地深度审查）"
+          fi
 
-            重点检查（REVIEW.md 高风险区）：
-            1. 认证与凭据：禁止放宽校验、明文落库
-            2. 命令执行：拼接 shell 必须转义；用户输入/AI 生成的命令进入 exec 前必须有白名单或审批边界
-            3. 主机文件：路径穿越（../、符号链接）必须边界校验；删除/覆写必须有范围限制
-            4. 防火墙/站点/证书：破坏性操作需二次确认与回滚说明
-            5. SQLite schema：改动必须幂等兼容存量数据库，新增列给默认值或允许 NULL
-            6. 打包升级：版本号同步（npm run docs:check）、原生模块 externals
+          read -r -d '' SYSTEM_PROMPT <<'EOF' || true
+          你是本仓库的 AI 代码审查器。优先级明文：先抓真 bug，其次减少审查轮数。
 
-            硬性要求：
-            - 每个发现必须给证据：文件名 + 行号 + 引用代码说明为什么错
-            - 分级：Important（数据丢失/命令注入/越权/锁死服务器）、Nit（最多 3 条）、Pre-existing（标注不阻塞）
-            - 纯风格问题（引号、空行、命名偏好）一律不提
-            - 不要重复报告此前轮次已提交过的发现
+          重点检查（REVIEW.md 高风险区）：
+          1. 认证与凭据：禁止放宽校验、明文落库
+          2. 命令执行：拼接 shell 必须转义；用户输入/AI 生成的命令进入 exec 前必须有白名单或审批边界
+          3. 主机文件：路径穿越（../、符号链接）必须边界校验；删除/覆写必须有范围限制
+          4. 防火墙/站点/证书：破坏性操作需二次确认与回滚说明
+          5. SQLite schema：改动必须幂等兼容存量数据库，新增列给默认值或允许 NULL
+          6. 打包升级：版本号同步、原生模块 externals
 
-            输出格式（中文）：
-            ## AI 审查
-            - 档位判定：Deep / Standard / Quick（依据 REVIEW.md 分档说明理由）
-            - 逐条列出发现：[Important|Nit|Pre-existing] `文件:行号` — 问题描述与证据
-            - 若无值得报告的问题：明确回复 "✅ AI 审查通过，无 Important 发现"
+          硬性要求：
+          - 每个发现必须给证据：文件名 + 行号 + 引用代码说明为什么错
+          - 分级：Important（数据丢失/命令注入/越权/锁死服务器）、Nit（最多 3 条）、Pre-existing（标注不阻塞）
+          - 纯风格问题（引号、空行、命名偏好）一律不提
+          - 输出使用中文 markdown，以「## AI 审查」开头
+          EOF
+
+          CHARTER="$(cat REVIEW.md 2>/dev/null || echo '见仓库根目录 REVIEW.md')"
+          USER_CONTENT="请审查以下 Pull Request。
+
+          ## PR 标题
+          ${PR_TITLE}
+
+          ## PR 描述
+          ${PR_BODY:0:2000}
+
+          ## 审查章程（REVIEW.md）
+          ${CHARTER}
+
+          ## Diff
+          \`\`\`diff
+          ${DIFF}
+          \`\`\`"
+
+          # ---- 组装请求体（messages JSON 写入临时文件，规避转义问题） ----
+          jq -n \
+            --arg model "$MODEL" \
+            --arg system "$SYSTEM_PROMPT" \
+            --arg user "$USER_CONTENT" \
+            '{model:$model, messages:[{role:"system",content:$system},{role:"user",content:$user}], temperature:0.2, max_tokens:4000}' \
+            > /tmp/ai-review-payload.json
+
+          # ---- 先占位评论（体现"审查进行中"，失败也有留痕） ----
+          gh pr comment "$PR_NUMBER" --body "🤖 AI 审查进行中……" > /dev/null
+          COMMENT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --jq '.[-1].id')"
+
+          # ---- 调用 OpenAI 兼容接口 ----
+          REVIEW="$(curl -sf --max-time 300 -X POST \
+            -H "Authorization: Bearer ${AI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/ai-review-payload.json \
+            "${BASE_URL%/}/chat/completions" 2>/dev/null | jq -r '.choices[0].message.content // empty' || true)"
+
+          # ---- 回填正式审查结果 ----
+          if [ -n "$REVIEW" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+              -f body="$REVIEW" > /dev/null
+          else
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+              -f body="🤖 AI 审查：❌ 接口调用失败，请检查 AI_API_KEY / AI_BASE_URL / AI_MODEL 配置" > /dev/null
+          fi
