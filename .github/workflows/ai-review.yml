@@ -1,14 +1,21 @@
 # ============================================================
 #  AI Review — 第 2 层：每个 PR 自动 AI 代码审查
-#  触发条件: PR 打开 / 新提交推送
+#  运行位置: 自托管 runner（自己的电脑）。
+#    原因: 团队使用的中转站模型接口不对 GitHub 托管 runner（海外 IP）开放，
+#          只有自家机器能访问，故把该 job 派发到本机执行。
+#  触发条件: PR 打开 / 新提交推送 / 重新打开（fork PR 不执行，保护本机安全）
 #  行为:
 #    - 按 REVIEW.md 章程审查 diff，发现按 Important / Nit / Pre-existing
 #      分级，附文件+行号证据，以 PR 评论形式输出
 #    - 审查发现为建议性质，不阻塞合并；合并仍由人类批准把关（第 5 层）
-#  前置条件（仓库 Settings → Secrets and variables → Actions）:
-#    Secret   AI_API_KEY   — OpenAI 兼容接口的 API Key（DeepSeek/GLM/Qwen/Kimi/中转站均可）
-#    Variable AI_BASE_URL  — 可选，接口基地址（默认 https://api.deepseek.com）
-#    Variable AI_MODEL     — 可选，模型名（默认 deepseek-chat）
+#  前置条件:
+#    1. 本机已注册 GitHub 自托管 runner（Settings → Actions → Runners）
+#    2. runner 机器 git / node ≥ 18 可用（PATH 中可寻址，node 需内置 fetch）
+#    3. runner 机器能访问 AI 接口基地址（AI_BASE_URL）
+#    4. 仓库 Settings → Secrets and variables → Actions:
+#       Secret   AI_API_KEY   — OpenAI 兼容接口的 API Key（必填，未配置时 job 优雅跳过）
+#       Variable AI_BASE_URL  — 接口基地址（默认 https://api.deepseek.com）
+#       Variable AI_MODEL     — 模型名（默认 deepseek-chat）
 # ============================================================
 name: AI Review
 
@@ -27,23 +34,15 @@ concurrency:
 jobs:
   ai-review:
     name: ai-review
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    # 公共仓库的 fork PR 一律不在本机 runner 上执行（防止在他机运行任意代码）
+    if: github.event.pull_request.head.repo.fork != true
     steps:
-      - name: Guard — 未配置 API Key 时优雅跳过
-        id: guard
-        run: |
-          if [ -z "${{ secrets.AI_API_KEY }}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::未配置 AI_API_KEY，跳过 AI 审查。添加路径：Settings → Secrets and variables → Actions"
-          fi
-
       - uses: actions/checkout@v5
-        if: steps.guard.outputs.skip != 'true'
         with:
           fetch-depth: 0
 
       - name: AI 审查（按 REVIEW.md 标准）
-        if: steps.guard.outputs.skip != 'true'
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_BASE_URL: ${{ vars.AI_BASE_URL }}
@@ -53,92 +52,4 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_REF: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          BASE_URL="${AI_BASE_URL:-https://api.deepseek.com}"
-          MODEL="${AI_MODEL:-deepseek-chat}"
-
-          # ---- 取 diff，保护 token 预算 ----
-          git fetch origin "$BASE_REF" --quiet
-          DIFF="$(git diff "origin/${BASE_REF}...HEAD")"
-          if [ -z "$DIFF" ]; then
-            gh pr comment "$PR_NUMBER" --body "🤖 AI 审查：✅ 无代码 diff（纯分支同步），跳过审查。"
-            exit 0
-          fi
-          if [ ${#DIFF} -gt 60000 ]; then
-            DIFF="${DIFF:0:60000}
-          ...（diff 超过 60000 字符已截断，请结合本地深度审查）"
-          fi
-
-          read -r -d '' SYSTEM_PROMPT <<'EOF' || true
-          你是本仓库的 AI 代码审查器。优先级明文：先抓真 bug，其次减少审查轮数。
-
-          重点检查（REVIEW.md 高风险区）：
-          1. 认证与凭据：禁止放宽校验、明文落库
-          2. 命令执行：拼接 shell 必须转义；用户输入/AI 生成的命令进入 exec 前必须有白名单或审批边界
-          3. 主机文件：路径穿越（../、符号链接）必须边界校验；删除/覆写必须有范围限制
-          4. 防火墙/站点/证书：破坏性操作需二次确认与回滚说明
-          5. SQLite schema：改动必须幂等兼容存量数据库，新增列给默认值或允许 NULL
-          6. 打包升级：版本号同步、原生模块 externals
-
-          硬性要求：
-          - 每个发现必须给证据：文件名 + 行号 + 引用代码说明为什么错
-          - 分级：Important（数据丢失/命令注入/越权/锁死服务器）、Nit（最多 3 条）、Pre-existing（标注不阻塞）
-          - 纯风格问题（引号、空行、命名偏好）一律不提
-          - 输出使用中文 markdown，以「## AI 审查」开头
-          EOF
-
-          CHARTER="$(cat REVIEW.md 2>/dev/null || echo '见仓库根目录 REVIEW.md')"
-          USER_CONTENT="请审查以下 Pull Request。
-
-          ## PR 标题
-          ${PR_TITLE}
-
-          ## PR 描述
-          ${PR_BODY:0:2000}
-
-          ## 审查章程（REVIEW.md）
-          ${CHARTER}
-
-          ## Diff
-          \`\`\`diff
-          ${DIFF}
-          \`\`\`"
-
-          # ---- 组装请求体（messages JSON 写入临时文件，规避转义问题） ----
-          jq -n \
-            --arg model "$MODEL" \
-            --arg system "$SYSTEM_PROMPT" \
-            --arg user "$USER_CONTENT" \
-            '{model:$model, messages:[{role:"system",content:$system},{role:"user",content:$user}], temperature:0.2, max_tokens:4000}' \
-            > /tmp/ai-review-payload.json
-
-          # ---- 先占位评论（体现"审查进行中"，失败也有留痕） ----
-          gh pr comment "$PR_NUMBER" --body "🤖 AI 审查进行中……" > /dev/null
-          COMMENT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --jq '.[-1].id')"
-
-          # ---- 调用 OpenAI 兼容接口，捕获状态码与错误体便于排障 ----
-          RESPONSE_FILE=/tmp/ai-response.json
-          HTTP_STATUS="$(curl -s --max-time 300 -o "$RESPONSE_FILE" -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${AI_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d @/tmp/ai-review-payload.json \
-            "${BASE_URL%/}/chat/completions" 2>/dev/null || echo "curl_failed")"
-
-          if [ "$HTTP_STATUS" != "200" ]; then
-            ERR_SNIPPET="$(head -c 300 "$RESPONSE_FILE" 2>/dev/null || echo '无响应体')"
-            echo "::error::AI 接口调用失败：HTTP ${HTTP_STATUS} — ${ERR_SNIPPET}（BASE_URL=${BASE_URL}, MODEL=${MODEL}）"
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
-              -f body="🤖 AI 审查：❌ 接口调用失败 HTTP \`${HTTP_STATUS}\`，请检查 AI_API_KEY / AI_BASE_URL / AI_MODEL 配置（详细错误见 Actions 日志）" > /dev/null
-            exit 1
-          fi
-
-          # ---- 回填正式审查结果 ----
-          REVIEW="$(jq -r '.choices[0].message.content // empty' "$RESPONSE_FILE")"
-          if [ -n "$REVIEW" ]; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
-              -f body="$REVIEW" > /dev/null
-          else
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
-              -f body="🤖 AI 审查：❌ 接口返回 200 但无审查内容，请确认 AI_MODEL 名称正确" > /dev/null
-          fi
+        run: node .github/scripts/ai-review.js
