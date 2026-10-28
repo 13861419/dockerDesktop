@@ -38,9 +38,26 @@ jobs:
     # 公共仓库的 fork PR 一律不在本机 runner 上执行（防止在他机运行任意代码）
     if: github.event.pull_request.head.repo.fork != true
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+      - name: Checkout（含网络抖动自动重试，替代 actions/checkout）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          rm -rf .git ./* .[!.]* 2>/dev/null || true
+          ok=0
+          for i in 1 2 3 4 5; do
+            if git clone --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .; then
+              ok=1; break
+            fi
+            echo "第 ${i} 次克隆失败（疑似本机到 github.com 网络抖动），15 秒后重试..."
+            rm -rf .git ./* .[!.]* 2>/dev/null || true
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::连续 5 次克隆失败，检查本机到 github.com 的网络连通性"
+            exit 1
+          fi
 
       - name: AI 审查（按 REVIEW.md 标准）
         env:
