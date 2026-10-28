@@ -26,9 +26,25 @@ env:
 
 jobs:
   # ==========================================================
+  #  0. 发布门禁：测试不过，一律不发版（第 7 层）
+  # ==========================================================
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - run: npm install --ignore-scripts
+      - run: npm run test:server:unit
+      - run: npx tsc -b
+        working-directory: web
+      - run: npx tsc --project server/tsconfig.json --noEmit
+
+  # ==========================================================
   #  1. GitHub Releases
   # ==========================================================
   build-windows:
+    needs: [gate]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -45,6 +61,7 @@ jobs:
           files: dist-release/DockerManager-windows-amd64.zip
 
   build-ubuntu:
+    needs: [gate]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -62,6 +79,7 @@ jobs:
           files: dist-release/docker-manager-*.deb
 
   build-centos:
+    needs: [gate]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -79,6 +97,7 @@ jobs:
           files: dist-release/docker-manager-*.rpm
 
   build-macos:
+    needs: [gate]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5

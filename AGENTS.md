@@ -29,6 +29,7 @@ npm run docs:check   # 图片死链检查（0 缺失为通过）；CI 的 docs j
 - 触碰 Deep 档区域（见 REVIEW.md）的 diff，合并前必须获得 Code Owners 人工批准，代理批准不算数。
 - **AI 审查自动化**（`.github/workflows/ai-review.yml`）：PR 打开/推送新提交时自动运行，按 REVIEW.md 标准输出分级发现（Important / Nit / Pre-existing），发现须逐条回应（修复或带理由关闭）；该 job 为建议性质不阻塞合并，人类批准才是合并闸门。调用 OpenAI 兼容接口（DeepSeek/GLM/Qwen/中转站均可），**运行在自托管 runner（本机）上**——因中转站接口不对 GitHub 托管 runner 开放；需本机注册 runner 且 git/node ≥ 18 可用，仓库 Secrets 配置 `AI_API_KEY`，可选 Variables：`AI_BASE_URL`（接口基地址）、`AI_MODEL`（模型名，默认 deepseek-chat）。审查逻辑见 `.github/scripts/ai-review.js`；runner 安装与新电脑接入步骤见 `docs/self-hosted-runner-setup.md`。
 - **安全审查自动化**（`.github/workflows/security.yml`）：PR 与每周一全量历史扫描。三线分级——gitleaks 密钥扫描（**阻塞**：泄漏零容忍，发现立即撤销 Key 并在 PR 修复）、npm audit 生产依赖高危审计（建议性）、Semgrep p/ci 静态分析（建议性，跑在 Job Summary）；建议性发现不阻塞但须人工过目，噪声稳定后可转阻塞。代码中出现任何疑似密钥（sk-/ghp_/AKIA 开头等）一律不提交。
+- **发布与回滚**（`.github/workflows/release.yml`，第 7 层）：推送 `v*` tag 触发——先过 gate 门禁（单测+类型检查）再四平台构建分发（Release/Docker/npm/APT）；**发版只走 tag，tag 只打在 main**。回滚与监控预案见 `docs/release-rollback.md`；`/api/health` 返回版本号，发版前 server/package.json 版本必须与 tag 同步 bump。**事故即评测集**：任何线上事故复盘必须沉淀回归测试或 REVIEW.md 规则（模板见 docs/release-rollback.md §4）。
 - 触碰 Deep 档区域（见 REVIEW.md）的 diff，合并前必须获得 Code Owners 人工批准，代理批准不算数。
 
 ## 项目关键约定

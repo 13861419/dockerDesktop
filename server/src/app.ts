@@ -129,9 +129,15 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-// 健康检查
+// 健康检查（带版本号：监控侧可确认当前运行的是哪个发布版本）
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  let version = 'unknown';
+  try {
+    version = require(path.join(__dirname, '..', 'package.json')).version;
+  } catch {
+    // 版本读取失败不阻塞健康检查
+  }
+  res.json({ status: 'ok', time: new Date().toISOString(), version });
 });
 
 // Prometheus 抓取端点（顶层 /metrics，内置可选 token 鉴权，见 routes/metrics.ts）
