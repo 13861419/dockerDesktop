@@ -38,26 +38,37 @@ jobs:
     # 公共仓库的 fork PR 一律不在本机 runner 上执行（防止在他机运行任意代码）
     if: github.event.pull_request.head.repo.fork != true
     steps:
-      - name: Checkout（含网络抖动自动重试，替代 actions/checkout）
-        shell: bash
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+        continue-on-error: true
+
+      # 本机到 github.com 偶发 SSL 瞬断（schannel: failed to receive handshake），
+      # checkout 失败时用 PowerShell 重试克隆兜底（Windows 自带，不依赖 bash——
+      # 注意本机 shell:bash 会解析到 WSL bash，读不到 Windows 路径，勿用）
+      - name: Checkout 重试（网络抖动兜底）
+        if: steps.checkout.outcome == 'failure'
+        shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd "$GITHUB_WORKSPACE"
-          rm -rf .git ./* .[!.]* 2>/dev/null || true
-          ok=0
-          for i in 1 2 3 4 5; do
-            if git clone --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .; then
-              ok=1; break
-            fi
-            echo "第 ${i} 次克隆失败（疑似本机到 github.com 网络抖动），15 秒后重试..."
-            rm -rf .git ./* .[!.]* 2>/dev/null || true
-            sleep 15
-          done
-          if [ "$ok" != "1" ]; then
-            echo "::error::连续 5 次克隆失败，检查本机到 github.com 的网络连通性"
+          Set-Location $env:GITHUB_WORKSPACE
+          if (Test-Path .git) { Remove-Item -Recurse -Force .git }
+          Get-ChildItem -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          $ok = $false
+          foreach ($i in 1..5) {
+            git clone --quiet "https://x-access-token:$($env:GH_TOKEN)@github.com/$($env:GITHUB_REPOSITORY).git" .
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Host "Clone attempt $i failed (network flake), retrying in 15s..."
+            if (Test-Path .git) { Remove-Item -Recurse -Force .git }
+            Start-Sleep -Seconds 15
+          }
+          if (-not $ok) {
+            Write-Host "::error::5 clone attempts failed - check network to github.com"
             exit 1
-          fi
+          }
 
       - name: AI 审查（按 REVIEW.md 标准）
         env:
