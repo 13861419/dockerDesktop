@@ -26,11 +26,15 @@ const MODEL = process.env.AI_MODEL || 'deepseek-chat';
 const API_KEY = process.env.AI_API_KEY || '';
 const DIFF_CAP = Number(process.env.AI_DIFF_MAX_CHARS || 60000);
 
+// 双平台兼容：GitHub（Bearer）与 Gitea Actions（token 认证头，GITHUB_API_URL 自带 /api/v1 前缀）
+const IS_GITEA = /\/api\/v1$/.test(API) || process.env.GITEA_ACTIONS === 'true';
+const AUTH_VALUE = IS_GITEA ? `token ${TOKEN}` : `Bearer ${TOKEN}`;
+
 async function ghRequest(path, method, bodyObj) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: AUTH_VALUE,
       Accept: 'application/vnd.github+json',
       'Content-Type': 'application/json'
     },
@@ -54,6 +58,14 @@ async function main() {
   }
 
   // ---- 提取 diff，保护 token 预算 ----
+  // Gitea Actions 的自动克隆可能不含基线分支，先确保 origin/<BASE_REF> 存在（GitHub 上无害）
+  try {
+    const server = (process.env.GITHUB_SERVER_URL || 'https://github.com').replace(/\/+$/, '');
+    execSync(`git remote set-url origin "https://x-access-token:${TOKEN}@${server.replace(/^https?:\/\//, '')}/${REPO}.git"`, { stdio: 'ignore' });
+    execSync(`git fetch origin ${BASE_REF} --quiet`, { stdio: 'ignore' });
+  } catch (e) {
+    // origin/<BASE_REF> 已存在时失败可忽略
+  }
   const rawDiff = execSync(`git diff origin/${BASE_REF}...HEAD`, {
     maxBuffer: 64 * 1024 * 1024
   }).toString();
